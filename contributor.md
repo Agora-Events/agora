@@ -23,7 +23,7 @@ Agora-stellr/
 ## 🎨 Frontend Contributions
 
 ### Design Reference
-- **Figma Design**: [Agora Figma](-----------link) 
+- **Figma Design**: [Agora Figma](https://www.figma.com/design/cpRUhrSlBVxGElm18Fa2Uh/Agora-event?node-id=0-1&t=qBlO0jnjQHQaHn2Z-1) 
 
 ### Standards and Best Practices
 - Follow professional frontend standards
