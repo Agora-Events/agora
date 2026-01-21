@@ -7,3 +7,5 @@ dist
 # Rust
 /target
 **/target
+server/target
+contract/target
