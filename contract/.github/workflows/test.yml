@@ -3,18 +3,26 @@ name: Continuous Integration
 on:
   push:
     branches: [main, develop]
+    paths:
+      - "contract/**"
   pull_request:
+    paths:
+      - "contract/**"
 
 jobs:
   ci:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: contract
 
     steps:
       # Checkout repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Install Rust toolchain
+      # Set up Rust toolchain
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -22,15 +30,15 @@ jobs:
           components: rustfmt, clippy
           override: true
 
-      # Cache Rust dependencies for faster builds
+      # Cache Rust dependencies
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            contract/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contract/**/Cargo.lock') }}
 
       # Check formatting
       - name: Run rustfmt
@@ -40,7 +48,7 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      # Build contracts
+      # Build contract
       - name: Build
         run: cargo build --release
 
