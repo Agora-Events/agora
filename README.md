@@ -26,6 +26,23 @@ This project is organized as a monorepo:
 - [`apps/web`](apps/web/README.md): The main frontend application (Next.js). **Please read the [Frontend Guidelines](apps/web/README.md) regarding styles and components before contributing.**
 - `contracts`: Smart contracts and blockchain logic.
 
+## Backend Architecture (Axum)
+
+The backend is built using **Rust** and the **Axum** web framework, following a clean and modular architecture designed for scalability and maintainability.
+
+### Directory Overview
+
+- `routes/` – API route definitions and versioned endpoints
+- `handlers/` – Request handlers (controllers/business logic)
+- `models/` – Data models and domain structures
+- `utils/` – Shared helpers and utilities
+- `config/` – Environment and configuration management
+- `main.rs` – Application entry point and server bootstrap
+- `lib.rs` – Central module exports
+
+This separation of concerns allows the backend to scale independently, supports clean testing, and keeps business logic isolated from routing and infrastructure code.
+
+
 ## Getting Started
 
 1. **Clone the repository**:
