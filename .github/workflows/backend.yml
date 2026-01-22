@@ -1,0 +1,73 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "contract/**"
+
+jobs:
+  backend-ci:
+    name: Contract Checks (Test • Build • Clippy • Fmt)
+    runs-on: ubuntu-latest
+
+    # ----------------------------------------
+    # Run all commands inside contract directory
+    # ----------------------------------------
+    defaults:
+      run:
+        working-directory: contract
+
+    steps:
+      # ----------------------------------------
+      # Checkout repository
+      # ----------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ----------------------------------------
+      # Set up Rust toolchain
+      # ----------------------------------------
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      # ----------------------------------------
+      # Cache Rust dependencies for faster runs
+      # ----------------------------------------
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contract/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contract/**/Cargo.lock') }}
+
+      # ----------------------------------------
+      # Formatting check (fails if not formatted)
+      # ----------------------------------------
+      - name: Check formatting (cargo fmt)
+        run: cargo fmt --all -- --check
+
+      # ----------------------------------------
+      # Linting (fail on warnings)
+      # ----------------------------------------
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # ----------------------------------------
+      # Build contracts
+      # ----------------------------------------
+      - name: Build contracts
+        run: cargo build --release
+
+      # ----------------------------------------
+      # Run tests
+      # ----------------------------------------
+      - name: Run tests
+        run: cargo test
