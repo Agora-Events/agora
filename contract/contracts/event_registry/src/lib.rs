@@ -56,10 +56,9 @@ impl EventRegistry {
         storage::set_platform_fee(&env, new_fee_percent);
 
         // Emit fee update event
-        env.events().publish(
-            (symbol_short!("fee_upd"),),
-            new_fee_percent
-        );
+        #[allow(deprecated)]
+        env.events()
+            .publish((symbol_short!("fee_upd"),), new_fee_percent);
     }
 
     /// Returns the current platform fee percentage.

@@ -44,7 +44,7 @@ fn test_initialization_invalid_fee() {
 fn test_set_platform_fee() {
     let env = Env::default();
     env.mock_all_auths();
-    
+
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
@@ -60,7 +60,7 @@ fn test_set_platform_fee() {
 fn test_set_platform_fee_invalid() {
     let env = Env::default();
     env.mock_all_auths();
-    
+
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
@@ -73,7 +73,7 @@ fn test_set_platform_fee_invalid() {
 #[should_panic] // Authentication failure
 fn test_set_platform_fee_unauthorized() {
     let env = Env::default();
-    
+
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);

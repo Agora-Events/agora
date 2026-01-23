@@ -18,7 +18,10 @@ pub fn set_platform_fee(env: &Env, fee: u32) {
 
 /// Retrieves the global platform fee.
 pub fn get_platform_fee(env: &Env) -> u32 {
-    env.storage().persistent().get(&DataKey::PlatformFee).unwrap_or(0)
+    env.storage()
+        .persistent()
+        .get(&DataKey::PlatformFee)
+        .unwrap_or(0)
 }
 
 /// Checks if the platform fee has been set.
