@@ -2,12 +2,19 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 
+// Sub-components
+import { GuestNav } from "./navbar/guest-nav";
+import { UserNav } from "./navbar/user-nav";
+import { MobileNavLink } from "./navbar/mobile-nav-link";
+
 export function Navbar() {
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   // Lock body scroll when menu is open
   useEffect(() => {
@@ -48,7 +55,7 @@ export function Navbar() {
       opacity: 1,
       y: 0,
       transition: {
-        delay: i * 0.1 + 0.2, 
+        delay: i * 0.1 + 0.2,
         duration: 0.4,
         ease: "easeOut" as const,
       },
@@ -57,72 +64,38 @@ export function Navbar() {
 
   return (
     <>
-      <nav className="w-full flex justify-between items-center bg-transparent px-4 md:px-8 lg:px-[145px] pt-[35px] relative z-50">
-        {/* Logo */}
-        <div className="flex items-center z-50">
-          <Image
-            src="/logo/agora logo.svg"
-            alt="Agora Logo"
-            width={100}
-            height={30}
-            className="h-auto w-auto"
-          />
-        </div>
+      <nav className="w-full max-w-[1221px] h-[56px] mt-[35px] mx-auto flex px-4 lg:px-0 items-center justify-between relative z-50">
+        {isLoggedIn ? (
+          <UserNav pathname={pathname} />
+        ) : (
+          <GuestNav pathname={pathname} />
+        )}
 
-        {/* Desktop Navigation Links */}
-        <div className="hidden lg:flex items-center gap-6">
-          <NavLink href="#" icon="/icons/earth.svg" text="Discover Events" />
-          <NavLink href="#" icon="/icons/dollar-circle.svg" text="Pricing" />
-          <NavLink
-            href="#"
-            icon="/icons/stellar-xlm-logo 1.svg"
-            text="Stellar Ecosystem"
-          />
-          <NavLink href="#" icon="/icons/help-circle.svg" text="FAQs" />
-        </div>
-
-        {/* Desktop Action Button */}
-        <div className="hidden lg:block">
-          <Button
-            backgroundColor="bg-white"
-            textColor="text-black"
-            shadowColor="rgba(0,0,0,1)"
+        <div className="flex items-center lg:hidden">
+          <button
+            onClick={toggleMenu}
+            className="z-50 flex flex-col justify-center items-center w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-black/10 hover:bg-white/20 transition-colors"
+            aria-label="Toggle Menu"
           >
-            <span>Create Your Event</span>
-            <Image
-              src="/icons/arrow-up-right-01.svg"
-              alt="Arrow"
-              width={24}
-              height={24}
-              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-            />
-          </Button>
+            <div className="w-6 h-6 flex flex-col justify-center gap-[5px]">
+              <motion.span
+                animate={isOpen ? { rotate: 45, y: 7 } : { rotate: 0, y: 0 }}
+                className="w-full h-[2px] bg-black rounded-full origin-center"
+              />
+              <motion.span
+                animate={isOpen ? { opacity: 0 } : { opacity: 1 }}
+                className="w-full h-[2px] bg-black rounded-full"
+              />
+              <motion.span
+                animate={isOpen ? { rotate: -45, y: -7 } : { rotate: 0, y: 0 }}
+                className="w-full h-[2px] bg-black rounded-full origin-center"
+              />
+            </div>
+          </button>
         </div>
 
-        {/* Mobile Hamburger Toggle */}
-        <button
-          onClick={toggleMenu}
-          className="lg:hidden z-50 flex flex-col justify-center items-center w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-black/10 hover:bg-white/20 transition-colors"
-          aria-label="Toggle Menu"
-        >
-          <div className="w-6 h-6 flex flex-col justify-center gap-[5px]">
-            <motion.span
-              animate={isOpen ? { rotate: 45, y: 7 } : { rotate: 0, y: 0 }}
-              className="w-full h-[2px] bg-black rounded-full origin-center"
-            />
-            <motion.span
-              animate={isOpen ? { opacity: 0 } : { opacity: 1 }}
-              className="w-full h-[2px] bg-black rounded-full"
-            />
-            <motion.span
-              animate={isOpen ? { rotate: -45, y: -7 } : { rotate: 0, y: 0 }}
-              className="w-full h-[2px] bg-black rounded-full origin-center"
-            />
-          </div>
-        </button>
       </nav>
 
-      {/* Mobile Side Navigation */}
       <AnimatePresence>
         {isOpen && (
           <>
@@ -134,7 +107,6 @@ export function Navbar() {
               className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden"
             />
 
-            {/* Side Menu */}
             <motion.div
               variants={menuVariants}
               initial="closed"
@@ -165,30 +137,69 @@ export function Navbar() {
               </button>
 
               <div className="flex flex-col gap-6">
-                <MobileNavLink
-                  i={0}
-                  href="#"
-                  icon="/icons/earth.svg"
-                  text="Discover Events"
-                />
-                <MobileNavLink
-                  i={1}
-                  href="#"
-                  icon="/icons/dollar-circle.svg"
-                  text="Pricing"
-                />
-                <MobileNavLink
-                  i={2}
-                  href="#"
-                  icon="/icons/stellar-xlm-logo 1.svg"
-                  text="Stellar Ecosystem"
-                />
-                <MobileNavLink
-                  i={3}
-                  href="#"
-                  icon="/icons/help-circle.svg"
-                  text="FAQs"
-                />
+                {isLoggedIn ? (
+                  <>
+                    <MobileNavLink
+                      i={0}
+                      href="/"
+                      icon="/icons/home.svg"
+                      text="Home"
+                      isActive={pathname === "/"}
+                    />
+                    <MobileNavLink
+                      i={1}
+                      href="/discover"
+                      icon="/icons/earth-yellow.svg"
+                      text="Discover Events"
+                      isActive={pathname === "/discover"}
+                    />
+                    <MobileNavLink
+                      i={2}
+                      href="/organizers"
+                      icon="/icons/user-group.svg"
+                      text="Organizers"
+                      isActive={pathname === "/organizers"}
+                    />
+                    <MobileNavLink
+                      i={3}
+                      href="/stellar"
+                      icon="/icons/stellar-xlm-logo 1.svg"
+                      text="Stellar Ecosystem"
+                      isActive={pathname === "/stellar"}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <MobileNavLink
+                      i={0}
+                      href="/discover"
+                      icon="/icons/earth.svg"
+                      text="Discover Events"
+                      isActive={pathname === "/discover"}
+                    />
+                    <MobileNavLink
+                      i={1}
+                      href="/pricing"
+                      icon="/icons/dollar-circle.svg"
+                      text="Pricing"
+                      isActive={pathname === "/pricing"}
+                    />
+                    <MobileNavLink
+                      i={2}
+                      href="/stellar"
+                      icon="/icons/stellar-xlm-logo 1.svg"
+                      text="Stellar Ecosystem"
+                      isActive={pathname === "/stellar"}
+                    />
+                    <MobileNavLink
+                      i={3}
+                      href="/faqs"
+                      icon="/icons/help-circle.svg"
+                      text="FAQs"
+                      isActive={pathname === "/faqs"}
+                    />
+                  </>
+                )}
 
                 <motion.div custom={4} variants={linkVariants} className="mt-4">
                   <Button
@@ -213,62 +224,5 @@ export function Navbar() {
         )}
       </AnimatePresence>
     </>
-  );
-}
-
-function NavLink({
-  href,
-  icon,
-  text,
-}: {
-  href: string;
-  icon: string;
-  text: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-1 text-[15px] font-medium hover:opacity-80 transition-opacity"
-    >
-      <Image src={icon} alt={text} width={24} height={24} />
-      <span>{text}</span>
-    </Link>
-  );
-}
-
-function MobileNavLink({
-  href,
-  icon,
-  text,
-  i,
-}: {
-  href: string;
-  icon: string;
-  text: string;
-  i: number;
-}) {
-  const linkVariants = {
-    closed: { opacity: 0, x: 20 },
-    open: (i: number) => ({
-      opacity: 1,
-      x: 0,
-      transition: {
-        delay: i * 0.1,
-        duration: 0.4,
-        ease: "easeOut" as const,
-      },
-    }),
-  };
-
-  return (
-    <motion.div custom={i} variants={linkVariants}>
-      <Link
-        href={href}
-        className="flex items-center gap-3 text-lg font-medium hover:opacity-80 transition-opacity p-2 rounded-lg hover:bg-gray-50"
-      >
-        <Image src={icon} alt={text} width={24} height={24} />
-        <span>{text}</span>
-      </Link>
-    </motion.div>
   );
 }

@@ -1,69 +1,77 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env, symbol_short};
 
-mod storage;
+use crate::types::EventInfo;
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Vec};
+
+pub mod storage;
+pub mod types;
 
 #[contract]
-pub struct EventRegistryContract;
+pub struct EventRegistry;
 
 #[contractimpl]
-impl EventRegistryContract {
-    /// Initializes the platform fee and sets the contract administrator.
-    /// 
-    /// # Parameters
-    /// * `admin` - The address that will have administrator privileges.
-    /// * `initial_fee_percent` - The initial platform fee percentage (0-100).
-    /// 
-    /// # Panics
-    /// * If already initialized.
-    /// * If `initial_fee_percent` is greater than 100.
-    pub fn initialize_platform_fee(e: Env, admin: Address, initial_fee_percent: u32) {
-        if storage::has_platform_fee(&e) || storage::has_admin(&e) {
-            panic!("Platform fee already initialized");
+impl EventRegistry {
+    /// Initializes the contract with an admin address and initial platform fee.
+    pub fn initialize(env: Env, admin: Address, platform_fee_percent: u32) {
+        if storage::get_admin(&env).is_some() || storage::has_platform_fee(&env) {
+            panic!("already initialized");
         }
-        if initial_fee_percent > 100 {
+        if platform_fee_percent > 100 {
             panic!("Fee percent must be between 0 and 100");
         }
-        
-        storage::set_admin(&e, &admin);
-        storage::set_platform_fee(&e, initial_fee_percent);
+        storage::set_admin(&env, &admin);
+        storage::set_platform_fee(&env, platform_fee_percent);
+    }
+
+    /// Stores or updates an event.
+    pub fn store_event(env: Env, event_info: EventInfo) {
+        // In a real scenario, we would check authorization here.
+        storage::store_event(&env, event_info);
+    }
+
+    /// Retrieves an event by its ID.
+    pub fn get_event(env: Env, event_id: String) -> Option<EventInfo> {
+        storage::get_event(&env, event_id)
+    }
+
+    /// Checks if an event exists.
+    pub fn event_exists(env: Env, event_id: String) -> bool {
+        storage::event_exists(&env, event_id)
+    }
+
+    /// Retrieves all event IDs for an organizer.
+    pub fn get_organizer_events(env: Env, organizer: Address) -> Vec<String> {
+        storage::get_organizer_events(&env, &organizer)
     }
 
     /// Updates the platform fee percentage. Only callable by the administrator.
-    /// 
-    /// # Parameters
-    /// * `new_fee_percent` - The new platform fee percentage (0-100).
-    /// 
-    /// # Panics
-    /// * If the caller is not the administrator.
-    /// * If `new_fee_percent` is greater than 100.
-    #[allow(deprecated)]
-    pub fn set_platform_fee(e: Env, new_fee_percent: u32) {
-        let admin = storage::get_admin(&e);
+    pub fn set_platform_fee(env: Env, new_fee_percent: u32) {
+        let admin = storage::get_admin(&env).expect("Contract not initialized");
         admin.require_auth();
 
         if new_fee_percent > 100 {
             panic!("Fee percent must be between 0 and 100");
         }
 
-        storage::set_platform_fee(&e, new_fee_percent);
+        storage::set_platform_fee(&env, new_fee_percent);
 
         // Emit fee update event
-        e.events().publish(
+        env.events().publish(
             (symbol_short!("fee_upd"),),
             new_fee_percent
         );
     }
 
     /// Returns the current platform fee percentage.
-    pub fn get_platform_fee(e: Env) -> u32 {
-        storage::get_platform_fee(&e)
+    pub fn get_platform_fee(env: Env) -> u32 {
+        storage::get_platform_fee(&env)
     }
 
     /// Returns the current administrator address.
-    pub fn get_admin(e: Env) -> Address {
-        storage::get_admin(&e)
+    pub fn get_admin(env: Env) -> Address {
+        storage::get_admin(&env).expect("Contract not initialized")
     }
 }
 
+#[cfg(test)]
 mod test;
