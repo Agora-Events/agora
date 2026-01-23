@@ -1,14 +1,14 @@
-name: Contract CI
+name: Backend CI
 
 on:
   push:
     branches: ["main", "develop"]
     paths:
-      - "contract/**"
+      - "server/**"
   pull_request:
     branches: ["main", "develop"]
     paths:
-      - "contract/**"
+      - "server/**"
 
 jobs:
   test:
@@ -17,7 +17,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: contract
+        working-directory: server
 
     steps:
       - name: Checkout code
@@ -31,7 +31,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: contract -> target
+          workspaces: server -> target
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -39,8 +39,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Build
-        run: cargo build --release
-
       - name: Run tests
         run: cargo test
+
+      - name: Build
+        run: cargo build --release
