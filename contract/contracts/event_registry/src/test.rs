@@ -37,7 +37,7 @@ fn test_storage_operations() {
     assert_eq!(stored_event.organizer_address, organizer);
     assert_eq!(stored_event.payment_address, payment_address);
     assert_eq!(stored_event.platform_fee_percent, 5);
-    assert_eq!(stored_event.is_active, true);
+    assert!(stored_event.is_active);
 
     // Test non-existent event
     let fake_id = String::from_str(&env, "fake");
