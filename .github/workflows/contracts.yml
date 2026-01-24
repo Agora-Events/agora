@@ -1,16 +1,18 @@
-name: Contract ci Integration
+name: Contract CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: ["main", "develop"]
     paths:
       - "contract/**"
   pull_request:
+    branches: ["main", "develop"]
     paths:
       - "contract/**"
 
 jobs:
-  ci:
+  test:
+    name: Build and Test
     runs-on: ubuntu-latest
 
     defaults:
@@ -18,40 +20,27 @@ jobs:
         working-directory: contract
 
     steps:
-      # Checkout repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Set up Rust toolchain
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
-          override: true
 
-      # Cache Rust dependencies
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            contract/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('contract/**/Cargo.lock') }}
+          workspaces: contract -> target
 
-      # Check formatting
-      - name: Run rustfmt
+      - name: Check formatting
         run: cargo fmt --all -- --check
 
-      # Run clippy (fail on warnings)
-      - name: Run clippy
+      - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      # Build contract
       - name: Build
         run: cargo build --release
 
-      # Run tests
       - name: Run tests
         run: cargo test

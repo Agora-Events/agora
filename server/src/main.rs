@@ -3,7 +3,6 @@ use dotenvy::dotenv;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
-
 use agora_server::routes::create_routes;
 
 #[tokio::main]
