@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use super::*;
 use crate::types::EventInfo;
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
