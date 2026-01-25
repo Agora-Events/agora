@@ -11,6 +11,24 @@ pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&DataKey::Admin)
 }
 
+/// Sets the global platform fee.
+pub fn set_platform_fee(env: &Env, fee: u32) {
+    env.storage().persistent().set(&DataKey::PlatformFee, &fee);
+}
+
+/// Retrieves the global platform fee.
+pub fn get_platform_fee(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PlatformFee)
+        .unwrap_or(0)
+}
+
+/// Checks if the platform fee has been set.
+pub fn has_platform_fee(env: &Env) -> bool {
+    env.storage().persistent().has(&DataKey::PlatformFee)
+}
+
 /// Stores a new event or updates an existing one.
 /// Also updates the organizer's list of events.
 pub fn store_event(env: &Env, event_info: EventInfo) {
@@ -18,7 +36,6 @@ pub fn store_event(env: &Env, event_info: EventInfo) {
     let organizer = event_info.organizer_address.clone();
 
     // Store the event info using persistent storage
-    // Persistent storage is used because event data is critical and should not expire easily.
     env.storage()
         .persistent()
         .set(&DataKey::Event(event_id.clone()), &event_info);
