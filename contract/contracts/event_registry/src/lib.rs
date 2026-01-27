@@ -3,8 +3,13 @@
 use crate::types::{EventInfo, PaymentInfo};
 use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Vec};
 
+pub mod error;
+pub mod events;
 pub mod storage;
 pub mod types;
+
+use crate::error::EventRegistryError;
+use crate::events::{EventRegistered, EventStatusUpdated, FeeUpdated};
 
 #[contract]
 pub struct EventRegistry;
@@ -12,15 +17,20 @@ pub struct EventRegistry;
 #[contractimpl]
 impl EventRegistry {
     /// Initializes the contract with an admin address and initial platform fee.
-    pub fn initialize(env: Env, admin: Address, platform_fee_percent: u32) {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        platform_fee_percent: u32,
+    ) -> Result<(), EventRegistryError> {
         if storage::get_admin(&env).is_some() || storage::has_platform_fee(&env) {
-            panic!("already initialized");
+            return Err(EventRegistryError::EventAlreadyExists);
         }
         if platform_fee_percent > 10000 {
-            panic!("Fee percent must be between 0 and 10000 (100%)");
+            return Err(EventRegistryError::InvalidFeePercent);
         }
         storage::set_admin(&env, &admin);
         storage::set_platform_fee(&env, platform_fee_percent);
+        Ok(())
     }
 
     /// Register a new event with organizer authentication
@@ -29,13 +39,13 @@ impl EventRegistry {
         event_id: String,
         organizer_address: Address,
         payment_address: Address,
-    ) {
+    ) -> Result<(), EventRegistryError> {
         // Verify organizer signature
         organizer_address.require_auth();
 
         // Check if event already exists
         if storage::event_exists(&env, event_id.clone()) {
-            panic!("Event already exists");
+            return Err(EventRegistryError::EventAlreadyExists);
         }
 
         // Get current platform fee
@@ -54,27 +64,45 @@ impl EventRegistry {
         // Store the event
         storage::store_event(&env, event_info);
 
-        // Emit registration event
-        #[allow(deprecated)]
+        // Emit registration event using structured data
         env.events().publish(
-            (symbol_short!("event_reg"), event_id.clone()),
-            (organizer_address, payment_address, platform_fee_percent),
+            (symbol_short!("ev_reg"), event_id.clone()),
+            &EventRegistered {
+                event_id,
+                organizer_address,
+                payment_address,
+                timestamp: env.ledger().timestamp(),
+            },
         );
+
+        Ok(())
     }
 
     /// Get event payment information
-    pub fn get_event_payment_info(env: Env, event_id: String) -> PaymentInfo {
+    pub fn get_event_payment_info(
+        env: Env,
+        event_id: String,
+    ) -> Result<PaymentInfo, EventRegistryError> {
         match storage::get_event(&env, event_id) {
-            Some(event_info) => PaymentInfo {
-                payment_address: event_info.payment_address,
-                platform_fee_percent: event_info.platform_fee_percent,
-            },
-            None => panic!("Event not found"),
+            Some(event_info) => {
+                if !event_info.is_active {
+                    return Err(EventRegistryError::EventInactive);
+                }
+                Ok(PaymentInfo {
+                    payment_address: event_info.payment_address,
+                    platform_fee_percent: event_info.platform_fee_percent,
+                })
+            }
+            None => Err(EventRegistryError::EventNotFound),
         }
     }
 
     /// Update event status (only by organizer)
-    pub fn update_event_status(env: Env, event_id: String, is_active: bool) {
+    pub fn update_event_status(
+        env: Env,
+        event_id: String,
+        is_active: bool,
+    ) -> Result<(), EventRegistryError> {
         match storage::get_event(&env, event_id.clone()) {
             Some(mut event_info) => {
                 // Verify organizer signature
@@ -82,9 +110,22 @@ impl EventRegistry {
 
                 // Update status
                 event_info.is_active = is_active;
-                storage::store_event(&env, event_info);
+                storage::store_event(&env, event_info.clone());
+
+                // Emit status update event
+                env.events().publish(
+                    (symbol_short!("ev_status"), event_id.clone()),
+                    &EventStatusUpdated {
+                        event_id,
+                        is_active,
+                        updated_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                Ok(())
             }
-            None => panic!("Event not found"),
+            None => Err(EventRegistryError::EventNotFound),
         }
     }
 
@@ -110,20 +151,21 @@ impl EventRegistry {
     }
 
     /// Updates the platform fee percentage. Only callable by the administrator.
-    pub fn set_platform_fee(env: Env, new_fee_percent: u32) {
-        let admin = storage::get_admin(&env).expect("Contract not initialized");
+    pub fn set_platform_fee(env: Env, new_fee_percent: u32) -> Result<(), EventRegistryError> {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
         admin.require_auth();
 
         if new_fee_percent > 10000 {
-            panic!("Fee percent must be between 0 and 10000 (100%)");
+            return Err(EventRegistryError::InvalidFeePercent);
         }
 
         storage::set_platform_fee(&env, new_fee_percent);
 
         // Emit fee update event
-        #[allow(deprecated)]
         env.events()
-            .publish((symbol_short!("fee_upd"),), new_fee_percent);
+            .publish((symbol_short!("fee_upd"),), &FeeUpdated { new_fee_percent });
+
+        Ok(())
     }
 
     /// Returns the current platform fee percentage.
@@ -132,8 +174,8 @@ impl EventRegistry {
     }
 
     /// Returns the current administrator address.
-    pub fn get_admin(env: Env) -> Address {
-        storage::get_admin(&env).expect("Contract not initialized")
+    pub fn get_admin(env: Env) -> Result<Address, EventRegistryError> {
+        storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)
     }
 }
 
