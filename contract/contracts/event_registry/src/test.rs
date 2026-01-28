@@ -1,10 +1,7 @@
 use super::*;
 use crate::error::EventRegistryError;
 use crate::types::EventInfo;
-use soroban_sdk::{
-    testutils::{Address as _},
-    Address, Env, String,
-};
+use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 #[test]
 fn test_initialize() {
