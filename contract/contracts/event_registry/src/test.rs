@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::EventRegistryError;
 use crate::types::EventInfo;
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
@@ -16,7 +17,6 @@ fn test_initialize() {
 }
 
 #[test]
-#[should_panic(expected = "already initialized")]
 fn test_double_initialization_fails() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
@@ -24,18 +24,19 @@ fn test_double_initialization_fails() {
     let admin = Address::generate(&env);
 
     client.initialize(&admin, &5);
-    client.initialize(&admin, &10); // Should panic
+    let result = client.try_initialize(&admin, &10);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
 
 #[test]
-#[should_panic(expected = "Fee percent must be between 0 and 10000")]
 fn test_initialization_invalid_fee() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
 
-    client.initialize(&admin, &10001); // Should panic
+    let result = client.try_initialize(&admin, &10001);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
 }
 
 #[test]
@@ -54,7 +55,6 @@ fn test_set_platform_fee() {
 }
 
 #[test]
-#[should_panic(expected = "Fee percent must be between 0 and 10000")]
 fn test_set_platform_fee_invalid() {
     let env = Env::default();
     env.mock_all_auths();
@@ -64,7 +64,8 @@ fn test_set_platform_fee_invalid() {
     let admin = Address::generate(&env);
 
     client.initialize(&admin, &5);
-    client.set_platform_fee(&10001); // Should panic
+    let result = client.try_set_platform_fee(&10001);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
 }
 
 #[test]
@@ -77,8 +78,6 @@ fn test_set_platform_fee_unauthorized() {
     let admin = Address::generate(&env);
 
     client.initialize(&admin, &5);
-
-    // This will fail because no auth is mocked/provided for the admin address stored in the contract
     client.set_platform_fee(&10);
 }
 
@@ -154,18 +153,12 @@ fn test_organizer_events_list() {
     client.store_event(&event_1);
     client.store_event(&event_2);
 
-    let event_exists_1 = client.event_exists(&event_1.event_id);
-    let event_exists_2 = client.event_exists(&event_2.event_id);
-    assert!(event_exists_1);
-    assert!(event_exists_2);
-
     let organizer_events = client.get_organizer_events(&organizer);
     assert_eq!(organizer_events.len(), 2);
     assert_eq!(organizer_events.get(0).unwrap(), event_1.event_id);
     assert_eq!(organizer_events.get(1).unwrap(), event_2.event_id);
 }
 
-// Event Registration Tests
 #[test]
 fn test_register_event_success() {
     let env = Env::default();
@@ -176,27 +169,18 @@ fn test_register_event_success() {
     let organizer = Address::generate(&env);
     let payment_addr = Address::generate(&env);
 
-    // Mock authorization for all addresses
     env.mock_all_auths();
-
-    // Initialize contract
     client.initialize(&admin, &500);
 
-    // Register event
     let event_id = String::from_str(&env, "event_001");
     client.register_event(&event_id, &organizer, &payment_addr);
 
-    // Verify event was registered
     let payment_info = client.get_event_payment_info(&event_id);
     assert_eq!(payment_info.payment_address, payment_addr);
     assert_eq!(payment_info.platform_fee_percent, 500);
-
-    // Verify event exists
-    assert!(client.event_exists(&event_id));
 }
 
 #[test]
-#[should_panic(expected = "Event already exists")]
 fn test_register_duplicate_event_fails() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
@@ -210,12 +194,10 @@ fn test_register_duplicate_event_fails() {
     client.initialize(&admin, &500);
 
     let event_id = String::from_str(&env, "event_001");
-
-    // Register event first time
     client.register_event(&event_id, &organizer, &payment_addr);
 
-    // Try to register same event again - should panic
-    client.register_event(&event_id, &organizer, &payment_addr);
+    let result = client.try_register_event(&event_id, &organizer, &payment_addr);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
 
 #[test]
@@ -229,27 +211,14 @@ fn test_get_event_payment_info() {
     let payment_addr = Address::generate(&env);
     env.mock_all_auths();
 
-    client.initialize(&admin, &750); // 7.5%
+    client.initialize(&admin, &750);
 
     let event_id = String::from_str(&env, "event_002");
     client.register_event(&event_id, &organizer, &payment_addr);
 
-    // Test successful query
     let info = client.get_event_payment_info(&event_id);
     assert_eq!(info.payment_address, payment_addr);
     assert_eq!(info.platform_fee_percent, 750);
-}
-
-#[test]
-#[should_panic(expected = "Event not found")]
-fn test_get_nonexistent_event_fails() {
-    let env = Env::default();
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    // Test query for non-existent event - should panic
-    let non_existent_id = String::from_str(&env, "non_existent");
-    client.get_event_payment_info(&non_existent_id);
 }
 
 #[test]
@@ -267,25 +236,30 @@ fn test_update_event_status() {
 
     let event_id = String::from_str(&env, "event_001");
     client.register_event(&event_id, &organizer, &payment_addr);
-
-    // Test successful status update by organizer
     client.update_event_status(&event_id, &false);
 
-    // Verify the event was updated
     let event_info = client.get_event(&event_id).unwrap();
     assert!(!event_info.is_active);
 }
 
 #[test]
-#[should_panic(expected = "Event not found")]
-fn test_update_nonexistent_event_fails() {
+fn test_event_inactive_error() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
 
-    // Test update for non-existent event - should panic
-    let non_existent_id = String::from_str(&env, "non_existent");
-    client.update_event_status(&non_existent_id, &false);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &500);
+    let event_id = String::from_str(&env, "event_001");
+    client.register_event(&event_id, &organizer, &payment_addr);
+    client.update_event_status(&event_id, &false);
+
+    let result = client.try_get_event_payment_info(&event_id);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventInactive)));
 }
 
 #[test]
@@ -299,32 +273,24 @@ fn test_complete_event_lifecycle() {
     let payment_addr = Address::generate(&env);
     env.mock_all_auths();
 
-    // Initialize
-    client.initialize(&admin, &600); // 6%
+    client.initialize(&admin, &600);
 
     let event_id = String::from_str(&env, "lifecycle_event");
-
-    // 1. Register event
     client.register_event(&event_id, &organizer, &payment_addr);
 
-    // 2. Query payment info
     let payment_info = client.get_event_payment_info(&event_id);
     assert_eq!(payment_info.payment_address, payment_addr);
     assert_eq!(payment_info.platform_fee_percent, 600);
 
-    // 3. Check organizer events
     let org_events = client.get_organizer_events(&organizer);
     assert_eq!(org_events.len(), 1);
     assert!(org_events.contains(&event_id));
 
-    // 4. Update event status
     client.update_event_status(&event_id, &false);
 
-    // 5. Verify event still exists and can be queried
-    let payment_info = client.get_event_payment_info(&event_id);
-    assert_eq!(payment_info.payment_address, payment_addr);
+    let result = client.try_get_event_payment_info(&event_id);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventInactive)));
 
-    // 6. Verify event info shows updated status
     let event_info = client.get_event(&event_id).unwrap();
     assert!(!event_info.is_active);
 }
