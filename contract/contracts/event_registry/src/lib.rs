@@ -67,12 +67,12 @@ impl EventRegistry {
         // Emit registration event using structured data
         env.events().publish(
             (symbol_short!("ev_reg"), event_id.clone()),
-            &EventRegistered {
-                event_id,
-                organizer_address,
-                payment_address,
-                timestamp: env.ledger().timestamp(),
-            },
+            (
+                event_id.clone(),
+                organizer_address.clone(),
+                payment_address.clone(),
+                env.ledger().timestamp().clone(),
+            ),
         );
 
         Ok(())
@@ -115,12 +115,12 @@ impl EventRegistry {
                 // Emit status update event
                 env.events().publish(
                     (symbol_short!("ev_status"), event_id.clone()),
-                    &EventStatusUpdated {
+                    (
                         event_id,
                         is_active,
-                        updated_by: event_info.organizer_address,
-                        timestamp: env.ledger().timestamp(),
-                    },
+                        event_info.organizer_address,
+                        env.ledger().timestamp(),
+                    ),
                 );
 
                 Ok(())
@@ -163,7 +163,7 @@ impl EventRegistry {
 
         // Emit fee update event
         env.events()
-            .publish((symbol_short!("fee_upd"),), &FeeUpdated { new_fee_percent });
+            .publish((symbol_short!("fee_upd"),), (new_fee_percent,));
 
         Ok(())
     }

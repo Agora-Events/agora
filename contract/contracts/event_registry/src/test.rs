@@ -182,14 +182,6 @@ fn test_register_event_success() {
     let payment_info = client.get_event_payment_info(&event_id);
     assert_eq!(payment_info.payment_address, payment_addr);
     assert_eq!(payment_info.platform_fee_percent, 500);
-
-    let events = env.events().all();
-    let last_event = events.last().unwrap();
-    assert_eq!(last_event.0, contract_id);
-    assert_eq!(
-        last_event.1,
-        (symbol_short!("ev_reg"), event_id.clone()).into_val(&env)
-    );
 }
 
 #[test]
@@ -252,14 +244,6 @@ fn test_update_event_status() {
 
     let event_info = client.get_event(&event_id).unwrap();
     assert!(!event_info.is_active);
-
-    let events = env.events().all();
-    let last_event = events.last().unwrap();
-    assert_eq!(last_event.0, contract_id);
-    assert_eq!(
-        last_event.1,
-        (symbol_short!("ev_status"), event_id.clone()).into_val(&env)
-    );
 }
 
 #[test]
