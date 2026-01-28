@@ -2,9 +2,8 @@ use super::*;
 use crate::error::EventRegistryError;
 use crate::types::EventInfo;
 use soroban_sdk::{
-    symbol_short,
-    testutils::{Address as _, Events},
-    Address, Env, IntoVal, String,
+    testutils::{Address as _},
+    Address, Env, String,
 };
 
 #[test]
@@ -82,7 +81,7 @@ fn test_set_platform_fee_unauthorized() {
     let admin = Address::generate(&env);
 
     client.initialize(&admin, &5);
-    let _ = client.set_platform_fee(&10);
+    client.set_platform_fee(&10);
 }
 
 #[test]

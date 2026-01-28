@@ -1,7 +1,8 @@
 #![no_std]
 
+use crate::events::{EventRegistered, EventStatusUpdated, FeeUpdated};
 use crate::types::{EventInfo, PaymentInfo};
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
 
 pub mod error;
 pub mod events;
@@ -9,7 +10,6 @@ pub mod storage;
 pub mod types;
 
 use crate::error::EventRegistryError;
-use crate::events::{EventRegistered, EventStatusUpdated, FeeUpdated};
 
 #[contract]
 pub struct EventRegistry;
@@ -64,16 +64,14 @@ impl EventRegistry {
         // Store the event
         storage::store_event(&env, event_info);
 
-        // Emit registration event using structured data
-        env.events().publish(
-            (symbol_short!("ev_reg"), event_id.clone()),
-            (
-                event_id.clone(),
-                organizer_address.clone(),
-                payment_address.clone(),
-                env.ledger().timestamp().clone(),
-            ),
-        );
+        // Emit registration event using contract event type
+        EventRegistered {
+            event_id: event_id.clone(),
+            organizer_address: organizer_address.clone(),
+            payment_address: payment_address.clone(),
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(&env);
 
         Ok(())
     }
@@ -112,16 +110,14 @@ impl EventRegistry {
                 event_info.is_active = is_active;
                 storage::store_event(&env, event_info.clone());
 
-                // Emit status update event
-                env.events().publish(
-                    (symbol_short!("ev_status"), event_id.clone()),
-                    (
-                        event_id,
-                        is_active,
-                        event_info.organizer_address,
-                        env.ledger().timestamp(),
-                    ),
-                );
+                // Emit status update event using contract event type
+                EventStatusUpdated {
+                    event_id,
+                    is_active,
+                    updated_by: event_info.organizer_address,
+                    timestamp: env.ledger().timestamp(),
+                }
+                .publish(&env);
 
                 Ok(())
             }
@@ -161,9 +157,8 @@ impl EventRegistry {
 
         storage::set_platform_fee(&env, new_fee_percent);
 
-        // Emit fee update event
-        env.events()
-            .publish((symbol_short!("fee_upd"),), (new_fee_percent,));
+        // Emit fee update event using contract event type
+        FeeUpdated { new_fee_percent }.publish(&env);
 
         Ok(())
     }
