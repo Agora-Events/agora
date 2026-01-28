@@ -24,11 +24,7 @@ pub async fn example_validation_error() -> Response {
 }
 
 pub async fn example_not_found(Path(resource_id): Path<String>) -> Response {
-    AppError::NotFound(format!(
-        "Resource with id '{}' was not found",
-        resource_id
-    ))
-    .into_response()
+    AppError::NotFound(format!("Resource with id '{}' was not found", resource_id)).into_response()
 }
 
 pub async fn example_empty_success() -> Response {
