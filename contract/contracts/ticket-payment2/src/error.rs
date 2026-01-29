@@ -1,4 +1,4 @@
-use soroban_sdk::{contracterror, String};
+use soroban_sdk::{contracterror};
 
 /// Custom error types for the Ticket Payment contract
 #[contracterror]
