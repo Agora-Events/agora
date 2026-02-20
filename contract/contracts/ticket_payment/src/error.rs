@@ -7,6 +7,8 @@ pub enum TicketPaymentError {
     AlreadyInitialized = 1,
     InvalidAddress = 2,
     NotInitialized = 3,
+    EventNotFound = 4,
+    EventInactive = 5,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -17,6 +19,8 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::InvalidAddress => write!(f, "Invalid Stellar address"),
             TicketPaymentError::NotInitialized => write!(f, "Contract not initialized"),
+            TicketPaymentError::EventNotFound => write!(f, "Event not found in registry"),
+            TicketPaymentError::EventInactive => write!(f, "Event is inactive"),
         }
     }
 }

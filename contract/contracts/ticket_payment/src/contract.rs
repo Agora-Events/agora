@@ -93,7 +93,7 @@ impl TicketPaymentContract {
         ticket_tier_id: String,
         buyer_address: Address,
         amount: i128,
-    ) -> String {
+    ) -> Result<String, TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
         }
@@ -106,7 +106,21 @@ impl TicketPaymentContract {
         // 1. Query Event Registry for payment info and platform fee
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
-        let payment_info = registry_client.get_event_payment_info(&event_id);
+
+        let payment_info = match registry_client.try_get_event_payment_info(&event_id) {
+            Ok(Ok(info)) => info,
+            Err(Ok(e)) => {
+                // Determine which error was thrown
+                if e.is_type(soroban_sdk::xdr::ScErrorType::Contract) && e.get_code() == 2 {
+                    return Err(TicketPaymentError::EventNotFound);
+                } else if e.is_type(soroban_sdk::xdr::ScErrorType::Contract) && e.get_code() == 6 {
+                    return Err(TicketPaymentError::EventInactive);
+                }
+                // Fallback for unexpected contract errors
+                return Err(TicketPaymentError::EventNotFound);
+            }
+            _ => return Err(TicketPaymentError::EventNotFound),
+        };
 
         // 2. Calculate platform fee (platform_fee_percent is in bps, 10000 = 100%)
         let platform_fee = (amount * payment_info.platform_fee_percent as i128) / 10000;
@@ -154,7 +168,7 @@ impl TicketPaymentContract {
             (amount, platform_fee),
         );
 
-        payment_id
+        Ok(payment_id)
     }
 
     /// Confirms a payment after backend verification.
