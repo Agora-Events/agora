@@ -6,6 +6,7 @@ const dataEvents = [
     location: "Discord",
     price: "Free",
     imageUrl: "/images/event1.png",
+    category: "Tech",
   },
   {
     id: 2,
@@ -14,6 +15,7 @@ const dataEvents = [
     location: "Amsterdam, Netherlands",
     price: "49",
     imageUrl: "/images/event2.png",
+    category: "Tech",
   },
   {
     id: 3,
@@ -22,6 +24,7 @@ const dataEvents = [
     location: "Hong Kong",
     price: "Free",
     imageUrl: "/images/event3.png",
+    category: "Party",
   },
   {
     id: 4,
@@ -30,6 +33,7 @@ const dataEvents = [
     location: "Buenos Aires",
     price: "Free",
     imageUrl: "/images/event4.png",
+    category: "Tech",
   },
   {
     id: 5,
@@ -38,6 +42,7 @@ const dataEvents = [
     location: "Online",
     price: "Free",
     imageUrl: "/images/event5.png",
+    category: "Crypto",
   },
   {
     id: 6,
@@ -46,6 +51,7 @@ const dataEvents = [
     location: "Online",
     price: "35",
     imageUrl: "/images/event6.png",
+    category: "Crypto",
   },
 ];
 export { dataEvents };

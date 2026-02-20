@@ -6,6 +6,7 @@ import Image from "next/image";
 import { EventCard } from "./event-card";
 import { Button } from "../ui/button";
 import { dataEvents } from "./mockups";
+import { FilterSidebar, FilterState } from "./filter-sidebar";
 
 const container = {
   hidden: { opacity: 0 },
@@ -35,9 +36,19 @@ const item = {
   },
 };
 
+const DEFAULT_FILTERS: FilterState = {
+  date: "",
+  categories: [],
+  locations: [],
+  minPrice: "",
+  maxPrice: "",
+};
+
 export function PopularEventsSection() {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
   const filteredEvents = useMemo(() => {
     const query = search.toLowerCase().trim();
@@ -124,6 +135,9 @@ export function PopularEventsSection() {
                 shadowColor="transparent"
                 textColor="text-white"
                 className="border-none sm:rounded-4xl! max-sm:p-0 h-9.75 sm:w-34 w-9.75"
+                onClick={() => setIsFilterOpen(true)}
+                aria-haspopup="dialog"
+                aria-expanded={isFilterOpen}
               >
                 <Image
                   src="/icons/filter.svg"
@@ -195,6 +209,14 @@ export function PopularEventsSection() {
           </Button>
         </motion.div>
       </div>
+
+      {/* ── Filter Sidebar ── */}
+      <FilterSidebar
+        isOpen={isFilterOpen}
+        onClose={() => setIsFilterOpen(false)}
+        filters={filters}
+        onFiltersChange={setFilters}
+      />
     </section>
   );
 }
