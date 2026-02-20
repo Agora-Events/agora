@@ -30,6 +30,7 @@ pub enum DataKey {
     Payment(String),        // payment_id -> Payment
     EventPayments(String),  // event_id -> Vec<payment_id>
     BuyerPayments(Address), // buyer_address -> Vec<payment_id>
+    Admin,                  // Contract administrator address
     UsdcToken,              // USDC token address
     PlatformWallet,         // Platform wallet address
     EventRegistry,          // Event Registry contract address
