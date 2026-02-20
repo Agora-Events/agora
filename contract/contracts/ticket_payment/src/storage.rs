@@ -1,6 +1,14 @@
 use crate::types::{DataKey, Payment, PaymentStatus};
 use soroban_sdk::{vec, Address, Env, String, Vec};
 
+pub fn set_admin(env: &Env, admin: &Address) {
+    env.storage().persistent().set(&DataKey::Admin, admin);
+}
+
+pub fn get_admin(env: &Env) -> Option<Address> {
+    env.storage().persistent().get(&DataKey::Admin)
+}
+
 pub fn store_payment(env: &Env, payment: Payment) {
     let key = DataKey::Payment(payment.payment_id.clone());
     env.storage().persistent().set(&key, &payment);
