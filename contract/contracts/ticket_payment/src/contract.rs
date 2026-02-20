@@ -1,7 +1,7 @@
 use crate::storage::{
-    get_admin, get_event_registry, get_payment, get_platform_wallet, get_usdc_token, is_initialized,
-    set_admin, set_event_registry, set_initialized, set_platform_wallet, set_usdc_token,
-    store_payment, update_payment_status,
+    get_admin, get_event_registry, get_payment, get_platform_wallet, get_usdc_token,
+    is_initialized, set_admin, set_event_registry, set_initialized, set_platform_wallet,
+    set_usdc_token, store_payment, update_payment_status,
 };
 use crate::types::{Payment, PaymentStatus};
 use crate::{
@@ -75,7 +75,8 @@ impl TicketPaymentContract {
             _ => panic!("Current contract is not a Wasm contract"),
         };
 
-        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
 
         ContractUpgraded {
             old_wasm_hash,

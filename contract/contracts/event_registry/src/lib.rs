@@ -1,8 +1,10 @@
 #![no_std]
 
-use crate::events::{EventRegistered, EventStatusUpdated, FeeUpdated, InitializationEvent};
+use crate::events::{
+    EventRegistered, EventStatusUpdated, FeeUpdated, InitializationEvent, RegistryUpgraded,
+};
 use crate::types::{EventInfo, PaymentInfo};
-use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
 pub mod error;
 pub mod events;
@@ -205,6 +207,27 @@ impl EventRegistry {
     /// Returns the current platform wallet address.
     pub fn get_platform_wallet(env: Env) -> Result<Address, EventRegistryError> {
         storage::get_platform_wallet(&env).ok_or(EventRegistryError::NotInitialized)
+    }
+
+    /// Upgrades the contract to a new WASM hash. Only callable by the administrator.
+    /// Performs post-upgrade state verification to ensure critical storage is intact.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), EventRegistryError> {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+
+        // Post-upgrade state verification
+        let verified_admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        storage::get_platform_wallet(&env).ok_or(EventRegistryError::NotInitialized)?;
+
+        RegistryUpgraded {
+            admin_address: verified_admin,
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(&env);
+
+        Ok(())
     }
 }
 

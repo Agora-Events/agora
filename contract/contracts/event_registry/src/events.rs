@@ -32,3 +32,10 @@ pub struct InitializationEvent {
     pub platform_fee_percent: u32,
     pub timestamp: u64,
 }
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegistryUpgraded {
+    pub admin_address: Address,
+    pub timestamp: u64,
+}
