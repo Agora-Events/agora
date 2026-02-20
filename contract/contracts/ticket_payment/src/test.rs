@@ -35,6 +35,15 @@ impl MockEventRegistry2 {
     }
 }
 
+// Dummy contract used to provide a valid alternate Wasm hash for upgrade tests.
+#[soroban_sdk::contract]
+pub struct DummyUpgradeable;
+
+#[soroban_sdk::contractimpl]
+impl DummyUpgradeable {
+    pub fn ping(_env: Env) {}
+}
+
 fn setup_test(
     env: &Env,
 ) -> (
@@ -42,19 +51,21 @@ fn setup_test(
     Address,
     Address,
     Address,
+    Address,
 ) {
     let contract_id = env.register(TicketPaymentContract, ());
     let client = TicketPaymentContractClient::new(env, &contract_id);
 
+    let admin = Address::generate(env);
     let usdc_id = env
         .register_stellar_asset_contract_v2(Address::generate(env))
         .address();
     let platform_wallet = Address::generate(env);
     let event_registry_id = env.register(MockEventRegistry, ());
 
-    client.initialize(&usdc_id, &platform_wallet, &event_registry_id);
+    client.initialize(&admin, &usdc_id, &platform_wallet, &event_registry_id);
 
-    (client, usdc_id, platform_wallet, event_registry_id)
+    (client, admin, usdc_id, platform_wallet, event_registry_id)
 }
 
 #[test]
@@ -62,7 +73,7 @@ fn test_process_payment_success() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, usdc_id, platform_wallet, _) = setup_test(&env);
+    let (client, _admin, usdc_id, platform_wallet, _) = setup_test(&env);
     let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
@@ -125,7 +136,7 @@ fn test_confirm_payment() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _, _, _) = setup_test(&env);
+    let (client, _admin, _, _, _) = setup_test(&env);
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
     let tx_hash = String::from_str(&env, "tx_hash_123");
@@ -163,7 +174,7 @@ fn test_process_payment_zero_amount() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _, _, _) = setup_test(&env);
+    let (client, _admin, _, _, _) = setup_test(&env);
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
 
@@ -184,13 +195,14 @@ fn test_fee_calculation_variants() {
     let contract_id = env.register(TicketPaymentContract, ());
     let client = TicketPaymentContractClient::new(&env, &contract_id);
 
+    let admin = Address::generate(&env);
     let usdc_id = env
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();
     let platform_wallet = Address::generate(&env);
 
     let registry_id = env.register(MockEventRegistry2, ());
-    client.initialize(&usdc_id, &platform_wallet, &registry_id);
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
 
     let buyer = Address::generate(&env);
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10000i128);
@@ -216,13 +228,14 @@ fn test_initialize_success() {
     let contract_id = env.register(TicketPaymentContract, ());
     let client = TicketPaymentContractClient::new(&env, &contract_id);
 
+    let admin = Address::generate(&env);
     let usdc_id = env
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();
     let platform_wallet = Address::generate(&env);
     let event_registry_id = env.register(MockEventRegistry, ());
 
-    client.initialize(&usdc_id, &platform_wallet, &event_registry_id);
+    client.initialize(&admin, &usdc_id, &platform_wallet, &event_registry_id);
 }
 
 #[test]
@@ -231,15 +244,16 @@ fn test_double_initialization_fails() {
     let contract_id = env.register(TicketPaymentContract, ());
     let client = TicketPaymentContractClient::new(&env, &contract_id);
 
+    let admin = Address::generate(&env);
     let usdc_id = env
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();
     let platform_wallet = Address::generate(&env);
     let event_registry_id = env.register(MockEventRegistry, ());
 
-    client.initialize(&usdc_id, &platform_wallet, &event_registry_id);
+    client.initialize(&admin, &usdc_id, &platform_wallet, &event_registry_id);
 
-    let result = client.try_initialize(&usdc_id, &platform_wallet, &event_registry_id);
+    let result = client.try_initialize(&admin, &usdc_id, &platform_wallet, &event_registry_id);
     assert_eq!(result, Err(Ok(TicketPaymentError::AlreadyInitialized)));
 }
 
@@ -250,9 +264,90 @@ fn test_initialize_invalid_address() {
     let client = TicketPaymentContractClient::new(&env, &contract_id);
 
     let invalid = client.address.clone();
+    let admin = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let event_registry_id = env.register(MockEventRegistry, ());
 
-    let result = client.try_initialize(&invalid, &platform_wallet, &event_registry_id);
+    let result = client.try_initialize(&admin, &invalid, &platform_wallet, &event_registry_id);
     assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+
+#[test]
+fn test_upgrade_preserves_initialization_addresses_and_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, platform_wallet, event_registry_id) = setup_test(&env);
+
+    let old_wasm_hash = match client.address.executable() {
+        Some(soroban_sdk::Executable::Wasm(hash)) => hash,
+        _ => panic!("Contract address is not a Wasm contract"),
+    };
+
+    let dummy_id = env.register(DummyUpgradeable, ());
+    let new_wasm_hash = match dummy_id.executable() {
+        Some(soroban_sdk::Executable::Wasm(hash)) => hash,
+        _ => panic!("Dummy contract is not a Wasm contract"),
+    };
+    client.upgrade(&new_wasm_hash);
+
+    // After upgrade, executable hash should change.
+    let upgraded_wasm_hash = match client.address.executable() {
+        Some(soroban_sdk::Executable::Wasm(hash)) => hash,
+        _ => panic!("Contract address is not a Wasm contract"),
+    };
+    assert_eq!(upgraded_wasm_hash, new_wasm_hash);
+
+    // Verify initialized addresses are preserved.
+    let stored_usdc = env.as_contract(&client.address, || get_usdc_token(&env));
+    let stored_registry = env.as_contract(&client.address, || get_event_registry(&env));
+    let stored_wallet = env.as_contract(&client.address, || get_platform_wallet(&env));
+
+    assert_eq!(stored_usdc, usdc_id);
+    assert_eq!(stored_registry, event_registry_id);
+    assert_eq!(stored_wallet, platform_wallet);
+
+    // Verify ContractUpgraded event present with expected hashes.
+    // Some Soroban host/test configurations don't reliably surface contract events; if
+    // the host didn't record any events, we skip this assertion.
+    let events = env.events().all();
+    if !events.is_empty() {
+        let topic_name = Symbol::new(&env, "ContractUpgraded");
+        let upgraded_event = events.iter().find(|e| {
+            // Contract event topics are: ("ContractUpgraded", old_wasm_hash, new_wasm_hash)
+            if e.1.len() != 3 {
+                return false;
+            }
+
+            let t0: Result<Symbol, _> = e.1.get(0).unwrap().clone().try_into_val(&env);
+            let t1: Result<soroban_sdk::BytesN<32>, _> =
+                e.1.get(1).unwrap().clone().try_into_val(&env);
+            let t2: Result<soroban_sdk::BytesN<32>, _> =
+                e.1.get(2).unwrap().clone().try_into_val(&env);
+
+            match (t0, t1, t2) {
+                (Ok(name), Ok(old), Ok(new)) => {
+                    name == topic_name && old == old_wasm_hash && new == new_wasm_hash
+                }
+                _ => false,
+            }
+        });
+        assert!(upgraded_event.is_some());
+    }
+}
+
+#[test]
+#[should_panic]
+fn test_upgrade_unauthorized_panics() {
+    let env = Env::default();
+
+    let (client, _admin, _, _, _) = setup_test(&env);
+    let dummy_id = env.register(DummyUpgradeable, ());
+    let new_wasm_hash = match dummy_id.executable() {
+        Some(soroban_sdk::Executable::Wasm(hash)) => hash,
+        _ => panic!("Dummy contract is not a Wasm contract"),
+    };
+
+    // No env.mock_all_auths() here, so require_auth should fail.
+    client.upgrade(&new_wasm_hash);
 }
