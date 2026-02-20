@@ -27,6 +27,9 @@
                 },
                 {
                   "string": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
+                },
+                {
+                  "i128": "100"
                 }
               ]
             }
@@ -155,6 +158,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "current_supply"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
@@ -167,6 +178,14 @@
                       },
                       "val": {
                         "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_supply"
+                      },
+                      "val": {
+                        "i128": "100"
                       }
                     },
                     {

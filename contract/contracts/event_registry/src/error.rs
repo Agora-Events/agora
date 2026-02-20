@@ -13,6 +13,9 @@ pub enum EventRegistryError {
     NotInitialized = 7,
     AlreadyInitialized = 8,
     InvalidMetadataCid = 9,
+    MaxSupplyExceeded = 10,
+    SupplyOverflow = 11,
+    UnauthorizedCaller = 12,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -31,6 +34,15 @@ impl core::fmt::Display for EventRegistryError {
             EventRegistryError::NotInitialized => write!(f, "Contract not initialized"),
             EventRegistryError::AlreadyInitialized => write!(f, "Contract already initialized"),
             EventRegistryError::InvalidMetadataCid => write!(f, "Invalid IPFS Metadata CID format"),
+            EventRegistryError::MaxSupplyExceeded => {
+                write!(f, "Event has reached its maximum ticket supply")
+            }
+            EventRegistryError::SupplyOverflow => {
+                write!(f, "Supply counter overflow")
+            }
+            EventRegistryError::UnauthorizedCaller => {
+                write!(f, "Caller is not the authorized TicketPayment contract")
+            }
         }
     }
 }

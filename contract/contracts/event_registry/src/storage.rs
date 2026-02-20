@@ -104,3 +104,17 @@ pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
         .get(&DataKey::OrganizerEvents(organizer.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
+
+/// Sets the authorized TicketPayment contract address.
+pub fn set_ticket_payment_contract(env: &Env, address: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::TicketPaymentContract, address);
+}
+
+/// Retrieves the authorized TicketPayment contract address.
+pub fn get_ticket_payment_contract(env: &Env) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TicketPaymentContract)
+}

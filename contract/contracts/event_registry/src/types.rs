@@ -18,6 +18,10 @@ pub struct EventInfo {
     pub created_at: u64,
     /// IPFS Content Identifier storing rich metadata details
     pub metadata_cid: String,
+    /// Maximum number of tickets available for this event (0 = unlimited)
+    pub max_supply: i128,
+    /// Current number of tickets that have been successfully purchased
+    pub current_supply: i128,
 }
 
 /// Payment information for an event
@@ -45,4 +49,6 @@ pub enum DataKey {
     Event(String),
     /// Mapping of organizer_address to a list of their event_ids (Persistent)
     OrganizerEvents(Address),
+    /// The authorized TicketPayment contract address for inventory updates
+    TicketPaymentContract,
 }

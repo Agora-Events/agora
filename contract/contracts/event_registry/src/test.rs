@@ -126,6 +126,8 @@ fn test_storage_operations() {
             &env,
             "bafkreifh22222222222222222222222222222222222222222222222222",
         ),
+        max_supply: 100,
+        current_supply: 0,
     };
 
     // Test store_event
@@ -141,6 +143,8 @@ fn test_storage_operations() {
     assert_eq!(stored_event.payment_address, payment_address);
     assert_eq!(stored_event.platform_fee_percent, 5);
     assert!(stored_event.is_active);
+    assert_eq!(stored_event.max_supply, 100);
+    assert_eq!(stored_event.current_supply, 0);
 
     // Test non-existent event
     let fake_id = String::from_str(&env, "fake");
@@ -165,6 +169,8 @@ fn test_organizer_events_list() {
             &env,
             "bafkreifh22222222222222222222222222222222222222222222222222",
         ),
+        max_supply: 50,
+        current_supply: 0,
     };
 
     let event_2 = EventInfo {
@@ -178,6 +184,8 @@ fn test_organizer_events_list() {
             &env,
             "bafkreifh22222222222222222222222222222222222222222222222222",
         ),
+        max_supply: 0,
+        current_supply: 0,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -211,11 +219,43 @@ fn test_register_event_success() {
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &100);
 
     let payment_info = client.get_event_payment_info(&event_id);
     assert_eq!(payment_info.payment_address, payment_addr);
     assert_eq!(payment_info.platform_fee_percent, 500);
+
+    // Verify supply fields
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.max_supply, 100);
+    assert_eq!(event_info.current_supply, 0);
+}
+
+#[test]
+fn test_register_event_unlimited_supply() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "unlimited_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    // max_supply = 0 means unlimited
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &0);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.max_supply, 0);
+    assert_eq!(event_info.current_supply, 0);
 }
 
 #[test]
@@ -237,9 +277,10 @@ fn test_register_duplicate_event_fails() {
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &100);
 
-    let result = client.try_register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+    let result =
+        client.try_register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &100);
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
 
@@ -262,7 +303,7 @@ fn test_get_event_payment_info() {
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &50);
 
     let info = client.get_event_payment_info(&event_id);
     assert_eq!(info.payment_address, payment_addr);
@@ -288,7 +329,7 @@ fn test_update_event_status() {
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &100);
     client.update_event_status(&event_id, &false);
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -313,7 +354,7 @@ fn test_event_inactive_error() {
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &100);
     client.update_event_status(&event_id, &false);
 
     let result = client.try_get_event_payment_info(&event_id);
@@ -339,7 +380,7 @@ fn test_complete_event_lifecycle() {
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &200);
 
     let payment_info = client.get_event_payment_info(&event_id);
     assert_eq!(payment_info.payment_address, payment_addr);
@@ -377,7 +418,7 @@ fn test_update_metadata_success() {
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &100);
 
     let new_metadata_cid = String::from_str(
         &env,
@@ -408,7 +449,7 @@ fn test_update_metadata_invalid_cid() {
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &100);
 
     // Test starts with wrong character
     let wrong_char_cid = String::from_str(
@@ -425,4 +466,224 @@ fn test_update_metadata_invalid_cid() {
     let short_cid = String::from_str(&env, "bafy");
     let result = client.try_update_metadata(&event_id, &short_cid);
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidMetadataCid)));
+}
+
+// ==================== Inventory / Supply Tests ====================
+
+#[test]
+fn test_set_ticket_payment_contract() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    assert_eq!(client.get_ticket_payment_contract(), ticket_payment);
+}
+
+#[test]
+fn test_increment_inventory_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "supply_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &10);
+
+    // Increment inventory
+    client.increment_inventory(&event_id);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.current_supply, 1);
+    assert_eq!(event_info.max_supply, 10);
+
+    // Increment again
+    client.increment_inventory(&event_id);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.current_supply, 2);
+}
+
+#[test]
+fn test_increment_inventory_max_supply_exceeded() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "limited_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    // Only 2 tickets available
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &2);
+
+    // First two should succeed
+    client.increment_inventory(&event_id);
+    client.increment_inventory(&event_id);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.current_supply, 2);
+    assert_eq!(event_info.max_supply, 2);
+
+    // Third should fail
+    let result = client.try_increment_inventory(&event_id);
+    assert_eq!(result, Err(Ok(EventRegistryError::MaxSupplyExceeded)));
+}
+
+#[test]
+fn test_increment_inventory_unlimited_supply() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "unlimited_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    // max_supply = 0 means unlimited
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &0);
+
+    // Should succeed many times without hitting a limit
+    for _ in 0..10 {
+        client.increment_inventory(&event_id);
+    }
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.current_supply, 10);
+    assert_eq!(event_info.max_supply, 0);
+}
+
+#[test]
+fn test_increment_inventory_event_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let fake_event_id = String::from_str(&env, "nonexistent");
+    let result = client.try_increment_inventory(&fake_event_id);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotFound)));
+}
+
+#[test]
+fn test_increment_inventory_inactive_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "inactive_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &100);
+
+    // Deactivate the event
+    client.update_event_status(&event_id, &false);
+
+    // Try to increment — should fail because event is inactive
+    let result = client.try_increment_inventory(&event_id);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventInactive)));
+}
+
+#[test]
+fn test_increment_inventory_persists_across_reads() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "persist_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid, &50);
+
+    // Increment 5 times
+    for _ in 0..5 {
+        client.increment_inventory(&event_id);
+    }
+
+    // Verify the supply is consistent across multiple reads
+    let event_info_1 = client.get_event(&event_id).unwrap();
+    let event_info_2 = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info_1.current_supply, 5);
+    assert_eq!(event_info_2.current_supply, 5);
+    assert_eq!(event_info_1.max_supply, 50);
 }

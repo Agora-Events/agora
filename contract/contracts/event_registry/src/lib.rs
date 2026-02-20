@@ -2,7 +2,7 @@
 
 use crate::events::{
     AgoraEvent, EventRegisteredEvent, EventStatusUpdatedEvent, FeeUpdatedEvent,
-    InitializationEvent, MetadataUpdatedEvent, RegistryUpgradedEvent,
+    InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent, RegistryUpgradedEvent,
 };
 use crate::types::{EventInfo, PaymentInfo};
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
@@ -66,12 +66,20 @@ impl EventRegistry {
     }
 
     /// Register a new event with organizer authentication
+    ///
+    /// # Arguments
+    /// * `event_id` - Unique identifier for the event
+    /// * `organizer_address` - The wallet address of the event organizer
+    /// * `payment_address` - The address where payments should be routed
+    /// * `metadata_cid` - IPFS CID for event metadata
+    /// * `max_supply` - Maximum number of tickets (0 = unlimited)
     pub fn register_event(
         env: Env,
         event_id: String,
         organizer_address: Address,
         payment_address: Address,
         metadata_cid: String,
+        max_supply: i128,
     ) -> Result<(), EventRegistryError> {
         if !storage::is_initialized(&env) {
             return Err(EventRegistryError::NotInitialized);
@@ -99,6 +107,8 @@ impl EventRegistry {
             is_active: true,
             created_at: env.ledger().timestamp(),
             metadata_cid,
+            max_supply,
+            current_supply: 0,
         };
 
         // Store the event
@@ -258,6 +268,84 @@ impl EventRegistry {
     /// Returns the current platform wallet address.
     pub fn get_platform_wallet(env: Env) -> Result<Address, EventRegistryError> {
         storage::get_platform_wallet(&env).ok_or(EventRegistryError::NotInitialized)
+    }
+
+    /// Sets the authorized TicketPayment contract address. Only callable by the administrator.
+    ///
+    /// # Arguments
+    /// * `ticket_payment_address` - The address of the TicketPayment contract authorized
+    ///   to call `increment_inventory`.
+    pub fn set_ticket_payment_contract(
+        env: Env,
+        ticket_payment_address: Address,
+    ) -> Result<(), EventRegistryError> {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+
+        validate_address(&env, &ticket_payment_address)?;
+
+        storage::set_ticket_payment_contract(&env, &ticket_payment_address);
+        Ok(())
+    }
+
+    /// Returns the authorized TicketPayment contract address.
+    pub fn get_ticket_payment_contract(env: Env) -> Result<Address, EventRegistryError> {
+        storage::get_ticket_payment_contract(&env).ok_or(EventRegistryError::NotInitialized)
+    }
+
+    /// Increments the current_supply counter for a given event.
+    /// This function is restricted to calls from the authorized TicketPayment contract.
+    ///
+    /// # Arguments
+    /// * `event_id` - The event whose inventory to increment.
+    ///
+    /// # Errors
+    /// * `UnauthorizedCaller` - If the invoker is not the registered TicketPayment contract.
+    /// * `EventNotFound` - If no event with the given ID exists.
+    /// * `EventInactive` - If the event is not currently active.
+    /// * `MaxSupplyExceeded` - If the event's max supply has been reached (when max_supply > 0).
+    /// * `SupplyOverflow` - If incrementing would cause an i128 overflow.
+    pub fn increment_inventory(env: Env, event_id: String) -> Result<(), EventRegistryError> {
+        // Verify the caller is the authorized TicketPayment contract
+        let ticket_payment_addr =
+            storage::get_ticket_payment_contract(&env).ok_or(EventRegistryError::NotInitialized)?;
+        ticket_payment_addr.require_auth();
+
+        // Retrieve the event
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Ensure event is active
+        if !event_info.is_active {
+            return Err(EventRegistryError::EventInactive);
+        }
+
+        // Check supply limits (max_supply of 0 means unlimited)
+        if event_info.max_supply > 0 && event_info.current_supply >= event_info.max_supply {
+            return Err(EventRegistryError::MaxSupplyExceeded);
+        }
+
+        // Safely increment the supply counter
+        event_info.current_supply = event_info
+            .current_supply
+            .checked_add(1)
+            .ok_or(EventRegistryError::SupplyOverflow)?;
+
+        // Persist updated event info using persistent storage
+        storage::store_event(&env, event_info.clone());
+
+        // Emit inventory incremented event
+        env.events().publish(
+            (AgoraEvent::InventoryIncremented,),
+            InventoryIncrementedEvent {
+                event_id,
+                new_supply: event_info.current_supply,
+                max_supply: event_info.max_supply,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
     /// Upgrades the contract to a new WASM hash. Only callable by the administrator.

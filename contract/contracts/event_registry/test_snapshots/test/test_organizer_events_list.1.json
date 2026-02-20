@@ -67,6 +67,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "current_supply"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
@@ -79,6 +87,14 @@
                       },
                       "val": {
                         "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_supply"
+                      },
+                      "val": {
+                        "i128": "50"
                       }
                     },
                     {
@@ -169,6 +185,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "current_supply"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
@@ -181,6 +205,14 @@
                       },
                       "val": {
                         "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_supply"
+                      },
+                      "val": {
+                        "i128": "0"
                       }
                     },
                     {

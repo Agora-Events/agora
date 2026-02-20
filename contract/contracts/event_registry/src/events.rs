@@ -9,6 +9,7 @@ pub enum AgoraEvent {
     ContractInitialized,
     ContractUpgraded,
     MetadataUpdated,
+    InventoryIncremented,
 }
 
 #[contracttype]
@@ -57,5 +58,14 @@ pub struct MetadataUpdatedEvent {
     pub event_id: String,
     pub new_metadata_cid: String,
     pub updated_by: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InventoryIncrementedEvent {
+    pub event_id: String,
+    pub new_supply: i128,
+    pub max_supply: i128,
     pub timestamp: u64,
 }

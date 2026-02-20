@@ -17,7 +17,7 @@
               "function_name": "register_event",
               "args": [
                 {
-                  "string": "event_001"
+                  "string": "unlimited_event"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
@@ -29,29 +29,7 @@
                   "string": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
                 },
                 {
-                  "i128": "100"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "update_event_status",
-              "args": [
-                {
-                  "string": "event_001"
-                },
-                {
-                  "bool": false
+                  "i128": "0"
                 }
               ]
             }
@@ -121,7 +99,7 @@
                   "symbol": "Event"
                 },
                 {
-                  "string": "event_001"
+                  "string": "unlimited_event"
                 }
               ]
             },
@@ -141,7 +119,7 @@
                       "symbol": "Event"
                     },
                     {
-                      "string": "event_001"
+                      "string": "unlimited_event"
                     }
                   ]
                 },
@@ -169,7 +147,7 @@
                         "symbol": "event_id"
                       },
                       "val": {
-                        "string": "event_001"
+                        "string": "unlimited_event"
                       }
                     },
                     {
@@ -177,7 +155,7 @@
                         "symbol": "is_active"
                       },
                       "val": {
-                        "bool": false
+                        "bool": true
                       }
                     },
                     {
@@ -185,7 +163,7 @@
                         "symbol": "max_supply"
                       },
                       "val": {
-                        "i128": "100"
+                        "i128": "0"
                       }
                     },
                     {
@@ -306,7 +284,7 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "event_001"
+                      "string": "unlimited_event"
                     }
                   ]
                 }
@@ -449,39 +427,6 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": "801925984706572462"
-                  }
-                },
-                "durability": "temporary",
-                "val": "void"
-              }
-            },
-            "ext": "v0"
-          },
-          6311999
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "key": {
-              "ledger_key_nonce": {
-                "nonce": "5541220902715666415"
-              }
-            },
-            "durability": "temporary"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "key": {
-                  "ledger_key_nonce": {
-                    "nonce": "5541220902715666415"
                   }
                 },
                 "durability": "temporary",
