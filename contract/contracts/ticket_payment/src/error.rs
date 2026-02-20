@@ -9,6 +9,7 @@ pub enum TicketPaymentError {
     NotInitialized = 3,
     EventNotFound = 4,
     EventInactive = 5,
+    TokenNotWhitelisted = 6,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -21,6 +22,7 @@ impl core::fmt::Display for TicketPaymentError {
             TicketPaymentError::NotInitialized => write!(f, "Contract not initialized"),
             TicketPaymentError::EventNotFound => write!(f, "Event not found in registry"),
             TicketPaymentError::EventInactive => write!(f, "Event is inactive"),
+            TicketPaymentError::TokenNotWhitelisted => write!(f, "Token not whitelisted"),
         }
     }
 }

@@ -107,7 +107,8 @@ fn test_process_payment_success() {
     let event_id = String::from_str(&env, "event_1");
     let tier_id = String::from_str(&env, "tier_1");
 
-    let result_id = client.process_payment(&payment_id, &event_id, &tier_id, &buyer, &amount);
+    let result_id =
+        client.process_payment(&payment_id, &event_id, &tier_id, &buyer, &usdc_id, &amount);
     assert_eq!(result_id, payment_id);
 
     // Check balances
@@ -191,7 +192,7 @@ fn test_process_payment_zero_amount() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, _, _, _) = setup_test(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
 
@@ -200,6 +201,7 @@ fn test_process_payment_zero_amount() {
         &String::from_str(&env, "e1"),
         &String::from_str(&env, "t1"),
         &buyer,
+        &usdc_id,
         &0,
     );
 }
@@ -229,6 +231,7 @@ fn test_fee_calculation_variants() {
         &String::from_str(&env, "e1"),
         &String::from_str(&env, "t1"),
         &buyer,
+        &usdc_id,
         &10000i128,
     );
 
@@ -264,6 +267,7 @@ fn test_process_payment_not_found() {
         &String::from_str(&env, "e1"),
         &String::from_str(&env, "t1"),
         &buyer,
+        &usdc_id,
         &10000i128,
     );
     // Since panic inside get_event_payment_info cannot easily map to get_code() == 2 right now without explicit Error returning in the mock,
@@ -399,4 +403,110 @@ fn test_upgrade_unauthorized_panics() {
 
     // No env.mock_all_auths() here, so require_auth should fail.
     client.upgrade(&new_wasm_hash);
+}
+
+#[test]
+fn test_add_remove_token_whitelist() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+
+    let xlm_token = Address::generate(&env);
+    let eurc_token = Address::generate(&env);
+
+    assert!(client.is_token_allowed(&usdc_id));
+    assert!(!client.is_token_allowed(&xlm_token));
+
+    client.add_token(&xlm_token);
+    assert!(client.is_token_allowed(&xlm_token));
+
+    client.add_token(&eurc_token);
+    assert!(client.is_token_allowed(&eurc_token));
+
+    client.remove_token(&xlm_token);
+    assert!(!client.is_token_allowed(&xlm_token));
+    assert!(client.is_token_allowed(&eurc_token));
+}
+
+#[test]
+fn test_process_payment_with_non_whitelisted_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    let non_whitelisted_token = Address::generate(&env);
+    let buyer = Address::generate(&env);
+
+    let res = client.try_process_payment(
+        &String::from_str(&env, "p1"),
+        &String::from_str(&env, "e1"),
+        &String::from_str(&env, "t1"),
+        &buyer,
+        &non_whitelisted_token,
+        &10000i128,
+    );
+
+    assert_eq!(res, Err(Ok(TicketPaymentError::TokenNotWhitelisted)));
+}
+
+#[test]
+fn test_process_payment_with_multiple_tokens() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, platform_wallet, _) = setup_test(&env);
+
+    let xlm_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    client.add_token(&xlm_id);
+
+    let buyer1 = Address::generate(&env);
+    let buyer2 = Address::generate(&env);
+
+    let usdc_amount = 1000_0000000i128;
+    let xlm_amount = 500_0000000i128;
+
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer1, &usdc_amount);
+    token::StellarAssetClient::new(&env, &xlm_id).mint(&buyer2, &xlm_amount);
+
+    client.process_payment(
+        &String::from_str(&env, "pay_usdc"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer1,
+        &usdc_id,
+        &usdc_amount,
+    );
+
+    client.process_payment(
+        &String::from_str(&env, "pay_xlm"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer2,
+        &xlm_id,
+        &xlm_amount,
+    );
+
+    let usdc_platform_balance = token::Client::new(&env, &usdc_id).balance(&platform_wallet);
+    let xlm_platform_balance = token::Client::new(&env, &xlm_id).balance(&platform_wallet);
+
+    let expected_usdc_fee = (usdc_amount * 500) / 10000;
+    let expected_xlm_fee = (xlm_amount * 500) / 10000;
+
+    assert_eq!(usdc_platform_balance, expected_usdc_fee);
+    assert_eq!(xlm_platform_balance, expected_xlm_fee);
+
+    let payment1 = client
+        .get_payment_status(&String::from_str(&env, "pay_usdc"))
+        .unwrap();
+    let payment2 = client
+        .get_payment_status(&String::from_str(&env, "pay_xlm"))
+        .unwrap();
+
+    assert_eq!(payment1.amount, usdc_amount);
+    assert_eq!(payment2.amount, xlm_amount);
 }

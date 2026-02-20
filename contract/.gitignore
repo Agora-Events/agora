@@ -4,3 +4,6 @@ target
 # Local settings
 .soroban
 .stellar
+
+# test_snapshots
+contracts/contracts/ticket_payment/test_snapshots

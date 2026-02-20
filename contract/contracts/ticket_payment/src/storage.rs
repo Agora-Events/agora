@@ -115,3 +115,22 @@ pub fn is_initialized(env: &Env) -> bool {
         .get(&DataKey::Initialized)
         .unwrap_or(false)
 }
+
+pub fn add_token_to_whitelist(env: &Env, token: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::TokenWhitelist(token.clone()), &true);
+}
+
+pub fn remove_token_from_whitelist(env: &Env, token: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::TokenWhitelist(token.clone()));
+}
+
+pub fn is_token_whitelisted(env: &Env, token: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TokenWhitelist(token.clone()))
+        .unwrap_or(false)
+}

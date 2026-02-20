@@ -1,7 +1,8 @@
 use crate::storage::{
-    get_admin, get_event_registry, get_payment, get_platform_wallet, get_usdc_token,
-    is_initialized, set_admin, set_event_registry, set_initialized, set_platform_wallet,
-    set_usdc_token, store_payment, update_payment_status,
+    add_token_to_whitelist, get_admin, get_event_registry, get_payment, get_platform_wallet,
+    is_initialized, is_token_whitelisted, remove_token_from_whitelist, set_admin,
+    set_event_registry, set_initialized, set_platform_wallet, set_usdc_token, store_payment,
+    update_payment_status,
 };
 use crate::types::{Payment, PaymentStatus};
 use crate::{
@@ -59,6 +60,9 @@ impl TicketPaymentContract {
         set_event_registry(&env, event_registry.clone());
         set_initialized(&env, true);
 
+        // Whitelist USDC by default
+        add_token_to_whitelist(&env, &usdc_token);
+
         env.events().publish(
             (AgoraEvent::ContractInitialized,),
             InitializationEvent {
@@ -92,6 +96,22 @@ impl TicketPaymentContract {
         );
     }
 
+    pub fn add_token(env: Env, token: Address) {
+        let admin = get_admin(&env).expect("Admin not set");
+        admin.require_auth();
+        add_token_to_whitelist(&env, &token);
+    }
+
+    pub fn remove_token(env: Env, token: Address) {
+        let admin = get_admin(&env).expect("Admin not set");
+        admin.require_auth();
+        remove_token_from_whitelist(&env, &token);
+    }
+
+    pub fn is_token_allowed(env: Env, token: Address) -> bool {
+        is_token_whitelisted(&env, &token)
+    }
+
     /// Processes a payment for an event ticket.
     pub fn process_payment(
         env: Env,
@@ -99,6 +119,7 @@ impl TicketPaymentContract {
         event_id: String,
         ticket_tier_id: String,
         buyer_address: Address,
+        token_address: Address,
         amount: i128,
     ) -> Result<String, TicketPaymentError> {
         if !is_initialized(&env) {
@@ -108,6 +129,10 @@ impl TicketPaymentContract {
 
         if amount <= 0 {
             panic!("Amount must be positive");
+        }
+
+        if !is_token_whitelisted(&env, &token_address) {
+            return Err(TicketPaymentError::TokenNotWhitelisted);
         }
 
         // 1. Query Event Registry for payment info and platform fee
@@ -133,9 +158,8 @@ impl TicketPaymentContract {
         let platform_fee = (amount * payment_info.platform_fee_percent as i128) / 10000;
         let organizer_amount = amount - platform_fee;
 
-        // 3. Transfer USDC from buyer (splitting payment)
-        let usdc_addr = get_usdc_token(&env);
-        let token_client = token::Client::new(&env, &usdc_addr);
+        // 3. Transfer tokens from buyer (splitting payment)
+        let token_client = token::Client::new(&env, &token_address);
         let platform_wallet = get_platform_wallet(&env);
 
         // Transfer platform fee
