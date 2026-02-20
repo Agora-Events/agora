@@ -16,6 +16,8 @@ pub struct EventInfo {
     pub is_active: bool,
     /// Timestamp when the event was created
     pub created_at: u64,
+    /// IPFS Content Identifier storing rich metadata details
+    pub metadata_cid: String,
 }
 
 /// Payment information for an event

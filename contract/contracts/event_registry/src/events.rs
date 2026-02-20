@@ -8,6 +8,7 @@ pub enum AgoraEvent {
     FeeUpdated,
     ContractInitialized,
     ContractUpgraded,
+    MetadataUpdated,
 }
 
 #[contracttype]
@@ -47,5 +48,14 @@ pub struct InitializationEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegistryUpgradedEvent {
     pub admin_address: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MetadataUpdatedEvent {
+    pub event_id: String,
+    pub new_metadata_cid: String,
+    pub updated_by: Address,
     pub timestamp: u64,
 }
