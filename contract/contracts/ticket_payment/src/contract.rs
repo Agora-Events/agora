@@ -1,11 +1,14 @@
 use crate::storage::{
-    get_event_registry, get_payment, get_platform_wallet, get_usdc_token, is_initialized,
-    set_event_registry, set_initialized, set_platform_wallet, set_usdc_token, store_payment,
-    update_payment_status,
+    get_admin, get_event_registry, get_payment, get_platform_wallet, get_usdc_token, is_initialized,
+    set_admin, set_event_registry, set_initialized, set_platform_wallet, set_usdc_token,
+    store_payment, update_payment_status,
 };
 use crate::types::{Payment, PaymentStatus};
-use crate::{error::TicketPaymentError, events::InitializationEvent};
-use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, String};
+use crate::{
+    error::TicketPaymentError,
+    events::{ContractUpgraded, InitializationEvent},
+};
+use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, BytesN, Env, String};
 
 // Event Registry interface
 pub mod event_registry {
@@ -33,6 +36,7 @@ impl TicketPaymentContract {
     /// Initializes the contract with necessary configurations.
     pub fn initialize(
         env: Env,
+        admin: Address,
         usdc_token: Address,
         platform_wallet: Address,
         event_registry: Address,
@@ -41,11 +45,12 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::AlreadyInitialized);
         }
 
+        validate_address(&env, &admin)?;
         validate_address(&env, &usdc_token)?;
         validate_address(&env, &platform_wallet)?;
         validate_address(&env, &event_registry)?;
 
-        // In a real scenario, we might want to check for admin authorization here.
+        set_admin(&env, &admin);
         set_usdc_token(&env, usdc_token.clone());
         set_platform_wallet(&env, platform_wallet.clone());
         set_event_registry(&env, event_registry.clone());
@@ -59,6 +64,24 @@ impl TicketPaymentContract {
         .publish(&env);
 
         Ok(())
+    }
+
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin = get_admin(&env).expect("Admin not set");
+        admin.require_auth();
+
+        let old_wasm_hash = match env.current_contract_address().executable() {
+            Some(soroban_sdk::Executable::Wasm(hash)) => hash,
+            _ => panic!("Current contract is not a Wasm contract"),
+        };
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+
+        ContractUpgraded {
+            old_wasm_hash,
+            new_wasm_hash,
+        }
+        .publish(&env);
     }
 
     /// Processes a payment for an event ticket.
