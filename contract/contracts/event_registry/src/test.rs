@@ -122,6 +122,10 @@ fn test_storage_operations() {
         platform_fee_percent: 5,
         is_active: true,
         created_at: env.ledger().timestamp(),
+        metadata_cid: String::from_str(
+            &env,
+            "bafkreifh22222222222222222222222222222222222222222222222222",
+        ),
     };
 
     // Test store_event
@@ -157,6 +161,10 @@ fn test_organizer_events_list() {
         platform_fee_percent: 5,
         is_active: true,
         created_at: 100,
+        metadata_cid: String::from_str(
+            &env,
+            "bafkreifh22222222222222222222222222222222222222222222222222",
+        ),
     };
 
     let event_2 = EventInfo {
@@ -166,6 +174,10 @@ fn test_organizer_events_list() {
         platform_fee_percent: 5,
         is_active: true,
         created_at: 200,
+        metadata_cid: String::from_str(
+            &env,
+            "bafkreifh22222222222222222222222222222222222222222222222222",
+        ),
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -195,7 +207,11 @@ fn test_register_event_success() {
     client.initialize(&admin, &platform_wallet, &500);
 
     let event_id = String::from_str(&env, "event_001");
-    client.register_event(&event_id, &organizer, &payment_addr);
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
 
     let payment_info = client.get_event_payment_info(&event_id);
     assert_eq!(payment_info.payment_address, payment_addr);
@@ -217,9 +233,13 @@ fn test_register_duplicate_event_fails() {
     client.initialize(&admin, &platform_wallet, &500);
 
     let event_id = String::from_str(&env, "event_001");
-    client.register_event(&event_id, &organizer, &payment_addr);
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
 
-    let result = client.try_register_event(&event_id, &organizer, &payment_addr);
+    let result = client.try_register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
 
@@ -238,7 +258,11 @@ fn test_get_event_payment_info() {
     client.initialize(&admin, &platform_wallet, &750);
 
     let event_id = String::from_str(&env, "event_002");
-    client.register_event(&event_id, &organizer, &payment_addr);
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
 
     let info = client.get_event_payment_info(&event_id);
     assert_eq!(info.payment_address, payment_addr);
@@ -260,7 +284,11 @@ fn test_update_event_status() {
     client.initialize(&admin, &platform_wallet, &500);
 
     let event_id = String::from_str(&env, "event_001");
-    client.register_event(&event_id, &organizer, &payment_addr);
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
     client.update_event_status(&event_id, &false);
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -281,7 +309,11 @@ fn test_event_inactive_error() {
 
     client.initialize(&admin, &platform_wallet, &500);
     let event_id = String::from_str(&env, "event_001");
-    client.register_event(&event_id, &organizer, &payment_addr);
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
     client.update_event_status(&event_id, &false);
 
     let result = client.try_get_event_payment_info(&event_id);
@@ -303,7 +335,11 @@ fn test_complete_event_lifecycle() {
     client.initialize(&admin, &platform_wallet, &600);
 
     let event_id = String::from_str(&env, "lifecycle_event");
-    client.register_event(&event_id, &organizer, &payment_addr);
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
 
     let payment_info = client.get_event_payment_info(&event_id);
     assert_eq!(payment_info.payment_address, payment_addr);
@@ -320,4 +356,73 @@ fn test_complete_event_lifecycle() {
 
     let event_info = client.get_event(&event_id).unwrap();
     assert!(!event_info.is_active);
+}
+
+#[test]
+fn test_update_metadata_success() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+    client.update_metadata(&event_id, &new_metadata_cid);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.metadata_cid, new_metadata_cid);
+}
+
+#[test]
+fn test_update_metadata_invalid_cid() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&event_id, &organizer, &payment_addr, &metadata_cid);
+
+    // Test starts with wrong character
+    let wrong_char_cid = String::from_str(
+        &env,
+        "Qafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let result_wrong_char = client.try_update_metadata(&event_id, &wrong_char_cid);
+    assert_eq!(
+        result_wrong_char,
+        Err(Ok(EventRegistryError::InvalidMetadataCid))
+    );
+
+    // Test too short
+    let short_cid = String::from_str(&env, "bafy");
+    let result = client.try_update_metadata(&event_id, &short_cid);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidMetadataCid)));
 }

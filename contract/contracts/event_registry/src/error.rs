@@ -12,6 +12,7 @@ pub enum EventRegistryError {
     EventInactive = 6,
     NotInitialized = 7,
     AlreadyInitialized = 8,
+    InvalidMetadataCid = 9,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -29,6 +30,7 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::NotInitialized => write!(f, "Contract not initialized"),
             EventRegistryError::AlreadyInitialized => write!(f, "Contract already initialized"),
+            EventRegistryError::InvalidMetadataCid => write!(f, "Invalid IPFS Metadata CID format"),
         }
     }
 }

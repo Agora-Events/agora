@@ -2,7 +2,7 @@
 
 use crate::events::{
     AgoraEvent, EventRegisteredEvent, EventStatusUpdatedEvent, FeeUpdatedEvent,
-    InitializationEvent, RegistryUpgradedEvent,
+    InitializationEvent, MetadataUpdatedEvent, RegistryUpgradedEvent,
 };
 use crate::types::{EventInfo, PaymentInfo};
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
@@ -71,12 +71,16 @@ impl EventRegistry {
         event_id: String,
         organizer_address: Address,
         payment_address: Address,
+        metadata_cid: String,
     ) -> Result<(), EventRegistryError> {
         if !storage::is_initialized(&env) {
             return Err(EventRegistryError::NotInitialized);
         }
         // Verify organizer signature
         organizer_address.require_auth();
+
+        // Validate metadata CID
+        validate_metadata_cid(&env, &metadata_cid)?;
 
         // Check if event already exists
         if storage::event_exists(&env, event_id.clone()) {
@@ -94,6 +98,7 @@ impl EventRegistry {
             platform_fee_percent,
             is_active: true,
             created_at: env.ledger().timestamp(),
+            metadata_cid,
         };
 
         // Store the event
@@ -153,6 +158,41 @@ impl EventRegistry {
                     EventStatusUpdatedEvent {
                         event_id,
                         is_active,
+                        updated_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                Ok(())
+            }
+            None => Err(EventRegistryError::EventNotFound),
+        }
+    }
+
+    /// Update the decentralized metadata CID for an event (only by organizer)
+    pub fn update_metadata(
+        env: Env,
+        event_id: String,
+        new_metadata_cid: String,
+    ) -> Result<(), EventRegistryError> {
+        match storage::get_event(&env, event_id.clone()) {
+            Some(mut event_info) => {
+                // Verify organizer signature
+                event_info.organizer_address.require_auth();
+
+                // Validate new metadata CID
+                validate_metadata_cid(&env, &new_metadata_cid)?;
+
+                // Update metadata
+                event_info.metadata_cid = new_metadata_cid.clone();
+                storage::store_event(&env, event_info.clone());
+
+                // Emit metadata update event
+                env.events().publish(
+                    (AgoraEvent::MetadataUpdated,),
+                    MetadataUpdatedEvent {
+                        event_id,
+                        new_metadata_cid,
                         updated_by: event_info.organizer_address,
                         timestamp: env.ledger().timestamp(),
                     },
@@ -248,6 +288,23 @@ fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryErr
     if address == &env.current_contract_address() {
         return Err(EventRegistryError::InvalidAddress);
     }
+    Ok(())
+}
+
+fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryError> {
+    if cid.len() < 46 {
+        return Err(EventRegistryError::InvalidMetadataCid);
+    }
+
+    // We expect CIDv1 base32, which starts with 'b'
+    // Convert to Bytes to check the first character safely
+    let mut bytes = soroban_sdk::Bytes::new(env);
+    bytes.append(&cid.clone().into());
+
+    if !bytes.is_empty() && bytes.get(0) != Some(b'b') {
+        return Err(EventRegistryError::InvalidMetadataCid);
+    }
+
     Ok(())
 }
 

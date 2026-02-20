@@ -83,6 +83,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "metadata_cid"
+                      },
+                      "val": {
+                        "string": "bafkreifh22222222222222222222222222222222222222222222222222"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "organizer_address"
                       },
                       "val": {
@@ -173,6 +181,14 @@
                       },
                       "val": {
                         "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata_cid"
+                      },
+                      "val": {
+                        "string": "bafkreifh22222222222222222222222222222222222222222222222222"
                       }
                     },
                     {

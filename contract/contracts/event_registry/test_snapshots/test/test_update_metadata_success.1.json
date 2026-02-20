@@ -17,7 +17,7 @@
               "function_name": "register_event",
               "args": [
                 {
-                  "string": "event_001"
+                  "string": "event_metadata"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
@@ -42,13 +42,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "update_event_status",
+              "function_name": "update_metadata",
               "args": [
                 {
-                  "string": "event_001"
+                  "string": "event_metadata"
                 },
                 {
-                  "bool": false
+                  "string": "bafkreifh22222222222222222222222222222222222222222222222222"
                 }
               ]
             }
@@ -118,7 +118,7 @@
                   "symbol": "Event"
                 },
                 {
-                  "string": "event_001"
+                  "string": "event_metadata"
                 }
               ]
             },
@@ -138,7 +138,7 @@
                       "symbol": "Event"
                     },
                     {
-                      "string": "event_001"
+                      "string": "event_metadata"
                     }
                   ]
                 },
@@ -158,7 +158,7 @@
                         "symbol": "event_id"
                       },
                       "val": {
-                        "string": "event_001"
+                        "string": "event_metadata"
                       }
                     },
                     {
@@ -166,7 +166,7 @@
                         "symbol": "is_active"
                       },
                       "val": {
-                        "bool": false
+                        "bool": true
                       }
                     },
                     {
@@ -174,7 +174,7 @@
                         "symbol": "metadata_cid"
                       },
                       "val": {
-                        "string": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
+                        "string": "bafkreifh22222222222222222222222222222222222222222222222222"
                       }
                     },
                     {
@@ -287,7 +287,7 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "event_001"
+                      "string": "event_metadata"
                     }
                   ]
                 }

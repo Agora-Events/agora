@@ -17,7 +17,7 @@
               "function_name": "register_event",
               "args": [
                 {
-                  "string": "event_001"
+                  "string": "event_metadata"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
@@ -35,28 +35,7 @@
         }
       ]
     ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "update_event_status",
-              "args": [
-                {
-                  "string": "event_001"
-                },
-                {
-                  "bool": false
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
+    [],
     []
   ],
   "ledger": {
@@ -118,7 +97,7 @@
                   "symbol": "Event"
                 },
                 {
-                  "string": "event_001"
+                  "string": "event_metadata"
                 }
               ]
             },
@@ -138,7 +117,7 @@
                       "symbol": "Event"
                     },
                     {
-                      "string": "event_001"
+                      "string": "event_metadata"
                     }
                   ]
                 },
@@ -158,7 +137,7 @@
                         "symbol": "event_id"
                       },
                       "val": {
-                        "string": "event_001"
+                        "string": "event_metadata"
                       }
                     },
                     {
@@ -166,7 +145,7 @@
                         "symbol": "is_active"
                       },
                       "val": {
-                        "bool": false
+                        "bool": true
                       }
                     },
                     {
@@ -287,7 +266,7 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "event_001"
+                      "string": "event_metadata"
                     }
                   ]
                 }
@@ -430,39 +409,6 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": "801925984706572462"
-                  }
-                },
-                "durability": "temporary",
-                "val": "void"
-              }
-            },
-            "ext": "v0"
-          },
-          6311999
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "key": {
-              "ledger_key_nonce": {
-                "nonce": "5541220902715666415"
-              }
-            },
-            "durability": "temporary"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "key": {
-                  "ledger_key_nonce": {
-                    "nonce": "5541220902715666415"
                   }
                 },
                 "durability": "temporary",
