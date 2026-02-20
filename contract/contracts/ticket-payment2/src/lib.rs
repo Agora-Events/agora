@@ -184,7 +184,7 @@ impl TicketPayment {
         // Create payment record
         let payment = Payment {
             payment_id: payment_id.clone(),
-            event_id,
+            event_id: event_id.clone(),
             buyer: buyer.clone(),
             amount,
             platform_fee,
@@ -205,6 +205,19 @@ impl TicketPayment {
         env.storage()
             .persistent()
             .set(&DataKey::Payments, &payments);
+
+        // Emit payment event
+        env.events().publish(
+            (crate::events::AgoraEvent::PaymentProcessed,),
+            crate::events::PaymentProcessedEvent {
+                payment_id: payment_id.clone(),
+                event_id,
+                buyer_address: buyer,
+                amount,
+                platform_fee,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         Ok(payment_id)
     }
@@ -241,16 +254,30 @@ impl TicketPayment {
             return Err(Error::PaymentAlreadyConfirmed);
         }
 
+        let old_status = payment.status.clone();
+
         // Update payment status
         payment.status = PaymentStatus::Confirmed;
         payment.confirmed_at = Some(env.ledger().timestamp());
-        payment.transaction_hash = Some(transaction_hash);
+        payment.transaction_hash = Some(transaction_hash.clone());
 
         // Update storage
-        payments.set(payment_id, payment);
+        payments.set(payment_id.clone(), payment.clone());
         env.storage()
             .persistent()
             .set(&DataKey::Payments, &payments);
+
+        // Emit confirmation event
+        env.events().publish(
+            (crate::events::AgoraEvent::PaymentStatusChanged,),
+            crate::events::PaymentStatusChangedEvent {
+                payment_id,
+                old_status,
+                new_status: payment.status,
+                transaction_hash,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         Ok(())
     }

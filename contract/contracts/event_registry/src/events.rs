@@ -1,30 +1,40 @@
-use soroban_sdk::{contractevent, Address, String};
+use soroban_sdk::{contracttype, Address, String};
 
-#[contractevent]
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EventRegistered {
+pub enum AgoraEvent {
+    EventRegistered,
+    EventStatusUpdated,
+    FeeUpdated,
+    ContractInitialized,
+    ContractUpgraded,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventRegisteredEvent {
     pub event_id: String,
     pub organizer_address: Address,
     pub payment_address: Address,
     pub timestamp: u64,
 }
 
-#[contractevent]
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EventStatusUpdated {
+pub struct EventStatusUpdatedEvent {
     pub event_id: String,
     pub is_active: bool,
     pub updated_by: Address,
     pub timestamp: u64,
 }
 
-#[contractevent]
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeeUpdated {
+pub struct FeeUpdatedEvent {
     pub new_fee_percent: u32,
 }
 
-#[contractevent]
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InitializationEvent {
     pub admin_address: Address,
@@ -33,9 +43,9 @@ pub struct InitializationEvent {
     pub timestamp: u64,
 }
 
-#[contractevent]
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RegistryUpgraded {
+pub struct RegistryUpgradedEvent {
     pub admin_address: Address,
     pub timestamp: u64,
 }

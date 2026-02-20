@@ -6,9 +6,12 @@ use crate::storage::{
 use crate::types::{Payment, PaymentStatus};
 use crate::{
     error::TicketPaymentError,
-    events::{ContractUpgraded, InitializationEvent},
+    events::{
+        AgoraEvent, ContractUpgraded, InitializationEvent, PaymentProcessedEvent,
+        PaymentStatusChangedEvent,
+    },
 };
-use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, BytesN, Env, String};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String};
 
 // Event Registry interface
 pub mod event_registry {
@@ -56,12 +59,14 @@ impl TicketPaymentContract {
         set_event_registry(&env, event_registry.clone());
         set_initialized(&env, true);
 
-        InitializationEvent {
-            usdc_token,
-            platform_wallet,
-            event_registry,
-        }
-        .publish(&env);
+        env.events().publish(
+            (AgoraEvent::ContractInitialized,),
+            InitializationEvent {
+                usdc_token,
+                platform_wallet,
+                event_registry,
+            },
+        );
 
         Ok(())
     }
@@ -78,11 +83,13 @@ impl TicketPaymentContract {
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
 
-        ContractUpgraded {
-            old_wasm_hash,
-            new_wasm_hash,
-        }
-        .publish(&env);
+        env.events().publish(
+            (AgoraEvent::ContractUpgraded,),
+            ContractUpgraded {
+                old_wasm_hash,
+                new_wasm_hash,
+            },
+        );
     }
 
     /// Processes a payment for an event ticket.
@@ -148,8 +155,8 @@ impl TicketPaymentContract {
         // 4. Create payment record
         let payment = Payment {
             payment_id: payment_id.clone(),
-            event_id,
-            buyer_address,
+            event_id: event_id.clone(),
+            buyer_address: buyer_address.clone(),
             ticket_tier_id,
             amount,
             platform_fee,
@@ -164,8 +171,15 @@ impl TicketPaymentContract {
 
         // 5. Emit payment event
         env.events().publish(
-            (symbol_short!("pay_proc"), payment_id.clone()),
-            (amount, platform_fee),
+            (AgoraEvent::PaymentProcessed,),
+            PaymentProcessedEvent {
+                payment_id: payment_id.clone(),
+                event_id: event_id.clone(),
+                buyer_address: buyer_address.clone(),
+                amount,
+                platform_fee,
+                timestamp: env.ledger().timestamp(),
+            },
         );
 
         Ok(payment_id)
@@ -191,8 +205,16 @@ impl TicketPaymentContract {
         }
 
         // Emit confirmation event
-        env.events()
-            .publish((symbol_short!("pay_conf"), payment_id), (transaction_hash,));
+        env.events().publish(
+            (AgoraEvent::PaymentStatusChanged,),
+            PaymentStatusChangedEvent {
+                payment_id: payment_id.clone(),
+                old_status: PaymentStatus::Pending,
+                new_status: PaymentStatus::Confirmed,
+                transaction_hash: transaction_hash.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
     }
 
     /// Returns the status and details of a payment.

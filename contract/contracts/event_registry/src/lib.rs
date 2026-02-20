@@ -1,7 +1,8 @@
 #![no_std]
 
 use crate::events::{
-    EventRegistered, EventStatusUpdated, FeeUpdated, InitializationEvent, RegistryUpgraded,
+    AgoraEvent, EventRegisteredEvent, EventStatusUpdatedEvent, FeeUpdatedEvent,
+    InitializationEvent, RegistryUpgradedEvent,
 };
 use crate::types::{EventInfo, PaymentInfo};
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
@@ -17,6 +18,7 @@ use crate::error::EventRegistryError;
 pub struct EventRegistry;
 
 #[contractimpl]
+#[allow(deprecated)]
 impl EventRegistry {
     /// Initializes the contract configuration. Can only be called once.
     ///
@@ -51,13 +53,15 @@ impl EventRegistry {
         storage::set_platform_fee(&env, initial_fee);
         storage::set_initialized(&env, true);
 
-        InitializationEvent {
-            admin_address: admin,
-            platform_wallet,
-            platform_fee_percent: initial_fee,
-            timestamp: env.ledger().timestamp(),
-        }
-        .publish(&env);
+        env.events().publish(
+            (AgoraEvent::ContractInitialized,),
+            InitializationEvent {
+                admin_address: admin,
+                platform_wallet,
+                platform_fee_percent: initial_fee,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
         Ok(())
     }
 
@@ -96,13 +100,15 @@ impl EventRegistry {
         storage::store_event(&env, event_info);
 
         // Emit registration event using contract event type
-        EventRegistered {
-            event_id: event_id.clone(),
-            organizer_address: organizer_address.clone(),
-            payment_address: payment_address.clone(),
-            timestamp: env.ledger().timestamp(),
-        }
-        .publish(&env);
+        env.events().publish(
+            (AgoraEvent::EventRegistered,),
+            EventRegisteredEvent {
+                event_id: event_id.clone(),
+                organizer_address: organizer_address.clone(),
+                payment_address: payment_address.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         Ok(())
     }
@@ -142,13 +148,15 @@ impl EventRegistry {
                 storage::store_event(&env, event_info.clone());
 
                 // Emit status update event using contract event type
-                EventStatusUpdated {
-                    event_id,
-                    is_active,
-                    updated_by: event_info.organizer_address,
-                    timestamp: env.ledger().timestamp(),
-                }
-                .publish(&env);
+                env.events().publish(
+                    (AgoraEvent::EventStatusUpdated,),
+                    EventStatusUpdatedEvent {
+                        event_id,
+                        is_active,
+                        updated_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
 
                 Ok(())
             }
@@ -189,7 +197,10 @@ impl EventRegistry {
         storage::set_platform_fee(&env, new_fee_percent);
 
         // Emit fee update event using contract event type
-        FeeUpdated { new_fee_percent }.publish(&env);
+        env.events().publish(
+            (AgoraEvent::FeeUpdated,),
+            FeeUpdatedEvent { new_fee_percent },
+        );
 
         Ok(())
     }
@@ -221,11 +232,13 @@ impl EventRegistry {
         let verified_admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
         storage::get_platform_wallet(&env).ok_or(EventRegistryError::NotInitialized)?;
 
-        RegistryUpgraded {
-            admin_address: verified_admin,
-            timestamp: env.ledger().timestamp(),
-        }
-        .publish(&env);
+        env.events().publish(
+            (AgoraEvent::ContractUpgraded,),
+            RegistryUpgradedEvent {
+                admin_address: verified_admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         Ok(())
     }
