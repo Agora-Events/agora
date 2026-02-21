@@ -11,7 +11,7 @@ pub struct Refund {
     pub ticket_id: Uuid,
     pub amount: Decimal,
     pub reason: String,
-    pub status: String, // pending, approved, rejected, completed
+    pub status: String,       // pending, approved, rejected, completed
     pub initiated_by: String, // 'guest' or 'organizer'
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

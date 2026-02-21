@@ -14,8 +14,14 @@ pub struct TicketTier {
     pub price: Decimal,
     pub total_quantity: i32,
     pub available_quantity: i32,
+    #[serde(default = "default_is_refundable")]
+    pub is_refundable: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+fn default_is_refundable() -> bool {
+    true
 }
 
 #[allow(dead_code)]

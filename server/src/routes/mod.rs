@@ -1,4 +1,7 @@
-use axum::{routing::{get, post}, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use sqlx::PgPool;
 
 use crate::config::{create_cors_layer, create_security_headers_layer};
@@ -16,7 +19,10 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
-        .route("/refunds/guest/tickets/:ticket_id", post(request_guest_refund))
+        .route(
+            "/refunds/guest/tickets/:ticket_id",
+            post(request_guest_refund),
+        )
         .route("/events/:event_id/cancel", post(handle_event_cancellation))
         .with_state(pool)
         .layer(create_security_headers_layer())

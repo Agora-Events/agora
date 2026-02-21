@@ -19,6 +19,9 @@ pub enum AppError {
     #[error("Resource not found: {0}")]
     NotFound(String),
 
+    #[error("This ticket is non-refundable")]
+    NonRefundableTicket,
+
     #[error("Database error")]
     DatabaseError(#[from] sqlx::Error),
 
@@ -36,6 +39,7 @@ impl AppError {
             AppError::AuthError(_) => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            AppError::NonRefundableTicket => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::ExternalServiceError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -48,6 +52,7 @@ impl AppError {
             AppError::AuthError(_) => "AUTH_ERROR",
             AppError::Forbidden(_) => "FORBIDDEN",
             AppError::NotFound(_) => "NOT_FOUND",
+            AppError::NonRefundableTicket => "NON_REFUNDABLE_TICKET",
             AppError::DatabaseError(_) => "DATABASE_ERROR",
             AppError::ExternalServiceError(_) => "EXTERNAL_SERVICE_ERROR",
             AppError::InternalServerError(_) => "INTERNAL_SERVER_ERROR",
@@ -63,6 +68,9 @@ impl AppError {
             | AppError::ExternalServiceError(msg)
             | AppError::InternalServerError(msg) => {
                 error!(error = ?self, message = %msg, "Application error");
+            }
+            AppError::NonRefundableTicket => {
+                error!(error = ?self, "Non-refundable ticket error");
             }
             AppError::DatabaseError(e) => {
                 error!(error = ?e, "Database error");
@@ -87,6 +95,7 @@ impl IntoResponse for AppError {
             | AppError::NotFound(msg)
             | AppError::ExternalServiceError(msg)
             | AppError::InternalServerError(msg) => msg.clone(),
+            AppError::NonRefundableTicket => "This ticket is non-refundable".to_string(),
             AppError::DatabaseError(_) => "A database error occurred".to_string(),
         };
 
