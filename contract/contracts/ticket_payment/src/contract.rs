@@ -25,9 +25,32 @@ pub mod event_registry {
         pub platform_fee_percent: u32,
     }
 
+    #[soroban_sdk::contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct EventInventory {
+        pub current_supply: i128,
+        pub max_supply: i128,
+    }
+
     #[contractclient(name = "Client")]
     pub trait EventRegistryInterface {
         fn get_event_payment_info(env: Env, event_id: String) -> PaymentInfo;
+        fn get_event(env: Env, event_id: String) -> Option<EventInfo>;
+        fn increment_inventory(env: Env, event_id: String);
+    }
+
+    #[soroban_sdk::contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct EventInfo {
+        pub event_id: String,
+        pub organizer_address: Address,
+        pub payment_address: Address,
+        pub platform_fee_percent: u32,
+        pub is_active: bool,
+        pub created_at: u64,
+        pub metadata_cid: String,
+        pub max_supply: i128,
+        pub current_supply: i128,
     }
 }
 
@@ -135,27 +158,27 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::TokenNotWhitelisted);
         }
 
-        // 1. Query Event Registry for payment info and platform fee
+        // 1. Query Event Registry for event info and check inventory
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
 
-        let payment_info = match registry_client.try_get_event_payment_info(&event_id) {
-            Ok(Ok(info)) => info,
-            Err(Ok(e)) => {
-                // Determine which error was thrown
-                if e.is_type(soroban_sdk::xdr::ScErrorType::Contract) && e.get_code() == 2 {
-                    return Err(TicketPaymentError::EventNotFound);
-                } else if e.is_type(soroban_sdk::xdr::ScErrorType::Contract) && e.get_code() == 6 {
-                    return Err(TicketPaymentError::EventInactive);
-                }
-                // Fallback for unexpected contract errors
-                return Err(TicketPaymentError::EventNotFound);
-            }
+        let event_info = match registry_client.try_get_event(&event_id) {
+            Ok(Ok(Some(info))) => info,
+            Ok(Ok(None)) => return Err(TicketPaymentError::EventNotFound),
             _ => return Err(TicketPaymentError::EventNotFound),
         };
 
+        if !event_info.is_active {
+            return Err(TicketPaymentError::EventInactive);
+        }
+
+        // Check if tickets are available (max_supply of 0 means unlimited)
+        if event_info.max_supply > 0 && event_info.current_supply >= event_info.max_supply {
+            return Err(TicketPaymentError::MaxSupplyExceeded);
+        }
+
         // 2. Calculate platform fee (platform_fee_percent is in bps, 10000 = 100%)
-        let platform_fee = (amount * payment_info.platform_fee_percent as i128) / 10000;
+        let platform_fee = (amount * event_info.platform_fee_percent as i128) / 10000;
         let organizer_amount = amount - platform_fee;
 
         // 3. Transfer tokens from buyer (splitting payment)
@@ -171,12 +194,15 @@ impl TicketPaymentContract {
         if organizer_amount > 0 {
             token_client.transfer(
                 &buyer_address,
-                &payment_info.payment_address,
+                &event_info.payment_address,
                 &organizer_amount,
             );
         }
 
-        // 4. Create payment record
+        // 4. Increment inventory after successful payment
+        registry_client.increment_inventory(&event_id);
+
+        // 5. Create payment record
         let payment = Payment {
             payment_id: payment_id.clone(),
             event_id: event_id.clone(),
@@ -193,7 +219,7 @@ impl TicketPaymentContract {
 
         store_payment(&env, payment);
 
-        // 5. Emit payment event
+        // 6. Emit payment event
         env.events().publish(
             (AgoraEvent::PaymentProcessed,),
             PaymentProcessedEvent {

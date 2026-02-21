@@ -19,6 +19,25 @@ impl MockEventRegistry {
             platform_fee_percent: 500, // 5%
         }
     }
+
+    pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id: String::from_str(&env, "event_1"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            is_active: true,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String) {}
 }
 
 // Another Mock for different fee
@@ -33,6 +52,25 @@ impl MockEventRegistry2 {
             platform_fee_percent: 250, // 2.5%
         }
     }
+
+    pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id: String::from_str(&env, "event_1"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 250,
+            is_active: true,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String) {}
 }
 
 // Mock Event Registry returning EventNotFound
@@ -44,6 +82,12 @@ impl MockEventRegistryNotFound {
     pub fn get_event_payment_info(_env: Env, _event_id: String) -> event_registry::PaymentInfo {
         panic!("simulated contract error");
     }
+
+    pub fn get_event(_env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
+        None
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String) {}
 }
 
 // Manually mapping the trap in Soroban tests is sometimes tricky if we just panic.
@@ -509,4 +553,153 @@ fn test_process_payment_with_multiple_tokens() {
 
     assert_eq!(payment1.amount, usdc_amount);
     assert_eq!(payment2.amount, xlm_amount);
+}
+
+// Mock Event Registry with max supply reached
+#[soroban_sdk::contract]
+pub struct MockEventRegistryMaxSupply;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryMaxSupply {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+        }
+    }
+
+    pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id: String::from_str(&env, "event_1"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            is_active: true,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 100,
+            current_supply: 100,
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String) {}
+}
+
+#[test]
+fn test_process_payment_max_supply_exceeded() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryMaxSupply, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &10000i128);
+
+    let res = client.try_process_payment(
+        &String::from_str(&env, "p1"),
+        &String::from_str(&env, "e1"),
+        &String::from_str(&env, "t1"),
+        &buyer,
+        &usdc_id,
+        &10000i128,
+    );
+
+    assert_eq!(res, Err(Ok(TicketPaymentError::MaxSupplyExceeded)));
+}
+
+// Mock Event Registry with inventory tracking
+#[soroban_sdk::contract]
+pub struct MockEventRegistryWithInventory;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryWithInventory {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        let key = Symbol::new(&env, "supply");
+        let current_supply: i128 = env.storage().instance().get(&key).unwrap_or(0);
+
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            is_active: true,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 10,
+            current_supply,
+        })
+    }
+
+    pub fn increment_inventory(env: Env, _event_id: String) {
+        let key = Symbol::new(&env, "supply");
+        let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
+        env.storage().instance().set(&key, &(current + 1));
+    }
+}
+
+#[test]
+fn test_inventory_increment_on_successful_payment() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryWithInventory, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &(amount * 5));
+
+    // Process first payment - should succeed
+    let result1 = client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+    );
+    assert_eq!(result1, String::from_str(&env, "pay_1"));
+
+    // Process second payment - should also succeed
+    let result2 = client.process_payment(
+        &String::from_str(&env, "pay_2"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+    );
+    assert_eq!(result2, String::from_str(&env, "pay_2"));
 }
