@@ -11,6 +11,7 @@ pub enum AgoraEvent {
     MetadataUpdated,
     InventoryIncremented,
     InventoryDecremented,
+    CustomFeeSet,
 }
 
 #[contracttype]
@@ -77,5 +78,13 @@ pub struct InventoryDecrementedEvent {
     pub event_id: String,
     pub new_supply: i128,
     pub max_supply: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CustomFeeSetEvent {
+    pub event_id: String,
+    pub custom_fee_bps: u32,
     pub timestamp: u64,
 }
