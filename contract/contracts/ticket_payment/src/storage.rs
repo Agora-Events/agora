@@ -376,3 +376,16 @@ pub fn mark_discount_hash_used(env: &Env, hash: soroban_sdk::BytesN<32>) {
         .persistent()
         .set(&DataKey::DiscountCodeUsed(hash), &true);
 }
+
+pub fn is_event_disputed(env: &Env, event_id: String) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DisputeStatus(event_id))
+        .unwrap_or(false)
+}
+
+pub fn set_event_dispute_status(env: &Env, event_id: String, disputed: bool) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DisputeStatus(event_id), &disputed);
+}
