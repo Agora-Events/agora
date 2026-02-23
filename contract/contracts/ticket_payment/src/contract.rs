@@ -902,7 +902,11 @@ impl TicketPaymentContract {
 
                     // max_price = original_price * (10000 + cap_bps) / 10000
                     let max_price = original_price
-                        .checked_mul((10000i128).checked_add(cap_bps as i128).unwrap_or(i128::MAX))
+                        .checked_mul(
+                            (10000i128)
+                                .checked_add(cap_bps as i128)
+                                .unwrap_or(i128::MAX),
+                        )
                         .ok_or(TicketPaymentError::ArithmeticError)?
                         / 10000;
 
