@@ -130,6 +130,7 @@ fn test_storage_operations() {
         max_supply: 100,
         current_supply: 0,
         tiers,
+        custom_fee_bps: None,
     };
 
     client.store_event(&event_info);
@@ -172,6 +173,7 @@ fn test_organizer_events_list() {
         max_supply: 50,
         current_supply: 0,
         tiers: tiers.clone(),
+        custom_fee_bps: None,
     };
 
     let event_2 = EventInfo {
@@ -188,6 +190,7 @@ fn test_organizer_events_list() {
         max_supply: 0,
         current_supply: 0,
         tiers,
+        custom_fee_bps: None,
     };
 
     let contract_id = env.register(EventRegistry, ());
