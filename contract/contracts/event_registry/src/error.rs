@@ -23,6 +23,7 @@ pub enum EventRegistryError {
     InvalidQuantity = 17,
     OrganizerBlacklisted = 18,
     OrganizerNotBlacklisted = 19,
+    InvalidResaleCapBps = 20,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -70,6 +71,9 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::OrganizerNotBlacklisted => {
                 write!(f, "Organizer is not currently blacklisted")
+            }
+            EventRegistryError::InvalidResaleCapBps => {
+                write!(f, "Resale cap must be between 0 and 10000 basis points")
             }
         }
     }

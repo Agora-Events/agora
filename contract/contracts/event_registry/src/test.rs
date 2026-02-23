@@ -136,6 +136,7 @@ fn test_storage_operations() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     };
 
     client.store_event(&event_info);
@@ -181,6 +182,7 @@ fn test_organizer_events_list() {
         tiers: tiers.clone(),
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     };
 
     let event_2 = EventInfo {
@@ -200,6 +202,7 @@ fn test_organizer_events_list() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -256,6 +259,7 @@ fn test_register_event_success() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -298,6 +302,7 @@ fn test_register_event_unlimited_supply() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -335,6 +340,7 @@ fn test_register_duplicate_event_fails() {
         tiers: tiers.clone(),
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -347,6 +353,7 @@ fn test_register_duplicate_event_fails() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -381,6 +388,7 @@ fn test_get_event_payment_info() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -418,6 +426,7 @@ fn test_update_event_status() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -454,6 +463,7 @@ fn test_event_inactive_error() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -491,6 +501,7 @@ fn test_complete_event_lifecycle() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -540,6 +551,7 @@ fn test_update_metadata_success() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let new_metadata_cid = String::from_str(
@@ -582,6 +594,7 @@ fn test_update_metadata_invalid_cid() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let wrong_char_cid = String::from_str(
@@ -665,6 +678,7 @@ fn test_increment_inventory_success() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -729,6 +743,7 @@ fn test_increment_inventory_max_supply_exceeded() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -788,6 +803,7 @@ fn test_increment_inventory_unlimited_supply() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     for _ in 0..10 {
@@ -864,6 +880,7 @@ fn test_increment_inventory_inactive_event() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     client.update_event_status(&event_id, &false);
@@ -916,6 +933,7 @@ fn test_increment_inventory_persists_across_reads() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     for _ in 0..5 {
@@ -984,6 +1002,7 @@ fn test_tier_limit_exceeds_max_supply() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
     assert_eq!(
         result,
@@ -1036,6 +1055,7 @@ fn test_tier_not_found() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -1089,6 +1109,7 @@ fn test_tier_supply_exceeded() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1157,6 +1178,7 @@ fn test_multiple_tiers_inventory() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -1205,6 +1227,7 @@ fn test_update_event_status_noop_skips_event() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let _ = env.events().all();
@@ -1274,6 +1297,7 @@ fn test_blacklist_prevents_event_registration() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -1312,6 +1336,7 @@ fn test_update_metadata_noop_skips_event() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let _ = env.events().all();
@@ -1388,6 +1413,7 @@ fn test_blacklist_suspends_active_events() {
         tiers,
         refund_deadline: 0,
         restocking_fee: 0,
+        resale_cap_bps: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1458,4 +1484,166 @@ fn test_remove_non_blacklisted_fails() {
     let reason = String::from_str(&env, "Removal attempt");
     let result = client.try_remove_from_blacklist(&organizer, &reason);
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerNotBlacklisted)));
+}
+
+// ==================== Resale Cap Tests ====================
+
+#[test]
+fn test_register_event_with_resale_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "capped_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: Some(1000), // 10% above face value
+    });
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.resale_cap_bps, Some(1000));
+}
+
+#[test]
+fn test_register_event_resale_cap_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "no_markup_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 50,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: Some(0), // No markup allowed
+    });
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.resale_cap_bps, Some(0));
+}
+
+#[test]
+fn test_register_event_resale_cap_none() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "free_market_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 50,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None, // No cap
+    });
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.resale_cap_bps, None);
+}
+
+#[test]
+fn test_register_event_resale_cap_invalid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "bad_cap_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id,
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: Some(10001), // Over 100% - invalid
+    });
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }

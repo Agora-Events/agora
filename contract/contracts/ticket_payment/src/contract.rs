@@ -82,6 +82,7 @@ pub mod event_registry {
         pub tiers: soroban_sdk::Map<String, TicketTier>,
         pub refund_deadline: u64,
         pub restocking_fee: i128,
+        pub resale_cap_bps: Option<u32>,
     }
 }
 
@@ -786,10 +787,12 @@ impl TicketPaymentContract {
     }
 
     /// Transfers a ticket from the current holder to a new owner.
+    /// If `sale_price` is provided, it is validated against the event's resale cap.
     pub fn transfer_ticket(
         env: Env,
         payment_id: String,
         to: Address,
+        sale_price: Option<i128>,
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
@@ -807,6 +810,33 @@ impl TicketPaymentContract {
 
         if from == to {
             return Err(TicketPaymentError::InvalidAddress);
+        }
+
+        // Validate resale price against the organizer's cap
+        if let Some(price) = sale_price {
+            let event_registry_addr = get_event_registry(&env);
+            let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+
+            if let Some(event_info) = registry_client.get_event(&payment.event_id) {
+                if let Some(cap_bps) = event_info.resale_cap_bps {
+                    // Look up the original tier face-value price
+                    let tier = event_info
+                        .tiers
+                        .get(payment.ticket_tier_id.clone())
+                        .ok_or(TicketPaymentError::TierNotFound)?;
+                    let original_price = tier.price;
+
+                    // max_price = original_price * (10000 + cap_bps) / 10000
+                    let max_price = original_price
+                        .checked_mul((10000i128).checked_add(cap_bps as i128).unwrap_or(i128::MAX))
+                        .ok_or(TicketPaymentError::ArithmeticError)?
+                        / 10000;
+
+                    if price > max_price {
+                        return Err(TicketPaymentError::ResalePriceExceedsCap);
+                    }
+                }
+            }
         }
 
         let transfer_fee = get_transfer_fee(&env, payment.event_id.clone());

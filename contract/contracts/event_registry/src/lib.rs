@@ -105,6 +105,13 @@ impl EventRegistry {
             }
         }
 
+        // Validate resale cap if provided
+        if let Some(cap) = args.resale_cap_bps {
+            if cap > 10000 {
+                return Err(EventRegistryError::InvalidResaleCapBps);
+            }
+        }
+
         let platform_fee_percent = storage::get_platform_fee(&env);
 
         let event_info = EventInfo {
@@ -121,6 +128,7 @@ impl EventRegistry {
             tiers: args.tiers.clone(),
             refund_deadline: args.refund_deadline,
             restocking_fee: args.restocking_fee,
+            resale_cap_bps: args.resale_cap_bps,
         };
 
         storage::store_event(&env, event_info);

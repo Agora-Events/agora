@@ -58,6 +58,7 @@ impl MockEventRegistry {
                 },
                 refund_deadline: 0,
                 restocking_fee: 0,
+                resale_cap_bps: None,
             });
         }
         None
@@ -113,6 +114,7 @@ impl MockEventRegistry2 {
             },
             refund_deadline: 0,
             restocking_fee: 0,
+            resale_cap_bps: None,
         })
     }
 
@@ -741,6 +743,7 @@ impl MockEventRegistryMaxSupply {
             },
             refund_deadline: 0,
             restocking_fee: 0,
+            resale_cap_bps: None,
         })
     }
 
@@ -835,6 +838,7 @@ impl MockEventRegistryWithInventory {
             },
             refund_deadline: 0,
             restocking_fee: 0,
+            resale_cap_bps: None,
         })
     }
 
@@ -1039,6 +1043,7 @@ impl MockEventRegistryWithMilestones {
             },
             refund_deadline: 0,
             restocking_fee: 0,
+            resale_cap_bps: None,
         })
     }
 
@@ -1189,7 +1194,7 @@ fn test_transfer_ticket_success() {
         store_payment(&env, payment);
     });
 
-    client.transfer_ticket(&payment_id, &new_owner);
+    client.transfer_ticket(&payment_id, &new_owner, &None);
 
     let updated = client.get_payment_status(&payment_id).unwrap();
     assert_eq!(updated.buyer_address, new_owner);
@@ -1248,7 +1253,7 @@ fn test_transfer_ticket_with_fee() {
         store_payment(&env, payment);
     });
 
-    client.transfer_ticket(&payment_id, &new_owner);
+    client.transfer_ticket(&payment_id, &new_owner, &None);
 
     // Verify fee deduction
     let new_escrow = client.get_event_escrow_balance(&event_id);
@@ -1292,7 +1297,7 @@ fn test_transfer_ticket_unauthorized() {
     // Thief tries to transfer buyer's ticket WITHOUT mock_all_auths().
     // The contract calls `from.require_auth()`, where `from` is `buyer`.
     // Since we didn't mock_all_auths() or sign for `buyer`, this MUST panic.
-    client.transfer_ticket(&payment_id, &thief);
+    client.transfer_ticket(&payment_id, &thief, &None);
 }
 
 // Mock Event Registry With Early Bird Pricing
@@ -1341,6 +1346,7 @@ impl MockEventRegistryEarlyBird {
             },
             refund_deadline: 0,
             restocking_fee: 0,
+            resale_cap_bps: None,
         })
     }
 
@@ -1810,6 +1816,7 @@ impl MockEventRegistryWithOrganizer {
             },
             refund_deadline: 0,
             restocking_fee: 0,
+            resale_cap_bps: None,
         })
     }
 
@@ -2107,6 +2114,7 @@ impl MockPlatformRegistryE2E {
             tiers,
             refund_deadline: 0,
             restocking_fee: 0,
+            resale_cap_bps: None,
         };
 
         env.storage()
@@ -2506,6 +2514,7 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
     assert_eq!(final_tier.current_sold, 10);
 }
 
+// Mock Event Registry for buyer-initiated refunds
 #[soroban_sdk::contract]
 pub struct MockEventRegistryRefund;
 
@@ -2551,8 +2560,290 @@ impl MockEventRegistryRefund {
             },
             refund_deadline: 2000,
             restocking_fee: 100,
+            resale_cap_bps: None,
         })
     }
+
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+}
+
+// ==================== Resale Price Cap Tests ====================
+
+// Mock Event Registry with resale cap set
+#[soroban_sdk::contract]
+pub struct MockEventRegistryWithResaleCap;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryWithResaleCap {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+        }
+    }
+
+    pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id: String::from_str(&env, "event_capped"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            is_active: true,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "general"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000_0000000i128, // 1000 USDC
+                        early_bird_price: 800_0000000i128,
+                        early_bird_deadline: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: Some(1000), // 10% above face value
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+}
+
+fn setup_test_with_resale_cap(
+    env: &Env,
+) -> (
+    TicketPaymentContractClient<'static>,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(env, &contract_id);
+
+    let admin = Address::generate(env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(env))
+        .address();
+    let platform_wallet = Address::generate(env);
+    let event_registry_id = env.register(MockEventRegistryWithResaleCap, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &event_registry_id);
+
+    (client, admin, usdc_id, platform_wallet, event_registry_id)
+}
+
+#[test]
+fn test_transfer_ticket_resale_price_within_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let buyer = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_cap_1");
+
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "event_capped"),
+        buyer_address: buyer.clone(),
+        ticket_tier_id: String::from_str(&env, "general"),
+        amount: 1000_0000000,
+        platform_fee: 50_0000000,
+        organizer_amount: 950_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx_1"),
+        created_at: 100,
+        confirmed_at: Some(101),
+    };
+
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+    });
+
+    // Sale price at exactly the cap: 1000 * (10000 + 1000) / 10000 = 1100 USDC
+    let sale_price = Some(1100_0000000i128);
+    client.transfer_ticket(&payment_id, &new_owner, &sale_price);
+
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(updated.buyer_address, new_owner);
+}
+
+#[test]
+fn test_transfer_ticket_resale_price_exceeds_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let buyer = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_cap_2");
+
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "event_capped"),
+        buyer_address: buyer.clone(),
+        ticket_tier_id: String::from_str(&env, "general"),
+        amount: 1000_0000000,
+        platform_fee: 50_0000000,
+        organizer_amount: 950_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx_2"),
+        created_at: 100,
+        confirmed_at: Some(101),
+    };
+
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+    });
+
+    // Sale price above the cap: 1200 USDC > 1100 USDC max
+    let sale_price = Some(1200_0000000i128);
+    let result = client.try_transfer_ticket(&payment_id, &new_owner, &sale_price);
+    assert_eq!(result, Err(Ok(TicketPaymentError::ResalePriceExceedsCap)));
+
+    // Verify ticket was NOT transferred
+    let unchanged = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(unchanged.buyer_address, buyer);
+}
+
+#[test]
+fn test_transfer_ticket_no_sale_price_with_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let buyer = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_cap_3");
+
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "event_capped"),
+        buyer_address: buyer.clone(),
+        ticket_tier_id: String::from_str(&env, "general"),
+        amount: 1000_0000000,
+        platform_fee: 50_0000000,
+        organizer_amount: 950_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx_3"),
+        created_at: 100,
+        confirmed_at: Some(101),
+    };
+
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+    });
+
+    // No sale price (gift/free transfer) should always succeed
+    client.transfer_ticket(&payment_id, &new_owner, &None);
+
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(updated.buyer_address, new_owner);
+}
+
+#[test]
+fn test_transfer_ticket_sale_price_no_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    // Use the default mock registry which has resale_cap_bps: None
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_nocap_1");
+
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "event_1"),
+        buyer_address: buyer.clone(),
+        ticket_tier_id: String::from_str(&env, "tier_1"),
+        amount: 1000_0000000,
+        platform_fee: 50_0000000,
+        organizer_amount: 950_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx_nc1"),
+        created_at: 100,
+        confirmed_at: Some(101),
+    };
+
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+    });
+
+    // Any sale price should be allowed when no cap is set
+    let sale_price = Some(5000_0000000i128); // 5x the original price
+    client.transfer_ticket(&payment_id, &new_owner, &sale_price);
+
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(updated.buyer_address, new_owner);
+}
+
+// Mock Event Registry with zero resale cap (no markup allowed)
+#[soroban_sdk::contract]
+pub struct MockRegistryZeroCap;
+
+#[soroban_sdk::contractimpl]
+impl MockRegistryZeroCap {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+        }
+    }
+
+    pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id: String::from_str(&env, "event_zero_cap"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            is_active: true,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "general"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000_0000000i128,
+                        early_bird_price: 0,
+                        early_bird_deadline: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: Some(0), // No markup allowed
+        })
+    }
+
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
 }
@@ -2648,4 +2939,48 @@ fn test_request_guest_refund_deadline_passed() {
 
     let res = client.try_request_guest_refund(&payment_id);
     assert_eq!(res, Err(Ok(TicketPaymentError::RefundDeadlinePassed)));
+}
+
+#[test]
+fn test_transfer_ticket_resale_cap_zero_no_markup() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockRegistryZeroCap, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_zero_cap");
+
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "event_zero_cap"),
+        buyer_address: buyer.clone(),
+        ticket_tier_id: String::from_str(&env, "general"),
+        amount: 1000_0000000,
+        platform_fee: 50_0000000,
+        organizer_amount: 950_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx_zc"),
+        created_at: 100,
+        confirmed_at: Some(101),
+    };
+
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+    });
+
+    // Resale at face value should succeed
+    let at_face = Some(1000_0000000i128);
+    client.transfer_ticket(&payment_id, &new_owner, &at_face);
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(updated.buyer_address, new_owner);
 }

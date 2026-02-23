@@ -56,6 +56,9 @@ pub struct EventInfo {
     pub refund_deadline: u64,
     /// Fee deducted from refund amount
     pub restocking_fee: i128,
+    /// Optional resale price cap in basis points above face value.
+    /// None = no cap (free market), Some(0) = no markup, Some(1000) = max 10% above face value.
+    pub resale_cap_bps: Option<u32>,
 }
 
 /// Payment information for an event
@@ -83,6 +86,8 @@ pub struct EventRegistrationArgs {
     pub tiers: Map<String, TicketTier>,
     pub refund_deadline: u64,
     pub restocking_fee: i128,
+    /// Optional resale price cap in basis points above face value.
+    pub resale_cap_bps: Option<u32>,
 }
 
 /// Audit log entry for blacklist actions

@@ -93,6 +93,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "resale_cap_bps"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "restocking_fee"
                       },
                       "val": {
@@ -589,6 +595,12 @@
                       "val": {
                         "u64": "0"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "resale_cap_bps"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
