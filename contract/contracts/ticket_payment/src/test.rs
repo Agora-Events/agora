@@ -967,8 +967,10 @@ fn test_withdraw_platform_fees() {
     let balance = client.get_event_escrow_balance(&event_id);
     let initial_platform_balance = token::Client::new(&env, &usdc_id).balance(&platform_wallet);
 
-    let withdrawn = client.withdraw_platform_fees(&event_id, &usdc_id);
-    assert_eq!(withdrawn, balance.platform_fee);
+    let settled = client.settle_platform_fees(&event_id, &usdc_id);
+    assert_eq!(settled, balance.platform_fee);
+
+    client.withdraw_platform_fees(&settled, &usdc_id);
 
     let final_platform_balance = token::Client::new(&env, &usdc_id).balance(&platform_wallet);
     assert_eq!(
@@ -1733,8 +1735,11 @@ fn test_protocol_revenue_reporting_views() {
     assert_eq!(client.get_active_escrow_total(), amount);
     assert_eq!(client.get_active_escrow_total_by_token(&usdc_id), amount);
 
-    let withdrawn_fee = client.withdraw_platform_fees(&event_id, &usdc_id);
-    assert_eq!(withdrawn_fee, expected_fee);
+    let settled_fee = client.settle_platform_fees(&event_id, &usdc_id);
+    assert_eq!(settled_fee, expected_fee);
+
+    client.withdraw_platform_fees(&settled_fee, &usdc_id);
+
     assert_eq!(client.get_active_escrow_total(), expected_organizer);
     assert_eq!(
         client.get_active_escrow_total_by_token(&usdc_id),
@@ -1746,9 +1751,8 @@ fn test_protocol_revenue_reporting_views() {
     assert_eq!(client.get_active_escrow_total(), 0);
     assert_eq!(client.get_active_escrow_total_by_token(&usdc_id), 0);
 
-    // Fees are cumulative reporting metrics and should not decrease on withdrawal.
-
-    assert_eq!(client.get_total_fees_collected(&usdc_id), expected_fee);
+    // Fees are decreased on withdrawal from treasury in the new implementation.
+    assert_eq!(client.get_total_fees_collected(&usdc_id), 0);
 }
 
 // ── Discount Code Tests ────────────────────────────────────────────────────────
@@ -2290,12 +2294,13 @@ fn test_integration_full_platform_day() {
     // Guest refunding (single ticket).
     payment_client.request_guest_refund(&first_payment);
 
-    // Organizer claiming + admin fee withdrawal.
+    // Organizer claiming + admin fee settlement.
     let organizer_claim = payment_client.withdraw_organizer_funds(&event_id, &usdc_id);
-    let admin_fees = payment_client.withdraw_platform_fees(&event_id, &usdc_id);
+    let settled_fees = payment_client.settle_platform_fees(&event_id, &usdc_id);
+    payment_client.withdraw_platform_fees(&settled_fees, &usdc_id);
 
     assert!(organizer_claim >= 0);
-    assert!(admin_fees >= 0);
+    assert!(settled_fees >= 0);
     assert!(payment_client.get_total_volume_processed() > 0);
 }
 
@@ -2648,4 +2653,62 @@ fn test_request_guest_refund_deadline_passed() {
 
     let res = client.try_request_guest_refund(&payment_id);
     assert_eq!(res, Err(Ok(TicketPaymentError::RefundDeadlinePassed)));
+}
+
+#[test]
+fn test_platform_fee_withdrawal_with_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, platform_wallet, _) = setup_test(&env);
+
+    // Process some payments to accumulate fees
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128; // 1000 USDC
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &9999);
+
+    client.process_payment(
+        &String::from_str(&env, "p1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    let expected_fee = (amount * 500) / 10000; // 50 USDC
+    assert_eq!(client.get_total_fees_collected(&usdc_id), expected_fee);
+
+    // Set daily cap to 30 USDC
+    let cap = 30_0000000i128;
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // Try to withdraw 40 USDC - should fail
+    let res = client.try_withdraw_platform_fees(&40_0000000i128, &usdc_id);
+    assert_eq!(res, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Withdraw 20 USDC - should succeed
+    client.withdraw_platform_fees(&20_0000000i128, &usdc_id);
+    assert_eq!(
+        token::Client::new(&env, &usdc_id).balance(&platform_wallet),
+        20_0000000i128
+    );
+
+    // Try to withdraw another 20 USDC - should fail (total 40 > cap 30)
+    let res2 = client.try_withdraw_platform_fees(&20_0000000i128, &usdc_id);
+    assert_eq!(res2, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Advance time by 1 day (86400 seconds)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 86401);
+
+    // Now can withdraw another 10 USDC (new day, cap reset)
+    client.withdraw_platform_fees(&10_0000000i128, &usdc_id);
+    assert_eq!(
+        token::Client::new(&env, &usdc_id).balance(&platform_wallet),
+        30_0000000i128
+    );
 }

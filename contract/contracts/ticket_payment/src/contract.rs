@@ -1,14 +1,16 @@
 use crate::storage::{
     add_discount_hash, add_payment_to_buyer_index, add_to_active_escrow_by_token,
-    add_to_active_escrow_total, add_to_total_fees_collected_by_token,
-    add_to_total_volume_processed, add_token_to_whitelist, get_admin, get_bulk_refund_index,
-    get_event_balance, get_event_payments, get_event_registry, get_payment, get_platform_wallet,
-    get_transfer_fee, has_price_switched, is_discount_hash_used, is_discount_hash_valid,
-    is_initialized, is_token_whitelisted, mark_discount_hash_used, remove_payment_from_buyer_index,
-    remove_token_from_whitelist, set_admin, set_bulk_refund_index, set_event_registry,
-    set_initialized, set_platform_wallet, set_price_switched, set_transfer_fee, set_usdc_token,
-    store_payment, subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
-    update_event_balance,
+    add_to_active_escrow_total, add_to_daily_withdrawn_amount,
+    add_to_total_fees_collected_by_token, add_to_total_volume_processed, add_token_to_whitelist,
+    get_admin, get_bulk_refund_index, get_daily_withdrawn_amount, get_event_balance,
+    get_event_payments, get_event_registry, get_payment, get_platform_wallet,
+    get_total_fees_collected_by_token, get_transfer_fee, get_withdrawal_cap, has_price_switched,
+    is_discount_hash_used, is_discount_hash_valid, is_initialized, is_token_whitelisted,
+    mark_discount_hash_used, remove_payment_from_buyer_index, remove_token_from_whitelist,
+    set_admin, set_bulk_refund_index, set_event_registry, set_initialized, set_platform_wallet,
+    set_price_switched, set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment,
+    subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
+    subtract_from_total_fees_collected_by_token, update_event_balance,
 };
 use crate::types::{Payment, PaymentStatus};
 use crate::{
@@ -626,11 +628,11 @@ impl TicketPaymentContract {
         Ok(available_to_withdraw)
     }
 
-    /// Withdraw platform fees from escrow.
-    pub fn withdraw_platform_fees(
+    /// Settles platform fees from an event escrow into the global treasury pool.
+    pub fn settle_platform_fees(
         env: Env,
         event_id: String,
-        token_address: Address,
+        _token_address: Address,
     ) -> Result<i128, TicketPaymentError> {
         let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
         admin.require_auth();
@@ -640,26 +642,97 @@ impl TicketPaymentContract {
             return Ok(0);
         }
 
-        let platform_wallet = get_platform_wallet(&env);
-        token::Client::new(&env, &token_address).transfer(
-            &env.current_contract_address(),
-            &platform_wallet,
-            &balance.platform_fee,
-        );
-
+        // We clarify that these are now "Settled" but they remain in the contract
+        // until a bulk withdrawal is made via `withdraw_platform_fees`.
         crate::storage::set_event_balance(
             &env,
-            event_id,
+            event_id.clone(),
             crate::types::EventBalance {
                 organizer_amount: balance.organizer_amount,
                 total_withdrawn: balance.total_withdrawn,
                 platform_fee: 0,
             },
         );
-        subtract_from_active_escrow_total(&env, balance.platform_fee);
-        subtract_from_active_escrow_by_token(&env, token_address, balance.platform_fee);
+
+        // Emit settlement event
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::FeeSettled,),
+            FeeSettledEvent {
+                event_id,
+                platform_wallet: get_platform_wallet(&env),
+                fee_amount: balance.platform_fee,
+                fee_bps: 0, // Not applicable here
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         Ok(balance.platform_fee)
+    }
+
+    /// Withdraw accumulated platform fees from the contract treasury.
+    /// Incorporates a daily withdrawal cap and requires admin (multi-sig) authorization.
+    pub fn withdraw_platform_fees(
+        env: Env,
+        amount: i128,
+        token_address: Address,
+    ) -> Result<(), TicketPaymentError> {
+        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
+        admin.require_auth();
+
+        if amount <= 0 {
+            return Err(TicketPaymentError::ArithmeticError);
+        }
+
+        // 1. Verify that the amount requested is less than or equal to the recorded total_fees_collected.
+        let total_accumulated = get_total_fees_collected_by_token(&env, token_address.clone());
+        if amount > total_accumulated {
+            return Err(TicketPaymentError::InsufficientFees);
+        }
+
+        // 2. Incorporate a 'Withdrawal Cap' per day.
+        let cap = get_withdrawal_cap(&env, token_address.clone());
+        if cap > 0 {
+            let current_day = env.ledger().timestamp() / 86400;
+            let already_withdrawn =
+                get_daily_withdrawn_amount(&env, token_address.clone(), current_day);
+            if already_withdrawn + amount > cap {
+                return Err(TicketPaymentError::WithdrawalCapExceeded);
+            }
+            add_to_daily_withdrawn_amount(&env, token_address.clone(), current_day, amount);
+        }
+
+        // 3. Process the transfer
+        let platform_wallet = get_platform_wallet(&env);
+        token::Client::new(&env, &token_address).transfer(
+            &env.current_contract_address(),
+            &platform_wallet,
+            &amount,
+        );
+
+        // 4. Update global accounting
+        subtract_from_total_fees_collected_by_token(&env, token_address.clone(), amount);
+        subtract_from_active_escrow_total(&env, amount);
+        subtract_from_active_escrow_by_token(&env, token_address, amount);
+
+        Ok(())
+    }
+
+    /// Sets a daily withdrawal cap for a specific token.
+    pub fn set_withdrawal_cap(
+        env: Env,
+        token: Address,
+        amount: i128,
+    ) -> Result<(), TicketPaymentError> {
+        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
+        admin.require_auth();
+
+        if amount < 0 {
+            return Err(TicketPaymentError::ArithmeticError);
+        }
+
+        set_withdrawal_cap(&env, token, amount);
+        Ok(())
     }
 
     /// Claim revenue after event completion.
@@ -697,10 +770,9 @@ impl TicketPaymentContract {
         let platform_fee_amount = balance.platform_fee;
         let organizer_amount = balance.organizer_amount;
 
-        // Transfer platform fee first to prioritize treasury safety
+        // Settlement logic: platform fees stay in the contract but are cleared from EventBalance.
+        // They are already tracked in TotalFeesCollected.
         if platform_fee_amount > 0 {
-            token_client.transfer(&contract_address, &platform_wallet, &platform_fee_amount);
-
             #[allow(deprecated)]
             env.events().publish(
                 (AgoraEvent::FeeSettled,),
@@ -734,9 +806,11 @@ impl TicketPaymentContract {
             },
         );
 
-        let total_transferred = platform_fee_amount + organizer_amount;
-        subtract_from_active_escrow_total(&env, total_transferred);
-        subtract_from_active_escrow_by_token(&env, token_address, total_transferred);
+        let total_transferred = organizer_amount;
+        if total_transferred > 0 {
+            subtract_from_active_escrow_total(&env, total_transferred);
+            subtract_from_active_escrow_by_token(&env, token_address, total_transferred);
+        }
 
         #[allow(deprecated)]
         env.events().publish(
@@ -960,6 +1034,15 @@ impl TicketPaymentContract {
     /// Active escrow liquidity for a specific token.
     pub fn get_active_escrow_total_by_token(env: Env, token_address: Address) -> i128 {
         crate::storage::get_active_escrow_by_token(&env, token_address)
+    }
+
+    pub fn get_withdrawal_cap(env: Env, token: Address) -> i128 {
+        crate::storage::get_withdrawal_cap(&env, token)
+    }
+
+    pub fn get_daily_withdrawn_amount(env: Env, token: Address) -> i128 {
+        let current_day = env.ledger().timestamp() / 86400;
+        crate::storage::get_daily_withdrawn_amount(&env, token, current_day)
     }
 
     /// Allows an event organizer to register a list of SHA-256 hashed discount codes.
