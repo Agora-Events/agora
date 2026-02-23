@@ -11,7 +11,9 @@ pub enum AgoraEvent {
     MetadataUpdated,
     InventoryIncremented,
     InventoryDecremented,
-    CustomFeeSet,
+    OrganizerBlacklisted,
+    OrganizerRemovedFromBlacklist,
+    EventsSuspended,
 }
 
 #[contracttype]
@@ -83,8 +85,27 @@ pub struct InventoryDecrementedEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CustomFeeSetEvent {
-    pub event_id: String,
-    pub custom_fee_bps: u32,
+pub struct OrganizerBlacklistedEvent {
+    pub organizer_address: Address,
+    pub admin_address: Address,
+    pub reason: String,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizerRemovedFromBlacklistEvent {
+    pub organizer_address: Address,
+    pub admin_address: Address,
+    pub reason: String,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventsSuspendedEvent {
+    pub organizer_address: Address,
+    pub suspended_event_count: u32,
+    pub admin_address: Address,
     pub timestamp: u64,
 }

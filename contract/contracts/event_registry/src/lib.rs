@@ -1,11 +1,12 @@
 #![no_std]
 
 use crate::events::{
-    AgoraEvent, CustomFeeSetEvent, EventRegisteredEvent, EventStatusUpdatedEvent, FeeUpdatedEvent,
-    InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent, RegistryUpgradedEvent,
+    AgoraEvent, EventRegisteredEvent, EventStatusUpdatedEvent, EventsSuspendedEvent,
+    FeeUpdatedEvent, InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent,
+    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
 };
-use crate::types::{EventInfo, PaymentInfo, TicketTier};
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Map, String, Vec};
+use crate::types::{BlacklistAuditEntry, EventInfo, EventRegistrationArgs, PaymentInfo};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
 pub mod error;
 pub mod events;
@@ -74,35 +75,32 @@ impl EventRegistry {
     /// * `metadata_cid` - IPFS CID for event metadata
     /// * `max_supply` - Maximum number of tickets (0 = unlimited)
     /// * `tiers` - Map of tier_id to TicketTier for multi-tiered pricing
-    pub fn register_event(
-        env: Env,
-        event_id: String,
-        organizer_address: Address,
-        payment_address: Address,
-        metadata_cid: String,
-        max_supply: i128,
-        tiers: Map<String, TicketTier>,
-    ) -> Result<(), EventRegistryError> {
+    pub fn register_event(env: Env, args: EventRegistrationArgs) -> Result<(), EventRegistryError> {
         if !storage::is_initialized(&env) {
             return Err(EventRegistryError::NotInitialized);
         }
-        organizer_address.require_auth();
+        args.organizer_address.require_auth();
 
-        validate_metadata_cid(&env, &metadata_cid)?;
+        // Check if organizer is blacklisted
+        if storage::is_blacklisted(&env, &args.organizer_address) {
+            return Err(EventRegistryError::OrganizerBlacklisted);
+        }
 
-        if storage::event_exists(&env, event_id.clone()) {
+        validate_metadata_cid(&env, &args.metadata_cid)?;
+
+        if storage::event_exists(&env, args.event_id.clone()) {
             return Err(EventRegistryError::EventAlreadyExists);
         }
 
         // Validate tier limits don't exceed max_supply
-        if max_supply > 0 {
+        if args.max_supply > 0 {
             let mut total_tier_limit: i128 = 0;
-            for tier in tiers.values() {
+            for tier in args.tiers.values() {
                 total_tier_limit = total_tier_limit
                     .checked_add(tier.tier_limit)
                     .ok_or(EventRegistryError::SupplyOverflow)?;
             }
-            if total_tier_limit > max_supply {
+            if total_tier_limit > args.max_supply {
                 return Err(EventRegistryError::TierLimitExceedsMaxSupply);
             }
         }
@@ -110,17 +108,17 @@ impl EventRegistry {
         let platform_fee_percent = storage::get_platform_fee(&env);
 
         let event_info = EventInfo {
-            event_id: event_id.clone(),
-            organizer_address: organizer_address.clone(),
-            payment_address: payment_address.clone(),
+            event_id: args.event_id.clone(),
+            organizer_address: args.organizer_address.clone(),
+            payment_address: args.payment_address.clone(),
             platform_fee_percent,
             is_active: true,
             created_at: env.ledger().timestamp(),
-            metadata_cid,
-            max_supply,
+            metadata_cid: args.metadata_cid.clone(),
+            max_supply: args.max_supply,
             current_supply: 0,
-            tiers,
-            custom_fee_bps: None,
+            milestone_plan: args.milestone_plan.clone(),
+            tiers: args.tiers.clone(),
         };
 
         storage::store_event(&env, event_info);
@@ -128,9 +126,9 @@ impl EventRegistry {
         env.events().publish(
             (AgoraEvent::EventRegistered,),
             EventRegisteredEvent {
-                event_id: event_id.clone(),
-                organizer_address: organizer_address.clone(),
-                payment_address: payment_address.clone(),
+                event_id: args.event_id.clone(),
+                organizer_address: args.organizer_address.clone(),
+                payment_address: args.payment_address.clone(),
                 timestamp: env.ledger().timestamp(),
             },
         );
@@ -355,10 +353,15 @@ impl EventRegistry {
         env: Env,
         event_id: String,
         tier_id: String,
+        quantity: u32,
     ) -> Result<(), EventRegistryError> {
         let ticket_payment_addr =
             storage::get_ticket_payment_contract(&env).ok_or(EventRegistryError::NotInitialized)?;
         ticket_payment_addr.require_auth();
+
+        if quantity == 0 {
+            return Err(EventRegistryError::InvalidQuantity);
+        }
 
         let mut event_info =
             storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
@@ -367,9 +370,17 @@ impl EventRegistry {
             return Err(EventRegistryError::EventInactive);
         }
 
+        let quantity_i128 = quantity as i128;
+
         // Check global supply limits
-        if event_info.max_supply > 0 && event_info.current_supply >= event_info.max_supply {
-            return Err(EventRegistryError::MaxSupplyExceeded);
+        if event_info.max_supply > 0 {
+            let new_total_supply = event_info
+                .current_supply
+                .checked_add(quantity_i128)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
+            if new_total_supply > event_info.max_supply {
+                return Err(EventRegistryError::MaxSupplyExceeded);
+            }
         }
 
         // Get and update tier
@@ -378,20 +389,21 @@ impl EventRegistry {
             .get(tier_id.clone())
             .ok_or(EventRegistryError::TierNotFound)?;
 
-        if tier.current_sold >= tier.tier_limit {
+        let new_tier_sold = tier
+            .current_sold
+            .checked_add(quantity_i128)
+            .ok_or(EventRegistryError::SupplyOverflow)?;
+
+        if new_tier_sold > tier.tier_limit {
             return Err(EventRegistryError::TierSupplyExceeded);
         }
 
-        tier.current_sold = tier
-            .current_sold
-            .checked_add(1)
-            .ok_or(EventRegistryError::SupplyOverflow)?;
-
+        tier.current_sold = new_tier_sold;
         event_info.tiers.set(tier_id, tier);
 
         event_info.current_supply = event_info
             .current_supply
-            .checked_add(1)
+            .checked_add(quantity_i128)
             .ok_or(EventRegistryError::SupplyOverflow)?;
 
         storage::store_event(&env, event_info.clone());
@@ -496,6 +508,107 @@ impl EventRegistry {
 
         Ok(())
     }
+
+    /// Adds an organizer to the blacklist with mandatory audit logging.
+    /// Only callable by the administrator.
+    pub fn blacklist_organizer(
+        env: Env,
+        organizer_address: Address,
+        reason: String,
+    ) -> Result<(), EventRegistryError> {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+
+        validate_address(&env, &organizer_address)?;
+
+        // Check if already blacklisted
+        if storage::is_blacklisted(&env, &organizer_address) {
+            return Err(EventRegistryError::OrganizerBlacklisted);
+        }
+
+        // Add to blacklist
+        storage::add_to_blacklist(&env, &organizer_address);
+
+        // Create audit log entry
+        let audit_entry = BlacklistAuditEntry {
+            organizer_address: organizer_address.clone(),
+            added_to_blacklist: true,
+            admin_address: admin.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        storage::add_blacklist_audit_entry(&env, audit_entry);
+
+        // Emit blacklist event
+        env.events().publish(
+            (AgoraEvent::OrganizerBlacklisted,),
+            OrganizerBlacklistedEvent {
+                organizer_address: organizer_address.clone(),
+                admin_address: admin.clone(),
+                reason: reason.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        // Suspend all active events from this organizer
+        suspend_organizer_events(env.clone(), organizer_address)?;
+
+        Ok(())
+    }
+
+    /// Removes an organizer from the blacklist with mandatory audit logging.
+    /// Only callable by the administrator.
+    pub fn remove_from_blacklist(
+        env: Env,
+        organizer_address: Address,
+        reason: String,
+    ) -> Result<(), EventRegistryError> {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+
+        validate_address(&env, &organizer_address)?;
+
+        // Check if currently blacklisted
+        if !storage::is_blacklisted(&env, &organizer_address) {
+            return Err(EventRegistryError::OrganizerNotBlacklisted);
+        }
+
+        // Remove from blacklist
+        storage::remove_from_blacklist(&env, &organizer_address);
+
+        // Create audit log entry
+        let audit_entry = BlacklistAuditEntry {
+            organizer_address: organizer_address.clone(),
+            added_to_blacklist: false,
+            admin_address: admin.clone(),
+            reason: reason.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        storage::add_blacklist_audit_entry(&env, audit_entry);
+
+        // Emit removal event
+        env.events().publish(
+            (AgoraEvent::OrganizerRemovedFromBlacklist,),
+            OrganizerRemovedFromBlacklistEvent {
+                organizer_address,
+                admin_address: admin,
+                reason,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Checks if an organizer is blacklisted.
+    pub fn is_organizer_blacklisted(env: Env, organizer_address: Address) -> bool {
+        storage::is_blacklisted(&env, &organizer_address)
+    }
+
+    /// Retrieves the blacklist audit log.
+    pub fn get_blacklist_audit_log(env: Env) -> Vec<BlacklistAuditEntry> {
+        storage::get_blacklist_audit_log(&env)
+    }
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
@@ -517,6 +630,43 @@ fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryErr
 
     if !bytes.is_empty() && bytes.get(0) != Some(b'b') {
         return Err(EventRegistryError::InvalidMetadataCid);
+    }
+
+    Ok(())
+}
+
+/// Suspends all active events for a blacklisted organizer.
+/// This implements the "Suspension" ripple effect.
+fn suspend_organizer_events(
+    env: Env,
+    organizer_address: Address,
+) -> Result<(), EventRegistryError> {
+    let organizer_events = storage::get_organizer_events(&env, &organizer_address);
+    let mut suspended_count = 0u32;
+
+    for event_id in organizer_events.iter() {
+        if let Some(mut event_info) = storage::get_event(&env, event_id.clone()) {
+            if event_info.is_active {
+                event_info.is_active = false;
+                storage::store_event(&env, event_info);
+                suspended_count += 1;
+            }
+        }
+    }
+
+    // Emit suspension event if any events were suspended
+    if suspended_count > 0 {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::EventsSuspended,),
+            EventsSuspendedEvent {
+                organizer_address,
+                suspended_event_count: suspended_count,
+                admin_address: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
     }
 
     Ok(())

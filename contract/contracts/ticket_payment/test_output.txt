@@ -1,0 +1,54 @@
+   Compiling ticket-payment v0.0.0 (/home/ljtwp/Desktop/drips/agora/contract/contracts/ticket_payment)
+warning: unused import: `Ledger`
+ --> contracts/ticket_payment/src/test.rs:6:39
+  |
+6 |     testutils::{Address as _, Events, Ledger},
+  |                                       ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ticket-payment` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.27s
+     Running unittests src/lib.rs (/home/ljtwp/Desktop/drips/agora/contract/target/debug/deps/ticket_payment-fa94b33cf75b3a1c)
+
+running 22 tests
+test test::test_initialize_invalid_address ... ok
+test test::test_double_initialization_fails ... ok
+test test::test_process_payment_with_non_whitelisted_token ... ok
+test test::test_process_payment_zero_amount - should panic ... ok
+test test::test_process_payment_not_found ... ok
+test test::test_add_remove_token_whitelist ... ok
+test test::test_confirm_payment ... ok
+test test::test_initialize_success ... ok
+test test::test_process_payment_max_supply_exceeded ... ok
+test test::test_transfer_ticket_success ... ok
+test test::test_upgrade_preserves_initialization_addresses_and_emits_event ... ok
+test test::test_upgrade_unauthorized_panics - should panic ... ok
+test test::test_transfer_ticket_unauthorized - should panic ... ok
+test test::test_process_payment_success ... ok
+test test::test_fee_calculation_variants ... FAILED
+test test::test_batch_purchase_success ... ok
+test test::test_inventory_increment_on_successful_payment ... ok
+test test::test_withdraw_organizer_funds ... ok
+test test::test_process_payment_with_multiple_tokens ... ok
+test test::test_transfer_ticket_with_fee ... ok
+test test::test_withdraw_platform_fees ... ok
+test test::test_withdraw_with_milestones ... ok
+
+failures:
+
+---- test::test_fee_calculation_variants stdout ----
+
+thread 'test::test_fee_calculation_variants' (101376) panicked at contracts/ticket_payment/src/test.rs:404:5:
+assertion `left == right` failed
+  left: 2500000000
+ right: 250000000
+Writing test snapshot file for test "test::test_fee_calculation_variants" to "test_snapshots/test/test_fee_calculation_variants.1.json".
+
+
+failures:
+    test::test_fee_calculation_variants
+
+test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+error: test failed, to rerun pass `--lib`

@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, String};
+use soroban_sdk::{contracttype, Address, BytesN, String};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,14 +26,27 @@ pub struct Payment {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventBalance {
+    pub organizer_amount: i128,
+    pub total_withdrawn: i128,
+    pub platform_fee: i128,
+}
+
+#[contracttype]
 pub enum DataKey {
-    Payment(String),         // payment_id -> Payment
-    EventPayments(String),   // event_id -> Vec<payment_id>
-    BuyerPayments(Address),  // buyer_address -> Vec<payment_id>
-    Admin,                   // Contract administrator address
-    UsdcToken,               // USDC token address
-    PlatformWallet,          // Platform wallet address
-    EventRegistry,           // Event Registry contract address
-    Initialized,             // Initialization flag
-    TokenWhitelist(Address), // token_address -> bool
+    Payment(String),              // payment_id -> Payment
+    EventPayments(String),        // event_id -> Vec<payment_id>
+    BuyerPayments(Address),       // buyer_address -> Vec<payment_id>
+    Admin,                        // Contract administrator address
+    UsdcToken,                    // USDC token address
+    PlatformWallet,               // Platform wallet address
+    EventRegistry,                // Event Registry contract address
+    Initialized,                  // Initialization flag
+    TokenWhitelist(Address),      // token_address -> bool
+    Balances(String),             // event_id -> EventBalance (escrow tracking)
+    TransferFee(String),          // event_id -> transfer_fee amount
+    BulkRefundIndex(String),      // event_id -> last processed payment index
+    DiscountCodeHash(BytesN<32>), // sha256_hash -> bool (registered)
+    DiscountCodeUsed(BytesN<32>), // sha256_hash -> bool (spent)
 }

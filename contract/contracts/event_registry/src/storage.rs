@@ -1,4 +1,4 @@
-use crate::types::{DataKey, EventInfo};
+use crate::types::{BlacklistAuditEntry, DataKey, EventInfo};
 use soroban_sdk::{Address, Env, String, Vec};
 
 /// Sets the administrator address of the contract.
@@ -117,4 +117,43 @@ pub fn get_ticket_payment_contract(env: &Env) -> Option<Address> {
     env.storage()
         .persistent()
         .get(&DataKey::TicketPaymentContract)
+}
+
+/// Checks if an organizer is blacklisted.
+pub fn is_blacklisted(env: &Env, organizer: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::BlacklistedOrganizer(organizer.clone()))
+        .unwrap_or(false)
+}
+
+/// Adds an organizer to the blacklist.
+pub fn add_to_blacklist(env: &Env, organizer: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::BlacklistedOrganizer(organizer.clone()), &true);
+}
+
+/// Removes an organizer from the blacklist.
+pub fn remove_from_blacklist(env: &Env, organizer: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::BlacklistedOrganizer(organizer.clone()));
+}
+
+/// Adds an audit log entry for blacklist actions.
+pub fn add_blacklist_audit_entry(env: &Env, entry: BlacklistAuditEntry) {
+    let mut audit_log: Vec<BlacklistAuditEntry> = get_blacklist_audit_log(env);
+    audit_log.push_back(entry);
+    env.storage()
+        .persistent()
+        .set(&DataKey::BlacklistLog, &audit_log);
+}
+
+/// Retrieves the blacklist audit log.
+pub fn get_blacklist_audit_log(env: &Env) -> Vec<BlacklistAuditEntry> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::BlacklistLog)
+        .unwrap_or_else(|| Vec::new(env))
 }

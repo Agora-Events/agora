@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -78,6 +78,16 @@ export function FilterSidebar({
 }: FilterSidebarProps) {
   const sidebarRef = useRef<HTMLDivElement>(null);
 
+  const [localFilters, setLocalFilters] = useState<FilterState>(filters);
+
+  // Sync local filters with parent filters when opened
+  useEffect(() => {
+    if (isOpen) {
+      setLocalFilters(filters);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   // Close on Escape key
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -96,30 +106,39 @@ export function FilterSidebar({
   }, [isOpen]);
 
   // ── helpers ──
-  const setDate = (date: string) => onFiltersChange({ ...filters, date });
+  const setDate = (date: string) => setLocalFilters({ ...localFilters, date });
   const toggleCategory = (cat: string) =>
-    onFiltersChange({
-      ...filters,
-      categories: toggleItem(filters.categories, cat),
+    setLocalFilters({
+      ...localFilters,
+      categories: toggleItem(localFilters.categories, cat),
     });
   const toggleLocation = (loc: string) =>
-    onFiltersChange({
-      ...filters,
-      locations: toggleItem(filters.locations, loc),
+    setLocalFilters({
+      ...localFilters,
+      locations: toggleItem(localFilters.locations, loc),
     });
   const setMinPrice = (minPrice: string) =>
-    onFiltersChange({ ...filters, minPrice });
+    setLocalFilters({ ...localFilters, minPrice });
   const setMaxPrice = (maxPrice: string) =>
-    onFiltersChange({ ...filters, maxPrice });
+    setLocalFilters({ ...localFilters, maxPrice });
 
-  const handleReset = () =>
-    onFiltersChange({
+  const handleReset = () => {
+    const defaultFilters = {
       date: "",
       categories: [],
       locations: [],
       minPrice: "",
       maxPrice: "",
-    });
+    };
+    setLocalFilters(defaultFilters);
+    onFiltersChange(defaultFilters);
+    onClose();
+  };
+
+  const handleApply = () => {
+    onFiltersChange(localFilters);
+    onClose();
+  };
 
   return (
     <AnimatePresence>
@@ -172,7 +191,7 @@ export function FilterSidebar({
                   onClick={handleReset}
                   className="text-[13px] font-medium text-black/50 hover:text-black transition-colors underline underline-offset-2"
                 >
-                  Reset all
+                  Clear Filter
                 </button>
                 <button
                   onClick={onClose}
@@ -214,8 +233,8 @@ export function FilterSidebar({
                     <Pill
                       key={d}
                       label={d}
-                      active={filters.date === d}
-                      onClick={() => setDate(filters.date === d ? "" : d)}
+                      active={localFilters.date === d}
+                      onClick={() => setDate(localFilters.date === d ? "" : d)}
                     />
                   ))}
                 </div>
@@ -234,7 +253,7 @@ export function FilterSidebar({
                       key={cat.label}
                       label={cat.label}
                       icon={cat.icon}
-                      active={filters.categories.includes(cat.label)}
+                      active={localFilters.categories.includes(cat.label)}
                       onClick={() => toggleCategory(cat.label)}
                     />
                   ))}
@@ -254,7 +273,7 @@ export function FilterSidebar({
                       key={loc.label}
                       label={loc.label}
                       icon={loc.icon}
-                      active={filters.locations.includes(loc.label)}
+                      active={localFilters.locations.includes(loc.label)}
                       onClick={() => toggleLocation(loc.label)}
                     />
                   ))}
@@ -281,7 +300,7 @@ export function FilterSidebar({
                       type="number"
                       min={0}
                       placeholder="0"
-                      value={filters.minPrice}
+                      value={localFilters.minPrice}
                       onChange={(e) => setMinPrice(e.target.value)}
                       className="
                         h-10 px-3 rounded-xl bg-white border border-black/15
@@ -309,7 +328,7 @@ export function FilterSidebar({
                       type="number"
                       min={0}
                       placeholder="Any"
-                      value={filters.maxPrice}
+                      value={localFilters.maxPrice}
                       onChange={(e) => setMaxPrice(e.target.value)}
                       className="
                         h-10 px-3 rounded-xl bg-white border border-black/15
@@ -327,7 +346,7 @@ export function FilterSidebar({
             {/* ── Footer CTA ── */}
             <div className="px-6 py-5 border-t border-black/10 shrink-0">
               <button
-                onClick={onClose}
+                onClick={handleApply}
                 className="
                   w-full h-12 rounded-[13px] bg-black text-white font-semibold text-[15px]
                   shadow-[-4px_4px_0px_0px_rgba(0,0,0,0.25)]
