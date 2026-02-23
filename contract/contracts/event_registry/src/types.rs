@@ -59,6 +59,12 @@ pub struct EventInfo {
     /// Optional resale price cap in basis points above face value.
     /// None = no cap (free market), Some(0) = no markup, Some(1000) = max 10% above face value.
     pub resale_cap_bps: Option<u32>,
+    /// Indicates whether the event is currently postponed (date shifted)
+    /// and in a temporary refund grace period window.
+    pub is_postponed: bool,
+    /// Timestamp (Unix) when the temporary refund grace period for a
+    /// postponed event ends. 0 means no grace period active.
+    pub grace_period_end: u64,
 }
 
 /// Payment information for an event

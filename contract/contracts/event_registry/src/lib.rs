@@ -1,10 +1,10 @@
 #![no_std]
 
 use crate::events::{
-    AgoraEvent, EventRegisteredEvent, EventStatusUpdatedEvent, EventsSuspendedEvent,
-    FeeUpdatedEvent, GlobalPromoUpdatedEvent, InitializationEvent, InventoryIncrementedEvent,
-    MetadataUpdatedEvent, OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent,
-    RegistryUpgradedEvent,
+    AgoraEvent, EventPostponedEvent, EventRegisteredEvent, EventStatusUpdatedEvent,
+    EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent, InitializationEvent,
+    InventoryIncrementedEvent, MetadataUpdatedEvent, OrganizerBlacklistedEvent,
+    OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
 };
 use crate::types::{BlacklistAuditEntry, EventInfo, EventRegistrationArgs, PaymentInfo};
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
@@ -130,6 +130,8 @@ impl EventRegistry {
             refund_deadline: args.refund_deadline,
             restocking_fee: args.restocking_fee,
             resale_cap_bps: args.resale_cap_bps,
+            is_postponed: false,
+            grace_period_end: 0,
         };
 
         storage::store_event(&env, event_info);
@@ -641,6 +643,42 @@ impl EventRegistry {
     /// Returns the expiry timestamp for the current global promo.
     pub fn get_promo_expiry(env: Env) -> u64 {
         storage::get_promo_expiry(&env)
+    }
+
+    /// Marks an event as postponed and sets a temporary refund grace period.
+    /// During this window, all guests may request refunds regardless of their
+    /// ticket tier's standard refundability rules or refund deadlines.
+    pub fn postpone_event(
+        env: Env,
+        event_id: String,
+        grace_period_end: u64,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Only the organizer may postpone their event.
+        event_info.organizer_address.require_auth();
+
+        let now = env.ledger().timestamp();
+        if grace_period_end <= now {
+            return Err(EventRegistryError::InvalidGracePeriodEnd);
+        }
+
+        event_info.is_postponed = true;
+        event_info.grace_period_end = grace_period_end;
+        storage::update_event(&env, event_info.clone());
+
+        env.events().publish(
+            (AgoraEvent::EventPostponed,),
+            EventPostponedEvent {
+                event_id,
+                organizer_address: event_info.organizer_address,
+                grace_period_end,
+                timestamp: now,
+            },
+        );
+
+        Ok(())
     }
 }
 
