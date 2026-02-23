@@ -24,7 +24,9 @@ export function GuestNav({ pathname }: { pathname: string }) {
             href="/discover"
             icon="/icons/earth.svg"
             text="Discover Events"
-            isActive={pathname === "/discover"}
+            isActive={
+              pathname === "/discover" || pathname.startsWith("/events")
+            }
           />
           <NavLink
             href="/pricing"

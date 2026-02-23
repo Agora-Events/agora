@@ -93,7 +93,6 @@ export function Navbar() {
             </div>
           </button>
         </div>
-
       </nav>
 
       <AnimatePresence>
@@ -151,7 +150,10 @@ export function Navbar() {
                       href="/discover"
                       icon="/icons/earth-yellow.svg"
                       text="Discover Events"
-                      isActive={pathname === "/discover"}
+                      isActive={
+                        pathname === "/discover" ||
+                        pathname.startsWith("/events")
+                      }
                     />
                     <MobileNavLink
                       i={2}
@@ -175,7 +177,10 @@ export function Navbar() {
                       href="/discover"
                       icon="/icons/earth.svg"
                       text="Discover Events"
-                      isActive={pathname === "/discover"}
+                      isActive={
+                        pathname === "/discover" ||
+                        pathname.startsWith("/events")
+                      }
                     />
                     <MobileNavLink
                       i={1}

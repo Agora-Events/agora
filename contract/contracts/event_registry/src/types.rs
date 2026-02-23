@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Map, String};
+use soroban_sdk::{contracttype, Address, Map, String, Vec};
 
 /// Represents a ticket tier with its own pricing and supply
 #[contracttype]
@@ -14,6 +14,16 @@ pub struct TicketTier {
     pub current_sold: i128,
     /// Indicates whether tickets in this tier can be refunded by the buyer
     pub is_refundable: bool,
+}
+
+/// Represents an early revenue release milestone.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Milestone {
+    /// The number of tickets sold to reach this milestone
+    pub sales_threshold: i128,
+    /// Percentage of the available revenue to release (in basis points, 10000 = 100%)
+    pub release_percent: u32,
 }
 
 /// Represents information about an event in the registry.
@@ -38,6 +48,8 @@ pub struct EventInfo {
     pub max_supply: i128,
     /// Current number of tickets that have been successfully purchased
     pub current_supply: i128,
+    /// Optional milestone plan for early revenue release
+    pub milestone_plan: Option<Vec<Milestone>>,
     /// Map of tier_id to TicketTier for multi-tiered pricing
     pub tiers: Map<String, TicketTier>,
     /// Optional custom fee override in basis points (takes precedence over platform_fee_percent)
@@ -54,6 +66,35 @@ pub struct PaymentInfo {
     pub platform_fee_percent: u32,
     /// Map of tier_id to TicketTier for multi-tiered pricing
     pub tiers: Map<String, TicketTier>,
+}
+
+/// Arguments required to register a new event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventRegistrationArgs {
+    pub event_id: String,
+    pub organizer_address: Address,
+    pub payment_address: Address,
+    pub metadata_cid: String,
+    pub max_supply: i128,
+    pub milestone_plan: Option<Vec<Milestone>>,
+    pub tiers: Map<String, TicketTier>,
+}
+
+/// Audit log entry for blacklist actions
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlacklistAuditEntry {
+    /// The organizer address that was blacklisted or removed from blacklist
+    pub organizer_address: Address,
+    /// Whether the organizer was added (true) or removed (false) from blacklist
+    pub added_to_blacklist: bool,
+    /// The admin who performed the action
+    pub admin_address: Address,
+    /// Reason for the blacklist action
+    pub reason: String,
+    /// Timestamp when the action was performed
+    pub timestamp: u64,
 }
 
 /// Storage keys for the Event Registry contract.
@@ -73,4 +114,8 @@ pub enum DataKey {
     OrganizerEvents(Address),
     /// The authorized TicketPayment contract address for inventory updates
     TicketPaymentContract,
+    /// Mapping of organizer address to blacklist status (Persistent)
+    BlacklistedOrganizer(Address),
+    /// List of blacklisted organizer addresses for audit purposes (Persistent)
+    BlacklistLog,
 }

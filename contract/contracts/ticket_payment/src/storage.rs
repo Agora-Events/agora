@@ -1,4 +1,4 @@
-use crate::types::{DataKey, Payment, PaymentStatus};
+use crate::types::{DataKey, EventBalance, Payment, PaymentStatus};
 use soroban_sdk::{vec, Address, Env, String, Vec};
 
 pub fn set_admin(env: &Env, admin: &Address) {
@@ -11,27 +11,31 @@ pub fn get_admin(env: &Env) -> Option<Address> {
 
 pub fn store_payment(env: &Env, payment: Payment) {
     let key = DataKey::Payment(payment.payment_id.clone());
+    let exists = env.storage().persistent().has(&key);
+
     env.storage().persistent().set(&key, &payment);
 
-    // Index by event
-    let event_key = DataKey::EventPayments(payment.event_id.clone());
-    let mut event_payments: Vec<String> = env
-        .storage()
-        .persistent()
-        .get(&event_key)
-        .unwrap_or(vec![env]);
-    event_payments.push_back(payment.payment_id.clone());
-    env.storage().persistent().set(&event_key, &event_payments);
+    if !exists {
+        // Index by event
+        let event_key = DataKey::EventPayments(payment.event_id.clone());
+        let mut event_payments: Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&event_key)
+            .unwrap_or(vec![env]);
+        event_payments.push_back(payment.payment_id.clone());
+        env.storage().persistent().set(&event_key, &event_payments);
 
-    // Index by buyer
-    let buyer_key = DataKey::BuyerPayments(payment.buyer_address.clone());
-    let mut buyer_payments: Vec<String> = env
-        .storage()
-        .persistent()
-        .get(&buyer_key)
-        .unwrap_or(vec![env]);
-    buyer_payments.push_back(payment.payment_id.clone());
-    env.storage().persistent().set(&buyer_key, &buyer_payments);
+        // Index by buyer
+        let buyer_key = DataKey::BuyerPayments(payment.buyer_address.clone());
+        let mut buyer_payments: Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&buyer_key)
+            .unwrap_or(vec![env]);
+        buyer_payments.push_back(payment.payment_id.clone());
+        env.storage().persistent().set(&buyer_key, &buyer_payments);
+    }
 }
 
 pub fn get_payment(env: &Env, payment_id: String) -> Option<Payment> {
@@ -133,4 +137,196 @@ pub fn is_token_whitelisted(env: &Env, token: &Address) -> bool {
         .persistent()
         .get(&DataKey::TokenWhitelist(token.clone()))
         .unwrap_or(false)
+}
+
+pub fn get_event_balance(env: &Env, event_id: String) -> EventBalance {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Balances(event_id))
+        .unwrap_or(EventBalance {
+            organizer_amount: 0,
+            total_withdrawn: 0,
+            platform_fee: 0,
+        })
+}
+
+pub fn update_event_balance(
+    env: &Env,
+    event_id: String,
+    organizer_amount: i128,
+    platform_fee: i128,
+) {
+    let mut balance = get_event_balance(env, event_id.clone());
+    balance.organizer_amount += organizer_amount;
+    balance.platform_fee += platform_fee;
+    env.storage()
+        .persistent()
+        .set(&DataKey::Balances(event_id), &balance);
+}
+
+pub fn set_event_balance(env: &Env, event_id: String, balance: EventBalance) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Balances(event_id), &balance);
+}
+
+pub fn set_transfer_fee(env: &Env, event_id: String, fee: i128) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::TransferFee(event_id), &fee);
+}
+
+pub fn get_transfer_fee(env: &Env, event_id: String) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TransferFee(event_id))
+        .unwrap_or(0)
+}
+
+pub fn add_payment_to_buyer_index(env: &Env, buyer_address: Address, payment_id: String) {
+    let key = DataKey::BuyerPayments(buyer_address);
+    let mut buyer_payments: Vec<String> = env.storage().persistent().get(&key).unwrap_or(vec![env]);
+    buyer_payments.push_back(payment_id);
+    env.storage().persistent().set(&key, &buyer_payments);
+}
+
+pub fn remove_payment_from_buyer_index(env: &Env, buyer_address: Address, payment_id: String) {
+    let key = DataKey::BuyerPayments(buyer_address);
+    if let Some(buyer_payments) = env.storage().persistent().get::<DataKey, Vec<String>>(&key) {
+        let mut new_payments = vec![env];
+        for p_id in buyer_payments.iter() {
+            if p_id != payment_id {
+                new_payments.push_back(p_id);
+            }
+        }
+        env.storage().persistent().set(&key, &new_payments);
+    }
+}
+
+pub fn set_bulk_refund_index(env: &Env, event_id: String, index: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::BulkRefundIndex(event_id), &index);
+}
+
+pub fn get_bulk_refund_index(env: &Env, event_id: String) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::BulkRefundIndex(event_id))
+        .unwrap_or(0)
+}
+
+pub fn has_price_switched(env: &Env, event_id: String, tier_id: String) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PriceSwitched(event_id, tier_id))
+        .unwrap_or(false)
+}
+
+pub fn set_price_switched(env: &Env, event_id: String, tier_id: String) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PriceSwitched(event_id, tier_id), &true);
+}
+
+pub fn get_total_volume_processed(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalVolumeProcessed)
+        .unwrap_or(0)
+}
+
+pub fn add_to_total_volume_processed(env: &Env, amount: i128) {
+    let total = get_total_volume_processed(env) + amount;
+    env.storage()
+        .persistent()
+        .set(&DataKey::TotalVolumeProcessed, &total);
+}
+
+pub fn get_total_fees_collected_by_token(env: &Env, token: Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalFeesCollected(token))
+        .unwrap_or(0)
+}
+
+pub fn add_to_total_fees_collected_by_token(env: &Env, token: Address, amount: i128) {
+    let current = get_total_fees_collected_by_token(env, token.clone());
+    env.storage()
+        .persistent()
+        .set(&DataKey::TotalFeesCollected(token), &(current + amount));
+}
+
+pub fn get_active_escrow_total(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ActiveEscrowTotal)
+        .unwrap_or(0)
+}
+
+pub fn add_to_active_escrow_total(env: &Env, amount: i128) {
+    let total = get_active_escrow_total(env) + amount;
+    env.storage()
+        .persistent()
+        .set(&DataKey::ActiveEscrowTotal, &total);
+}
+
+pub fn subtract_from_active_escrow_total(env: &Env, amount: i128) {
+    let total = get_active_escrow_total(env) - amount;
+    env.storage()
+        .persistent()
+        .set(&DataKey::ActiveEscrowTotal, &total);
+}
+
+pub fn get_active_escrow_by_token(env: &Env, token: Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ActiveEscrowByToken(token))
+        .unwrap_or(0)
+}
+
+pub fn add_to_active_escrow_by_token(env: &Env, token: Address, amount: i128) {
+    let current = get_active_escrow_by_token(env, token.clone());
+    env.storage()
+        .persistent()
+        .set(&DataKey::ActiveEscrowByToken(token), &(current + amount));
+}
+
+pub fn subtract_from_active_escrow_by_token(env: &Env, token: Address, amount: i128) {
+    let current = get_active_escrow_by_token(env, token.clone());
+    env.storage()
+        .persistent()
+        .set(&DataKey::ActiveEscrowByToken(token), &(current - amount));
+}
+
+// ── Discount code registry ────────────────────────────────────────────────────
+
+/// Register a SHA-256 hash as a valid (unused) discount code.
+pub fn add_discount_hash(env: &Env, hash: soroban_sdk::BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DiscountCodeHash(hash), &true);
+}
+
+/// Returns `true` if the hash has been registered as a discount code.
+pub fn is_discount_hash_valid(env: &Env, hash: &soroban_sdk::BytesN<32>) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DiscountCodeHash(hash.clone()))
+        .unwrap_or(false)
+}
+
+/// Returns `true` if the hash has already been redeemed.
+pub fn is_discount_hash_used(env: &Env, hash: &soroban_sdk::BytesN<32>) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DiscountCodeUsed(hash.clone()))
+        .unwrap_or(false)
+}
+
+/// Mark a discount code hash as spent so it cannot be reused.
+pub fn mark_discount_hash_used(env: &Env, hash: soroban_sdk::BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DiscountCodeUsed(hash), &true);
 }

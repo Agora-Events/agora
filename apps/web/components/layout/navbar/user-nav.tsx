@@ -31,7 +31,9 @@ export function UserNav({ pathname }: { pathname: string }) {
               href="/discover"
               icon="/icons/earth-yellow.svg"
               text="Discover Events"
-              isActive={pathname === "/discover"}
+              isActive={
+                pathname === "/discover" || pathname.startsWith("/events")
+              }
             />
             <NavLink
               href="/organizers"
