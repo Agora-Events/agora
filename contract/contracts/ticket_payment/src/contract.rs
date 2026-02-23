@@ -170,7 +170,11 @@ impl TicketPaymentContract {
     }
 
     /// Sets or clears a dispute for an event. Only callable by admin.
-    pub fn set_event_dispute(env: Env, event_id: String, disputed: bool) -> Result<(), TicketPaymentError> {
+    pub fn set_event_dispute(
+        env: Env,
+        event_id: String,
+        disputed: bool,
+    ) -> Result<(), TicketPaymentError> {
         let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
         admin.require_auth();
 
