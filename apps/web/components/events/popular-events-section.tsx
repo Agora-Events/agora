@@ -51,13 +51,55 @@ export function PopularEventsSection() {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
   const filteredEvents = useMemo(() => {
-    const query = search.toLowerCase().trim();
-    if (!query) return dataEvents;
+    let result = dataEvents;
 
-    return dataEvents.filter((event) =>
-      event.title.toLowerCase().includes(query),
-    );
-  }, [search]);
+    // 1. Search Query
+    const query = search.toLowerCase().trim();
+    if (query) {
+      result = result.filter((event) =>
+        event.title.toLowerCase().includes(query),
+      );
+    }
+
+    // 2. Categories
+    if (filters.categories.length > 0) {
+      result = result.filter((event) =>
+        filters.categories.includes(event.category),
+      );
+    }
+
+    // 3. Location
+    if (filters.locations.length > 0) {
+      result = result.filter((event) =>
+        filters.locations.some((loc) =>
+          event.location.toLowerCase().includes(loc.toLowerCase()),
+        ),
+      );
+    }
+
+    // 4. Date
+    if (filters.date && filters.date !== "Any time") {
+      // Note: Since mockup dates are static strings like "Thu, 22 Jan, 1:00",
+      // strict parsing for "Today", "Tomorrow" is omitted for now.
+      // In a real app with timestamps, you would check the date ranges here.
+    }
+
+    // 5. Price Range
+    if (filters.minPrice !== "" || filters.maxPrice !== "") {
+      result = result.filter((event) => {
+        const isFree = event.price.toLowerCase() === "free";
+        const price = isFree ? 0 : parseFloat(event.price);
+
+        const min = filters.minPrice !== "" ? parseFloat(filters.minPrice) : 0;
+        const max =
+          filters.maxPrice !== "" ? parseFloat(filters.maxPrice) : Infinity;
+
+        return price >= min && price <= max;
+      });
+    }
+
+    return result;
+  }, [search, filters]);
 
   const widthVariants = {
     focused: { width: "12rem" },
@@ -166,6 +208,7 @@ export function PopularEventsSection() {
               className="flex"
             >
               <EventCard
+                id={event.id}
                 title={event.title}
                 date={event.date}
                 location={event.location}
@@ -176,12 +219,24 @@ export function PopularEventsSection() {
           ))}
 
           {filteredEvents.length === 0 && (
-            <motion.p
-              variants={item}
-              className="col-span-full text-center text-black "
-            >
-              No events found
-            </motion.p>
+            <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-16 h-16 mb-4 rounded-full bg-black/5 flex items-center justify-center">
+                <Image
+                  src="/icons/search.svg"
+                  width={32}
+                  height={32}
+                  alt="search icon"
+                  className="opacity-40"
+                />
+              </div>
+              <h4 className="text-[20px] font-semibold text-black mb-2">
+                No matching events
+              </h4>
+              <p className="text-[15px] text-black/60 max-w-sm">
+                We couldn&apos;t find any events that match your current filter
+                selections. Try adjusting your search or clearing some filters.
+              </p>
+            </div>
           )}
         </motion.div>
 

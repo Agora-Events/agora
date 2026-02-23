@@ -20,6 +20,12 @@ pub enum EventRegistryError {
     TierNotFound = 14,
     TierSupplyExceeded = 15,
     SupplyUnderflow = 16,
+    InvalidQuantity = 17,
+    OrganizerBlacklisted = 18,
+    OrganizerNotBlacklisted = 19,
+    InvalidResaleCapBps = 20,
+    InvalidPromoBps = 21,
+    InvalidGracePeriodEnd = 22,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -58,6 +64,24 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::SupplyUnderflow => {
                 write!(f, "Supply counter underflow")
+            }
+            EventRegistryError::InvalidQuantity => {
+                write!(f, "Quantity must be greater than zero")
+            }
+            EventRegistryError::OrganizerBlacklisted => {
+                write!(f, "Organizer is blacklisted and cannot perform this action")
+            }
+            EventRegistryError::OrganizerNotBlacklisted => {
+                write!(f, "Organizer is not currently blacklisted")
+            }
+            EventRegistryError::InvalidResaleCapBps => {
+                write!(f, "Resale cap must be between 0 and 10000 basis points")
+            }
+            EventRegistryError::InvalidPromoBps => {
+                write!(f, "Promo discount must be between 0 and 10000 basis points")
+            }
+            EventRegistryError::InvalidGracePeriodEnd => {
+                write!(f, "Grace period end must be in the future")
             }
         }
     }
