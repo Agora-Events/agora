@@ -1,10 +1,10 @@
 #![no_std]
 
 use crate::events::{
-    AgoraEvent, EventCancelledEvent, EventRegisteredEvent, EventStatusUpdatedEvent,
-    EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent, InitializationEvent,
-    InventoryIncrementedEvent, MetadataUpdatedEvent, OrganizerBlacklistedEvent,
-    OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent, EventPostponedEvent,
+    AgoraEvent, EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
+    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
+    InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent,
+    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, PaymentInfo,
