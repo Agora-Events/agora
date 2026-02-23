@@ -2,7 +2,6 @@
 
 import { motion, type Transition } from "framer-motion";
 import Image from "next/image";
-import { Button } from "../ui/button";
 
 const categories = [
   { name: "Tech", icon: "/icons/Tech.svg", color: "#DBF4B9" },
