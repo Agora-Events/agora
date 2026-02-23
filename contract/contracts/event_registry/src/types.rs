@@ -40,6 +40,8 @@ pub struct EventInfo {
     pub current_supply: i128,
     /// Map of tier_id to TicketTier for multi-tiered pricing
     pub tiers: Map<String, TicketTier>,
+    /// Custom fee override in basis points (overrides platform_fee_percent)
+    pub custom_fee_bps: Option<u32>,
 }
 
 /// Payment information for an event
@@ -71,4 +73,6 @@ pub enum DataKey {
     OrganizerEvents(Address),
     /// The authorized TicketPayment contract address for inventory updates
     TicketPaymentContract,
+    /// Custom fee override for specific events (event_id -> u32)
+    CustomEventFee(String),
 }

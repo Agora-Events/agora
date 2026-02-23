@@ -63,6 +63,7 @@ pub mod event_registry {
         pub max_supply: i128,
         pub current_supply: i128,
         pub tiers: soroban_sdk::Map<String, TicketTier>,
+        pub custom_fee_bps: Option<u32>,
     }
 }
 
@@ -190,7 +191,8 @@ impl TicketPaymentContract {
         }
 
         // 2. Calculate platform fee (platform_fee_percent is in bps, 10000 = 100%)
-        let platform_fee = (amount * event_info.platform_fee_percent as i128) / 10000;
+        let effective_fee = event_info.custom_fee_bps.unwrap_or(event_info.platform_fee_percent);
+        let platform_fee = (amount * effective_fee as i128) / 10000;
         let organizer_amount = amount - platform_fee;
 
         // 3. Transfer tokens from buyer (splitting payment)

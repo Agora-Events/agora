@@ -120,6 +120,7 @@ impl EventRegistry {
             max_supply,
             current_supply: 0,
             tiers,
+            custom_fee_bps: None,
         };
 
         storage::store_event(&env, event_info);
@@ -147,9 +148,10 @@ impl EventRegistry {
                 if !event_info.is_active {
                     return Err(EventRegistryError::EventInactive);
                 }
+                let effective_fee = event_info.custom_fee_bps.unwrap_or(event_info.platform_fee_percent);
                 Ok(PaymentInfo {
                     payment_address: event_info.payment_address,
-                    platform_fee_percent: event_info.platform_fee_percent,
+                    platform_fee_percent: effective_fee,
                     tiers: event_info.tiers,
                 })
             }
@@ -295,6 +297,34 @@ impl EventRegistry {
         validate_address(&env, &ticket_payment_address)?;
 
         storage::set_ticket_payment_contract(&env, &ticket_payment_address);
+        Ok(())
+    }
+
+    /// Sets a custom fee override for a specific event. Only callable by the administrator.
+    ///
+    /// # Arguments
+    /// * `event_id` - The event to apply the custom fee to
+    /// * `custom_fee_bps` - Custom fee in basis points (10000 = 100%), or None to remove override
+    pub fn set_custom_event_fee(
+        env: Env,
+        event_id: String,
+        custom_fee_bps: Option<u32>,
+    ) -> Result<(), EventRegistryError> {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+
+        if let Some(fee) = custom_fee_bps {
+            if fee > 10000 {
+                return Err(EventRegistryError::InvalidFeePercent);
+            }
+        }
+
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        event_info.custom_fee_bps = custom_fee_bps;
+        storage::store_event(&env, event_info);
+
         Ok(())
     }
 
