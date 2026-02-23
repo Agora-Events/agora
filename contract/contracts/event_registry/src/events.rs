@@ -15,6 +15,7 @@ pub enum AgoraEvent {
     OrganizerRemovedFromBlacklist,
     EventsSuspended,
     GlobalPromoUpdated,
+    EventPostponed,
 }
 
 #[contracttype]
@@ -115,5 +116,14 @@ pub struct GlobalPromoUpdatedEvent {
     pub global_promo_bps: u32,
     pub promo_expiry: u64,
     pub admin_address: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventPostponedEvent {
+    pub event_id: String,
+    pub organizer_address: Address,
+    pub grace_period_end: u64,
     pub timestamp: u64,
 }
