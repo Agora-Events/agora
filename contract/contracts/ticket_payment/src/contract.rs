@@ -473,7 +473,10 @@ impl TicketPaymentContract {
         }
 
         // Validate against refund deadline if event is active
-        if event_info.is_active && event_info.refund_deadline > 0 && env.ledger().timestamp() > event_info.refund_deadline {
+        if event_info.is_active
+            && event_info.refund_deadline > 0
+            && env.ledger().timestamp() > event_info.refund_deadline
+        {
             return Err(TicketPaymentError::RefundDeadlinePassed);
         }
 

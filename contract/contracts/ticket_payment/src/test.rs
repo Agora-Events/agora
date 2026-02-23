@@ -2506,7 +2506,6 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
     assert_eq!(final_tier.current_sold, 10);
 }
 
-
 #[soroban_sdk::contract]
 pub struct MockEventRegistryRefund;
 
@@ -2527,7 +2526,10 @@ impl MockEventRegistryRefund {
             platform_fee_percent: 500,
             is_active: true,
             created_at: 0,
-            metadata_cid: String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"),
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
             max_supply: 100,
             current_supply: 0,
             milestone_plan: None,
@@ -2564,7 +2566,9 @@ fn test_request_guest_refund_success_with_fee() {
     let contract_id = env.register(TicketPaymentContract, ());
     let client = TicketPaymentContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
-    let usdc_id = env.register_stellar_asset_contract_v2(Address::generate(&env)).address();
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
     let platform_wallet = Address::generate(&env);
     let registry_id = env.register(MockEventRegistryRefund, ());
 
@@ -2575,7 +2579,17 @@ fn test_request_guest_refund_success_with_fee() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &1000, &9999);
 
     let payment_id = String::from_str(&env, "p1");
-    client.process_payment(&payment_id, &String::from_str(&env, "e1"), &String::from_str(&env, "tier_1"), &buyer, &usdc_id, &1000, &1, &None, &None);
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "e1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &1000,
+        &1,
+        &None,
+        &None,
+    );
 
     // Initial escrow: 1000 total. Platform fee 5% = 50. Organizer = 950.
     let balance = client.get_event_escrow_balance(&String::from_str(&env, "e1"));
@@ -2605,7 +2619,9 @@ fn test_request_guest_refund_deadline_passed() {
     let contract_id = env.register(TicketPaymentContract, ());
     let client = TicketPaymentContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
-    let usdc_id = env.register_stellar_asset_contract_v2(Address::generate(&env)).address();
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
     let platform_wallet = Address::generate(&env);
     let registry_id = env.register(MockEventRegistryRefund, ());
 
@@ -2618,7 +2634,17 @@ fn test_request_guest_refund_deadline_passed() {
     let payment_id = String::from_str(&env, "p1");
     // We can still process payment if deadlines are 0/past, but refund check should fail.
     // Actually process_payment might not check refund_deadline, only request_guest_refund does.
-    client.process_payment(&payment_id, &String::from_str(&env, "e1"), &String::from_str(&env, "tier_1"), &buyer, &usdc_id, &1000, &1, &None, &None);
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "e1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &1000,
+        &1,
+        &None,
+        &None,
+    );
 
     let res = client.try_request_guest_refund(&payment_id);
     assert_eq!(res, Err(Ok(TicketPaymentError::RefundDeadlinePassed)));
