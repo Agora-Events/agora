@@ -17,8 +17,8 @@ use crate::{
     error::TicketPaymentError,
     events::{
         AgoraEvent, BulkRefundProcessedEvent, ContractUpgraded, DiscountCodeAppliedEvent,
-        FeeSettledEvent, InitializationEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
-        PriceSwitchedEvent, RevenueClaimedEvent, TicketTransferredEvent,
+        FeeSettledEvent, GlobalPromoAppliedEvent, InitializationEvent, PaymentProcessedEvent,
+        PaymentStatusChangedEvent, PriceSwitchedEvent, RevenueClaimedEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec};
@@ -47,6 +47,8 @@ pub mod event_registry {
         fn get_event(env: Env, event_id: String) -> Option<EventInfo>;
         fn increment_inventory(env: Env, event_id: String, tier_id: String, quantity: u32);
         fn decrement_inventory(env: Env, event_id: String, tier_id: String);
+        fn get_global_promo_bps(env: Env) -> u32;
+        fn get_promo_expiry(env: Env) -> u64;
     }
 
     #[soroban_sdk::contracttype]
@@ -213,7 +215,25 @@ impl TicketPaymentContract {
             .checked_mul(quantity as i128)
             .ok_or(TicketPaymentError::ArithmeticError)?;
 
-        // Optionally apply a discount code (10% off)
+        // Apply platform-wide global promo if active (self-expiring via timestamp check)
+        let event_registry_addr_promo = get_event_registry(&env);
+        let registry_client_promo = event_registry::Client::new(&env, &event_registry_addr_promo);
+        let global_promo_bps = registry_client_promo.get_global_promo_bps();
+        let promo_expiry = registry_client_promo.get_promo_expiry();
+        let current_ts = env.ledger().timestamp();
+
+        let (after_promo, promo_applied_bps) = if global_promo_bps > 0 && current_ts < promo_expiry
+        {
+            let discounted = total_amount
+                .checked_mul((10000 - global_promo_bps as i128) as i128)
+                .and_then(|v| v.checked_div(10000))
+                .ok_or(TicketPaymentError::ArithmeticError)?;
+            (discounted, global_promo_bps)
+        } else {
+            (total_amount, 0u32)
+        };
+
+        // Optionally apply a discount code (10% off) on top of the promo price
         let (effective_total, discount_code_hash) = if let Some(preimage) = code_preimage {
             let hash: soroban_sdk::BytesN<32> = env.crypto().sha256(&preimage).into();
             if !is_discount_hash_valid(&env, &hash) {
@@ -223,13 +243,13 @@ impl TicketPaymentContract {
                 return Err(TicketPaymentError::DiscountCodeAlreadyUsed);
             }
             // 10% discount
-            let discounted = total_amount
+            let discounted = after_promo
                 .checked_mul(90)
                 .and_then(|v| v.checked_div(100))
                 .ok_or(TicketPaymentError::ArithmeticError)?;
             (discounted, Some(hash))
         } else {
-            (total_amount, None)
+            (after_promo, None)
         };
         // 1. Query Event Registry for event info and check inventory
         let event_registry_addr = get_event_registry(&env);
@@ -408,6 +428,21 @@ impl TicketPaymentContract {
                     event_id: event_id.clone(),
                     code_hash: hash,
                     discount_amount,
+                    timestamp: env.ledger().timestamp(),
+                },
+            );
+        }
+
+        // 10. Emit global promo applied event if promo was active
+        if promo_applied_bps > 0 {
+            let promo_discount_amount = total_amount - after_promo;
+            env.events().publish(
+                (AgoraEvent::GlobalPromoApplied,),
+                GlobalPromoAppliedEvent {
+                    payment_id: payment_id.clone(),
+                    event_id: event_id.clone(),
+                    promo_bps: promo_applied_bps,
+                    discount_amount: promo_discount_amount,
                     timestamp: env.ledger().timestamp(),
                 },
             );

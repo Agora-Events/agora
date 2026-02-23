@@ -127,4 +127,8 @@ pub enum DataKey {
     BlacklistedOrganizer(Address),
     /// List of blacklisted organizer addresses for audit purposes (Persistent)
     BlacklistLog,
+    /// Global promotional discount in basis points (e.g., 1500 = 15%)
+    GlobalPromoBps,
+    /// Expiry timestamp for the global promotional discount
+    PromoExpiry,
 }

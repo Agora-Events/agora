@@ -66,6 +66,12 @@ impl MockEventRegistry {
 
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 // Another Mock for different fee
@@ -119,6 +125,12 @@ impl MockEventRegistry2 {
     }
 
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 // Mock Event Registry returning EventNotFound
@@ -136,6 +148,12 @@ impl MockEventRegistryNotFound {
     }
 
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 // Manually mapping the trap in Soroban tests is sometimes tricky if we just panic.
@@ -750,6 +768,12 @@ impl MockEventRegistryMaxSupply {
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {
         panic!("MaxSupplyExceeded");
     }
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 #[test]
@@ -848,6 +872,12 @@ impl MockEventRegistryWithInventory {
         env.storage()
             .instance()
             .set(&key, &(current + quantity as i128));
+    }
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
     }
 }
 
@@ -1055,6 +1085,12 @@ impl MockEventRegistryWithMilestones {
         env.storage()
             .instance()
             .set(&key, &(current + quantity as i128));
+    }
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
     }
 }
 
@@ -1354,6 +1390,12 @@ impl MockEventRegistryEarlyBird {
 
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 #[test]
@@ -1826,6 +1868,12 @@ impl MockEventRegistryWithOrganizer {
 
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 fn setup_discount_test(
@@ -2211,6 +2259,12 @@ impl MockPlatformRegistryE2E {
             .persistent()
             .set(&MockPlatformDataKey::Event(event_id), &event);
     }
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 #[test]
@@ -2571,6 +2625,12 @@ impl MockEventRegistryRefund {
 
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 // ==================== Resale Price Cap Tests ====================
@@ -2627,6 +2687,12 @@ impl MockEventRegistryWithResaleCap {
 
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 fn setup_test_with_resale_cap(
@@ -2851,6 +2917,12 @@ impl MockRegistryZeroCap {
 
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
 }
 
 #[test]
