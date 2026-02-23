@@ -26,6 +26,14 @@ pub struct Milestone {
     pub release_percent: u32,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EventStatus {
+    Active,
+    Inactive,
+    Cancelled,
+}
+
 /// Represents information about an event in the registry.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,6 +48,8 @@ pub struct EventInfo {
     pub platform_fee_percent: u32,
     /// Whether the event is currently active and accepting payments
     pub is_active: bool,
+    /// The current status of the event
+    pub status: EventStatus,
     /// Timestamp when the event was created
     pub created_at: u64,
     /// IPFS Content Identifier storing rich metadata details

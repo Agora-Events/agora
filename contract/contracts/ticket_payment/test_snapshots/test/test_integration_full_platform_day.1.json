@@ -1401,6 +1401,18 @@
                     },
                     {
                       "key": {
+                        "symbol": "status"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "Active"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "tiers"
                       },
                       "val": {

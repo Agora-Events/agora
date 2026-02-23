@@ -5,6 +5,7 @@ use soroban_sdk::{contracttype, Address, String};
 pub enum AgoraEvent {
     EventRegistered,
     EventStatusUpdated,
+    EventCancelled,
     FeeUpdated,
     ContractInitialized,
     ContractUpgraded,
@@ -15,6 +16,14 @@ pub enum AgoraEvent {
     OrganizerRemovedFromBlacklist,
     EventsSuspended,
     GlobalPromoUpdated,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventCancelledEvent {
+    pub event_id: String,
+    pub cancelled_by: Address,
+    pub timestamp: u64,
 }
 
 #[contracttype]

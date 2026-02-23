@@ -1,12 +1,14 @@
 #![no_std]
 
 use crate::events::{
-    AgoraEvent, EventRegisteredEvent, EventStatusUpdatedEvent, EventsSuspendedEvent,
-    FeeUpdatedEvent, GlobalPromoUpdatedEvent, InitializationEvent, InventoryIncrementedEvent,
-    MetadataUpdatedEvent, OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent,
-    RegistryUpgradedEvent,
+    AgoraEvent, EventCancelledEvent, EventRegisteredEvent, EventStatusUpdatedEvent,
+    EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent, InitializationEvent,
+    InventoryIncrementedEvent, MetadataUpdatedEvent, OrganizerBlacklistedEvent,
+    OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
 };
-use crate::types::{BlacklistAuditEntry, EventInfo, EventRegistrationArgs, PaymentInfo};
+use crate::types::{
+    BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, PaymentInfo,
+};
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
 pub mod error;
@@ -121,6 +123,7 @@ impl EventRegistry {
             payment_address: args.payment_address.clone(),
             platform_fee_percent,
             is_active: true,
+            status: EventStatus::Active,
             created_at: env.ledger().timestamp(),
             metadata_cid: args.metadata_cid.clone(),
             max_supply: args.max_supply,
@@ -178,6 +181,10 @@ impl EventRegistry {
                 // Verify organizer signature
                 event_info.organizer_address.require_auth();
 
+                if matches!(event_info.status, EventStatus::Cancelled) {
+                    return Err(EventRegistryError::EventCancelled);
+                }
+
                 // Skip storage/event writes when status is unchanged.
                 if event_info.is_active == is_active {
                     return Ok(());
@@ -194,6 +201,38 @@ impl EventRegistry {
                         event_id,
                         is_active,
                         updated_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                Ok(())
+            }
+            None => Err(EventRegistryError::EventNotFound),
+        }
+    }
+
+    /// Cancel an event (only by organizer). This is irreversible.
+    pub fn cancel_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
+        match storage::get_event(&env, event_id.clone()) {
+            Some(mut event_info) => {
+                // Verify organizer signature
+                event_info.organizer_address.require_auth();
+
+                if matches!(event_info.status, EventStatus::Cancelled) {
+                    return Err(EventRegistryError::EventAlreadyCancelled);
+                }
+
+                // Update status to Cancelled and deactivate
+                event_info.status = EventStatus::Cancelled;
+                event_info.is_active = false;
+                storage::update_event(&env, event_info.clone());
+
+                // Emit cancellation event
+                env.events().publish(
+                    (AgoraEvent::EventCancelled,),
+                    EventCancelledEvent {
+                        event_id,
+                        cancelled_by: event_info.organizer_address,
                         timestamp: env.ledger().timestamp(),
                     },
                 );
@@ -355,7 +394,7 @@ impl EventRegistry {
         let mut event_info =
             storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
 
-        if !event_info.is_active {
+        if !event_info.is_active || matches!(event_info.status, EventStatus::Cancelled) {
             return Err(EventRegistryError::EventInactive);
         }
 
