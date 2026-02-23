@@ -56,6 +56,8 @@ impl MockEventRegistry {
                     );
                     tiers
                 },
+                refund_deadline: 0,
+                restocking_fee: 0,
             });
         }
         None
@@ -109,6 +111,8 @@ impl MockEventRegistry2 {
                 );
                 tiers
             },
+            refund_deadline: 0,
+            restocking_fee: 0,
         })
     }
 
@@ -735,6 +739,8 @@ impl MockEventRegistryMaxSupply {
                 );
                 tiers
             },
+            refund_deadline: 0,
+            restocking_fee: 0,
         })
     }
 
@@ -827,6 +833,8 @@ impl MockEventRegistryWithInventory {
                 );
                 tiers
             },
+            refund_deadline: 0,
+            restocking_fee: 0,
         })
     }
 
@@ -1029,6 +1037,8 @@ impl MockEventRegistryWithMilestones {
                 );
                 tiers
             },
+            refund_deadline: 0,
+            restocking_fee: 0,
         })
     }
 
@@ -1329,6 +1339,8 @@ impl MockEventRegistryEarlyBird {
                 );
                 tiers
             },
+            refund_deadline: 0,
+            restocking_fee: 0,
         })
     }
 
@@ -1796,6 +1808,8 @@ impl MockEventRegistryWithOrganizer {
                 );
                 tiers
             },
+            refund_deadline: 0,
+            restocking_fee: 0,
         })
     }
 
@@ -2091,6 +2105,8 @@ impl MockPlatformRegistryE2E {
             current_supply: 0,
             milestone_plan: None,
             tiers,
+            refund_deadline: 0,
+            restocking_fee: 0,
         };
 
         env.storage()
@@ -2488,4 +2504,122 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
     assert_eq!(fail_count, 10);
     assert_eq!(final_event.current_supply, 10);
     assert_eq!(final_tier.current_sold, 10);
+}
+
+
+#[soroban_sdk::contract]
+pub struct MockEventRegistryRefund;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryRefund {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            is_active: true,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"),
+            max_supply: 100,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000,
+                        early_bird_price: 1000,
+                        early_bird_deadline: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 2000,
+            restocking_fee: 100,
+        })
+    }
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+}
+
+#[test]
+fn test_request_guest_refund_success_with_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 1000);
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env.register_stellar_asset_contract_v2(Address::generate(&env)).address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryRefund, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &1000);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &1000, &9999);
+
+    let payment_id = String::from_str(&env, "p1");
+    client.process_payment(&payment_id, &String::from_str(&env, "e1"), &String::from_str(&env, "tier_1"), &buyer, &usdc_id, &1000, &1, &None, &None);
+
+    // Initial escrow: 1000 total. Platform fee 5% = 50. Organizer = 950.
+    let balance = client.get_event_escrow_balance(&String::from_str(&env, "e1"));
+    assert_eq!(balance.organizer_amount, 950);
+    assert_eq!(balance.platform_fee, 50);
+
+    // Refund at timestamp 1000 (deadline 2000). Restocking fee 100.
+    // Guest gets 1000 - 100 = 900.
+    // Organizer keeps 100.
+    // EventBalance organizer_amount should be 100. platform_fee should be 0.
+    client.request_guest_refund(&payment_id);
+
+    let updated_balance = client.get_event_escrow_balance(&String::from_str(&env, "e1"));
+    assert_eq!(updated_balance.organizer_amount, 100);
+    assert_eq!(updated_balance.platform_fee, 0);
+
+    let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert_eq!(buyer_balance, 900);
+}
+
+#[test]
+fn test_request_guest_refund_deadline_passed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 2500); // 2500 > 2000
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env.register_stellar_asset_contract_v2(Address::generate(&env)).address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryRefund, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &1000);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &1000, &9999);
+
+    let payment_id = String::from_str(&env, "p1");
+    // We can still process payment if deadlines are 0/past, but refund check should fail.
+    // Actually process_payment might not check refund_deadline, only request_guest_refund does.
+    client.process_payment(&payment_id, &String::from_str(&env, "e1"), &String::from_str(&env, "tier_1"), &buyer, &usdc_id, &1000, &1, &None, &None);
+
+    let res = client.try_request_guest_refund(&payment_id);
+    assert_eq!(res, Err(Ok(TicketPaymentError::RefundDeadlinePassed)));
 }

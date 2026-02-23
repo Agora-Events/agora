@@ -26,6 +26,7 @@ pub enum TicketPaymentError {
     Unauthorized = 20,
     EventNotCompleted = 21,
     NoFundsAvailable = 22,
+    RefundDeadlinePassed = 23,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -76,6 +77,7 @@ impl core::fmt::Display for TicketPaymentError {
             TicketPaymentError::Unauthorized => write!(f, "Unauthorized caller"),
             TicketPaymentError::EventNotCompleted => write!(f, "Event is not completed"),
             TicketPaymentError::NoFundsAvailable => write!(f, "No funds available to claim"),
+            TicketPaymentError::RefundDeadlinePassed => write!(f, "Refund deadline has passed"),
         }
     }
 }

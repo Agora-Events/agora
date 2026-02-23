@@ -119,6 +119,8 @@ impl EventRegistry {
             current_supply: 0,
             milestone_plan: args.milestone_plan.clone(),
             tiers: args.tiers.clone(),
+            refund_deadline: args.refund_deadline,
+            restocking_fee: args.restocking_fee,
         };
 
         storage::store_event(&env, event_info);

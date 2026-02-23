@@ -80,6 +80,8 @@ pub mod event_registry {
         pub current_supply: i128,
         pub milestone_plan: Option<soroban_sdk::Vec<Milestone>>,
         pub tiers: soroban_sdk::Map<String, TicketTier>,
+        pub refund_deadline: u64,
+        pub restocking_fee: i128,
     }
 }
 
@@ -470,15 +472,54 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::TicketNotRefundable);
         }
 
-        // Return ticket to inventory using the authorized contract interface
+        // Validate against refund deadline if event is active
+        if event_info.is_active && event_info.refund_deadline > 0 && env.ledger().timestamp() > event_info.refund_deadline {
+            return Err(TicketPaymentError::RefundDeadlinePassed);
+        }
+
+        // Deduct restocking fee if specified (capped at payment amount)
+        let effective_restocking_fee = if event_info.restocking_fee > payment.amount {
+            payment.amount
+        } else if event_info.restocking_fee > 0 {
+            event_info.restocking_fee
+        } else {
+            0
+        };
+
+        let refund_amount = payment.amount - effective_restocking_fee;
+
+        // Return ticket to inventory (increments available inventory)
         registry_client.decrement_inventory(&payment.event_id, &payment.ticket_tier_id);
 
         let old_status = payment.status.clone();
         payment.status = PaymentStatus::Refunded;
         payment.confirmed_at = Some(env.ledger().timestamp());
-        let refund_amount = payment.amount;
 
-        store_payment(&env, payment);
+        store_payment(&env, payment.clone());
+
+        // Process token transfer
+        if refund_amount > 0 {
+            let token_address = crate::storage::get_usdc_token(&env);
+            token::Client::new(&env, &token_address).transfer(
+                &env.current_contract_address(),
+                &payment.buyer_address,
+                &refund_amount,
+            );
+        }
+
+        // Guest receives payment.amount - effective_restocking_fee
+        // Organizer keeps effective_restocking_fee (adjust from original organizer_amount)
+        // Platform fee is refunded (removed from escrow)
+        let org_adjustment = payment.organizer_amount - effective_restocking_fee;
+        let platform_adjustment = payment.platform_fee;
+
+        crate::storage::update_event_balance(
+            &env,
+            payment.event_id.clone(),
+            -org_adjustment,
+            -platform_adjustment,
+        );
+
         subtract_from_active_escrow_total(&env, refund_amount);
         subtract_from_active_escrow_by_token(
             &env,

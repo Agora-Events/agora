@@ -52,6 +52,10 @@ pub struct EventInfo {
     pub milestone_plan: Option<Vec<Milestone>>,
     /// Map of tier_id to TicketTier for multi-tiered pricing
     pub tiers: Map<String, TicketTier>,
+    /// Deadline for guests to request a refund (Unix timestamp)
+    pub refund_deadline: u64,
+    /// Fee deducted from refund amount
+    pub restocking_fee: i128,
 }
 
 /// Payment information for an event
@@ -77,6 +81,8 @@ pub struct EventRegistrationArgs {
     pub max_supply: i128,
     pub milestone_plan: Option<Vec<Milestone>>,
     pub tiers: Map<String, TicketTier>,
+    pub refund_deadline: u64,
+    pub restocking_fee: i128,
 }
 
 /// Audit log entry for blacklist actions
