@@ -27,6 +27,7 @@ pub enum EventRegistryError {
     InvalidPromoBps = 21,
     EventCancelled = 22,
     EventAlreadyCancelled = 23,
+    InvalidGracePeriodEnd = 24,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -86,6 +87,9 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::EventAlreadyCancelled => {
                 write!(f, "The event is already cancelled")
+            }
+            EventRegistryError::InvalidGracePeriodEnd => {
+                write!(f, "Grace period end timestamp must be in the future")
             }
         }
     }

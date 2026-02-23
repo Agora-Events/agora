@@ -23,7 +23,7 @@
                         "symbol": "event_id"
                       },
                       "val": {
-                        "string": "event_metadata"
+                        "string": "postponed_event"
                       }
                     },
                     {
@@ -103,13 +103,34 @@
         }
       ]
     ],
-    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "postpone_event",
+              "args": [
+                {
+                  "string": "postponed_event"
+                },
+                {
+                  "u64": "2000"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
     []
   ],
   "ledger": {
     "protocol_version": 23,
     "sequence_number": 0,
-    "timestamp": 0,
+    "timestamp": 1000,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
     "min_persistent_entry_ttl": 4096,
@@ -165,7 +186,7 @@
                   "symbol": "Event"
                 },
                 {
-                  "string": "event_metadata"
+                  "string": "postponed_event"
                 }
               ]
             },
@@ -185,7 +206,7 @@
                       "symbol": "Event"
                     },
                     {
-                      "string": "event_metadata"
+                      "string": "postponed_event"
                     }
                   ]
                 },
@@ -213,7 +234,7 @@
                         "symbol": "event_id"
                       },
                       "val": {
-                        "string": "event_metadata"
+                        "string": "postponed_event"
                       }
                     },
                     {
@@ -221,7 +242,7 @@
                         "symbol": "grace_period_end"
                       },
                       "val": {
-                        "u64": "0"
+                        "u64": "2000"
                       }
                     },
                     {
@@ -237,7 +258,7 @@
                         "symbol": "is_postponed"
                       },
                       "val": {
-                        "bool": false
+                        "bool": true
                       }
                     },
                     {
@@ -414,7 +435,7 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "event_metadata"
+                      "string": "postponed_event"
                     }
                   ]
                 }
@@ -557,6 +578,39 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": "801925984706572462"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "5541220902715666415"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "5541220902715666415"
                   }
                 },
                 "durability": "temporary",
