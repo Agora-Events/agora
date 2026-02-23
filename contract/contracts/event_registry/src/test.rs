@@ -2,7 +2,7 @@ use super::*;
 use crate::error::EventRegistryError;
 use crate::types::{EventInfo, EventRegistrationArgs, TicketTier};
 use soroban_sdk::{
-    testutils::{Address as _, EnvTestConfig, Events},
+    testutils::{Address as _, EnvTestConfig, Events, Ledger},
     Address, Env, Map, String,
 };
 
@@ -137,6 +137,8 @@ fn test_storage_operations() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
     };
 
     client.store_event(&event_info);
@@ -183,6 +185,8 @@ fn test_organizer_events_list() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
     };
 
     let event_2 = EventInfo {
@@ -203,6 +207,8 @@ fn test_organizer_events_list() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -270,6 +276,8 @@ fn test_register_event_success() {
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.max_supply, 100);
     assert_eq!(event_info.current_supply, 0);
+    assert!(!event_info.is_postponed);
+    assert_eq!(event_info.grace_period_end, 0);
 }
 
 #[test]
@@ -1610,6 +1618,51 @@ fn test_register_event_resale_cap_none() {
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.resale_cap_bps, None);
+}
+
+#[test]
+fn test_postpone_event_sets_grace_period() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "postponed_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+    });
+
+    // Set ledger time and grace period end in the future
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let grace_period_end = 2_000u64;
+
+    client.postpone_event(&event_id, &grace_period_end);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert!(event_info.is_postponed);
+    assert_eq!(event_info.grace_period_end, grace_period_end);
 }
 
 #[test]
