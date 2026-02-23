@@ -166,3 +166,33 @@ pub fn get_blacklist_audit_log(env: &Env) -> Vec<BlacklistAuditEntry> {
         .get(&DataKey::BlacklistLog)
         .unwrap_or_else(|| Vec::new(env))
 }
+
+/// Sets the global promotional discount in basis points.
+pub fn set_global_promo_bps(env: &Env, bps: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalPromoBps, &bps);
+}
+
+/// Retrieves the global promotional discount in basis points.
+pub fn get_global_promo_bps(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::GlobalPromoBps)
+        .unwrap_or(0)
+}
+
+/// Sets the expiry timestamp for the global promotional discount.
+pub fn set_promo_expiry(env: &Env, expiry: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PromoExpiry, &expiry);
+}
+
+/// Retrieves the expiry timestamp for the global promotional discount.
+pub fn get_promo_expiry(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PromoExpiry)
+        .unwrap_or(0)
+}

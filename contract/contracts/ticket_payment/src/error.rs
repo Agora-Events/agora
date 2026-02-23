@@ -29,6 +29,7 @@ pub enum TicketPaymentError {
     RefundDeadlinePassed = 23,
     WithdrawalCapExceeded = 24,
     InsufficientFees = 25,
+    ResalePriceExceedsCap = 26,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -83,6 +84,9 @@ impl core::fmt::Display for TicketPaymentError {
             TicketPaymentError::WithdrawalCapExceeded => write!(f, "Daily withdrawal cap exceeded"),
             TicketPaymentError::InsufficientFees => {
                 write!(f, "Insufficient platform fees accumulated")
+            }
+            TicketPaymentError::ResalePriceExceedsCap => {
+                write!(f, "Resale price exceeds the event's resale cap")
             }
         }
     }

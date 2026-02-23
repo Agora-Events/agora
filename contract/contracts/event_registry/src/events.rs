@@ -14,6 +14,7 @@ pub enum AgoraEvent {
     OrganizerBlacklisted,
     OrganizerRemovedFromBlacklist,
     EventsSuspended,
+    GlobalPromoUpdated,
 }
 
 #[contracttype]
@@ -104,6 +105,15 @@ pub struct OrganizerRemovedFromBlacklistEvent {
 pub struct EventsSuspendedEvent {
     pub organizer_address: Address,
     pub suspended_event_count: u32,
+    pub admin_address: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GlobalPromoUpdatedEvent {
+    pub global_promo_bps: u32,
+    pub promo_expiry: u64,
     pub admin_address: Address,
     pub timestamp: u64,
 }
