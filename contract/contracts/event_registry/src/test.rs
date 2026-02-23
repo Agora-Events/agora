@@ -134,6 +134,8 @@ fn test_storage_operations() {
         current_supply: 0,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     };
 
     client.store_event(&event_info);
@@ -177,6 +179,8 @@ fn test_organizer_events_list() {
         current_supply: 0,
         milestone_plan: None,
         tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
     };
 
     let event_2 = EventInfo {
@@ -194,6 +198,8 @@ fn test_organizer_events_list() {
         current_supply: 0,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -248,6 +254,8 @@ fn test_register_event_success() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -288,6 +296,8 @@ fn test_register_event_unlimited_supply() {
         max_supply: 0,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -323,6 +333,8 @@ fn test_register_duplicate_event_fails() {
         max_supply: 100,
         milestone_plan: None,
         tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -333,6 +345,8 @@ fn test_register_duplicate_event_fails() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -365,6 +379,8 @@ fn test_get_event_payment_info() {
         max_supply: 50,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -400,6 +416,8 @@ fn test_update_event_status() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
     client.update_event_status(&event_id, &false);
 
@@ -434,6 +452,8 @@ fn test_event_inactive_error() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
     client.update_event_status(&event_id, &false);
 
@@ -469,6 +489,8 @@ fn test_complete_event_lifecycle() {
         max_supply: 200,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -516,6 +538,8 @@ fn test_update_metadata_success() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let new_metadata_cid = String::from_str(
@@ -556,6 +580,8 @@ fn test_update_metadata_invalid_cid() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let wrong_char_cid = String::from_str(
@@ -637,6 +663,8 @@ fn test_increment_inventory_success() {
         max_supply: 10,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -699,6 +727,8 @@ fn test_increment_inventory_max_supply_exceeded() {
         max_supply: 2,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -756,6 +786,8 @@ fn test_increment_inventory_unlimited_supply() {
         max_supply: 0,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     for _ in 0..10 {
@@ -830,6 +862,8 @@ fn test_increment_inventory_inactive_event() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     client.update_event_status(&event_id, &false);
@@ -880,6 +914,8 @@ fn test_increment_inventory_persists_across_reads() {
         max_supply: 50,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     for _ in 0..5 {
@@ -946,6 +982,8 @@ fn test_tier_limit_exceeds_max_supply() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
     assert_eq!(
         result,
@@ -996,6 +1034,8 @@ fn test_tier_not_found() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -1047,6 +1087,8 @@ fn test_tier_supply_exceeded() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1113,6 +1155,8 @@ fn test_multiple_tiers_inventory() {
         max_supply: 70,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -1159,6 +1203,8 @@ fn test_update_event_status_noop_skips_event() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let _ = env.events().all();
@@ -1226,6 +1272,8 @@ fn test_blacklist_prevents_event_registration() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -1262,6 +1310,8 @@ fn test_update_metadata_noop_skips_event() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let _ = env.events().all();
@@ -1336,6 +1386,8 @@ fn test_blacklist_suspends_active_events() {
         max_supply: 100,
         milestone_plan: None,
         tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();

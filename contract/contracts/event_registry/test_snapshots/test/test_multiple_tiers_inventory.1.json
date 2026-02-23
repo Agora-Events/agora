@@ -85,6 +85,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "refund_deadline"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "restocking_fee"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "tiers"
                       },
                       "val": {
@@ -438,6 +454,22 @@
                       },
                       "val": {
                         "u32": 500
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "refund_deadline"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "restocking_fee"
+                      },
+                      "val": {
+                        "i128": "0"
                       }
                     },
                     {
