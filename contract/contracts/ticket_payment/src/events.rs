@@ -13,6 +13,7 @@ pub enum AgoraEvent {
     BulkRefundProcessed,
     DiscountCodeApplied,
     RevenueClaimed,
+    FeeSettled,
 }
 
 #[contracttype]
@@ -94,5 +95,15 @@ pub struct RevenueClaimedEvent {
     pub event_id: String,
     pub organizer_address: Address,
     pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeSettledEvent {
+    pub event_id: String,
+    pub platform_wallet: Address,
+    pub fee_amount: i128,
+    pub fee_bps: u32,
     pub timestamp: u64,
 }

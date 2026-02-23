@@ -15,8 +15,8 @@ use crate::{
     error::TicketPaymentError,
     events::{
         AgoraEvent, BulkRefundProcessedEvent, ContractUpgraded, DiscountCodeAppliedEvent,
-        InitializationEvent, PaymentProcessedEvent, PaymentStatusChangedEvent, PriceSwitchedEvent,
-        RevenueClaimedEvent, TicketTransferredEvent,
+        FeeSettledEvent, InitializationEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
+        PriceSwitchedEvent, RevenueClaimedEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec};
@@ -641,29 +641,58 @@ impl TicketPaymentContract {
         }
 
         let balance = get_event_balance(&env, event_id.clone());
-        if balance.organizer_amount == 0 {
+        if balance.organizer_amount == 0 && balance.platform_fee == 0 {
             return Err(TicketPaymentError::NoFundsAvailable);
         }
 
-        let claim_amount = balance.organizer_amount;
+        let platform_wallet = get_platform_wallet(&env);
+        let token_client = token::Client::new(&env, &token_address);
+        let contract_address = env.current_contract_address();
+        let timestamp = env.ledger().timestamp();
 
-        token::Client::new(&env, &token_address).transfer(
-            &env.current_contract_address(),
-            &event_info.payment_address,
-            &claim_amount,
-        );
+        let platform_fee_amount = balance.platform_fee;
+        let organizer_amount = balance.organizer_amount;
 
+        // Transfer platform fee first to prioritize treasury safety
+        if platform_fee_amount > 0 {
+            token_client.transfer(&contract_address, &platform_wallet, &platform_fee_amount);
+
+            #[allow(deprecated)]
+            env.events().publish(
+                (AgoraEvent::FeeSettled,),
+                FeeSettledEvent {
+                    event_id: event_id.clone(),
+                    platform_wallet: platform_wallet.clone(),
+                    fee_amount: platform_fee_amount,
+                    fee_bps: event_info.platform_fee_percent,
+                    timestamp,
+                },
+            );
+        }
+
+        // Transfer net revenue to organizer
+        if organizer_amount > 0 {
+            token_client.transfer(
+                &contract_address,
+                &event_info.payment_address,
+                &organizer_amount,
+            );
+        }
+
+        // Update balances
         crate::storage::set_event_balance(
             &env,
             event_id.clone(),
             crate::types::EventBalance {
                 organizer_amount: 0,
-                total_withdrawn: balance.total_withdrawn + claim_amount,
-                platform_fee: balance.platform_fee,
+                total_withdrawn: balance.total_withdrawn + organizer_amount,
+                platform_fee: 0,
             },
         );
-        subtract_from_active_escrow_total(&env, claim_amount);
-        subtract_from_active_escrow_by_token(&env, token_address, claim_amount);
+
+        let total_transferred = platform_fee_amount + organizer_amount;
+        subtract_from_active_escrow_total(&env, total_transferred);
+        subtract_from_active_escrow_by_token(&env, token_address, total_transferred);
 
         #[allow(deprecated)]
         env.events().publish(
@@ -671,12 +700,12 @@ impl TicketPaymentContract {
             RevenueClaimedEvent {
                 event_id,
                 organizer_address: event_info.organizer_address,
-                amount: claim_amount,
-                timestamp: env.ledger().timestamp(),
+                amount: organizer_amount,
+                timestamp,
             },
         );
 
-        Ok(claim_amount)
+        Ok(organizer_amount)
     }
 
     /// Returns all payments for a specific buyer.
