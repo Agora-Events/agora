@@ -257,6 +257,41 @@ pub fn add_to_total_fees_collected_by_token(env: &Env, token: Address, amount: i
         .set(&DataKey::TotalFeesCollected(token), &(current + amount));
 }
 
+pub fn subtract_from_total_fees_collected_by_token(env: &Env, token: Address, amount: i128) {
+    let current = get_total_fees_collected_by_token(env, token.clone());
+    env.storage()
+        .persistent()
+        .set(&DataKey::TotalFeesCollected(token), &(current - amount));
+}
+
+pub fn set_withdrawal_cap(env: &Env, token: Address, amount: i128) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::WithdrawalCap(token), &amount);
+}
+
+pub fn get_withdrawal_cap(env: &Env, token: Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::WithdrawalCap(token))
+        .unwrap_or(0)
+}
+
+pub fn get_daily_withdrawn_amount(env: &Env, token: Address, day: u64) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DailyWithdrawalAmount(token, day))
+        .unwrap_or(0)
+}
+
+pub fn add_to_daily_withdrawn_amount(env: &Env, token: Address, day: u64, amount: i128) {
+    let current = get_daily_withdrawn_amount(env, token.clone(), day);
+    env.storage().persistent().set(
+        &DataKey::DailyWithdrawalAmount(token, day),
+        &(current + amount),
+    );
+}
+
 pub fn get_active_escrow_total(env: &Env) -> i128 {
     env.storage()
         .persistent()

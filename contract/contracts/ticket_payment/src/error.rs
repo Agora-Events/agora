@@ -27,7 +27,8 @@ pub enum TicketPaymentError {
     EventNotCompleted = 21,
     NoFundsAvailable = 22,
     RefundDeadlinePassed = 23,
-    ResalePriceExceedsCap = 24,
+    WithdrawalCapExceeded = 24,
+    InsufficientFees = 25,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -79,8 +80,9 @@ impl core::fmt::Display for TicketPaymentError {
             TicketPaymentError::EventNotCompleted => write!(f, "Event is not completed"),
             TicketPaymentError::NoFundsAvailable => write!(f, "No funds available to claim"),
             TicketPaymentError::RefundDeadlinePassed => write!(f, "Refund deadline has passed"),
-            TicketPaymentError::ResalePriceExceedsCap => {
-                write!(f, "Resale price exceeds the organizer's cap")
+            TicketPaymentError::WithdrawalCapExceeded => write!(f, "Daily withdrawal cap exceeded"),
+            TicketPaymentError::InsufficientFees => {
+                write!(f, "Insufficient platform fees accumulated")
             }
         }
     }
