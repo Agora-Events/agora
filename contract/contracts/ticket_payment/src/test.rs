@@ -3311,3 +3311,88 @@ fn test_claim_automatic_refund_success() {
     assert_eq!(balance.organizer_amount, 0);
     assert_eq!(balance.platform_fee, 0);
 }
+
+#[test]
+fn test_dispute_blocks_withdrawal() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let event_id = String::from_str(&env, "event_1");
+    client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Set event as disputed
+    client.set_event_dispute(&event_id, &true);
+    assert!(client.is_event_disputed(&event_id));
+
+    // Attempt to withdraw - should fail
+    let res = client.try_withdraw_organizer_funds(&event_id, &usdc_id);
+    assert_eq!(res, Err(Ok(TicketPaymentError::EventDisputed)));
+
+    // Clear dispute
+    client.set_event_dispute(&event_id, &false);
+    assert!(!client.is_event_disputed(&event_id));
+
+    // Attempt to withdraw - should succeed
+    let withdrawn = client.withdraw_organizer_funds(&event_id, &usdc_id);
+    assert!(withdrawn > 0);
+}
+
+#[test]
+fn test_admin_refund_during_dispute() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let event_id = String::from_str(&env, "event_1");
+    let payment_id = String::from_str(&env, "pay_1");
+    client.process_payment(
+        &payment_id,
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Set event as disputed
+    client.set_event_dispute(&event_id, &true);
+
+    // Admin triggers refund
+    client.admin_refund(&payment_id);
+
+    // Check payment status
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.status, PaymentStatus::Refunded);
+
+    // Check buyer balance
+    let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert!(buyer_balance > 0);
+}
