@@ -16,7 +16,7 @@ use crate::{
     events::{
         AgoraEvent, BulkRefundProcessedEvent, ContractUpgraded, DiscountCodeAppliedEvent,
         InitializationEvent, PaymentProcessedEvent, PaymentStatusChangedEvent, PriceSwitchedEvent,
-        TicketTransferredEvent,
+        RevenueClaimedEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec};
@@ -616,6 +616,67 @@ impl TicketPaymentContract {
         subtract_from_active_escrow_by_token(&env, token_address, balance.platform_fee);
 
         Ok(balance.platform_fee)
+    }
+
+    /// Claim revenue after event completion.
+    pub fn claim_revenue(
+        env: Env,
+        event_id: String,
+        token_address: Address,
+    ) -> Result<i128, TicketPaymentError> {
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+
+        let event_info = registry_client
+            .try_get_event(&event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+            .ok_or(TicketPaymentError::EventNotFound)?;
+
+        event_info.organizer_address.require_auth();
+
+        if event_info.is_active {
+            return Err(TicketPaymentError::EventNotCompleted);
+        }
+
+        let balance = get_event_balance(&env, event_id.clone());
+        if balance.organizer_amount == 0 {
+            return Err(TicketPaymentError::NoFundsAvailable);
+        }
+
+        let claim_amount = balance.organizer_amount;
+
+        token::Client::new(&env, &token_address).transfer(
+            &env.current_contract_address(),
+            &event_info.payment_address,
+            &claim_amount,
+        );
+
+        crate::storage::set_event_balance(
+            &env,
+            event_id.clone(),
+            crate::types::EventBalance {
+                organizer_amount: 0,
+                total_withdrawn: balance.total_withdrawn + claim_amount,
+                platform_fee: balance.platform_fee,
+            },
+        );
+        subtract_from_active_escrow_total(&env, claim_amount);
+        subtract_from_active_escrow_by_token(&env, token_address, claim_amount);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::RevenueClaimed,),
+            RevenueClaimedEvent {
+                event_id,
+                organizer_address: event_info.organizer_address,
+                amount: claim_amount,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(claim_amount)
     }
 
     /// Returns all payments for a specific buyer.

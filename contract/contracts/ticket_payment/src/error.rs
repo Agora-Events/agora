@@ -23,6 +23,9 @@ pub enum TicketPaymentError {
     InvalidPrice = 17,
     InvalidDiscountCode = 18,
     DiscountCodeAlreadyUsed = 19,
+    Unauthorized = 20,
+    EventNotCompleted = 21,
+    NoFundsAvailable = 22,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -70,6 +73,9 @@ impl core::fmt::Display for TicketPaymentError {
             TicketPaymentError::DiscountCodeAlreadyUsed => {
                 write!(f, "Discount code has already been used")
             }
+            TicketPaymentError::Unauthorized => write!(f, "Unauthorized caller"),
+            TicketPaymentError::EventNotCompleted => write!(f, "Event is not completed"),
+            TicketPaymentError::NoFundsAvailable => write!(f, "No funds available to claim"),
         }
     }
 }
