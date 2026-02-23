@@ -16,6 +16,7 @@ pub enum AgoraEvent {
     FeeSettled,
     GlobalPromoApplied,
     ContractPaused,
+    AdminReturnProcessed,
 }
 
 #[contracttype]
@@ -124,5 +125,15 @@ pub struct GlobalPromoAppliedEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractPausedEvent {
     pub paused: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminReturnProcessedEvent {
+    pub event_id: String,
+    pub payment_id: String,
+    pub admin_address: Address,
+    pub amount_refunded: i128,
     pub timestamp: u64,
 }

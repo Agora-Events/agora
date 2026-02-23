@@ -1,10 +1,10 @@
 #![no_std]
 
 use crate::events::{
-    AgoraEvent, EventPostponedEvent, EventRegisteredEvent, EventStatusUpdatedEvent,
-    EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent, InitializationEvent,
-    InventoryIncrementedEvent, MetadataUpdatedEvent, OrganizerBlacklistedEvent,
-    OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
+    AgoraEvent, DisputeStatusUpdatedEvent, EventPostponedEvent, EventRegisteredEvent,
+    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
+    InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent,
+    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
 };
 use crate::types::{BlacklistAuditEntry, EventInfo, EventRegistrationArgs, PaymentInfo};
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
@@ -132,6 +132,7 @@ impl EventRegistry {
             resale_cap_bps: args.resale_cap_bps,
             is_postponed: false,
             grace_period_end: 0,
+            dispute_status: false,
         };
 
         storage::store_event(&env, event_info);
@@ -236,6 +237,41 @@ impl EventRegistry {
                         event_id,
                         new_metadata_cid,
                         updated_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                Ok(())
+            }
+            None => Err(EventRegistryError::EventNotFound),
+        }
+    }
+
+    /// Sets the dispute status of an event. Only callable by the administrator.
+    /// Emits `DisputeStatusUpdatedEvent` when changed.
+    pub fn set_dispute_status(
+        env: Env,
+        event_id: String,
+        dispute_status: bool,
+    ) -> Result<(), EventRegistryError> {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+
+        match storage::get_event(&env, event_id.clone()) {
+            Some(mut event_info) => {
+                if event_info.dispute_status == dispute_status {
+                    return Ok(());
+                }
+
+                event_info.dispute_status = dispute_status;
+                storage::update_event(&env, event_info);
+
+                env.events().publish(
+                    (AgoraEvent::DisputeStatusUpdated,),
+                    DisputeStatusUpdatedEvent {
+                        event_id,
+                        dispute_status,
+                        admin_address: admin,
                         timestamp: env.ledger().timestamp(),
                     },
                 );

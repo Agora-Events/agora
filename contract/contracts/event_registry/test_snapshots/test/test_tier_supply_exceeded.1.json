@@ -353,6 +353,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "dispute_status"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
@@ -361,10 +369,26 @@
                     },
                     {
                       "key": {
+                        "symbol": "grace_period_end"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "is_active"
                       },
                       "val": {
                         "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "is_postponed"
+                      },
+                      "val": {
+                        "bool": false
                       }
                     },
                     {

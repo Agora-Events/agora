@@ -26,6 +26,7 @@ pub enum EventRegistryError {
     InvalidResaleCapBps = 20,
     InvalidPromoBps = 21,
     InvalidGracePeriodEnd = 22,
+    DisputingEvent = 23,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -82,6 +83,9 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::InvalidGracePeriodEnd => {
                 write!(f, "Grace period end must be in the future")
+            }
+            EventRegistryError::DisputingEvent => {
+                write!(f, "Cannot modify event under dispute")
             }
         }
     }

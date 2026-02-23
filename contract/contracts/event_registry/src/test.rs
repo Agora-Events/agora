@@ -137,6 +137,7 @@ fn test_storage_operations() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        dispute_status: false,
         is_postponed: false,
         grace_period_end: 0,
     };
@@ -185,6 +186,7 @@ fn test_organizer_events_list() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        dispute_status: false,
         is_postponed: false,
         grace_period_end: 0,
     };
@@ -207,6 +209,7 @@ fn test_organizer_events_list() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        dispute_status: false,
         is_postponed: false,
         grace_period_end: 0,
     };
@@ -1699,4 +1702,74 @@ fn test_register_event_resale_cap_invalid() {
         resale_cap_bps: Some(10001), // Over 100% - invalid
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
+}
+
+#[test]
+fn test_set_dispute_status_success() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "dispute_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+    });
+
+    // Default should be false
+    let event_info_before = client.get_event(&event_id).unwrap();
+    assert!(!event_info_before.dispute_status);
+
+    // Set to true
+    client.set_dispute_status(&event_id, &true);
+    let event_info_after = client.get_event(&event_id).unwrap();
+    assert!(event_info_after.dispute_status);
+
+    // Set back to false
+    client.set_dispute_status(&event_id, &false);
+    let event_info_final = client.get_event(&event_id).unwrap();
+    assert!(!event_info_final.dispute_status);
+}
+
+#[test]
+#[should_panic]
+fn test_set_dispute_status_unauthorized() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    // don't mock auth, should panic
+    client.set_dispute_status(&String::from_str(&env, "e1"), &true);
 }

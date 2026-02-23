@@ -23,7 +23,7 @@
                         "symbol": "event_id"
                       },
                       "val": {
-                        "string": "event_002"
+                        "string": "dispute_event"
                       }
                     },
                     {
@@ -31,7 +31,7 @@
                         "symbol": "max_supply"
                       },
                       "val": {
-                        "i128": "50"
+                        "i128": "100"
                       }
                     },
                     {
@@ -91,10 +91,106 @@
                         "symbol": "tiers"
                       },
                       "val": {
-                        "map": []
+                        "map": [
+                          {
+                            "key": {
+                              "string": "general"
+                            },
+                            "val": {
+                              "map": [
+                                {
+                                  "key": {
+                                    "symbol": "current_sold"
+                                  },
+                                  "val": {
+                                    "i128": "0"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "is_refundable"
+                                  },
+                                  "val": {
+                                    "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "name"
+                                  },
+                                  "val": {
+                                    "string": "General"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "price"
+                                  },
+                                  "val": {
+                                    "i128": "5000000"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "tier_limit"
+                                  },
+                                  "val": {
+                                    "i128": "100"
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        ]
                       }
                     }
                   ]
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "set_dispute_status",
+              "args": [
+                {
+                  "string": "dispute_event"
+                },
+                {
+                  "bool": true
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "set_dispute_status",
+              "args": [
+                {
+                  "string": "dispute_event"
+                },
+                {
+                  "bool": false
                 }
               ]
             }
@@ -164,7 +260,7 @@
                   "symbol": "Event"
                 },
                 {
-                  "string": "event_002"
+                  "string": "dispute_event"
                 }
               ]
             },
@@ -184,7 +280,7 @@
                       "symbol": "Event"
                     },
                     {
-                      "string": "event_002"
+                      "string": "dispute_event"
                     }
                   ]
                 },
@@ -220,7 +316,7 @@
                         "symbol": "event_id"
                       },
                       "val": {
-                        "string": "event_002"
+                        "string": "dispute_event"
                       }
                     },
                     {
@@ -252,7 +348,7 @@
                         "symbol": "max_supply"
                       },
                       "val": {
-                        "i128": "50"
+                        "i128": "100"
                       }
                     },
                     {
@@ -290,7 +386,7 @@
                         "symbol": "platform_fee_percent"
                       },
                       "val": {
-                        "u32": 750
+                        "u32": 500
                       }
                     },
                     {
@@ -320,7 +416,57 @@
                         "symbol": "tiers"
                       },
                       "val": {
-                        "map": []
+                        "map": [
+                          {
+                            "key": {
+                              "string": "general"
+                            },
+                            "val": {
+                              "map": [
+                                {
+                                  "key": {
+                                    "symbol": "current_sold"
+                                  },
+                                  "val": {
+                                    "i128": "0"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "is_refundable"
+                                  },
+                                  "val": {
+                                    "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "name"
+                                  },
+                                  "val": {
+                                    "string": "General"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "price"
+                                  },
+                                  "val": {
+                                    "i128": "5000000"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "tier_limit"
+                                  },
+                                  "val": {
+                                    "i128": "100"
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        ]
                       }
                     }
                   ]
@@ -409,7 +555,7 @@
                 "val": {
                   "vec": [
                     {
-                      "string": "event_002"
+                      "string": "dispute_event"
                     }
                   ]
                 }
@@ -450,7 +596,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u32": 750
+                  "u32": 500
                 }
               }
             },
@@ -528,6 +674,72 @@
             "ext": "v0"
           },
           4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "1033654523790656264"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "1033654523790656264"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "5541220902715666415"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "5541220902715666415"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
         ]
       ],
       [

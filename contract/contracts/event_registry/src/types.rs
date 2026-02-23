@@ -65,6 +65,8 @@ pub struct EventInfo {
     /// Timestamp (Unix) when the temporary refund grace period for a
     /// postponed event ends. 0 means no grace period active.
     pub grace_period_end: u64,
+    /// Indicates whether the event is currently under dispute by the platform
+    pub dispute_status: bool,
 }
 
 /// Payment information for an event
