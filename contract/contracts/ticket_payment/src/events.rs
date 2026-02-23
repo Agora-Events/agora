@@ -8,6 +8,14 @@ pub enum AgoraEvent {
     PaymentStatusChanged,
     ContractInitialized,
     ContractUpgraded,
+    TicketTransferred,
+    PriceSwitched,
+    BulkRefundProcessed,
+    DiscountCodeApplied,
+    RevenueClaimed,
+    FeeSettled,
+    GlobalPromoApplied,
+    ContractPaused,
 }
 
 #[contracttype]
@@ -44,4 +52,77 @@ pub struct InitializationEvent {
 pub struct ContractUpgraded {
     pub old_wasm_hash: BytesN<32>,
     pub new_wasm_hash: BytesN<32>,
+}
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketTransferredEvent {
+    pub payment_id: String,
+    pub from: Address,
+    pub to: Address,
+    pub transfer_fee: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PriceSwitchedEvent {
+    pub event_id: String,
+    pub tier_id: String,
+    pub new_price: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BulkRefundProcessedEvent {
+    pub event_id: String,
+    pub refund_count: u32,
+    pub total_refunded: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiscountCodeAppliedEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub code_hash: BytesN<32>,
+    pub discount_amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RevenueClaimedEvent {
+    pub event_id: String,
+    pub organizer_address: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeSettledEvent {
+    pub event_id: String,
+    pub platform_wallet: Address,
+    pub fee_amount: i128,
+    pub fee_bps: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GlobalPromoAppliedEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub promo_bps: u32,
+    pub discount_amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractPausedEvent {
+    pub paused: bool,
+    pub timestamp: u64,
 }

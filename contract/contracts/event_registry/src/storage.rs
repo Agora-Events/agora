@@ -1,4 +1,4 @@
-use crate::types::{DataKey, EventInfo};
+use crate::types::{BlacklistAuditEntry, DataKey, EventInfo};
 use soroban_sdk::{Address, Env, String, Vec};
 
 /// Sets the administrator address of the contract.
@@ -87,6 +87,15 @@ pub fn store_event(env: &Env, event_info: EventInfo) {
     }
 }
 
+/// Updates event data without touching organizer index.
+/// Use this for mutations on already-registered events.
+pub fn update_event(env: &Env, event_info: EventInfo) {
+    let event_id = event_info.event_id.clone();
+    env.storage()
+        .persistent()
+        .set(&DataKey::Event(event_id), &event_info);
+}
+
 /// Retrieves event information by event_id.
 pub fn get_event(env: &Env, event_id: String) -> Option<EventInfo> {
     env.storage().persistent().get(&DataKey::Event(event_id))
@@ -117,4 +126,73 @@ pub fn get_ticket_payment_contract(env: &Env) -> Option<Address> {
     env.storage()
         .persistent()
         .get(&DataKey::TicketPaymentContract)
+}
+
+/// Checks if an organizer is blacklisted.
+pub fn is_blacklisted(env: &Env, organizer: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::BlacklistedOrganizer(organizer.clone()))
+        .unwrap_or(false)
+}
+
+/// Adds an organizer to the blacklist.
+pub fn add_to_blacklist(env: &Env, organizer: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::BlacklistedOrganizer(organizer.clone()), &true);
+}
+
+/// Removes an organizer from the blacklist.
+pub fn remove_from_blacklist(env: &Env, organizer: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::BlacklistedOrganizer(organizer.clone()));
+}
+
+/// Adds an audit log entry for blacklist actions.
+pub fn add_blacklist_audit_entry(env: &Env, entry: BlacklistAuditEntry) {
+    let mut audit_log: Vec<BlacklistAuditEntry> = get_blacklist_audit_log(env);
+    audit_log.push_back(entry);
+    env.storage()
+        .persistent()
+        .set(&DataKey::BlacklistLog, &audit_log);
+}
+
+/// Retrieves the blacklist audit log.
+pub fn get_blacklist_audit_log(env: &Env) -> Vec<BlacklistAuditEntry> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::BlacklistLog)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Sets the global promotional discount in basis points.
+pub fn set_global_promo_bps(env: &Env, bps: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalPromoBps, &bps);
+}
+
+/// Retrieves the global promotional discount in basis points.
+pub fn get_global_promo_bps(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::GlobalPromoBps)
+        .unwrap_or(0)
+}
+
+/// Sets the expiry timestamp for the global promotional discount.
+pub fn set_promo_expiry(env: &Env, expiry: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PromoExpiry, &expiry);
+}
+
+/// Retrieves the expiry timestamp for the global promotional discount.
+pub fn get_promo_expiry(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PromoExpiry)
+        .unwrap_or(0)
 }
