@@ -1009,6 +1009,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "refunded_amount"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -1141,6 +1149,14 @@
                       },
                       "val": {
                         "i128": "500000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "refunded_amount"
+                      },
+                      "val": {
+                        "i128": "0"
                       }
                     },
                     {

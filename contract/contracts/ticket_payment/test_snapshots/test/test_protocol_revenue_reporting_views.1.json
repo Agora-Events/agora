@@ -937,6 +937,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "refunded_amount"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
