@@ -1,8 +1,9 @@
 use super::*;
 use crate::error::EventRegistryError;
+use crate::types::EventStatus;
 use crate::types::{EventInfo, EventRegistrationArgs, TicketTier};
 use soroban_sdk::{
-    testutils::{Address as _, EnvTestConfig, Events},
+    testutils::{Address as _, EnvTestConfig, Events, Ledger},
     Address, Env, Map, String,
 };
 
@@ -107,6 +108,7 @@ fn test_set_platform_fee_unauthorized() {
 #[test]
 fn test_storage_operations() {
     let env = Env::default();
+    env.mock_all_auths();
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
 
@@ -125,6 +127,7 @@ fn test_storage_operations() {
         payment_address: payment_address.clone(),
         platform_fee_percent: 5,
         is_active: true,
+        status: EventStatus::Active,
         created_at: env.ledger().timestamp(),
         metadata_cid: String::from_str(
             &env,
@@ -137,6 +140,8 @@ fn test_storage_operations() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
     };
 
     client.store_event(&event_info);
@@ -160,6 +165,7 @@ fn test_storage_operations() {
 #[test]
 fn test_organizer_events_list() {
     let env = Env::default();
+    env.mock_all_auths();
     let organizer = Address::generate(&env);
     let payment_address = Address::generate(&env);
 
@@ -171,6 +177,7 @@ fn test_organizer_events_list() {
         payment_address: payment_address.clone(),
         platform_fee_percent: 5,
         is_active: true,
+        status: EventStatus::Active,
         created_at: 100,
         metadata_cid: String::from_str(
             &env,
@@ -183,6 +190,8 @@ fn test_organizer_events_list() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
     };
 
     let event_2 = EventInfo {
@@ -191,6 +200,7 @@ fn test_organizer_events_list() {
         payment_address: payment_address.clone(),
         platform_fee_percent: 5,
         is_active: true,
+        status: EventStatus::Active,
         created_at: 200,
         metadata_cid: String::from_str(
             &env,
@@ -203,6 +213,8 @@ fn test_organizer_events_list() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -270,6 +282,8 @@ fn test_register_event_success() {
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.max_supply, 100);
     assert_eq!(event_info.current_supply, 0);
+    assert!(!event_info.is_postponed);
+    assert_eq!(event_info.grace_period_end, 0);
 }
 
 #[test]
@@ -1613,6 +1627,51 @@ fn test_register_event_resale_cap_none() {
 }
 
 #[test]
+fn test_postpone_event_sets_grace_period() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "postponed_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+    });
+
+    // Set ledger time and grace period end in the future
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let grace_period_end = 2_000u64;
+
+    client.postpone_event(&event_id, &grace_period_end);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert!(event_info.is_postponed);
+    assert_eq!(event_info.grace_period_end, grace_period_end);
+}
+
+#[test]
 fn test_register_event_resale_cap_invalid() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1646,4 +1705,115 @@ fn test_register_event_resale_cap_invalid() {
         resale_cap_bps: Some(10001), // Over 100% - invalid
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
+}
+
+#[test]
+fn test_cancel_event_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "cancel_me");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 100,
+        resale_cap_bps: None,
+    });
+
+    client.cancel_event(&event_id);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.status, EventStatus::Cancelled);
+    assert!(!event_info.is_active);
+}
+
+#[test]
+fn test_cancel_already_cancelled_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "cancel_twice");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+    });
+
+    client.cancel_event(&event_id);
+    let result = client.try_cancel_event(&event_id);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCancelled)));
+}
+
+#[test]
+fn test_update_status_on_cancelled_event_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "no_updates");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+    });
+
+    client.cancel_event(&event_id);
+    let result = client.try_update_event_status(&event_id, &true);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 }

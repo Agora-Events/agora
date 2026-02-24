@@ -1,12 +1,14 @@
 #![no_std]
 
 use crate::events::{
-    AgoraEvent, EventRegisteredEvent, EventStatusUpdatedEvent, EventsSuspendedEvent,
-    FeeUpdatedEvent, GlobalPromoUpdatedEvent, InitializationEvent, InventoryIncrementedEvent,
-    MetadataUpdatedEvent, OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent,
-    RegistryUpgradedEvent,
+    AgoraEvent, EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
+    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
+    InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent,
+    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
 };
-use crate::types::{BlacklistAuditEntry, EventInfo, EventRegistrationArgs, PaymentInfo};
+use crate::types::{
+    BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, MultiSigConfig, PaymentInfo,
+};
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
 pub mod error;
@@ -23,6 +25,7 @@ pub struct EventRegistry;
 #[allow(deprecated)]
 impl EventRegistry {
     /// Initializes the contract configuration. Can only be called once.
+    /// Sets up initial admin with multi-sig configuration (threshold = 1 for single admin).
     ///
     /// # Arguments
     /// * `admin` - The administrator address.
@@ -50,7 +53,17 @@ impl EventRegistry {
         if initial_fee > 10000 {
             return Err(EventRegistryError::InvalidFeePercent);
         }
-        storage::set_admin(&env, &admin);
+
+        // Initialize multi-sig with single admin and threshold of 1
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        let multisig_config = MultiSigConfig {
+            admins,
+            threshold: 1,
+        };
+
+        storage::set_admin(&env, &admin); // Legacy support
+        storage::set_multisig_config(&env, &multisig_config);
         storage::set_platform_wallet(&env, &platform_wallet);
         storage::set_platform_fee(&env, initial_fee);
         storage::set_initialized(&env, true);
@@ -121,6 +134,7 @@ impl EventRegistry {
             payment_address: args.payment_address.clone(),
             platform_fee_percent,
             is_active: true,
+            status: EventStatus::Active,
             created_at: env.ledger().timestamp(),
             metadata_cid: args.metadata_cid.clone(),
             max_supply: args.max_supply,
@@ -130,6 +144,8 @@ impl EventRegistry {
             refund_deadline: args.refund_deadline,
             restocking_fee: args.restocking_fee,
             resale_cap_bps: args.resale_cap_bps,
+            is_postponed: false,
+            grace_period_end: 0,
         };
 
         storage::store_event(&env, event_info);
@@ -178,6 +194,10 @@ impl EventRegistry {
                 // Verify organizer signature
                 event_info.organizer_address.require_auth();
 
+                if matches!(event_info.status, EventStatus::Cancelled) {
+                    return Err(EventRegistryError::EventCancelled);
+                }
+
                 // Skip storage/event writes when status is unchanged.
                 if event_info.is_active == is_active {
                     return Ok(());
@@ -194,6 +214,38 @@ impl EventRegistry {
                         event_id,
                         is_active,
                         updated_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                Ok(())
+            }
+            None => Err(EventRegistryError::EventNotFound),
+        }
+    }
+
+    /// Cancel an event (only by organizer). This is irreversible.
+    pub fn cancel_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
+        match storage::get_event(&env, event_id.clone()) {
+            Some(mut event_info) => {
+                // Verify organizer signature
+                event_info.organizer_address.require_auth();
+
+                if matches!(event_info.status, EventStatus::Cancelled) {
+                    return Err(EventRegistryError::EventAlreadyCancelled);
+                }
+
+                // Update status to Cancelled and deactivate
+                event_info.status = EventStatus::Cancelled;
+                event_info.is_active = false;
+                storage::update_event(&env, event_info.clone());
+
+                // Emit cancellation event
+                env.events().publish(
+                    (AgoraEvent::EventCancelled,),
+                    EventCancelledEvent {
+                        event_id,
+                        cancelled_by: event_info.organizer_address,
                         timestamp: env.ledger().timestamp(),
                     },
                 );
@@ -246,7 +298,8 @@ impl EventRegistry {
 
     /// Stores or updates an event (legacy function for backward compatibility).
     pub fn store_event(env: Env, event_info: EventInfo) {
-        // In a real scenario, we would check authorization here.
+        // Require authorization to ensure only the organizer can store/update their event directly
+        event_info.organizer_address.require_auth();
         storage::store_event(&env, event_info);
     }
 
@@ -355,7 +408,7 @@ impl EventRegistry {
         let mut event_info =
             storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
 
-        if !event_info.is_active {
+        if !event_info.is_active || matches!(event_info.status, EventStatus::Cancelled) {
             return Err(EventRegistryError::EventInactive);
         }
 
@@ -642,6 +695,42 @@ impl EventRegistry {
     pub fn get_promo_expiry(env: Env) -> u64 {
         storage::get_promo_expiry(&env)
     }
+
+    /// Marks an event as postponed and sets a temporary refund grace period.
+    /// During this window, all guests may request refunds regardless of their
+    /// ticket tier's standard refundability rules or refund deadlines.
+    pub fn postpone_event(
+        env: Env,
+        event_id: String,
+        grace_period_end: u64,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Only the organizer may postpone their event.
+        event_info.organizer_address.require_auth();
+
+        let now = env.ledger().timestamp();
+        if grace_period_end <= now {
+            return Err(EventRegistryError::InvalidGracePeriodEnd);
+        }
+
+        event_info.is_postponed = true;
+        event_info.grace_period_end = grace_period_end;
+        storage::update_event(&env, event_info.clone());
+
+        env.events().publish(
+            (AgoraEvent::EventPostponed,),
+            EventPostponedEvent {
+                event_id,
+                organizer_address: event_info.organizer_address,
+                grace_period_end,
+                timestamp: now,
+            },
+        );
+
+        Ok(())
+    }
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
@@ -707,3 +796,7 @@ fn suspend_organizer_events(
 
 #[cfg(test)]
 mod test;
+
+// TODO: Uncomment when multisig functions are implemented
+// #[cfg(test)]
+// mod test_multisig;

@@ -26,6 +26,14 @@ pub struct Milestone {
     pub release_percent: u32,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EventStatus {
+    Active,
+    Inactive,
+    Cancelled,
+}
+
 /// Represents information about an event in the registry.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,6 +48,8 @@ pub struct EventInfo {
     pub platform_fee_percent: u32,
     /// Whether the event is currently active and accepting payments
     pub is_active: bool,
+    /// The current status of the event
+    pub status: EventStatus,
     /// Timestamp when the event was created
     pub created_at: u64,
     /// IPFS Content Identifier storing rich metadata details
@@ -59,6 +69,12 @@ pub struct EventInfo {
     /// Optional resale price cap in basis points above face value.
     /// None = no cap (free market), Some(0) = no markup, Some(1000) = max 10% above face value.
     pub resale_cap_bps: Option<u32>,
+    /// Indicates whether the event is currently postponed (date shifted)
+    /// and in a temporary refund grace period window.
+    pub is_postponed: bool,
+    /// Timestamp (Unix) when the temporary refund grace period for a
+    /// postponed event ends. 0 means no grace period active.
+    pub grace_period_end: u64,
 }
 
 /// Payment information for an event
@@ -106,11 +122,43 @@ pub struct BlacklistAuditEntry {
     pub timestamp: u64,
 }
 
+/// Multi-signature configuration for admin management
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultiSigConfig {
+    /// List of admin addresses
+    pub admins: Vec<Address>,
+    /// Number of approvals required to execute a proposal
+    pub threshold: u32,
+}
+
+/// Represents a governance proposal
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Proposal {
+    /// Unique identifier for the proposal
+    pub proposal_id: u64,
+    /// Address that created the proposal
+    pub proposer: Address,
+    /// Description of the proposal
+    pub description: String,
+    /// Addresses that have approved this proposal
+    pub approvals: Vec<Address>,
+    /// Whether the proposal has been executed
+    pub executed: bool,
+    /// Timestamp when the proposal was created
+    pub created_at: u64,
+    /// Timestamp when the proposal expires
+    pub expires_at: u64,
+}
+
 /// Storage keys for the Event Registry contract.
 #[contracttype]
 pub enum DataKey {
-    /// The administrator address for contract management
+    /// The administrator address for contract management (legacy, kept for backward compatibility)
     Admin,
+    /// Multi-signature configuration
+    MultiSigConfig,
     /// The platform wallet address for fee collection
     PlatformWallet,
     /// The global platform fee percentage
@@ -119,8 +167,12 @@ pub enum DataKey {
     Initialized,
     /// Mapping of event_id to EventInfo (Persistent)
     Event(String),
-    /// Mapping of organizer_address to a list of their event_ids (Persistent)
-    OrganizerEvents(Address),
+    /// Individual entry for an organizer's event (Persistent)
+    OrganizerEvent(Address, String),
+    /// Sharded mapping of organizer address to their event_ids (Persistent)
+    OrganizerEventShard(Address, u32),
+    /// Total number of events for an organizer (Persistent)
+    OrganizerEventCount(Address),
     /// The authorized TicketPayment contract address for inventory updates
     TicketPaymentContract,
     /// Mapping of organizer address to blacklist status (Persistent)
@@ -131,4 +183,10 @@ pub enum DataKey {
     GlobalPromoBps,
     /// Expiry timestamp for the global promotional discount
     PromoExpiry,
+    /// Counter for proposal IDs
+    ProposalCounter,
+    /// Mapping of proposal_id to Proposal
+    Proposal(u64),
+    /// List of active proposal IDs
+    ActiveProposals,
 }
