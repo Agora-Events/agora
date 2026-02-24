@@ -10,10 +10,10 @@ use crate::storage::{
     is_token_whitelisted, mark_discount_hash_used, remove_payment_from_buyer_index,
     remove_token_from_whitelist, set_admin, set_bulk_refund_index, set_event_dispute_status,
     set_event_registry, set_initialized, set_is_paused, set_partial_refund_index,
-    set_partial_refund_percentage, set_platform_wallet, set_price_switched,
-    set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment,
-    subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
-    subtract_from_total_fees_collected_by_token, update_event_balance,
+    set_partial_refund_percentage, set_platform_wallet, set_price_switched, set_transfer_fee,
+    set_usdc_token, set_withdrawal_cap, store_payment, subtract_from_active_escrow_by_token,
+    subtract_from_active_escrow_total, subtract_from_total_fees_collected_by_token,
+    update_event_balance,
 };
 use crate::types::{Payment, PaymentStatus};
 use crate::{
@@ -487,6 +487,7 @@ impl TicketPaymentContract {
                 transaction_hash: empty_tx_hash.clone(),
                 created_at,
                 confirmed_at: None,
+                refunded_amount: 0,
             };
 
             store_payment(&env, payment);
@@ -1333,7 +1334,8 @@ impl TicketPaymentContract {
             let payment_id = payment_ids.get(i).unwrap();
             if let Some(mut payment) = get_payment(&env, payment_id.clone()) {
                 if payment.status == PaymentStatus::Confirmed {
-                    let refund_amount = (payment.amount
+                    let refund_amount = (payment
+                        .amount
                         .checked_mul(active_pct as i128)
                         .ok_or(TicketPaymentError::ArithmeticError)?)
                         / 10000;

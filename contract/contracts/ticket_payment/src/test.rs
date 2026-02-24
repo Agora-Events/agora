@@ -345,6 +345,7 @@ fn test_confirm_payment() {
         transaction_hash: String::from_str(&env, ""),
         created_at: 100,
         confirmed_at: None,
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1272,6 +1273,7 @@ fn test_transfer_ticket_success() {
         transaction_hash: String::from_str(&env, "tx_1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1331,6 +1333,7 @@ fn test_transfer_ticket_with_fee() {
         transaction_hash: String::from_str(&env, "tx_1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1372,6 +1375,7 @@ fn test_transfer_ticket_unauthorized() {
         transaction_hash: String::from_str(&env, ""),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2792,6 +2796,7 @@ fn test_transfer_ticket_resale_price_within_cap() {
         transaction_hash: String::from_str(&env, "tx_1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2828,6 +2833,7 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
         transaction_hash: String::from_str(&env, "tx_2"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2866,6 +2872,7 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
         transaction_hash: String::from_str(&env, "tx_3"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2902,6 +2909,7 @@ fn test_transfer_ticket_sale_price_no_cap() {
         transaction_hash: String::from_str(&env, "tx_nc1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -3289,6 +3297,7 @@ fn test_claim_automatic_refund_success() {
         transaction_hash: String::from_str(&env, "tx"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
