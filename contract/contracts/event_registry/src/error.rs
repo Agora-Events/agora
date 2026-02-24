@@ -28,6 +28,7 @@ pub enum EventRegistryError {
     EventCancelled = 22,
     EventAlreadyCancelled = 23,
     InvalidGracePeriodEnd = 24,
+    EventIsActive = 25,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -90,6 +91,9 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::InvalidGracePeriodEnd => {
                 write!(f, "Grace period end timestamp must be in the future")
+            }
+            EventRegistryError::EventIsActive => {
+                write!(f, "Cannot perform action on an active event")
             }
         }
     }

@@ -96,9 +96,28 @@ pub fn update_event(env: &Env, event_info: EventInfo) {
         .set(&DataKey::Event(event_id), &event_info);
 }
 
-/// Retrieves event information by event_id.
+/// Integrates storage functions to get, remove events and handle their receipts.
 pub fn get_event(env: &Env, event_id: String) -> Option<EventInfo> {
     env.storage().persistent().get(&DataKey::Event(event_id))
+}
+
+/// Removes an event from storage
+pub fn remove_event(env: &Env, event_id: String) {
+    env.storage().persistent().remove(&DataKey::Event(event_id));
+}
+
+/// Stores an event receipt
+pub fn store_event_receipt(env: &Env, receipt: crate::types::EventReceipt) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventReceipt(receipt.event_id.clone()), &receipt);
+}
+
+/// Retrieves an event receipt by its event_id
+pub fn get_event_receipt(env: &Env, event_id: String) -> Option<crate::types::EventReceipt> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventReceipt(event_id))
 }
 
 /// Checks if an event with the given event_id exists.

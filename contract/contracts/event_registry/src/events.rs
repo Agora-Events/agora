@@ -17,6 +17,7 @@ pub enum AgoraEvent {
     EventsSuspended,
     GlobalPromoUpdated,
     EventPostponed,
+    EventArchived,
 }
 
 #[contracttype]
@@ -24,6 +25,14 @@ pub enum AgoraEvent {
 pub struct EventCancelledEvent {
     pub event_id: String,
     pub cancelled_by: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventArchivedEvent {
+    pub event_id: String,
+    pub organizer_address: Address,
     pub timestamp: u64,
 }
 

@@ -122,6 +122,16 @@ pub struct BlacklistAuditEntry {
     pub timestamp: u64,
 }
 
+/// Minimal receipt for an archived event, preserving basic data for historical lookups.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventReceipt {
+    pub event_id: String,
+    pub organizer_address: Address,
+    pub total_sold: i128,
+    pub archived_at: u64,
+}
+
 /// Storage keys for the Event Registry contract.
 #[contracttype]
 pub enum DataKey {
@@ -147,4 +157,6 @@ pub enum DataKey {
     GlobalPromoBps,
     /// Expiry timestamp for the global promotional discount
     PromoExpiry,
+    /// Mapping of event_id to EventReceipt (Persistent) for archived events
+    EventReceipt(String),
 }

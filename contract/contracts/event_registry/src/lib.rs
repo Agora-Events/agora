@@ -5,9 +5,10 @@ use crate::events::{
     EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
     InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent,
     OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
+    EventArchivedEvent,
 };
 use crate::types::{
-    BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, PaymentInfo,
+    BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, PaymentInfo, EventReceipt,
 };
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
 
@@ -235,6 +236,43 @@ impl EventRegistry {
                     EventCancelledEvent {
                         event_id,
                         cancelled_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                Ok(())
+            }
+            None => Err(EventRegistryError::EventNotFound),
+        }
+    }
+
+    /// Archive an event that is settled and no longer active.
+    /// Wipes large data structures and leaves a minimal Receipt,
+    /// returning reclaimed XLM deposit to the organizer automatically.
+    pub fn archive_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
+        match storage::get_event(&env, event_id.clone()) {
+            Some(event_info) => {
+                event_info.organizer_address.require_auth();
+
+                if event_info.is_active {
+                    return Err(EventRegistryError::EventIsActive);
+                }
+
+                storage::remove_event(&env, event_id.clone());
+
+                let receipt = EventReceipt {
+                    event_id: event_id.clone(),
+                    organizer_address: event_info.organizer_address.clone(),
+                    total_sold: event_info.current_supply,
+                    archived_at: env.ledger().timestamp(),
+                };
+                storage::store_event_receipt(&env, receipt);
+
+                env.events().publish(
+                    (AgoraEvent::EventArchived,),
+                    EventArchivedEvent {
+                        event_id,
+                        organizer_address: event_info.organizer_address,
                         timestamp: env.ledger().timestamp(),
                     },
                 );
