@@ -1,5 +1,7 @@
 use crate::types::{BlacklistAuditEntry, DataKey, EventInfo};
-use soroban_sdk::{Address, Env, String, Vec};
+use soroban_sdk::{vec, Address, Env, String, Vec};
+
+const SHARD_SIZE: u32 = 50;
 
 /// Sets the administrator address of the contract.
 pub fn set_admin(env: &Env, admin: &Address) {
@@ -67,23 +69,29 @@ pub fn store_event(env: &Env, event_info: EventInfo) {
         .persistent()
         .set(&DataKey::Event(event_id.clone()), &event_info);
 
-    // Update organizer's event list
-    let mut organizer_events: Vec<String> = get_organizer_events(env, &organizer);
+    // Update organizer's event index if it doesn't exist
+    if !has_organizer_event(env, &organizer, event_id.clone()) {
+        let count = get_organizer_event_count(env, &organizer);
+        let shard_id = count / SHARD_SIZE;
 
-    // Check if event_id is already in the list to avoid duplicates on updates
-    let mut exists = false;
-    for id in organizer_events.iter() {
-        if id == event_id {
-            exists = true;
-            break;
-        }
-    }
+        let mut shard: Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OrganizerEventShard(organizer.clone(), shard_id))
+            .unwrap_or_else(|| vec![env]);
 
-    if !exists {
-        organizer_events.push_back(event_id);
+        shard.push_back(event_id.clone());
         env.storage()
             .persistent()
-            .set(&DataKey::OrganizerEvents(organizer), &organizer_events);
+            .set(&DataKey::OrganizerEventShard(organizer.clone(), shard_id), &shard);
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::OrganizerEventCount(organizer.clone()), &(count + 1));
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::OrganizerEvent(organizer, event_id), &true);
     }
 }
 
@@ -106,12 +114,51 @@ pub fn event_exists(env: &Env, event_id: String) -> bool {
     env.storage().persistent().has(&DataKey::Event(event_id))
 }
 
-/// Retrieves all event_ids associated with an organizer.
-pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
+/// Retrieves the total number of events for an organizer.
+pub fn get_organizer_event_count(env: &Env, organizer: &Address) -> u32 {
     env.storage()
         .persistent()
-        .get(&DataKey::OrganizerEvents(organizer.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+        .get(&DataKey::OrganizerEventCount(organizer.clone()))
+        .unwrap_or(0)
+}
+
+/// Checks if an organizer has a specific event in their index.
+pub fn has_organizer_event(env: &Env, organizer: &Address, event_id: String) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::OrganizerEvent(organizer.clone(), event_id))
+}
+
+/// Retrieves all event_ids associated with an organizer by iterating through shards.
+/// NOTE: For very large lists, this may exceed gas limits. Use shard-based iteration for scale.
+pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
+    let count = get_organizer_event_count(env, organizer);
+    let mut all_events = vec![env];
+
+    if count == 0 {
+        return all_events;
+    }
+
+    let num_shards = (count + SHARD_SIZE - 1) / SHARD_SIZE;
+    for i in 0..num_shards {
+        let shard: Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OrganizerEventShard(organizer.clone(), i))
+            .unwrap_or_else(|| vec![env]);
+        for id in shard.iter() {
+            all_events.push_back(id);
+        }
+    }
+    all_events
+}
+
+/// Retrieves a specific shard of event_ids for an organizer.
+pub fn get_organizer_event_shard(env: &Env, organizer: &Address, shard_id: u32) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OrganizerEventShard(organizer.clone(), shard_id))
+        .unwrap_or_else(|| vec![env])
 }
 
 /// Sets the authorized TicketPayment contract address.

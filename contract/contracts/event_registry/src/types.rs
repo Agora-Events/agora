@@ -135,8 +135,12 @@ pub enum DataKey {
     Initialized,
     /// Mapping of event_id to EventInfo (Persistent)
     Event(String),
-    /// Mapping of organizer_address to a list of their event_ids (Persistent)
-    OrganizerEvents(Address),
+    /// Individual entry for an organizer's event (Persistent)
+    OrganizerEvent(Address, String),
+    /// Sharded mapping of organizer address to their event_ids (Persistent)
+    OrganizerEventShard(Address, u32),
+    /// Total number of events for an organizer (Persistent)
+    OrganizerEventCount(Address),
     /// The authorized TicketPayment contract address for inventory updates
     TicketPaymentContract,
     /// Mapping of organizer address to blacklist status (Persistent)

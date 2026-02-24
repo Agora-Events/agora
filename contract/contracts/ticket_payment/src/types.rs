@@ -36,8 +36,18 @@ pub struct EventBalance {
 #[contracttype]
 pub enum DataKey {
     Payment(String),                     // payment_id -> Payment
-    EventPayments(String),               // event_id -> Vec<payment_id>
-    BuyerPayments(Address),              // buyer_address -> Vec<payment_id>
+    /// Individual entry for an event payment (Persistent)
+    EventPayment(String, String),
+    /// Sharded mapping of event_id to payment_ids (Persistent)
+    EventPaymentShard(String, u32),
+    /// Total number of payments for an event (Persistent)
+    EventPaymentCount(String),
+    /// Individual entry for a buyer payment (Persistent)
+    BuyerPayment(Address, String),
+    /// Sharded mapping of buyer_address to payment_ids (Persistent)
+    BuyerPaymentShard(Address, u32),
+    /// Total number of payments for a buyer (Persistent)
+    BuyerPaymentCount(Address),
     Admin,                               // Contract administrator address
     UsdcToken,                           // USDC token address
     PlatformWallet,                      // Platform wallet address
