@@ -23,6 +23,7 @@ pub struct Payment {
     pub transaction_hash: String,
     pub created_at: u64,
     pub confirmed_at: Option<u64>,
+    pub refunded_amount: i128,
 }
 
 #[contracttype]
@@ -68,4 +69,6 @@ pub enum DataKey {
     DailyWithdrawalAmount(Address, u64), // (token_address, day_timestamp) -> amount withdrawn
     IsPaused,                            // bool – global circuit breaker flag
     DisputeStatus(String),               // event_id -> bool
+    PartialRefundIndex(String),          // event_id -> last processed payment index
+    PartialRefundPercentage(String),     // event_id -> active refund percentage in bps
 }

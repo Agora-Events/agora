@@ -364,6 +364,32 @@ pub fn get_bulk_refund_index(env: &Env, event_id: String) -> u32 {
         .unwrap_or(0)
 }
 
+pub fn set_partial_refund_index(env: &Env, event_id: String, index: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PartialRefundIndex(event_id), &index);
+}
+
+pub fn get_partial_refund_index(env: &Env, event_id: String) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PartialRefundIndex(event_id))
+        .unwrap_or(0)
+}
+
+pub fn set_partial_refund_percentage(env: &Env, event_id: String, percentage_bps: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PartialRefundPercentage(event_id), &percentage_bps);
+}
+
+pub fn get_partial_refund_percentage(env: &Env, event_id: String) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PartialRefundPercentage(event_id))
+        .unwrap_or(0)
+}
+
 pub fn has_price_switched(env: &Env, event_id: String, tier_id: String) -> bool {
     env.storage()
         .persistent()

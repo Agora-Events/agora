@@ -3,12 +3,14 @@ use crate::storage::{
     add_to_active_escrow_total, add_to_daily_withdrawn_amount,
     add_to_total_fees_collected_by_token, add_to_total_volume_processed, add_token_to_whitelist,
     get_admin, get_bulk_refund_index, get_daily_withdrawn_amount, get_event_balance,
-    get_event_payments, get_event_registry, get_payment, get_platform_wallet,
+    get_event_payments, get_event_registry, get_partial_refund_index,
+    get_partial_refund_percentage, get_payment, get_platform_wallet,
     get_total_fees_collected_by_token, get_transfer_fee, get_withdrawal_cap, has_price_switched,
     is_discount_hash_used, is_discount_hash_valid, is_event_disputed, is_initialized, is_paused,
     is_token_whitelisted, mark_discount_hash_used, remove_payment_from_buyer_index,
     remove_token_from_whitelist, set_admin, set_bulk_refund_index, set_event_dispute_status,
-    set_event_registry, set_initialized, set_is_paused, set_platform_wallet, set_price_switched,
+    set_event_registry, set_initialized, set_is_paused, set_partial_refund_index,
+    set_partial_refund_percentage, set_platform_wallet, set_price_switched,
     set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment,
     subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
     subtract_from_total_fees_collected_by_token, update_event_balance,
@@ -19,8 +21,9 @@ use crate::{
     events::{
         AgoraEvent, BulkRefundProcessedEvent, ContractPausedEvent, ContractUpgraded,
         DiscountCodeAppliedEvent, DisputeStatusChangedEvent, FeeSettledEvent,
-        GlobalPromoAppliedEvent, InitializationEvent, PaymentProcessedEvent,
-        PaymentStatusChangedEvent, PriceSwitchedEvent, RevenueClaimedEvent, TicketTransferredEvent,
+        GlobalPromoAppliedEvent, InitializationEvent, PartialRefundProcessedEvent,
+        PaymentProcessedEvent, PaymentStatusChangedEvent, PriceSwitchedEvent, RevenueClaimedEvent,
+        TicketTransferredEvent,
     },
 };
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec};
@@ -1262,6 +1265,121 @@ impl TicketPaymentContract {
                 event_id,
                 refund_count: processed_count,
                 total_refunded,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(processed_count)
+    }
+
+    /// Issues a partial refund to all guests for an event. Processes in batches.
+    /// `percentage_bps` is the refund percentage in basis points (e.g., 2000 = 20%).
+    pub fn issue_partial_refund(
+        env: Env,
+        event_id: String,
+        percentage_bps: u32,
+        batch_size: u32,
+    ) -> Result<u32, TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+        if percentage_bps > 10000 {
+            panic!("Percentage cannot exceed 100%");
+        }
+
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+
+        let event_info = match registry_client.try_get_event(&event_id) {
+            Ok(Ok(Some(info))) => info,
+            _ => return Err(TicketPaymentError::EventNotFound),
+        };
+
+        event_info.organizer_address.require_auth();
+
+        let start_index = get_partial_refund_index(&env, event_id.clone());
+        let payment_ids = get_event_payments(&env, event_id.clone());
+        let total_payments = payment_ids.len();
+
+        if start_index >= total_payments {
+            // Check if we were in the middle of a refund and just finished
+            let active_pct = get_partial_refund_percentage(&env, event_id.clone());
+            if active_pct > 0 {
+                set_partial_refund_percentage(&env, event_id.clone(), 0);
+                set_partial_refund_index(&env, event_id.clone(), 0);
+            }
+            return Ok(0);
+        }
+
+        // If this is the first batch, lock the percentage
+        if start_index == 0 {
+            set_partial_refund_percentage(&env, event_id.clone(), percentage_bps);
+        }
+        let active_pct = get_partial_refund_percentage(&env, event_id.clone());
+
+        let end_index = core::cmp::min(start_index + batch_size, total_payments);
+        let mut processed_count = 0;
+        let mut total_refunded = 0;
+        let mut balance = get_event_balance(&env, event_id.clone());
+
+        let token_address = crate::storage::get_usdc_token(&env);
+        let token_client = token::Client::new(&env, &token_address);
+        let contract_address = env.current_contract_address();
+
+        for i in start_index..end_index {
+            let payment_id = payment_ids.get(i).unwrap();
+            if let Some(mut payment) = get_payment(&env, payment_id.clone()) {
+                if payment.status == PaymentStatus::Confirmed {
+                    let refund_amount = (payment.amount
+                        .checked_mul(active_pct as i128)
+                        .ok_or(TicketPaymentError::ArithmeticError)?)
+                        / 10000;
+
+                    if refund_amount > 0 && payment.organizer_amount >= refund_amount {
+                        token_client.transfer(
+                            &contract_address,
+                            &payment.buyer_address,
+                            &refund_amount,
+                        );
+
+                        payment.refunded_amount += refund_amount;
+                        payment.organizer_amount -= refund_amount;
+                        store_payment(&env, payment.clone());
+
+                        balance.organizer_amount -= refund_amount;
+                        total_refunded += refund_amount;
+                        processed_count += 1;
+                    }
+                }
+            }
+        }
+
+        if processed_count > 0 {
+            crate::storage::set_event_balance(&env, event_id.clone(), balance);
+            subtract_from_active_escrow_total(&env, total_refunded);
+            subtract_from_active_escrow_by_token(&env, token_address, total_refunded);
+        }
+
+        set_partial_refund_index(&env, event_id.clone(), end_index);
+
+        // If finished, reset tracking
+        if end_index >= total_payments {
+            set_partial_refund_percentage(&env, event_id.clone(), 0);
+            set_partial_refund_index(&env, event_id.clone(), 0);
+        }
+
+        // Emit partial refund event
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::PartialRefundProcessed,),
+            PartialRefundProcessedEvent {
+                event_id,
+                refund_count: processed_count,
+                total_refunded,
+                percentage_bps: active_pct,
                 timestamp: env.ledger().timestamp(),
             },
         );
