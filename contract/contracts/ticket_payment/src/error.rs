@@ -30,6 +30,11 @@ pub enum TicketPaymentError {
     WithdrawalCapExceeded = 24,
     InsufficientFees = 25,
     ResalePriceExceedsCap = 26,
+    ContractPaused = 27,
+    EventCancelled = 35,
+    EventDisputed = 36,
+    UnauthorizedScanner = 37,
+    TicketAlreadyUsed = 38,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -87,6 +92,21 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::ResalePriceExceedsCap => {
                 write!(f, "Resale price exceeds the event's resale cap")
+            }
+            TicketPaymentError::ContractPaused => {
+                write!(f, "Contract is paused")
+            }
+            TicketPaymentError::EventCancelled => {
+                write!(f, "The event has been cancelled")
+            }
+            TicketPaymentError::EventDisputed => {
+                write!(f, "The event is currently under dispute")
+            }
+            TicketPaymentError::UnauthorizedScanner => {
+                write!(f, "Caller is not an authorized scanner for this event")
+            }
+            TicketPaymentError::TicketAlreadyUsed => {
+                write!(f, "Ticket has already been checked in/used")
             }
         }
     }

@@ -7,6 +7,7 @@ pub enum PaymentStatus {
     Confirmed,
     Refunded,
     Failed,
+    CheckedIn,
 }
 
 #[contracttype]
@@ -23,6 +24,7 @@ pub struct Payment {
     pub transaction_hash: String,
     pub created_at: u64,
     pub confirmed_at: Option<u64>,
+    pub refunded_amount: i128,
 }
 
 #[contracttype]
@@ -35,9 +37,19 @@ pub struct EventBalance {
 
 #[contracttype]
 pub enum DataKey {
-    Payment(String),                     // payment_id -> Payment
-    EventPayments(String),               // event_id -> Vec<payment_id>
-    BuyerPayments(Address),              // buyer_address -> Vec<payment_id>
+    Payment(String), // payment_id -> Payment
+    /// Individual entry for an event payment (Persistent)
+    EventPayment(String, String),
+    /// Sharded mapping of event_id to payment_ids (Persistent)
+    EventPaymentShard(String, u32),
+    /// Total number of payments for an event (Persistent)
+    EventPaymentCount(String),
+    /// Individual entry for a buyer payment (Persistent)
+    BuyerPayment(Address, String),
+    /// Sharded mapping of buyer_address to payment_ids (Persistent)
+    BuyerPaymentShard(Address, u32),
+    /// Total number of payments for a buyer (Persistent)
+    BuyerPaymentCount(Address),
     Admin,                               // Contract administrator address
     UsdcToken,                           // USDC token address
     PlatformWallet,                      // Platform wallet address
@@ -56,4 +68,8 @@ pub enum DataKey {
     DiscountCodeUsed(BytesN<32>),        // sha256_hash -> bool (spent)
     WithdrawalCap(Address),              // token_address -> max amount per day
     DailyWithdrawalAmount(Address, u64), // (token_address, day_timestamp) -> amount withdrawn
+    IsPaused,                            // bool – global circuit breaker flag
+    DisputeStatus(String),               // event_id -> bool
+    PartialRefundIndex(String),          // event_id -> last processed payment index
+    PartialRefundPercentage(String),     // event_id -> active refund percentage in bps
 }

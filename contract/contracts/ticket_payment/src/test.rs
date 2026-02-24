@@ -7,6 +7,54 @@ use soroban_sdk::{
     token, Address, Bytes, Env, IntoVal, String, Symbol, TryIntoVal,
 };
 
+// Mock registry that returns a cancelled event
+#[soroban_sdk::contract]
+pub struct MockCancelledRegistry;
+#[soroban_sdk::contractimpl]
+impl MockCancelledRegistry {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+        }
+    }
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            is_active: false,
+            status: event_registry::EventStatus::Cancelled,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 100,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000,
+                        early_bird_price: 1000,
+                        early_bird_deadline: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: false,
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 100,
+            resale_cap_bps: None,
+        })
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+}
+
 // Mock Event Registry Contract
 #[soroban_sdk::contract]
 pub struct MockEventRegistry;
@@ -32,6 +80,7 @@ impl MockEventRegistry {
                 payment_address: Address::generate(&env),
                 platform_fee_percent: 500,
                 is_active: true,
+                status: event_registry::EventStatus::Active,
                 created_at: 0,
                 metadata_cid: String::from_str(
                     &env,
@@ -94,6 +143,7 @@ impl MockEventRegistry2 {
             payment_address: Address::generate(&env),
             platform_fee_percent: 250,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: 0,
             metadata_cid: String::from_str(
                 &env,
@@ -295,6 +345,7 @@ fn test_confirm_payment() {
         transaction_hash: String::from_str(&env, ""),
         created_at: 100,
         confirmed_at: None,
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -721,13 +772,6 @@ pub struct MockEventRegistryMaxSupply;
 
 #[soroban_sdk::contractimpl]
 impl MockEventRegistryMaxSupply {
-    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
-        event_registry::PaymentInfo {
-            payment_address: Address::generate(&env),
-            platform_fee_percent: 500,
-        }
-    }
-
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
@@ -735,6 +779,7 @@ impl MockEventRegistryMaxSupply {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: 0,
             metadata_cid: String::from_str(
                 &env,
@@ -836,6 +881,7 @@ impl MockEventRegistryWithInventory {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: 0,
             metadata_cid: String::from_str(
                 &env,
@@ -1049,6 +1095,7 @@ impl MockEventRegistryWithMilestones {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: 0,
             metadata_cid: String::from_str(
                 &env,
@@ -1226,6 +1273,7 @@ fn test_transfer_ticket_success() {
         transaction_hash: String::from_str(&env, "tx_1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1285,6 +1333,7 @@ fn test_transfer_ticket_with_fee() {
         transaction_hash: String::from_str(&env, "tx_1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1326,6 +1375,7 @@ fn test_transfer_ticket_unauthorized() {
         transaction_hash: String::from_str(&env, ""),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1358,6 +1408,7 @@ impl MockEventRegistryEarlyBird {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: 0,
             metadata_cid: String::from_str(
                 &env,
@@ -1836,6 +1887,7 @@ impl MockEventRegistryWithOrganizer {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: 0,
             metadata_cid: String::from_str(
                 &env,
@@ -2155,6 +2207,7 @@ impl MockPlatformRegistryE2E {
             payment_address,
             platform_fee_percent: 500,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: env.ledger().timestamp(),
             metadata_cid: String::from_str(
                 &env,
@@ -2593,6 +2646,7 @@ impl MockEventRegistryRefund {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: 0,
             metadata_cid: String::from_str(
                 &env,
@@ -2655,6 +2709,7 @@ impl MockEventRegistryWithResaleCap {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: 0,
             metadata_cid: String::from_str(
                 &env,
@@ -2741,6 +2796,7 @@ fn test_transfer_ticket_resale_price_within_cap() {
         transaction_hash: String::from_str(&env, "tx_1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2777,6 +2833,7 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
         transaction_hash: String::from_str(&env, "tx_2"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2815,6 +2872,7 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
         transaction_hash: String::from_str(&env, "tx_3"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2851,6 +2909,7 @@ fn test_transfer_ticket_sale_price_no_cap() {
         transaction_hash: String::from_str(&env, "tx_nc1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2885,6 +2944,7 @@ impl MockRegistryZeroCap {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             is_active: true,
+            status: event_registry::EventStatus::Active,
             created_at: 0,
             metadata_cid: String::from_str(
                 &env,
@@ -3074,4 +3134,274 @@ fn test_platform_fee_withdrawal_with_cap() {
         token::Client::new(&env, &usdc_id).balance(&platform_wallet),
         30_0000000i128
     );
+}
+
+#[test]
+#[should_panic]
+fn test_set_pause_unauthorized_panics() {
+    let env = Env::default();
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    // Auth not mocked, should panic
+    client.set_pause(&true);
+}
+
+#[test]
+fn test_set_pause_and_resume() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    assert!(!client.get_is_paused());
+    client.set_pause(&true);
+    assert!(client.get_is_paused());
+    client.set_pause(&false);
+    assert!(!client.get_is_paused());
+}
+
+#[test]
+fn test_process_payment_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    client.set_pause(&true);
+
+    let buyer = Address::generate(&env);
+    let res = client.try_process_payment(
+        &String::from_str(&env, "p1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &1000_0000000i128,
+        &1,
+        &None,
+        &None,
+    );
+    assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
+}
+
+#[test]
+fn test_refund_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _, _, _) = setup_test(&env);
+    client.set_pause(&true);
+    let res = client.try_request_guest_refund(&String::from_str(&env, "p1"));
+    assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
+}
+
+#[test]
+fn test_claim_revenue_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    client.set_pause(&true);
+    let res = client.try_claim_revenue(&String::from_str(&env, "event_1"), &usdc_id);
+    assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
+}
+
+#[test]
+fn test_transfer_ticket_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _, _, _) = setup_test(&env);
+    client.set_pause(&true);
+    let to = Address::generate(&env);
+    let res = client.try_transfer_ticket(&String::from_str(&env, "p1"), &to, &None);
+    assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
+}
+
+#[test]
+fn test_trigger_bulk_refund_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _, _, _) = setup_test(&env);
+    client.set_pause(&true);
+    let res = client.try_trigger_bulk_refund(&String::from_str(&env, "event_1"), &10);
+    assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
+}
+
+#[test]
+fn test_upgrade_works_when_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _, _, _) = setup_test(&env);
+    client.set_pause(&true);
+
+    let dummy_id = env.register(DummyUpgradeable, ());
+    let new_wasm_hash = match dummy_id.executable() {
+        Some(soroban_sdk::Executable::Wasm(hash)) => hash,
+        _ => panic!("Not a Wasm contract"),
+    };
+
+    // Should not panic, upgrade should succeed despite pause
+    client.upgrade(&new_wasm_hash);
+}
+
+#[test]
+fn test_withdraw_platform_fees_works_when_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistry, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    // Need a tiny bit of fees stored initially so we don't get ArithmeticError (amount=0) or InsufficientFees
+    // Actually just testing try_withdraw_platform_fees doesn't return ContractPaused is enough.
+    client.set_pause(&true);
+    let res = client.try_withdraw_platform_fees(&1000i128, &usdc_id);
+
+    // It should hit InsufficientFees, not ContractPaused
+    assert_eq!(res, Err(Ok(TicketPaymentError::InsufficientFees)));
+}
+
+#[test]
+fn test_claim_automatic_refund_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+
+    let registry_id = env.register(MockCancelledRegistry, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &1000);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &1000, &9999);
+
+    let payment_id = String::from_str(&env, "p1");
+    // Manual store since process_payment might fail due to cancelled event check if we don't bypass
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "e1"),
+        buyer_address: buyer.clone(),
+        ticket_tier_id: String::from_str(&env, "tier_1"),
+        amount: 1000,
+        platform_fee: 50,
+        organizer_amount: 950,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx"),
+        created_at: 100,
+        confirmed_at: Some(101),
+        refunded_amount: 0,
+    };
+
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+        update_event_balance(&env, String::from_str(&env, "e1"), 950, 50);
+    });
+
+    // Mint tokens to contract for refund
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&client.address, &1000);
+
+    // Call claim_automatic_refund
+    client.claim_automatic_refund(&payment_id);
+
+    // Verify full refund (buyer had 1000 initially, didn't actually pay in this manual setup, so 1000 + 1000 = 2000)
+    let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert_eq!(buyer_balance, 2000);
+
+    // Verify balance cleared
+    let balance = client.get_event_escrow_balance(&String::from_str(&env, "e1"));
+    assert_eq!(balance.organizer_amount, 0);
+    assert_eq!(balance.platform_fee, 0);
+}
+
+#[test]
+fn test_dispute_blocks_withdrawal() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let event_id = String::from_str(&env, "event_1");
+    client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Set event as disputed
+    client.set_event_dispute(&event_id, &true);
+    assert!(client.is_event_disputed(&event_id));
+
+    // Attempt to withdraw - should fail
+    let res = client.try_withdraw_organizer_funds(&event_id, &usdc_id);
+    assert_eq!(res, Err(Ok(TicketPaymentError::EventDisputed)));
+
+    // Clear dispute
+    client.set_event_dispute(&event_id, &false);
+    assert!(!client.is_event_disputed(&event_id));
+
+    // Attempt to withdraw - should succeed
+    let withdrawn = client.withdraw_organizer_funds(&event_id, &usdc_id);
+    assert!(withdrawn > 0);
+}
+
+#[test]
+fn test_admin_refund_during_dispute() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let event_id = String::from_str(&env, "event_1");
+    let payment_id = String::from_str(&env, "pay_1");
+    client.process_payment(
+        &payment_id,
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Set event as disputed
+    client.set_event_dispute(&event_id, &true);
+
+    // Admin triggers refund
+    client.admin_refund(&payment_id);
+
+    // Check payment status
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.status, PaymentStatus::Refunded);
+
+    // Check buyer balance
+    let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert!(buyer_balance > 0);
 }

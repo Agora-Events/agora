@@ -15,6 +15,10 @@ pub enum AgoraEvent {
     RevenueClaimed,
     FeeSettled,
     GlobalPromoApplied,
+    ContractPaused,
+    DisputeStatusChanged,
+    PartialRefundProcessed,
+    TicketCheckedIn,
 }
 
 #[contracttype]
@@ -116,5 +120,39 @@ pub struct GlobalPromoAppliedEvent {
     pub event_id: String,
     pub promo_bps: u32,
     pub discount_amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractPausedEvent {
+    pub paused: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeStatusChangedEvent {
+    pub event_id: String,
+    pub is_disputed: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PartialRefundProcessedEvent {
+    pub event_id: String,
+    pub refund_count: u32,
+    pub total_refunded: i128,
+    pub percentage_bps: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketCheckedInEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub scanner: Address,
     pub timestamp: u64,
 }

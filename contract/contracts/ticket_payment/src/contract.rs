@@ -3,22 +3,27 @@ use crate::storage::{
     add_to_active_escrow_total, add_to_daily_withdrawn_amount,
     add_to_total_fees_collected_by_token, add_to_total_volume_processed, add_token_to_whitelist,
     get_admin, get_bulk_refund_index, get_daily_withdrawn_amount, get_event_balance,
-    get_event_payments, get_event_registry, get_payment, get_platform_wallet,
+    get_event_payments, get_event_registry, get_partial_refund_index,
+    get_partial_refund_percentage, get_payment, get_platform_wallet,
     get_total_fees_collected_by_token, get_transfer_fee, get_withdrawal_cap, has_price_switched,
-    is_discount_hash_used, is_discount_hash_valid, is_initialized, is_token_whitelisted,
-    mark_discount_hash_used, remove_payment_from_buyer_index, remove_token_from_whitelist,
-    set_admin, set_bulk_refund_index, set_event_registry, set_initialized, set_platform_wallet,
-    set_price_switched, set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment,
-    subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
-    subtract_from_total_fees_collected_by_token, update_event_balance,
+    is_discount_hash_used, is_discount_hash_valid, is_event_disputed, is_initialized, is_paused,
+    is_token_whitelisted, mark_discount_hash_used, remove_payment_from_buyer_index,
+    remove_token_from_whitelist, set_admin, set_bulk_refund_index, set_event_dispute_status,
+    set_event_registry, set_initialized, set_is_paused, set_partial_refund_index,
+    set_partial_refund_percentage, set_platform_wallet, set_price_switched, set_transfer_fee,
+    set_usdc_token, set_withdrawal_cap, store_payment, subtract_from_active_escrow_by_token,
+    subtract_from_active_escrow_total, subtract_from_total_fees_collected_by_token,
+    update_event_balance,
 };
 use crate::types::{Payment, PaymentStatus};
 use crate::{
     error::TicketPaymentError,
     events::{
-        AgoraEvent, BulkRefundProcessedEvent, ContractUpgraded, DiscountCodeAppliedEvent,
-        FeeSettledEvent, GlobalPromoAppliedEvent, InitializationEvent, PaymentProcessedEvent,
-        PaymentStatusChangedEvent, PriceSwitchedEvent, RevenueClaimedEvent, TicketTransferredEvent,
+        AgoraEvent, BulkRefundProcessedEvent, ContractPausedEvent, ContractUpgraded,
+        DiscountCodeAppliedEvent, DisputeStatusChangedEvent, FeeSettledEvent,
+        GlobalPromoAppliedEvent, InitializationEvent, PartialRefundProcessedEvent,
+        PaymentProcessedEvent, PaymentStatusChangedEvent, PriceSwitchedEvent, RevenueClaimedEvent,
+        TicketTransferredEvent,
     },
 };
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec};
@@ -26,6 +31,14 @@ use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, St
 // Event Registry interface
 pub mod event_registry {
     use soroban_sdk::{contractclient, Address, Env, String};
+
+    #[soroban_sdk::contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub enum EventStatus {
+        Active,
+        Inactive,
+        Cancelled,
+    }
 
     #[soroban_sdk::contracttype]
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,6 +62,7 @@ pub mod event_registry {
         fn decrement_inventory(env: Env, event_id: String, tier_id: String);
         fn get_global_promo_bps(env: Env) -> u32;
         fn get_promo_expiry(env: Env) -> u64;
+        fn is_scanner_authorized(env: Env, event_id: String, scanner: Address) -> bool;
     }
 
     #[soroban_sdk::contracttype]
@@ -78,6 +92,7 @@ pub mod event_registry {
         pub payment_address: Address,
         pub platform_fee_percent: u32,
         pub is_active: bool,
+        pub status: EventStatus,
         pub created_at: u64,
         pub metadata_cid: String,
         pub max_supply: i128,
@@ -136,6 +151,56 @@ impl TicketPaymentContract {
         Ok(())
     }
 
+    /// Pauses or resumes the contract. Only callable by the multi-sig admin.
+    /// Upgrade and emergency-withdrawal remain available while the contract is paused.
+    pub fn set_pause(env: Env, paused: bool) -> Result<(), TicketPaymentError> {
+        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
+        admin.require_auth();
+        set_is_paused(&env, paused);
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::ContractPaused,),
+            ContractPausedEvent {
+                paused,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+        Ok(())
+    }
+
+    /// Returns the current paused state of the contract.
+    pub fn get_is_paused(env: Env) -> bool {
+        is_paused(&env)
+    }
+
+    /// Sets or clears a dispute for an event. Only callable by admin.
+    pub fn set_event_dispute(
+        env: Env,
+        event_id: String,
+        disputed: bool,
+    ) -> Result<(), TicketPaymentError> {
+        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
+        admin.require_auth();
+
+        set_event_dispute_status(&env, event_id.clone(), disputed);
+
+        env.events().publish(
+            (AgoraEvent::DisputeStatusChanged,),
+            DisputeStatusChangedEvent {
+                event_id,
+                is_disputed: disputed,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns if an event is currently disputed.
+    pub fn is_event_disputed(env: Env, event_id: String) -> bool {
+        is_event_disputed(&env, event_id)
+    }
+
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         let admin = get_admin(&env).expect("Admin not set");
         admin.require_auth();
@@ -190,6 +255,9 @@ impl TicketPaymentContract {
     ) -> Result<String, TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
         }
         buyer_address.require_auth();
 
@@ -261,7 +329,9 @@ impl TicketPaymentContract {
             _ => return Err(TicketPaymentError::EventNotFound),
         };
 
-        if !event_info.is_active {
+        if !event_info.is_active
+            || matches!(event_info.status, event_registry::EventStatus::Cancelled)
+        {
             return Err(TicketPaymentError::EventInactive);
         }
 
@@ -300,13 +370,22 @@ impl TicketPaymentContract {
         }
 
         // 2. Calculate platform fee (platform_fee_percent is in bps, 10000 = 100%)
-        let mut total_platform_fee =
-            (effective_total * event_info.platform_fee_percent as i128) / 10000;
-        let total_organizer_amount = effective_total - total_platform_fee;
+        let mut total_platform_fee = effective_total
+            .checked_mul(event_info.platform_fee_percent as i128)
+            .and_then(|v| v.checked_div(10000))
+            .ok_or(TicketPaymentError::ArithmeticError)?;
+        let total_organizer_amount = effective_total
+            .checked_sub(total_platform_fee)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
 
         let referral_reward = if referrer.is_some() {
-            let reward = (total_platform_fee * 20) / 100; // 20%
-            total_platform_fee -= reward;
+            let reward = total_platform_fee
+                .checked_mul(20)
+                .and_then(|v| v.checked_div(100))
+                .ok_or(TicketPaymentError::ArithmeticError)?; // 20%
+            total_platform_fee = total_platform_fee
+                .checked_sub(reward)
+                .ok_or(TicketPaymentError::ArithmeticError)?;
             reward
         } else {
             0
@@ -335,7 +414,11 @@ impl TicketPaymentContract {
 
         // Verify balance after transfer
         let balance_after = token_client.balance(&contract_address);
-        if balance_after - balance_before != effective_total {
+        if balance_after
+            .checked_sub(balance_before)
+            .ok_or(TicketPaymentError::ArithmeticError)?
+            != effective_total
+        {
             return Err(TicketPaymentError::TransferVerificationFailed);
         }
 
@@ -367,8 +450,13 @@ impl TicketPaymentContract {
         registry_client.increment_inventory(&event_id, &ticket_tier_id, &quantity);
 
         // 7. Create payment records for each individual ticket
-        let platform_fee_per_ticket = total_platform_fee / quantity as i128;
-        let organizer_amount_per_ticket = total_organizer_amount / quantity as i128;
+        let quantity_i128 = quantity as i128;
+        let platform_fee_per_ticket = total_platform_fee
+            .checked_div(quantity_i128)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
+        let organizer_amount_per_ticket = total_organizer_amount
+            .checked_div(quantity_i128)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
         let created_at = env.ledger().timestamp();
         let empty_tx_hash = String::from_str(&env, "");
 
@@ -400,6 +488,7 @@ impl TicketPaymentContract {
                 transaction_hash: empty_tx_hash.clone(),
                 created_at,
                 confirmed_at: None,
+                refunded_amount: 0,
             };
 
             store_payment(&env, payment);
@@ -420,7 +509,7 @@ impl TicketPaymentContract {
 
         // 9. Emit discount applied event if a code was used
         if let Some(hash) = discount_code_hash {
-            let discount_amount = total_amount - effective_total;
+            let discount_amount = total_amount.checked_sub(effective_total).unwrap_or(0);
             env.events().publish(
                 (AgoraEvent::DiscountCodeApplied,),
                 DiscountCodeAppliedEvent {
@@ -435,7 +524,7 @@ impl TicketPaymentContract {
 
         // 10. Emit global promo applied event if promo was active
         if promo_applied_bps > 0 {
-            let promo_discount_amount = total_amount - after_promo;
+            let promo_discount_amount = total_amount.checked_sub(after_promo).unwrap_or(0);
             env.events().publish(
                 (AgoraEvent::GlobalPromoApplied,),
                 GlobalPromoAppliedEvent {
@@ -456,6 +545,8 @@ impl TicketPaymentContract {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
         }
+        let admin = get_admin(&env).expect("Admin not set");
+        admin.require_auth();
         // In a real scenario, this would be restricted to a specific backend/admin address.
         if let Some(mut payment) = get_payment(&env, payment_id.clone()) {
             payment.status = PaymentStatus::Confirmed;
@@ -482,7 +573,50 @@ impl TicketPaymentContract {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
         }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
 
+        Self::internal_refund(env, payment_id)
+    }
+
+    /// Triggers a refund as an administrator, regardless of dispute status.
+    pub fn admin_refund(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
+        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
+        admin.require_auth();
+
+        Self::internal_refund(env, payment_id)
+    }
+
+    /// Public wrapper for automatic refunds, specifically for cancelled events.
+    pub fn claim_automatic_refund(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        let payment =
+            get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+
+        let event_info = match registry_client.try_get_event(&payment.event_id) {
+            Ok(Ok(Some(info))) => info,
+            _ => return Err(TicketPaymentError::EventNotFound),
+        };
+
+        // Ensure the event is cancelled for automatic refund
+        if !matches!(event_info.status, event_registry::EventStatus::Cancelled) {
+            return Err(TicketPaymentError::InvalidPaymentStatus);
+        }
+
+        Self::internal_refund(env, payment_id)
+    }
+
+    fn internal_refund(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
         let mut payment =
             get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
 
@@ -505,13 +639,16 @@ impl TicketPaymentContract {
             .get(payment.ticket_tier_id.clone())
             .ok_or(TicketPaymentError::TierNotFound)?;
 
-        // Check if refundable or if EVENT IS CANCELLED (is_active == false)
-        if !tier.is_refundable && event_info.is_active {
+        let is_cancelled = matches!(event_info.status, event_registry::EventStatus::Cancelled);
+
+        // Check if refundable or if EVENT IS CANCELLED
+        if !tier.is_refundable && !is_cancelled && event_info.is_active {
             return Err(TicketPaymentError::TicketNotRefundable);
         }
 
-        // Validate against refund deadline if event is active
-        if event_info.is_active
+        // Validate against refund deadline if event is active and not cancelled
+        if !is_cancelled
+            && event_info.is_active
             && event_info.refund_deadline > 0
             && env.ledger().timestamp() > event_info.refund_deadline
         {
@@ -519,7 +656,10 @@ impl TicketPaymentContract {
         }
 
         // Deduct restocking fee if specified (capped at payment amount)
-        let effective_restocking_fee = if event_info.restocking_fee > payment.amount {
+        // Bypass restocking fee if the event is cancelled.
+        let effective_restocking_fee = if is_cancelled {
+            0
+        } else if event_info.restocking_fee > payment.amount {
             payment.amount
         } else if event_info.restocking_fee > 0 {
             event_info.restocking_fee
@@ -527,7 +667,10 @@ impl TicketPaymentContract {
             0
         };
 
-        let refund_amount = payment.amount - effective_restocking_fee;
+        let refund_amount = payment
+            .amount
+            .checked_sub(effective_restocking_fee)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
 
         // Return ticket to inventory (increments available inventory)
         registry_client.decrement_inventory(&payment.event_id, &payment.ticket_tier_id);
@@ -551,7 +694,10 @@ impl TicketPaymentContract {
         // Guest receives payment.amount - effective_restocking_fee
         // Organizer keeps effective_restocking_fee (adjust from original organizer_amount)
         // Platform fee is refunded (removed from escrow)
-        let org_adjustment = payment.organizer_amount - effective_restocking_fee;
+        let org_adjustment = payment
+            .organizer_amount
+            .checked_sub(effective_restocking_fee)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
         let platform_adjustment = payment.platform_fee;
 
         crate::storage::update_event_balance(
@@ -567,6 +713,13 @@ impl TicketPaymentContract {
             crate::storage::get_usdc_token(&env),
             refund_amount,
         );
+
+        // Clear escrow record if both amounts are now zero (fully refunded event)
+        let updated_balance = get_event_balance(&env, payment.event_id.clone());
+        if updated_balance.organizer_amount == 0 && updated_balance.platform_fee == 0 {
+            // Keep the record but ensure it's clean
+            update_event_balance(&env, payment.event_id.clone(), 0, 0);
+        }
 
         // Emit confirmation event
         #[allow(deprecated)]
@@ -584,9 +737,59 @@ impl TicketPaymentContract {
         Ok(())
     }
 
-    /// Returns the status and details of a payment.
     pub fn get_payment_status(env: Env, payment_id: String) -> Option<Payment> {
         get_payment(&env, payment_id)
+    }
+
+    /// Verifies scanner authorization and marks a ticket as CheckedIn.
+    pub fn check_in(
+        env: Env,
+        payment_id: String,
+        scanner: Address,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        let mut payment =
+            get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        // Must authenticate the scanner wallet calling this entry point
+        scanner.require_auth();
+
+        if payment.status == PaymentStatus::CheckedIn {
+            return Err(TicketPaymentError::TicketAlreadyUsed);
+        }
+
+        // Verify scanner authorization
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+        let is_auth = registry_client.is_scanner_authorized(&payment.event_id, &scanner);
+        if !is_auth {
+            return Err(TicketPaymentError::UnauthorizedScanner);
+        }
+
+        // Update status and store arrival timestamp
+        payment.status = PaymentStatus::CheckedIn;
+        payment.confirmed_at = Some(env.ledger().timestamp());
+
+        store_payment(&env, payment.clone());
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::TicketCheckedIn,),
+            crate::events::TicketCheckedInEvent {
+                payment_id,
+                event_id: payment.event_id,
+                scanner,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
     /// Returns the escrowed balance for an event.
@@ -612,7 +815,20 @@ impl TicketPaymentContract {
         event_info.organizer_address.require_auth();
 
         let balance = get_event_balance(&env, event_id.clone());
-        let total_revenue = balance.organizer_amount + balance.total_withdrawn;
+        // Block all claim_revenue attempts for an event while a dispute is active.
+        if is_event_disputed(&env, event_id.clone()) {
+            return Err(TicketPaymentError::EventDisputed);
+        }
+
+        // Block any further organizer payouts once an event is in the Cancelled state.
+        if matches!(event_info.status, event_registry::EventStatus::Cancelled) {
+            return Err(TicketPaymentError::EventCancelled);
+        }
+
+        let total_revenue = balance
+            .organizer_amount
+            .checked_add(balance.total_withdrawn)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
         if total_revenue == 0 {
             return Ok(0);
         }
@@ -632,8 +848,13 @@ impl TicketPaymentContract {
             }
         }
 
-        let max_allowed = (total_revenue * release_percent as i128) / 10000;
-        let mut available_to_withdraw = max_allowed - balance.total_withdrawn;
+        let max_allowed = total_revenue
+            .checked_mul(release_percent as i128)
+            .and_then(|v| v.checked_div(10000))
+            .ok_or(TicketPaymentError::ArithmeticError)?;
+        let mut available_to_withdraw = max_allowed
+            .checked_sub(balance.total_withdrawn)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
 
         if available_to_withdraw <= 0 {
             return Ok(0);
@@ -653,8 +874,14 @@ impl TicketPaymentContract {
             &env,
             event_id,
             crate::types::EventBalance {
-                organizer_amount: balance.organizer_amount - available_to_withdraw,
-                total_withdrawn: balance.total_withdrawn + available_to_withdraw,
+                organizer_amount: balance
+                    .organizer_amount
+                    .checked_sub(available_to_withdraw)
+                    .ok_or(TicketPaymentError::ArithmeticError)?,
+                total_withdrawn: balance
+                    .total_withdrawn
+                    .checked_add(available_to_withdraw)
+                    .ok_or(TicketPaymentError::ArithmeticError)?,
                 platform_fee: balance.platform_fee,
             },
         );
@@ -732,7 +959,11 @@ impl TicketPaymentContract {
             let current_day = env.ledger().timestamp() / 86400;
             let already_withdrawn =
                 get_daily_withdrawn_amount(&env, token_address.clone(), current_day);
-            if already_withdrawn + amount > cap {
+            if already_withdrawn
+                .checked_add(amount)
+                .ok_or(TicketPaymentError::ArithmeticError)?
+                > cap
+            {
                 return Err(TicketPaymentError::WithdrawalCapExceeded);
             }
             add_to_daily_withdrawn_amount(&env, token_address.clone(), current_day, amount);
@@ -777,6 +1008,9 @@ impl TicketPaymentContract {
         event_id: String,
         token_address: Address,
     ) -> Result<i128, TicketPaymentError> {
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
 
@@ -906,6 +1140,9 @@ impl TicketPaymentContract {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
         }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
 
         let mut payment =
             get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
@@ -1000,6 +1237,9 @@ impl TicketPaymentContract {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
         }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
 
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
@@ -1012,11 +1252,10 @@ impl TicketPaymentContract {
         event_info.organizer_address.require_auth();
 
         // In a bulk refund, we assume the event is cancelled or inactive
-        if event_info.is_active {
-            // Technically organizers might want to refund even if active,
-            // but for mass cancellations it's safer to check it's inactive or cancelled.
-            // Requirement says "event cannot proceed", implying cancellation.
-            // We'll allow it anyway as long as they are the organizer.
+        if event_info.is_active
+            && !matches!(event_info.status, event_registry::EventStatus::Cancelled)
+        {
+            // Bulk refund is typically for cancelled events or post-event settlements.
         }
 
         let start_index = get_bulk_refund_index(&env, event_id.clone());
@@ -1078,6 +1317,122 @@ impl TicketPaymentContract {
                 event_id,
                 refund_count: processed_count,
                 total_refunded,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(processed_count)
+    }
+
+    /// Issues a partial refund to all guests for an event. Processes in batches.
+    /// `percentage_bps` is the refund percentage in basis points (e.g., 2000 = 20%).
+    pub fn issue_partial_refund(
+        env: Env,
+        event_id: String,
+        percentage_bps: u32,
+        batch_size: u32,
+    ) -> Result<u32, TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+        if percentage_bps > 10000 {
+            panic!("Percentage cannot exceed 100%");
+        }
+
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+
+        let event_info = match registry_client.try_get_event(&event_id) {
+            Ok(Ok(Some(info))) => info,
+            _ => return Err(TicketPaymentError::EventNotFound),
+        };
+
+        event_info.organizer_address.require_auth();
+
+        let start_index = get_partial_refund_index(&env, event_id.clone());
+        let payment_ids = get_event_payments(&env, event_id.clone());
+        let total_payments = payment_ids.len();
+
+        if start_index >= total_payments {
+            // Check if we were in the middle of a refund and just finished
+            let active_pct = get_partial_refund_percentage(&env, event_id.clone());
+            if active_pct > 0 {
+                set_partial_refund_percentage(&env, event_id.clone(), 0);
+                set_partial_refund_index(&env, event_id.clone(), 0);
+            }
+            return Ok(0);
+        }
+
+        // If this is the first batch, lock the percentage
+        if start_index == 0 {
+            set_partial_refund_percentage(&env, event_id.clone(), percentage_bps);
+        }
+        let active_pct = get_partial_refund_percentage(&env, event_id.clone());
+
+        let end_index = core::cmp::min(start_index + batch_size, total_payments);
+        let mut processed_count = 0;
+        let mut total_refunded = 0;
+        let mut balance = get_event_balance(&env, event_id.clone());
+
+        let token_address = crate::storage::get_usdc_token(&env);
+        let token_client = token::Client::new(&env, &token_address);
+        let contract_address = env.current_contract_address();
+
+        for i in start_index..end_index {
+            let payment_id = payment_ids.get(i).unwrap();
+            if let Some(mut payment) = get_payment(&env, payment_id.clone()) {
+                if payment.status == PaymentStatus::Confirmed {
+                    let refund_amount = (payment
+                        .amount
+                        .checked_mul(active_pct as i128)
+                        .ok_or(TicketPaymentError::ArithmeticError)?)
+                        / 10000;
+
+                    if refund_amount > 0 && payment.organizer_amount >= refund_amount {
+                        token_client.transfer(
+                            &contract_address,
+                            &payment.buyer_address,
+                            &refund_amount,
+                        );
+
+                        payment.refunded_amount += refund_amount;
+                        payment.organizer_amount -= refund_amount;
+                        store_payment(&env, payment.clone());
+
+                        balance.organizer_amount -= refund_amount;
+                        total_refunded += refund_amount;
+                        processed_count += 1;
+                    }
+                }
+            }
+        }
+
+        if processed_count > 0 {
+            crate::storage::set_event_balance(&env, event_id.clone(), balance);
+            subtract_from_active_escrow_total(&env, total_refunded);
+            subtract_from_active_escrow_by_token(&env, token_address, total_refunded);
+        }
+
+        set_partial_refund_index(&env, event_id.clone(), end_index);
+
+        // If finished, reset tracking
+        if end_index >= total_payments {
+            set_partial_refund_percentage(&env, event_id.clone(), 0);
+            set_partial_refund_index(&env, event_id.clone(), 0);
+        }
+
+        // Emit partial refund event
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::PartialRefundProcessed,),
+            PartialRefundProcessedEvent {
+                event_id,
+                refund_count: processed_count,
+                total_refunded,
+                percentage_bps: active_pct,
                 timestamp: env.ledger().timestamp(),
             },
         );
