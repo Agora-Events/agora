@@ -22,7 +22,11 @@ pub fn store_payment(env: &Env, payment: Payment) {
         add_payment_to_event_index(env, payment.event_id.clone(), payment.payment_id.clone());
 
         // Index by buyer
-        add_payment_to_buyer_index(env, payment.buyer_address.clone(), payment.payment_id.clone());
+        add_payment_to_buyer_index(
+            env,
+            payment.buyer_address.clone(),
+            payment.payment_id.clone(),
+        );
     }
 }
 
@@ -60,7 +64,7 @@ pub fn get_event_payments(env: &Env, event_id: String) -> Vec<String> {
         return all_payments;
     }
 
-    let num_shards = (count + SHARD_SIZE - 1) / SHARD_SIZE;
+    let num_shards = count.div_ceil(SHARD_SIZE);
     for i in 0..num_shards {
         let shard: Vec<String> = env
             .storage()
@@ -89,7 +93,7 @@ pub fn get_buyer_payments(env: &Env, buyer_address: Address) -> Vec<String> {
         return all_payments;
     }
 
-    let num_shards = (count + SHARD_SIZE - 1) / SHARD_SIZE;
+    let num_shards = count.div_ceil(SHARD_SIZE);
     for i in 0..num_shards {
         let shard: Vec<String> = env
             .storage()
@@ -252,9 +256,10 @@ pub fn add_payment_to_event_index(env: &Env, event_id: String, payment_id: Strin
         .unwrap_or_else(|| vec![env]);
 
     shard.push_back(payment_id.clone());
-    env.storage()
-        .persistent()
-        .set(&DataKey::EventPaymentShard(event_id.clone(), shard_id), &shard);
+    env.storage().persistent().set(
+        &DataKey::EventPaymentShard(event_id.clone(), shard_id),
+        &shard,
+    );
 
     env.storage()
         .persistent()
@@ -266,14 +271,10 @@ pub fn add_payment_to_event_index(env: &Env, event_id: String, payment_id: Strin
 }
 
 pub fn add_payment_to_buyer_index(env: &Env, buyer_address: Address, payment_id: String) {
-    if env
-        .storage()
-        .persistent()
-        .has(&DataKey::BuyerPayment(
-            buyer_address.clone(),
-            payment_id.clone(),
-        ))
-    {
+    if env.storage().persistent().has(&DataKey::BuyerPayment(
+        buyer_address.clone(),
+        payment_id.clone(),
+    )) {
         return;
     }
 
@@ -292,9 +293,10 @@ pub fn add_payment_to_buyer_index(env: &Env, buyer_address: Address, payment_id:
         &shard,
     );
 
-    env.storage()
-        .persistent()
-        .set(&DataKey::BuyerPaymentCount(buyer_address.clone()), &(count + 1));
+    env.storage().persistent().set(
+        &DataKey::BuyerPaymentCount(buyer_address.clone()),
+        &(count + 1),
+    );
 
     env.storage()
         .persistent()
@@ -309,11 +311,11 @@ pub fn remove_payment_from_buyer_index(env: &Env, buyer_address: Address, paymen
         return;
     }
 
-    let num_shards = (count + SHARD_SIZE - 1) / SHARD_SIZE;
+    let num_shards = count.div_ceil(SHARD_SIZE);
     let mut found = false;
 
     for i in 0..num_shards {
-        let mut shard: Vec<String> = env
+        let shard: Vec<String> = env
             .storage()
             .persistent()
             .get(&DataKey::BuyerPaymentShard(buyer_address.clone(), i))
@@ -342,9 +344,10 @@ pub fn remove_payment_from_buyer_index(env: &Env, buyer_address: Address, paymen
     }
 
     if found {
-        env.storage()
-            .persistent()
-            .set(&DataKey::BuyerPaymentCount(buyer_address.clone()), &(count - 1));
+        env.storage().persistent().set(
+            &DataKey::BuyerPaymentCount(buyer_address.clone()),
+            &(count - 1),
+        );
         env.storage()
             .persistent()
             .remove(&DataKey::BuyerPayment(buyer_address, payment_id));

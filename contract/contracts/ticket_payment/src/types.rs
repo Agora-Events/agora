@@ -36,7 +36,7 @@ pub struct EventBalance {
 
 #[contracttype]
 pub enum DataKey {
-    Payment(String),                     // payment_id -> Payment
+    Payment(String), // payment_id -> Payment
     /// Individual entry for an event payment (Persistent)
     EventPayment(String, String),
     /// Sharded mapping of event_id to payment_ids (Persistent)

@@ -81,13 +81,15 @@ pub fn store_event(env: &Env, event_info: EventInfo) {
             .unwrap_or_else(|| vec![env]);
 
         shard.push_back(event_id.clone());
-        env.storage()
-            .persistent()
-            .set(&DataKey::OrganizerEventShard(organizer.clone(), shard_id), &shard);
+        env.storage().persistent().set(
+            &DataKey::OrganizerEventShard(organizer.clone(), shard_id),
+            &shard,
+        );
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::OrganizerEventCount(organizer.clone()), &(count + 1));
+        env.storage().persistent().set(
+            &DataKey::OrganizerEventCount(organizer.clone()),
+            &(count + 1),
+        );
 
         env.storage()
             .persistent()
@@ -139,7 +141,7 @@ pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
         return all_events;
     }
 
-    let num_shards = (count + SHARD_SIZE - 1) / SHARD_SIZE;
+    let num_shards = count.div_ceil(SHARD_SIZE);
     for i in 0..num_shards {
         let shard: Vec<String> = env
             .storage()
