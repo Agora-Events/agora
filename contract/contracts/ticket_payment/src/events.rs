@@ -18,6 +18,7 @@ pub enum AgoraEvent {
     ContractPaused,
     DisputeStatusChanged,
     PartialRefundProcessed,
+    TicketCheckedIn,
 }
 
 #[contracttype]
@@ -144,5 +145,14 @@ pub struct PartialRefundProcessedEvent {
     pub refund_count: u32,
     pub total_refunded: i128,
     pub percentage_bps: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketCheckedInEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub scanner: Address,
     pub timestamp: u64,
 }

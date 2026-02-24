@@ -5,6 +5,7 @@ use crate::events::{
     EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
     InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent,
     OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
+    ScannerAuthorizedEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, MultiSigConfig, PaymentInfo,
@@ -730,6 +731,38 @@ impl EventRegistry {
         );
 
         Ok(())
+    }
+
+    /// Authorizes a new scanner wallet for a specific event
+    pub fn authorize_scanner(
+        env: Env,
+        event_id: String,
+        scanner: Address,
+    ) -> Result<(), EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Only the organizer can authorize scanners
+        event_info.organizer_address.require_auth();
+
+        storage::authorize_scanner(&env, event_id.clone(), &scanner);
+
+        env.events().publish(
+            (AgoraEvent::ScannerAuthorized,),
+            ScannerAuthorizedEvent {
+                event_id,
+                scanner,
+                authorized_by: event_info.organizer_address,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Checks if a scanner is authorized for a specific event
+    pub fn is_scanner_authorized(env: Env, event_id: String, scanner: Address) -> bool {
+        storage::is_scanner_authorized(&env, event_id, &scanner)
     }
 }
 

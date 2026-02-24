@@ -33,6 +33,8 @@ pub enum TicketPaymentError {
     ContractPaused = 27,
     EventCancelled = 35,
     EventDisputed = 36,
+    UnauthorizedScanner = 37,
+    TicketAlreadyUsed = 38,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -99,6 +101,12 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::EventDisputed => {
                 write!(f, "The event is currently under dispute")
+            }
+            TicketPaymentError::UnauthorizedScanner => {
+                write!(f, "Caller is not an authorized scanner for this event")
+            }
+            TicketPaymentError::TicketAlreadyUsed => {
+                write!(f, "Ticket has already been checked in/used")
             }
         }
     }

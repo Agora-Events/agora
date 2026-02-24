@@ -7,6 +7,7 @@ pub enum PaymentStatus {
     Confirmed,
     Refunded,
     Failed,
+    CheckedIn,
 }
 
 #[contracttype]

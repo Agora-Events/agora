@@ -17,6 +17,7 @@ pub enum AgoraEvent {
     EventsSuspended,
     GlobalPromoUpdated,
     EventPostponed,
+    ScannerAuthorized,
 }
 
 #[contracttype]
@@ -182,5 +183,14 @@ pub struct AdminRemovedEvent {
 pub struct ThresholdUpdatedEvent {
     pub old_threshold: u32,
     pub new_threshold: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScannerAuthorizedEvent {
+    pub event_id: String,
+    pub scanner: Address,
+    pub authorized_by: Address,
     pub timestamp: u64,
 }

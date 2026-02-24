@@ -62,6 +62,7 @@ pub mod event_registry {
         fn decrement_inventory(env: Env, event_id: String, tier_id: String);
         fn get_global_promo_bps(env: Env) -> u32;
         fn get_promo_expiry(env: Env) -> u64;
+        fn is_scanner_authorized(env: Env, event_id: String, scanner: Address) -> bool;
     }
 
     #[soroban_sdk::contracttype]
@@ -736,9 +737,59 @@ impl TicketPaymentContract {
         Ok(())
     }
 
-    /// Returns the status and details of a payment.
     pub fn get_payment_status(env: Env, payment_id: String) -> Option<Payment> {
         get_payment(&env, payment_id)
+    }
+
+    /// Verifies scanner authorization and marks a ticket as CheckedIn.
+    pub fn check_in(
+        env: Env,
+        payment_id: String,
+        scanner: Address,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        let mut payment =
+            get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        // Must authenticate the scanner wallet calling this entry point
+        scanner.require_auth();
+
+        if payment.status == PaymentStatus::CheckedIn {
+            return Err(TicketPaymentError::TicketAlreadyUsed);
+        }
+
+        // Verify scanner authorization
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+        let is_auth = registry_client.is_scanner_authorized(&payment.event_id, &scanner);
+        if !is_auth {
+            return Err(TicketPaymentError::UnauthorizedScanner);
+        }
+
+        // Update status and store arrival timestamp
+        payment.status = PaymentStatus::CheckedIn;
+        payment.confirmed_at = Some(env.ledger().timestamp());
+
+        store_payment(&env, payment.clone());
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::TicketCheckedIn,),
+            crate::events::TicketCheckedInEvent {
+                payment_id,
+                event_id: payment.event_id,
+                scanner,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
     /// Returns the escrowed balance for an event.

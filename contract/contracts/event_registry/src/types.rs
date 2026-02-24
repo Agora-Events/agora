@@ -189,4 +189,6 @@ pub enum DataKey {
     Proposal(u64),
     /// List of active proposal IDs
     ActiveProposals,
+    /// Mapping of (event_id, scanner_address) to bool
+    AuthorizedScanner(String, Address),
 }
