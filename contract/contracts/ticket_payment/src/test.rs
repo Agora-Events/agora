@@ -3994,3 +3994,168 @@ fn test_governance_unauthorized_propose_and_vote() {
     let res = client.try_vote_on_proposal(&random_user, &0);
     assert_eq!(res, Err(Ok(TicketPaymentError::NotGovernor)));
 }
+
+// ════════════════════════════════════════════════════════════════
+// Loyalty Discount Integration Tests
+// ════════════════════════════════════════════════════════════════
+
+/// Mock event registry that returns a loyalty discount (1000 bps = 10%)
+/// for buyers, simulating a high-loyalty-score guest.
+#[soroban_sdk::contract]
+pub struct MockEventRegistryWithLoyalty;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryWithLoyalty {
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500, // 5%
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000_0000000i128,
+                        early_bird_price: 1000_0000000i128,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+        })
+    }
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+    /// Returns 1000 bps (10%) loyalty discount for all buyers
+    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 {
+        1000
+    }
+    pub fn update_loyalty_score(
+        _env: Env,
+        _caller: Address,
+        _guest: Address,
+        _tickets: u32,
+        _amount: i128,
+    ) {
+    }
+    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> {
+        None
+    }
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+        }
+    }
+}
+
+#[test]
+fn test_loyalty_discount_reduces_platform_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let loyalty_registry_id = env.register(MockEventRegistryWithLoyalty, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &loyalty_registry_id);
+
+    let buyer = Address::generate(&env);
+    let price = 1000_0000000i128; // 1000 USDC
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc_token.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_loyalty");
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+
+    // platform_fee = 1000 * 5% = 50 USDC
+    // loyalty_discount = 50 * 10% = 5 USDC
+    // effective_total = 1000 - 5 = 995 USDC
+    // buyer should be charged 995 USDC
+    client.process_payment(
+        &payment_id,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Buyer should have 1000 - 995 = 5 USDC remaining (not charged for the loyalty discount portion)
+    let remaining = token::Client::new(&env, &usdc_id).balance(&buyer);
+    // original = 1000, paid = 995
+    assert_eq!(remaining, 5_0000000i128);
+}
+
+#[test]
+fn test_payment_without_loyalty_discount_unchanged() {
+    // Existing mock (MockEventRegistry) returns 0 loyalty discount; behaviour unchanged
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let payment_id = String::from_str(&env, "pay_no_loyalty");
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Full price charged; buyer has no remaining balance
+    let remaining = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert_eq!(remaining, 0);
+}

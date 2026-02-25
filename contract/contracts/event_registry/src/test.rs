@@ -2022,3 +2022,507 @@ fn test_update_status_on_cancelled_event_fails() {
     let result = client.try_update_event_status(&event_id, &true);
     assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 }
+
+// ════════════════════════════════════════════════════════════════
+// Loyalty & Staking Tests
+// ════════════════════════════════════════════════════════════════
+
+/// Helper: initialises a fresh contract and returns (client, admin, platform_wallet)
+fn setup_loyalty_env(
+    env: &Env,
+) -> (
+    crate::EventRegistryClient<'static>,
+    Address,
+    Address,
+) {
+    let contract_id = env.register(EventRegistry, ());
+    let client = crate::EventRegistryClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let platform_wallet = Address::generate(env);
+    client.initialize(&admin, &platform_wallet, &500);
+    (client, admin, platform_wallet)
+}
+
+// ── Guest Loyalty Profile ────────────────────────────────────────
+
+#[test]
+fn test_guest_profile_initially_none() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    assert!(client.get_guest_profile(&guest).is_none());
+}
+
+#[test]
+fn test_update_loyalty_score_creates_profile() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    client.update_loyalty_score(&admin, &guest, &2, &2000_0000000i128);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.guest_address, guest);
+    assert_eq!(profile.loyalty_score, 20); // 2 tickets × 10 pts
+    assert_eq!(profile.total_tickets_purchased, 2);
+    assert_eq!(profile.total_spent, 2000_0000000i128);
+}
+
+#[test]
+fn test_update_loyalty_score_accumulates() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+
+    // First purchase: 5 tickets
+    client.update_loyalty_score(&admin, &guest, &5, &5000_0000000i128);
+    // Second purchase: 3 tickets
+    client.update_loyalty_score(&admin, &guest, &3, &3000_0000000i128);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 80); // (5+3) × 10
+    assert_eq!(profile.total_tickets_purchased, 8);
+    assert_eq!(profile.total_spent, 8000_0000000i128);
+}
+
+#[test]
+fn test_update_loyalty_score_unauthorized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    let random_caller = Address::generate(&env);
+
+    let result = client.try_update_loyalty_score(&random_caller, &guest, &1, &1000i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized)));
+}
+
+#[test]
+fn test_update_loyalty_score_zero_tickets_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    let result = client.try_update_loyalty_score(&admin, &guest, &0, &0i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
+}
+
+// ── Loyalty Discount Tiers ───────────────────────────────────────
+
+#[test]
+fn test_loyalty_discount_bps_no_profile() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 0);
+}
+
+#[test]
+fn test_loyalty_discount_bps_tiers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+
+    // Score < 100 → 0 bps
+    client.update_loyalty_score(&admin, &guest, &5, &100i128); // 50 pts
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 0);
+
+    // Score 100–499 → 250 bps
+    client.update_loyalty_score(&admin, &guest, &5, &100i128); // +50 = 100 pts
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 250);
+
+    // Score 500–999 → 500 bps
+    // Need to get to 500 pts: currently 100, need 400 more = 40 tickets
+    client.update_loyalty_score(&admin, &guest, &40, &1000i128); // +400 = 500 pts
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 500);
+
+    // Score ≥ 1000 → 1000 bps
+    // Need 500 more pts = 50 tickets
+    client.update_loyalty_score(&admin, &guest, &50, &1000i128); // +500 = 1000 pts
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 1000);
+}
+
+// ── Staking Configuration ────────────────────────────────────────
+
+#[test]
+fn test_set_staking_config_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let token = Address::generate(&env);
+    let min_amount = 1000_0000000i128;
+    client.set_staking_config(&token, &min_amount);
+    // No error means success; verify via a stake attempt
+}
+
+#[test]
+fn test_set_staking_config_zero_amount_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let token = Address::generate(&env);
+    let result = client.try_set_staking_config(&token, &0i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidStakeAmount)));
+}
+
+// ── stake_collateral ─────────────────────────────────────────────
+
+#[test]
+fn test_stake_collateral_achieves_verified_status() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let min_amount = 1000_0000000i128;
+
+    // Create a stellar asset token and mint to organizer
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &(min_amount * 2));
+
+    // Configure staking
+    client.set_staking_config(&token_id, &min_amount);
+
+    // Approve tokens and stake
+    soroban_sdk::token::Client::new(&env, &token_id).approve(
+        &organizer,
+        &client.address,
+        &min_amount,
+        &99999,
+    );
+    client.stake_collateral(&organizer, &min_amount);
+
+    // Check stake record
+    let stake = client.get_organizer_stake(&organizer).unwrap();
+    assert_eq!(stake.organizer, organizer);
+    assert_eq!(stake.amount, min_amount);
+    assert!(stake.is_verified);
+    assert_eq!(stake.reward_balance, 0);
+
+    // Check verified status helper
+    assert!(client.is_organizer_verified(&organizer));
+}
+
+#[test]
+fn test_stake_below_min_not_verified() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let min_amount = 1000_0000000i128;
+    let stake_amount = min_amount / 2;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &stake_amount);
+
+    client.set_staking_config(&token_id, &min_amount);
+
+    soroban_sdk::token::Client::new(&env, &token_id).approve(
+        &organizer,
+        &client.address,
+        &stake_amount,
+        &99999,
+    );
+    client.stake_collateral(&organizer, &stake_amount);
+
+    let stake = client.get_organizer_stake(&organizer).unwrap();
+    assert!(!stake.is_verified);
+    assert!(!client.is_organizer_verified(&organizer));
+}
+
+#[test]
+fn test_stake_collateral_without_config_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let result = client.try_stake_collateral(&organizer, &1000i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::StakingNotConfigured)));
+}
+
+#[test]
+fn test_stake_collateral_zero_amount_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    client.set_staking_config(&token_id, &1000i128);
+
+    let result = client.try_stake_collateral(&organizer, &0i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidStakeAmount)));
+}
+
+#[test]
+fn test_double_stake_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let stake_amount = 500_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &(stake_amount * 2));
+
+    client.set_staking_config(&token_id, &1000_0000000i128);
+
+    soroban_sdk::token::Client::new(&env, &token_id).approve(
+        &organizer,
+        &client.address,
+        &stake_amount,
+        &99999,
+    );
+    client.stake_collateral(&organizer, &stake_amount);
+
+    // Second stake attempt should fail
+    soroban_sdk::token::Client::new(&env, &token_id).approve(
+        &organizer,
+        &client.address,
+        &stake_amount,
+        &99999,
+    );
+    let result = client.try_stake_collateral(&organizer, &stake_amount);
+    assert_eq!(result, Err(Ok(EventRegistryError::AlreadyStaked)));
+}
+
+// ── unstake_collateral ───────────────────────────────────────────
+
+#[test]
+fn test_unstake_collateral_returns_tokens() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let stake_amount = 1000_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &stake_amount);
+
+    client.set_staking_config(&token_id, &stake_amount);
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    token_client.approve(&organizer, &client.address, &stake_amount, &99999);
+    client.stake_collateral(&organizer, &stake_amount);
+
+    // Balance should be 0 after staking
+    assert_eq!(token_client.balance(&organizer), 0);
+
+    // Unstake
+    client.unstake_collateral(&organizer);
+
+    // Balance should be restored
+    assert_eq!(token_client.balance(&organizer), stake_amount);
+    assert!(client.get_organizer_stake(&organizer).is_none());
+    assert!(!client.is_organizer_verified(&organizer));
+}
+
+#[test]
+fn test_unstake_without_stake_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let result = client.try_unstake_collateral(&organizer);
+    assert_eq!(result, Err(Ok(EventRegistryError::NotStaked)));
+}
+
+// ── distribute_staker_rewards & claim_staker_rewards ────────────
+
+#[test]
+fn test_distribute_and_claim_staker_rewards() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let stake_amount = 1000_0000000i128;
+    let reward_amount = 100_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    // Mint for organizer (stake) + admin (rewards)
+    token_admin.mint(&organizer, &stake_amount);
+    token_admin.mint(&admin, &reward_amount);
+
+    client.set_staking_config(&token_id, &stake_amount);
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    token_client.approve(&organizer, &client.address, &stake_amount, &99999);
+    client.stake_collateral(&organizer, &stake_amount);
+
+    // Admin approves reward tokens to contract
+    token_client.approve(&admin, &client.address, &reward_amount, &99999);
+    client.distribute_staker_rewards(&admin, &reward_amount);
+
+    // Organizer's reward_balance should be updated
+    let stake = client.get_organizer_stake(&organizer).unwrap();
+    assert_eq!(stake.reward_balance, reward_amount); // 100% since only one staker
+
+    // Organizer claims rewards
+    let claimed = client.claim_staker_rewards(&organizer);
+    assert_eq!(claimed, reward_amount);
+
+    // Check token balance restored
+    assert_eq!(token_client.balance(&organizer), reward_amount);
+
+    // reward_balance should be zero after claiming
+    let stake_after = client.get_organizer_stake(&organizer).unwrap();
+    assert_eq!(stake_after.reward_balance, 0);
+    assert_eq!(stake_after.total_rewards_claimed, reward_amount);
+}
+
+#[test]
+fn test_distribute_rewards_proportional_to_multiple_stakers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let organizer_a = Address::generate(&env);
+    let organizer_b = Address::generate(&env);
+    let stake_a = 1000_0000000i128;
+    let stake_b = 3000_0000000i128;
+    let total_reward = 1000_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer_a, &stake_a);
+    token_admin.mint(&organizer_b, &stake_b);
+    token_admin.mint(&admin, &total_reward);
+
+    client.set_staking_config(&token_id, &1i128); // min_amount = 1 for simplicity
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    token_client.approve(&organizer_a, &client.address, &stake_a, &99999);
+    client.stake_collateral(&organizer_a, &stake_a);
+
+    token_client.approve(&organizer_b, &client.address, &stake_b, &99999);
+    client.stake_collateral(&organizer_b, &stake_b);
+
+    token_client.approve(&admin, &client.address, &total_reward, &99999);
+    client.distribute_staker_rewards(&admin, &total_reward);
+
+    // A has 25% stake (1000/4000), B has 75% (3000/4000)
+    let expected_a = total_reward * stake_a / (stake_a + stake_b); // 250_0000000
+    let expected_b = total_reward * stake_b / (stake_a + stake_b); // 750_0000000
+
+    let stake_a_record = client.get_organizer_stake(&organizer_a).unwrap();
+    let stake_b_record = client.get_organizer_stake(&organizer_b).unwrap();
+
+    assert_eq!(stake_a_record.reward_balance, expected_a);
+    assert_eq!(stake_b_record.reward_balance, expected_b);
+}
+
+#[test]
+fn test_claim_rewards_no_stake_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let result = client.try_claim_staker_rewards(&organizer);
+    assert_eq!(result, Err(Ok(EventRegistryError::NotStaked)));
+}
+
+#[test]
+fn test_claim_rewards_zero_balance_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let stake_amount = 500_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &stake_amount);
+
+    client.set_staking_config(&token_id, &stake_amount);
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    token_client.approve(&organizer, &client.address, &stake_amount, &99999);
+    client.stake_collateral(&organizer, &stake_amount);
+
+    // No rewards distributed yet
+    let result = client.try_claim_staker_rewards(&organizer);
+    assert_eq!(result, Err(Ok(EventRegistryError::NoRewardsAvailable)));
+}
+
+#[test]
+fn test_distribute_rewards_no_stakers_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    client.set_staking_config(&token_id, &1000i128);
+
+    let result = client.try_distribute_staker_rewards(&admin, &100i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::NotStaked)));
+}
+
+#[test]
+fn test_distribute_rewards_unauthorized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let random_caller = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    client.set_staking_config(&token_id, &1000i128);
+
+    let result = client.try_distribute_staker_rewards(&random_caller, &100i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized)));
+}
+
+#[test]
+fn test_is_organizer_verified_false_when_not_staked() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    assert!(!client.is_organizer_verified(&organizer));
+}
