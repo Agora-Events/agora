@@ -1,4 +1,6 @@
-use crate::types::{BlacklistAuditEntry, DataKey, EventInfo, GuestProfile, MultiSigConfig, OrganizerStake, Proposal};
+use crate::types::{
+    BlacklistAuditEntry, DataKey, EventInfo, GuestProfile, MultiSigConfig, OrganizerStake, Proposal,
+};
 use crate::types::{SeriesPass, SeriesRegistry};
 use soroban_sdk::{vec, Address, Env, String, Vec};
 // --- SeriesRegistry Storage ---
@@ -450,9 +452,10 @@ pub fn get_guest_profile(env: &Env, guest: &Address) -> Option<GuestProfile> {
 
 /// Stores (creates or updates) a guest's loyalty profile.
 pub fn set_guest_profile(env: &Env, profile: &GuestProfile) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::GuestProfile(profile.guest_address.clone()), profile);
+    env.storage().persistent().set(
+        &DataKey::GuestProfile(profile.guest_address.clone()),
+        profile,
+    );
 }
 
 /// Retrieves an organizer's stake record.

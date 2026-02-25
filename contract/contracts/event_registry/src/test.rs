@@ -2028,13 +2028,7 @@ fn test_update_status_on_cancelled_event_fails() {
 // ════════════════════════════════════════════════════════════════
 
 /// Helper: initialises a fresh contract and returns (client, admin, platform_wallet)
-fn setup_loyalty_env(
-    env: &Env,
-) -> (
-    crate::EventRegistryClient<'static>,
-    Address,
-    Address,
-) {
+fn setup_loyalty_env(env: &Env) -> (crate::EventRegistryClient<'static>, Address, Address) {
     let contract_id = env.register(EventRegistry, ());
     let client = crate::EventRegistryClient::new(env, &contract_id);
     let admin = Address::generate(env);

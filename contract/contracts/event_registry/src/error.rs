@@ -113,7 +113,10 @@ impl core::fmt::Display for EventRegistryError {
                 write!(f, "Organizer does not have an active stake")
             }
             EventRegistryError::InsufficientStakeAmount => {
-                write!(f, "Stake amount is below the minimum required for Verified status")
+                write!(
+                    f,
+                    "Stake amount is below the minimum required for Verified status"
+                )
             }
             EventRegistryError::InvalidStakeAmount => {
                 write!(f, "Stake amount must be greater than zero")

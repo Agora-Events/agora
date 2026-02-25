@@ -909,8 +909,8 @@ impl EventRegistry {
             return Err(EventRegistryError::AlreadyStaked);
         }
 
-        let token = storage::get_staking_token(&env)
-            .ok_or(EventRegistryError::StakingNotConfigured)?;
+        let token =
+            storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
         let min_amount = storage::get_min_stake_amount(&env);
 
         // Transfer tokens from organizer to this contract
@@ -960,8 +960,8 @@ impl EventRegistry {
     pub fn unstake_collateral(env: Env, organizer: Address) -> Result<(), EventRegistryError> {
         organizer.require_auth();
 
-        let stake = storage::get_organizer_stake(&env, &organizer)
-            .ok_or(EventRegistryError::NotStaked)?;
+        let stake =
+            storage::get_organizer_stake(&env, &organizer).ok_or(EventRegistryError::NotStaked)?;
 
         // Transfer tokens back to organizer
         let token_client = token::Client::new(&env, &stake.token);
@@ -1012,8 +1012,8 @@ impl EventRegistry {
             return Err(EventRegistryError::InvalidRewardAmount);
         }
 
-        let token = storage::get_staking_token(&env)
-            .ok_or(EventRegistryError::StakingNotConfigured)?;
+        let token =
+            storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
 
         let total_staked = storage::get_total_staked(&env);
         if total_staked == 0 {
@@ -1066,8 +1066,8 @@ impl EventRegistry {
     pub fn claim_staker_rewards(env: Env, organizer: Address) -> Result<i128, EventRegistryError> {
         organizer.require_auth();
 
-        let mut stake = storage::get_organizer_stake(&env, &organizer)
-            .ok_or(EventRegistryError::NotStaked)?;
+        let mut stake =
+            storage::get_organizer_stake(&env, &organizer).ok_or(EventRegistryError::NotStaked)?;
 
         if stake.reward_balance == 0 {
             return Err(EventRegistryError::NoRewardsAvailable);
@@ -1083,9 +1083,7 @@ impl EventRegistry {
             &reward_to_claim,
         );
 
-        stake.total_rewards_claimed = stake
-            .total_rewards_claimed
-            .saturating_add(reward_to_claim);
+        stake.total_rewards_claimed = stake.total_rewards_claimed.saturating_add(reward_to_claim);
         stake.reward_balance = 0;
         storage::set_organizer_stake(&env, &stake);
 
