@@ -77,6 +77,17 @@ pub mod event_registry {
         pub max_supply: i128,
     }
 
+    /// Loyalty profile mirrored from the event_registry contract
+    #[soroban_sdk::contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct GuestProfile {
+        pub guest_address: Address,
+        pub loyalty_score: u64,
+        pub total_tickets_purchased: u32,
+        pub total_spent: i128,
+        pub last_updated: u64,
+    }
+
     #[contractclient(name = "Client")]
     pub trait EventRegistryInterface {
         fn get_event_payment_info(env: Env, event_id: String) -> PaymentInfo;
@@ -86,6 +97,15 @@ pub mod event_registry {
         fn get_global_promo_bps(env: Env) -> u32;
         fn get_promo_expiry(env: Env) -> u64;
         fn is_scanner_authorized(env: Env, event_id: String, scanner: Address) -> bool;
+        fn update_loyalty_score(
+            env: Env,
+            caller: Address,
+            guest: Address,
+            tickets_purchased: u32,
+            amount_spent: i128,
+        );
+        fn get_loyalty_discount_bps(env: Env, guest: Address) -> u32;
+        fn get_guest_profile(env: Env, guest: Address) -> Option<GuestProfile>;
     }
 
     pub use crate::types::AuctionConfig;
@@ -603,6 +623,32 @@ impl TicketPaymentContract {
             .checked_mul(event_info.platform_fee_percent as i128)
             .and_then(|v| v.checked_div(10000))
             .ok_or(TicketPaymentError::ArithmeticError)?;
+
+        // Apply loyalty discount: reduce the platform fee for guests with high scores.
+        // Uses try_ variant so that contracts without loyalty support are unaffected.
+        let loyalty_discount_bps: u32 = registry_client_promo
+            .try_get_loyalty_discount_bps(&buyer_address)
+            .ok()
+            .and_then(|r| r.ok())
+            .unwrap_or(0);
+
+        let loyalty_discount_amount = if loyalty_discount_bps > 0 {
+            total_platform_fee
+                .checked_mul(loyalty_discount_bps as i128)
+                .and_then(|v| v.checked_div(10000))
+                .ok_or(TicketPaymentError::ArithmeticError)?
+        } else {
+            0
+        };
+        total_platform_fee = total_platform_fee
+            .checked_sub(loyalty_discount_amount)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
+
+        // Adjust effective_total to reflect the loyalty discount (guest pays less)
+        let effective_total = effective_total
+            .checked_sub(loyalty_discount_amount)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
+
         let total_organizer_amount = effective_total
             .checked_sub(total_platform_fee)
             .ok_or(TicketPaymentError::ArithmeticError)?;
@@ -734,6 +780,14 @@ impl TicketPaymentContract {
                 platform_fee: total_platform_fee,
                 timestamp: env.ledger().timestamp(),
             },
+        );
+
+        // 8a. Award loyalty points to buyer (best-effort; ignore failures)
+        let _ = registry_client_promo.try_update_loyalty_score(
+            &env.current_contract_address(),
+            &buyer_address,
+            &quantity,
+            &effective_total,
         );
 
         // 9. Emit discount applied event if a code was used
