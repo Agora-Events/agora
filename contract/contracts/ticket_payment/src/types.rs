@@ -10,6 +10,38 @@ pub struct AuctionConfig {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ParameterChange {
+    AddGovernor(Address),
+    RemoveGovernor(Address),
+    AddTokenToWhitelist(Address),
+    RemoveTokenFromWhitelist(Address),
+    UpdateWithdrawalCap(Address, i128),
+    UpdateSlippage(u32),
+    UpdateTransferFee(String, i128),
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProposalStatus {
+    Pending,
+    Executed,
+    Rejected,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParameterProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub change: ParameterChange,
+    pub status: ProposalStatus,
+    pub created_at: u64,
+    pub vote_count: u32,
+    pub voters: soroban_sdk::Vec<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PaymentStatus {
     Pending,
     Confirmed,
@@ -91,4 +123,8 @@ pub enum DataKey {
     SlippageBps,                         // u32 — slippage tolerance in bps (default 200 = 2%)
     HighestBid(String, String),          // (event_id, tier_id) -> HighestBid
     AuctionClosed(String, String),       // (event_id, tier_id) -> bool
+    Governor(Address),                   // Address -> bool (is authorized governor)
+    TotalGovernors,                      // u32
+    Proposal(u64),                       // id -> ParameterProposal
+    ProposalCount,                       // u64
 }

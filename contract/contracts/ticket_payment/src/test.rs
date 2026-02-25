@@ -2,7 +2,7 @@ use super::contract::{
     event_registry, price_oracle, TicketPaymentContract, TicketPaymentContractClient,
 };
 use super::storage::*;
-use super::types::{Payment, PaymentStatus};
+use super::types::{ParameterChange, Payment, PaymentStatus};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, Events, Ledger},
@@ -672,7 +672,7 @@ fn test_add_remove_token_whitelist() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let (client, admin, usdc_id, _, _) = setup_test(&env);
 
     let xlm_token = Address::generate(&env);
     let eurc_token = Address::generate(&env);
@@ -680,13 +680,34 @@ fn test_add_remove_token_whitelist() {
     assert!(client.is_token_allowed(&usdc_id));
     assert!(!client.is_token_allowed(&xlm_token));
 
-    client.add_token(&xlm_token);
+    let p1 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(xlm_token.clone()),
+    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p1);
+
     assert!(client.is_token_allowed(&xlm_token));
 
-    client.add_token(&eurc_token);
+    let p2 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(eurc_token.clone()),
+    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p2);
+
     assert!(client.is_token_allowed(&eurc_token));
 
-    client.remove_token(&xlm_token);
+    let p3 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::RemoveTokenFromWhitelist(xlm_token.clone()),
+    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p3);
+
     assert!(!client.is_token_allowed(&xlm_token));
     assert!(client.is_token_allowed(&eurc_token));
 }
@@ -721,13 +742,19 @@ fn test_process_payment_with_multiple_tokens() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let (client, admin, usdc_id, _platform_wallet, _) = setup_test(&env);
 
     let xlm_id = env
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();
 
-    client.add_token(&xlm_id);
+    let p1 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(xlm_id.clone()),
+    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p1);
 
     let buyer1 = Address::generate(&env);
     let buyer2 = Address::generate(&env);
@@ -3826,29 +3853,6 @@ fn test_set_oracle_admin_only() {
     client.set_oracle(&oracle_id);
 }
 
-// 9. Slippage bps > 5000 → InvalidSlippageBps
-#[test]
-fn test_set_slippage_bps_bounds() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (client, _admin, _usdc_id, _pw, _reg) = setup_test(&env);
-
-    // Setting within range should succeed
-    let result = client.try_set_slippage_bps(&500);
-    assert!(result.is_ok());
-    assert_eq!(client.get_slippage(), 500);
-
-    // Setting above 5000 should fail
-    let result = client.try_set_slippage_bps(&5001);
-    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidSlippageBps)));
-
-    // Boundary value should succeed
-    let result = client.try_set_slippage_bps(&5000);
-    assert!(result.is_ok());
-    assert_eq!(client.get_slippage(), 5000);
-}
-
 // 10. get_asset_price returns oracle price
 #[test]
 fn test_get_asset_price_returns_oracle_price() {
@@ -3860,4 +3864,133 @@ fn test_get_asset_price_returns_oracle_price() {
     let price_data = client.get_asset_price(&token_id);
     assert_eq!(price_data.price, 8_3333333);
     assert_eq!(price_data.timestamp, 1000);
+}
+
+// ----------------------------------------------------------------------------
+// DAO-Lite Governance Integration Tests
+// ----------------------------------------------------------------------------
+
+#[test]
+fn test_governance_propose_and_execute_time_lock() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _, _, _) = setup_test(&env);
+    let new_token = Address::generate(&env);
+
+    // Initial state
+    assert!(!client.is_token_allowed(&new_token));
+
+    // Propose
+    let proposal_id = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(new_token.clone()),
+    );
+
+    // Fast-forward inside the lock (fails)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 1000);
+    let res1 = client.try_execute_proposal(&admin, &proposal_id);
+    assert_eq!(res1, Err(Ok(TicketPaymentError::VotingPeriodNotMet)));
+
+    // Fast-forward past 48 hours
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+
+    // Execute
+    assert!(client.try_execute_proposal(&admin, &proposal_id).is_ok());
+
+    // Verify change
+    assert!(client.is_token_allowed(&new_token));
+}
+
+#[test]
+fn test_governance_add_governor_requires_new_threshold() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _, _, _) = setup_test(&env);
+    let new_governor = Address::generate(&env);
+
+    // 1. Add new governor
+    let p1 = client
+        .propose_parameter_change(&admin, &ParameterChange::AddGovernor(new_governor.clone()));
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p1);
+
+    // Total Governors is now 2. Threshold = (2/2) + 1 = 2 votes needed.
+
+    // 2. Propose another change
+    let new_token = Address::generate(&env);
+    let p2 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(new_token.clone()),
+    );
+
+    // Try executing with only 1 vote
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    let res = client.try_execute_proposal(&admin, &p2);
+    assert_eq!(res, Err(Ok(TicketPaymentError::InsufficientVotes)));
+
+    // 3. New governor votes
+    client.vote_on_proposal(&new_governor, &p2);
+
+    // Now execute
+    assert!(client.try_execute_proposal(&admin, &p2).is_ok());
+    assert!(client.is_token_allowed(&new_token));
+}
+
+#[test]
+fn test_governance_remove_governor() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _, _, _) = setup_test(&env);
+    let gov2 = Address::generate(&env);
+    let gov3 = Address::generate(&env);
+
+    // Add gov2 and gov3
+    let p1 = client.propose_parameter_change(&admin, &ParameterChange::AddGovernor(gov2.clone()));
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p1);
+
+    let p2 = client.propose_parameter_change(&admin, &ParameterChange::AddGovernor(gov3.clone()));
+    client.vote_on_proposal(&gov2, &p2);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p2);
+
+    // Remove gov3
+    let p3 = client.propose_parameter_change(&gov2, &ParameterChange::RemoveGovernor(gov3.clone()));
+    client.vote_on_proposal(&admin, &p3);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p3);
+
+    // Total Govs: 2, Threshold is 2. Propose again by admin.
+    let p4 = client.propose_parameter_change(&admin, &ParameterChange::UpdateSlippage(100));
+
+    // gov3 tries to vote but is no longer a governor
+    let failed_vote = client.try_vote_on_proposal(&gov3, &p4);
+    assert_eq!(failed_vote, Err(Ok(TicketPaymentError::NotGovernor)));
+}
+
+#[test]
+fn test_governance_unauthorized_propose_and_vote() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _, _, _) = setup_test(&env);
+    let random_user = Address::generate(&env);
+
+    // unauthorized propose
+    let res =
+        client.try_propose_parameter_change(&random_user, &ParameterChange::UpdateSlippage(300));
+    assert_eq!(res, Err(Ok(TicketPaymentError::NotGovernor)));
+
+    // unauthorized vote
+    let res = client.try_vote_on_proposal(&random_user, &0);
+    assert_eq!(res, Err(Ok(TicketPaymentError::NotGovernor)));
 }

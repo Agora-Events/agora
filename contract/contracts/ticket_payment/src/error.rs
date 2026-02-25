@@ -45,6 +45,12 @@ pub enum TicketPaymentError {
     AuctionEnded = 46,
     AuctionNotEnded = 47,
     NotAuctionTier = 48,
+    NotGovernor = 49,
+    InvalidProposal = 50,
+    ProposalNotActive = 51,
+    AlreadyVoted = 52,
+    VotingPeriodNotMet = 53,
+    InsufficientVotes = 54,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -147,6 +153,24 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::NotAuctionTier => {
                 write!(f, "This tier is not configured for auctions")
+            }
+            TicketPaymentError::NotGovernor => {
+                write!(f, "Caller is not an authorized governor")
+            }
+            TicketPaymentError::InvalidProposal => {
+                write!(f, "Proposal does not exist")
+            }
+            TicketPaymentError::ProposalNotActive => {
+                write!(f, "Proposal is not active")
+            }
+            TicketPaymentError::AlreadyVoted => {
+                write!(f, "Governor has already voted on this proposal")
+            }
+            TicketPaymentError::VotingPeriodNotMet => {
+                write!(f, "Voting period has not ended yet")
+            }
+            TicketPaymentError::InsufficientVotes => {
+                write!(f, "Proposal does not have enough votes to execute")
             }
         }
     }

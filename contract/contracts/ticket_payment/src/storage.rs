@@ -1,4 +1,4 @@
-use crate::types::{DataKey, EventBalance, HighestBid, Payment, PaymentStatus};
+use crate::types::{DataKey, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus};
 use soroban_sdk::{vec, Address, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
@@ -608,4 +608,57 @@ pub fn is_auction_closed(env: &Env, event_id: String, tier_id: String) -> bool {
         .persistent()
         .get(&DataKey::AuctionClosed(event_id, tier_id))
         .unwrap_or(false)
+}
+
+// ── Governance functions ──────────────────────────────────────────────────────
+
+pub fn is_governor(env: &Env, address: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Governor(address.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_governor(env: &Env, address: &Address, status: bool) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Governor(address.clone()), &status);
+}
+
+pub fn get_total_governors(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalGovernors)
+        .unwrap_or(0)
+}
+
+pub fn set_total_governors(env: &Env, total: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::TotalGovernors, &total);
+}
+
+pub fn get_proposal(env: &Env, id: u64) -> Option<ParameterProposal> {
+    env.storage().persistent().get(&DataKey::Proposal(id))
+}
+
+pub fn set_proposal(env: &Env, proposal: &ParameterProposal) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Proposal(proposal.id), proposal);
+}
+
+pub fn get_proposal_count(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ProposalCount)
+        .unwrap_or(0)
+}
+
+pub fn increment_proposal_count(env: &Env) -> u64 {
+    let count = get_proposal_count(env) + 1;
+    env.storage()
+        .persistent()
+        .set(&DataKey::ProposalCount, &count);
+    count
 }

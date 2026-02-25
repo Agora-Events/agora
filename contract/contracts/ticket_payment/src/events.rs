@@ -21,6 +21,9 @@ pub enum AgoraEvent {
     TicketCheckedIn,
     BidPlaced,
     AuctionClosed,
+    ProposalCreated,
+    ProposalVoted,
+    GovernanceActionExecuted,
 }
 
 #[contracttype]
@@ -176,5 +179,30 @@ pub struct AuctionClosedEvent {
     pub tier_id: String,
     pub winner: Address,
     pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProposalCreatedEvent {
+    pub proposal_id: u64,
+    pub proposer: Address,
+    pub change: crate::types::ParameterChange,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProposalVotedEvent {
+    pub proposal_id: u64,
+    pub voter: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceActionExecutedEvent {
+    pub proposal_id: u64,
+    pub change: crate::types::ParameterChange,
     pub timestamp: u64,
 }

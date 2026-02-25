@@ -5,26 +5,31 @@ use crate::storage::{
     get_admin, get_bulk_refund_index, get_daily_withdrawn_amount, get_event_balance,
     get_event_payments, get_event_registry, get_highest_bid, get_oracle_address,
     get_partial_refund_index, get_partial_refund_percentage, get_payment, get_platform_wallet,
-    get_slippage_bps, get_total_fees_collected_by_token, get_transfer_fee, get_usdc_token,
-    get_withdrawal_cap, has_price_switched, is_auction_closed, is_discount_hash_used,
-    is_discount_hash_valid, is_event_disputed, is_initialized, is_paused, is_token_whitelisted,
+    get_proposal, get_slippage_bps, get_total_fees_collected_by_token, get_total_governors,
+    get_transfer_fee, get_usdc_token, get_withdrawal_cap, has_price_switched,
+    increment_proposal_count, is_auction_closed, is_discount_hash_used, is_discount_hash_valid,
+    is_event_disputed, is_governor, is_initialized, is_paused, is_token_whitelisted,
     mark_discount_hash_used, remove_payment_from_buyer_index, remove_token_from_whitelist,
     set_admin, set_auction_closed, set_bulk_refund_index, set_event_dispute_status,
-    set_event_registry, set_highest_bid, set_initialized, set_is_paused, set_oracle_address,
-    set_partial_refund_index, set_partial_refund_percentage, set_platform_wallet,
-    set_price_switched, set_slippage_bps, set_transfer_fee, set_usdc_token, set_withdrawal_cap,
-    store_payment, subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
+    set_event_registry, set_governor, set_highest_bid, set_initialized, set_is_paused,
+    set_oracle_address, set_partial_refund_index, set_partial_refund_percentage,
+    set_platform_wallet, set_price_switched, set_proposal, set_slippage_bps, set_total_governors,
+    set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment,
+    subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
     subtract_from_total_fees_collected_by_token, update_event_balance,
 };
-use crate::types::{HighestBid, Payment, PaymentStatus};
+use crate::types::{
+    HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus, ProposalStatus,
+};
 use crate::{
     error::TicketPaymentError,
     events::{
         AgoraEvent, AuctionClosedEvent, BidPlacedEvent, BulkRefundProcessedEvent,
         ContractPausedEvent, ContractUpgraded, DiscountCodeAppliedEvent, DisputeStatusChangedEvent,
-        FeeSettledEvent, GlobalPromoAppliedEvent, InitializationEvent, PartialRefundProcessedEvent,
-        PaymentProcessedEvent, PaymentStatusChangedEvent, PriceSwitchedEvent, RevenueClaimedEvent,
-        TicketTransferredEvent,
+        FeeSettledEvent, GlobalPromoAppliedEvent, GovernanceActionExecutedEvent,
+        InitializationEvent, PartialRefundProcessedEvent, PaymentProcessedEvent,
+        PaymentStatusChangedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
+        RevenueClaimedEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec};
@@ -155,6 +160,8 @@ impl TicketPaymentContract {
         validate_address(&env, &event_registry)?;
 
         set_admin(&env, &admin);
+        set_governor(&env, &admin, true);
+        set_total_governors(&env, 1);
         set_usdc_token(&env, usdc_token.clone());
         set_platform_wallet(&env, platform_wallet.clone());
         set_event_registry(&env, event_registry.clone());
@@ -248,16 +255,154 @@ impl TicketPaymentContract {
         );
     }
 
-    pub fn add_token(env: Env, token: Address) {
-        let admin = get_admin(&env).expect("Admin not set");
-        admin.require_auth();
-        add_token_to_whitelist(&env, &token);
+    /// Proposes a parameter change for the platform. Only callable by a governor.
+    pub fn propose_parameter_change(
+        env: Env,
+        proposer: Address,
+        change: ParameterChange,
+    ) -> Result<u64, TicketPaymentError> {
+        proposer.require_auth();
+        if !is_governor(&env, &proposer) {
+            return Err(TicketPaymentError::NotGovernor);
+        }
+
+        let proposal_id = increment_proposal_count(&env);
+        let proposal = ParameterProposal {
+            id: proposal_id,
+            proposer: proposer.clone(),
+            change: change.clone(),
+            status: ProposalStatus::Pending,
+            created_at: env.ledger().timestamp(),
+            vote_count: 1, // proposer automatically votes
+            voters: soroban_sdk::vec![&env, proposer.clone()],
+        };
+
+        set_proposal(&env, &proposal);
+
+        env.events().publish(
+            (AgoraEvent::ProposalCreated,),
+            ProposalCreatedEvent {
+                proposal_id,
+                proposer,
+                change,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(proposal_id)
     }
 
-    pub fn remove_token(env: Env, token: Address) {
-        let admin = get_admin(&env).expect("Admin not set");
-        admin.require_auth();
-        remove_token_from_whitelist(&env, &token);
+    /// Votes on an active proposal. Only callable by a governor.
+    pub fn vote_on_proposal(
+        env: Env,
+        voter: Address,
+        proposal_id: u64,
+    ) -> Result<(), TicketPaymentError> {
+        voter.require_auth();
+        if !is_governor(&env, &voter) {
+            return Err(TicketPaymentError::NotGovernor);
+        }
+
+        let mut proposal =
+            get_proposal(&env, proposal_id).ok_or(TicketPaymentError::InvalidProposal)?;
+
+        if proposal.status != ProposalStatus::Pending {
+            return Err(TicketPaymentError::ProposalNotActive);
+        }
+
+        if proposal.voters.contains(&voter) {
+            return Err(TicketPaymentError::AlreadyVoted);
+        }
+
+        proposal.voters.push_back(voter.clone());
+        proposal.vote_count += 1;
+        set_proposal(&env, &proposal);
+
+        env.events().publish(
+            (AgoraEvent::ProposalVoted,),
+            ProposalVotedEvent {
+                proposal_id,
+                voter,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Executes a proposal if it has met the voting threshold and time lock.
+    pub fn execute_proposal(
+        env: Env,
+        executor: Address,
+        proposal_id: u64,
+    ) -> Result<(), TicketPaymentError> {
+        executor.require_auth();
+        let mut proposal =
+            get_proposal(&env, proposal_id).ok_or(TicketPaymentError::InvalidProposal)?;
+
+        if proposal.status != ProposalStatus::Pending {
+            return Err(TicketPaymentError::ProposalNotActive);
+        }
+
+        let current_time = env.ledger().timestamp();
+        // 48 hours = 48 * 60 * 60 = 172800 seconds
+        if current_time < proposal.created_at + 172800 {
+            return Err(TicketPaymentError::VotingPeriodNotMet);
+        }
+
+        let total_governors = get_total_governors(&env);
+        // Simple majority: > 50%
+        let threshold = (total_governors / 2) + 1;
+        if proposal.vote_count < threshold {
+            return Err(TicketPaymentError::InsufficientVotes);
+        }
+
+        // Execute the change
+        match &proposal.change {
+            ParameterChange::AddGovernor(new_governor) => {
+                if !is_governor(&env, new_governor) {
+                    set_governor(&env, new_governor, true);
+                    set_total_governors(&env, total_governors + 1);
+                }
+            }
+            ParameterChange::RemoveGovernor(old_governor) => {
+                if is_governor(&env, old_governor) && total_governors > 1 {
+                    set_governor(&env, old_governor, false);
+                    set_total_governors(&env, total_governors - 1);
+                }
+            }
+            ParameterChange::AddTokenToWhitelist(token) => {
+                add_token_to_whitelist(&env, token);
+            }
+            ParameterChange::RemoveTokenFromWhitelist(token) => {
+                remove_token_from_whitelist(&env, token);
+            }
+            ParameterChange::UpdateWithdrawalCap(token, cap) => {
+                set_withdrawal_cap(&env, token.clone(), *cap);
+            }
+            ParameterChange::UpdateSlippage(bps) => {
+                if *bps <= 5000 {
+                    set_slippage_bps(&env, *bps);
+                }
+            }
+            ParameterChange::UpdateTransferFee(event_id, fee) => {
+                set_transfer_fee(&env, event_id.clone(), *fee);
+            }
+        }
+
+        proposal.status = ProposalStatus::Executed;
+        set_proposal(&env, &proposal);
+
+        env.events().publish(
+            (AgoraEvent::GovernanceActionExecuted,),
+            GovernanceActionExecutedEvent {
+                proposal_id,
+                change: proposal.change.clone(),
+                timestamp: current_time,
+            },
+        );
+
+        Ok(())
     }
 
     pub fn is_token_allowed(env: Env, token: Address) -> bool {
@@ -269,18 +414,6 @@ impl TicketPaymentContract {
         let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
         admin.require_auth();
         set_oracle_address(&env, &oracle_address);
-        Ok(())
-    }
-
-    /// Sets the slippage tolerance in basis points. Only callable by admin.
-    /// Maximum allowed value is 5000 (50%).
-    pub fn set_slippage_bps(env: Env, bps: u32) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
-        if bps > 5000 {
-            return Err(TicketPaymentError::InvalidSlippageBps);
-        }
-        set_slippage_bps(&env, bps);
         Ok(())
     }
 
