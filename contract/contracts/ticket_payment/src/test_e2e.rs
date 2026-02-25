@@ -423,7 +423,10 @@ fn test_e2e_full_purchase_confirm_checkin_lifecycle() {
     assert!(payment.confirmed_at.is_some());
 
     // 3. Check in
-    client.check_in(&pay_id, &scanner);
+    // 3. Check in
+    let series_id: Option<String> = None;
+    let pass_holder: Option<Address> = None;
+    client.check_in(&pay_id, &scanner, &series_id, &pass_holder);
     let payment = client.get_payment_status(&pay_id).unwrap();
     assert_eq!(payment.status, PaymentStatus::CheckedIn);
 

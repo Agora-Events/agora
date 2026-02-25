@@ -1,5 +1,82 @@
 use crate::types::{BlacklistAuditEntry, DataKey, EventInfo, MultiSigConfig, Proposal};
+use crate::types::{SeriesPass, SeriesRegistry};
 use soroban_sdk::{vec, Address, Env, String, Vec};
+// --- SeriesRegistry Storage ---
+pub fn store_series(env: &Env, series: &SeriesRegistry) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Series(series.series_id.clone()), series);
+    // Index each event_id for fast lookup
+    for event_id in series.event_ids.iter() {
+        env.storage().persistent().set(
+            &DataKey::SeriesEvent(series.series_id.clone(), event_id.clone()),
+            &true,
+        );
+    }
+}
+
+pub fn get_series(env: &Env, series_id: String) -> Option<SeriesRegistry> {
+    env.storage().persistent().get(&DataKey::Series(series_id))
+}
+
+pub fn series_contains_event(env: &Env, series_id: String, event_id: String) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::SeriesEvent(series_id, event_id))
+}
+
+// --- SeriesPass Storage ---
+pub fn store_series_pass(env: &Env, pass: &SeriesPass) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::SeriesPass(pass.pass_id.clone()), pass);
+    env.storage().persistent().set(
+        &DataKey::HolderSeriesPass(pass.holder.clone(), pass.series_id.clone()),
+        &pass.pass_id,
+    );
+}
+
+pub fn get_series_pass(env: &Env, pass_id: String) -> Option<SeriesPass> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SeriesPass(pass_id))
+}
+
+pub fn get_holder_series_pass(
+    env: &Env,
+    holder: &Address,
+    series_id: String,
+) -> Option<SeriesPass> {
+    if let Some(pass_id) = env
+        .storage()
+        .persistent()
+        .get::<_, String>(&DataKey::HolderSeriesPass(
+            holder.clone(),
+            series_id.clone(),
+        ))
+    {
+        env.storage()
+            .persistent()
+            .get(&DataKey::SeriesPass(pass_id))
+    } else {
+        None
+    }
+}
+
+/// Increments usage count for a pass, enforcing usage limit. Returns Some(pass) if incremented, None if not allowed.
+pub fn increment_series_pass_usage(env: &Env, pass_id: String) -> Option<SeriesPass> {
+    if let Some(mut pass) = get_series_pass(env, pass_id.clone()) {
+        if pass.usage_count < pass.usage_limit {
+            pass.usage_count += 1;
+            store_series_pass(env, &pass);
+            Some(pass)
+        } else {
+            None // Usage limit reached
+        }
+    } else {
+        None
+    }
+}
 
 const SHARD_SIZE: u32 = 50;
 

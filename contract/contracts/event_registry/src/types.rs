@@ -1,5 +1,41 @@
 use soroban_sdk::{contracttype, Address, Map, String, Vec};
 
+/// Represents a series or festival grouping multiple events
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SeriesRegistry {
+    /// Unique identifier for the series
+    pub series_id: String,
+    /// Name or description of the series
+    pub name: String,
+    /// List of event_ids included in this series
+    pub event_ids: Vec<String>,
+    /// Organizer address for the series
+    pub organizer_address: Address,
+    /// Optional metadata (e.g., IPFS CID)
+    pub metadata_cid: Option<String>,
+}
+
+/// Represents a season pass for a series
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SeriesPass {
+    /// Unique pass ID
+    pub pass_id: String,
+    /// Series this pass is valid for
+    pub series_id: String,
+    /// Address of the pass holder
+    pub holder: Address,
+    /// Usage limit (e.g., 5 out of 10 events)
+    pub usage_limit: u32,
+    /// Number of events attended with this pass
+    pub usage_count: u32,
+    /// Timestamp when the pass was issued
+    pub issued_at: u64,
+    /// Expiry timestamp (optional, 0 = no expiry)
+    pub expires_at: u64,
+}
+
 /// Represents a ticket tier with its own pricing and supply
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -201,4 +237,13 @@ pub enum DataKey {
     ActiveProposals,
     /// Mapping of (event_id, scanner_address) to bool
     AuthorizedScanner(String, Address),
+
+    /// Mapping of series_id to SeriesRegistry (Persistent)
+    Series(String),
+    /// Mapping of pass_id to SeriesPass (Persistent)
+    SeriesPass(String),
+    /// Mapping of (holder, series_id) to pass_id (Persistent)
+    HolderSeriesPass(Address, String),
+    /// Mapping of (series_id, event_id) to bool (Persistent, for fast lookup)
+    SeriesEvent(String, String),
 }

@@ -17,6 +17,8 @@ pub mod events;
 pub mod storage;
 pub mod types;
 
+use crate::types::{SeriesPass, SeriesRegistry};
+
 use crate::error::EventRegistryError;
 
 #[contract]
@@ -25,6 +27,79 @@ pub struct EventRegistry;
 #[contractimpl]
 #[allow(deprecated)]
 impl EventRegistry {
+    /// Register a new series grouping multiple events
+    pub fn register_series(
+        env: Env,
+        series_id: String,
+        name: String,
+        event_ids: Vec<String>,
+        organizer_address: Address,
+        metadata_cid: Option<String>,
+    ) -> Result<(), EventRegistryError> {
+        organizer_address.require_auth();
+        // Validate all event_ids exist and belong to organizer
+        for event_id in event_ids.iter() {
+            let event = storage::get_event(&env, event_id.clone())
+                .ok_or(EventRegistryError::EventNotFound)?;
+            if event.organizer_address != organizer_address {
+                return Err(EventRegistryError::UnauthorizedCaller);
+            }
+        }
+        let series = SeriesRegistry {
+            series_id: series_id.clone(),
+            name,
+            event_ids: event_ids.clone(),
+            organizer_address: organizer_address.clone(),
+            metadata_cid,
+        };
+        storage::store_series(&env, &series);
+        Ok(())
+    }
+
+    /// Get a series by ID
+    pub fn get_series(env: Env, series_id: String) -> Option<SeriesRegistry> {
+        storage::get_series(&env, series_id)
+    }
+
+    /// Issue a season pass for a series
+    pub fn issue_series_pass(
+        env: Env,
+        pass_id: String,
+        series_id: String,
+        holder: Address,
+        usage_limit: u32,
+        expires_at: u64,
+    ) -> Result<(), EventRegistryError> {
+        // Only organizer of the series can issue passes
+        let series = storage::get_series(&env, series_id.clone())
+            .ok_or(EventRegistryError::EventNotFound)?;
+        series.organizer_address.require_auth();
+        let pass = SeriesPass {
+            pass_id: pass_id.clone(),
+            series_id: series_id.clone(),
+            holder: holder.clone(),
+            usage_limit,
+            usage_count: 0,
+            issued_at: env.ledger().timestamp(),
+            expires_at,
+        };
+        storage::store_series_pass(&env, &pass);
+        Ok(())
+    }
+
+    /// Get a pass by ID
+    pub fn get_series_pass(env: Env, pass_id: String) -> Option<SeriesPass> {
+        storage::get_series_pass(&env, pass_id)
+    }
+
+    /// Get a pass for a holder and series
+    pub fn get_holder_series_pass(
+        env: Env,
+        holder: Address,
+        series_id: String,
+    ) -> Option<SeriesPass> {
+        storage::get_holder_series_pass(&env, &holder, series_id)
+    }
     /// Initializes the contract configuration. Can only be called once.
     /// Sets up initial admin with multi-sig configuration (threshold = 1 for single admin).
     ///

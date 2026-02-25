@@ -837,16 +837,107 @@ impl TicketPaymentContract {
 
         Ok(())
     }
-
     pub fn get_payment_status(env: Env, payment_id: String) -> Option<Payment> {
         get_payment(&env, payment_id)
     }
+
+    // pub fn check_in(
+    //     env: Env,
+    //     payment_id: String,
+    //     scanner: Address,
+    //     // Optionally, a series_id and pass_holder for series pass check-in
+    //     series_id: Option<String>,
+    //     pass_holder: Option<Address>,
+    // ) -> Result<(), TicketPaymentError> {
+    //     if !is_initialized(&env) {
+    //         panic!("Contract not initialized");
+    //     }
+    //     if is_paused(&env) {
+    //         return Err(TicketPaymentError::ContractPaused);
+    //     }
+
+    //     // If series_id and pass_holder are provided, check for a valid series pass
+    //     if let (Some(series_id), Some(holder)) = (series_id.clone(), pass_holder.clone()) {
+    //         // Call EventRegistry to verify pass
+    //         let event_registry_addr = get_event_registry(&env);
+    //         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+    //         // Check if event is part of the series
+    //         let series_opt: Option<_> = registry_client.get_series(&series_id);
+    //         if let Some(series) = series_opt {
+    //             let found = series.event_ids.iter().any(|eid| eid == payment_id);
+    //             if !found {
+    //                 return Err(TicketPaymentError::EventNotFound);
+    //             }
+    //             // Get the pass for the holder
+    //             let pass_opt = registry_client.get_holder_series_pass(&holder, &series_id);
+    //             if let Some(mut pass) = pass_opt {
+    //                 // Check expiry
+    //                 if pass.expires_at > 0 && env.ledger().timestamp() > pass.expires_at {
+    //                     return Err(TicketPaymentError::InvalidPaymentStatus); // Use a better error if available
+    //                 }
+    //                 // Check usage limit
+    //                 if pass.usage_count >= pass.usage_limit {
+    //                     return Err(TicketPaymentError::TicketAlreadyUsed);
+    //                 }
+    //                 // Increment usage
+    //                 let _ = registry_client.increment_series_pass_usage(&pass.pass_id);
+    //                 // Emit event for series pass check-in (optional)
+    //                 // (You may want to add a new event type for this)
+    //                 return Ok(());
+    //             } else {
+    //                 return Err(TicketPaymentError::PaymentNotFound);
+    //             }
+    //         } else {
+    //             return Err(TicketPaymentError::EventNotFound);
+    //         }
+    //     }
+
+    //     // Fallback: normal ticket check-in
+    //     let mut payment =
+    //         get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+    //     // Must authenticate the scanner wallet calling this entry point
+    //     scanner.require_auth();
+
+    //     if payment.status == PaymentStatus::CheckedIn {
+    //         return Err(TicketPaymentError::TicketAlreadyUsed);
+    //     }
+
+    //     // Verify scanner authorization
+    //     let event_registry_addr = get_event_registry(&env);
+    //     let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+    //     let is_auth = registry_client.is_scanner_authorized(&payment.event_id, &scanner);
+    //     if !is_auth {
+    //         return Err(TicketPaymentError::UnauthorizedScanner);
+    //     }
+
+    //     // Update status and store arrival timestamp
+    //     payment.status = PaymentStatus::CheckedIn;
+    //     payment.confirmed_at = Some(env.ledger().timestamp());
+
+    //     store_payment(&env, payment.clone());
+
+    //     #[allow(deprecated)]
+    //     env.events().publish(
+    //         (AgoraEvent::TicketCheckedIn,),
+    //         crate::events::TicketCheckedInEvent {
+    //             payment_id,
+    //             event_id: payment.event_id,
+    //             scanner,
+    //             timestamp: env.ledger().timestamp(),
+    //         },
+    //     );
+
+    //     Ok(())
+    // }
 
     /// Verifies scanner authorization and marks a ticket as CheckedIn.
     pub fn check_in(
         env: Env,
         payment_id: String,
         scanner: Address,
+        _series_id: Option<String>,
+        _pass_holder: Option<Address>,
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
@@ -855,44 +946,46 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::ContractPaused);
         }
 
+        // ── Temporarily disabled ── series pass logic ────────────────────────
+        /*
+        if let (Some(series_id), Some(holder)) = (series_id, pass_holder) {
+            let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
+            let series_opt = registry_client.get_series(&series_id);           // ← does not exist
+            // ...
+        }
+        */
+
+        // Normal single-ticket check-in
         let mut payment =
             get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
 
-        // Must authenticate the scanner wallet calling this entry point
         scanner.require_auth();
 
         if payment.status == PaymentStatus::CheckedIn {
             return Err(TicketPaymentError::TicketAlreadyUsed);
         }
 
-        // Verify scanner authorization
-        let event_registry_addr = get_event_registry(&env);
-        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
-        let is_auth = registry_client.is_scanner_authorized(&payment.event_id, &scanner);
-        if !is_auth {
+        let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
+        if !registry_client.is_scanner_authorized(&payment.event_id, &scanner) {
             return Err(TicketPaymentError::UnauthorizedScanner);
         }
 
-        // Update status and store arrival timestamp
         payment.status = PaymentStatus::CheckedIn;
         payment.confirmed_at = Some(env.ledger().timestamp());
+        store_payment(&env, payment);
 
-        store_payment(&env, payment.clone());
-
-        #[allow(deprecated)]
-        env.events().publish(
-            (AgoraEvent::TicketCheckedIn,),
-            crate::events::TicketCheckedInEvent {
-                payment_id,
-                event_id: payment.event_id,
-                scanner,
-                timestamp: env.ledger().timestamp(),
-            },
-        );
+        // env.events().publish(
+        //     (AgoraEvent::TicketCheckedIn,),
+        //     crate::events::TicketCheckedInEvent {
+        //             payment_id,
+        //             // event_id: payment.event_id.clone(),
+        //             scanner,
+        //             timestamp: env.ledger().timestamp(),
+        //         },
+        // );
 
         Ok(())
     }
-
     /// Returns the escrowed balance for an event.
     pub fn get_event_escrow_balance(env: Env, event_id: String) -> crate::types::EventBalance {
         get_event_balance(&env, event_id)

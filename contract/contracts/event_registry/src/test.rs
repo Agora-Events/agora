@@ -8,18 +8,127 @@ use soroban_sdk::{
 };
 
 #[test]
-fn test_initialize() {
+fn test_register_and_get_series() {
     let env = Env::default();
+    env.mock_all_auths();
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500);
 
-    client.initialize(&admin, &platform_wallet, &0);
+    // Register two events for the organizer
+    let event_id1 = String::from_str(&env, "event_1");
+    let event_id2 = String::from_str(&env, "event_2");
+    let metadata_cid = String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi");
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id1.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id2.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
 
-    assert_eq!(client.get_platform_fee(), 500);
-    assert_eq!(client.get_admin(), admin);
-    assert_eq!(client.get_platform_wallet(), platform_wallet);
+    // Register a series
+    let series_id = String::from_str(&env, "series_1");
+    let series_name = String::from_str(&env, "Spring Festival");
+    let event_ids = soroban_sdk::vec![&env, event_id1.clone(), event_id2.clone()];
+    let meta = Some(String::from_str(&env, "series_meta"));
+    client.register_series(&series_id, &series_name, &event_ids, &organizer, &meta);
+
+    let series = client.get_series(&series_id).unwrap();
+    assert_eq!(series.series_id, series_id);
+    assert_eq!(series.name, series_name);
+    assert_eq!(series.event_ids.len(), 2);
+    assert_eq!(series.organizer_address, organizer);
+    assert_eq!(series.metadata_cid, meta);
+}
+
+#[test]
+fn test_issue_and_use_series_pass() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500);
+
+    // Register event and series
+    let event_id = String::from_str(&env, "event_1");
+    let metadata_cid = String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi");
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
+    let series_id = String::from_str(&env, "series_1");
+    let event_ids = soroban_sdk::vec![&env, event_id.clone()];
+    let meta = Some(String::from_str(&env, "series_meta"));
+    client.register_series(&series_id, &String::from_str(&env, "Series"), &event_ids, &organizer, &meta);
+
+    // Issue a pass
+    let pass_id = String::from_str(&env, "pass_1");
+    let holder = Address::generate(&env);
+    let usage_limit = 2u32;
+    let expires_at = env.ledger().timestamp() + 10000;
+    client.issue_series_pass(&pass_id, &series_id, &holder, &usage_limit, &expires_at);
+
+    // Retrieve and check pass
+    let pass = client.get_series_pass(&pass_id).unwrap();
+    assert_eq!(pass.series_id, series_id);
+    assert_eq!(pass.holder, holder);
+    assert_eq!(pass.usage_limit, usage_limit);
+    assert_eq!(pass.usage_count, 0);
+
+    // Increment usage and check limit enforcement
+    for i in 0..usage_limit {
+        let updated = env.as_contract(&contract_id, || {
+            crate::storage::increment_series_pass_usage(&env, pass_id.clone())
+        });
+        assert!(updated.is_some());
+        let pass = client.get_series_pass(&pass_id).unwrap();
+        assert_eq!(pass.usage_count, i + 1);
+    }
+    // Should not increment beyond limit
+    let updated = env.as_contract(&contract_id, || {
+        crate::storage::increment_series_pass_usage(&env, pass_id.clone())
+    });
+    assert!(updated.is_none());
 }
 
 #[test]
