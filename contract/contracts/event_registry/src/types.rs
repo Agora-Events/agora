@@ -212,6 +212,42 @@ pub struct Proposal {
     pub expires_at: u64,
 }
 
+/// Loyalty profile for a guest (event attendee / ticket buyer)
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GuestProfile {
+    /// The wallet address of the guest
+    pub guest_address: Address,
+    /// Accumulated loyalty score (increases with each purchase)
+    pub loyalty_score: u64,
+    /// Total number of tickets purchased across all events
+    pub total_tickets_purchased: u32,
+    /// Total amount spent across all events (in token stroops)
+    pub total_spent: i128,
+    /// Timestamp of the last loyalty score update
+    pub last_updated: u64,
+}
+
+/// Represents an organizer's staked collateral for Verified status
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizerStake {
+    /// The organizer's wallet address
+    pub organizer: Address,
+    /// The token contract address used for staking
+    pub token: Address,
+    /// The amount of tokens staked
+    pub amount: i128,
+    /// Timestamp when the stake was created
+    pub staked_at: u64,
+    /// Whether the organizer currently holds Verified status
+    pub is_verified: bool,
+    /// Accumulated reward balance available to claim
+    pub reward_balance: i128,
+    /// Total rewards claimed historically
+    pub total_rewards_claimed: i128,
+}
+
 /// Storage keys for the Event Registry contract.
 #[contracttype]
 pub enum DataKey {
@@ -260,4 +296,18 @@ pub enum DataKey {
     HolderSeriesPass(Address, String),
     /// Mapping of (series_id, event_id) to bool (Persistent, for fast lookup)
     SeriesEvent(String, String),
+
+    // ── Loyalty & Staking ──────────────────────────────────────────────
+    /// Guest loyalty profile keyed by guest address (Persistent)
+    GuestProfile(Address),
+    /// Organizer stake record keyed by organizer address (Persistent)
+    OrganizerStake(Address),
+    /// Minimum token amount required to unlock Verified status
+    MinStakeAmount,
+    /// Token contract address accepted for staking
+    StakingToken,
+    /// Sum of all tokens currently staked (i128, Persistent)
+    TotalStaked,
+    /// List of all currently staked organizer addresses for proportional distribution
+    StakersList,
 }

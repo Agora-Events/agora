@@ -28,6 +28,21 @@ pub enum EventRegistryError {
     EventCancelled = 22,
     EventAlreadyCancelled = 23,
     InvalidGracePeriodEnd = 24,
+    // ── Loyalty & Staking errors ───────────────────────────────────────
+    /// Organizer already has an active stake
+    AlreadyStaked = 25,
+    /// Organizer does not have an active stake
+    NotStaked = 26,
+    /// Stake amount is below the minimum required for Verified status
+    InsufficientStakeAmount = 27,
+    /// Stake amount must be greater than zero
+    InvalidStakeAmount = 28,
+    /// Staking has not been configured by the admin
+    StakingNotConfigured = 29,
+    /// No rewards available to claim
+    NoRewardsAvailable = 30,
+    /// Reward distribution total must be positive
+    InvalidRewardAmount = 31,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -90,6 +105,27 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::InvalidGracePeriodEnd => {
                 write!(f, "Grace period end timestamp must be in the future")
+            }
+            EventRegistryError::AlreadyStaked => {
+                write!(f, "Organizer already has an active stake")
+            }
+            EventRegistryError::NotStaked => {
+                write!(f, "Organizer does not have an active stake")
+            }
+            EventRegistryError::InsufficientStakeAmount => {
+                write!(f, "Stake amount is below the minimum required for Verified status")
+            }
+            EventRegistryError::InvalidStakeAmount => {
+                write!(f, "Stake amount must be greater than zero")
+            }
+            EventRegistryError::StakingNotConfigured => {
+                write!(f, "Staking has not been configured by the admin")
+            }
+            EventRegistryError::NoRewardsAvailable => {
+                write!(f, "No rewards available to claim")
+            }
+            EventRegistryError::InvalidRewardAmount => {
+                write!(f, "Reward distribution total must be positive")
             }
         }
     }

@@ -1,4 +1,4 @@
-use crate::types::{BlacklistAuditEntry, DataKey, EventInfo, MultiSigConfig, Proposal};
+use crate::types::{BlacklistAuditEntry, DataKey, EventInfo, GuestProfile, MultiSigConfig, OrganizerStake, Proposal};
 use crate::types::{SeriesPass, SeriesRegistry};
 use soroban_sdk::{vec, Address, Env, String, Vec};
 // --- SeriesRegistry Storage ---
@@ -437,4 +437,127 @@ pub fn is_scanner_authorized(env: &Env, event_id: String, scanner: &Address) -> 
         .persistent()
         .get(&DataKey::AuthorizedScanner(event_id, scanner.clone()))
         .unwrap_or(false)
+}
+
+// ── Loyalty & Staking Storage ─────────────────────────────────────────────────
+
+/// Retrieves a guest's loyalty profile.
+pub fn get_guest_profile(env: &Env, guest: &Address) -> Option<GuestProfile> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::GuestProfile(guest.clone()))
+}
+
+/// Stores (creates or updates) a guest's loyalty profile.
+pub fn set_guest_profile(env: &Env, profile: &GuestProfile) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::GuestProfile(profile.guest_address.clone()), profile);
+}
+
+/// Retrieves an organizer's stake record.
+pub fn get_organizer_stake(env: &Env, organizer: &Address) -> Option<OrganizerStake> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OrganizerStake(organizer.clone()))
+}
+
+/// Stores (creates or updates) an organizer's stake record.
+pub fn set_organizer_stake(env: &Env, stake: &OrganizerStake) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::OrganizerStake(stake.organizer.clone()), stake);
+}
+
+/// Removes an organizer's stake record (used on unstake).
+pub fn remove_organizer_stake(env: &Env, organizer: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::OrganizerStake(organizer.clone()));
+}
+
+/// Gets the minimum stake amount required for Verified status.
+pub fn get_min_stake_amount(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::MinStakeAmount)
+        .unwrap_or(0)
+}
+
+/// Sets the minimum stake amount required for Verified status.
+pub fn set_min_stake_amount(env: &Env, amount: i128) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::MinStakeAmount, &amount);
+}
+
+/// Gets the token contract address accepted for staking.
+pub fn get_staking_token(env: &Env) -> Option<Address> {
+    env.storage().persistent().get(&DataKey::StakingToken)
+}
+
+/// Sets the token contract address accepted for staking.
+pub fn set_staking_token(env: &Env, token: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::StakingToken, token);
+}
+
+/// Gets the total amount currently staked across all organizers.
+pub fn get_total_staked(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalStaked)
+        .unwrap_or(0)
+}
+
+/// Adds `amount` to the total staked counter.
+pub fn add_to_total_staked(env: &Env, amount: i128) {
+    let current = get_total_staked(env);
+    env.storage()
+        .persistent()
+        .set(&DataKey::TotalStaked, &(current + amount));
+}
+
+/// Subtracts `amount` from the total staked counter.
+pub fn subtract_from_total_staked(env: &Env, amount: i128) {
+    let current = get_total_staked(env);
+    let new_val = current.saturating_sub(amount);
+    env.storage()
+        .persistent()
+        .set(&DataKey::TotalStaked, &new_val);
+}
+
+/// Gets the list of all currently staked organizer addresses.
+pub fn get_stakers_list(env: &Env) -> Vec<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::StakersList)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Adds an organizer to the stakers list if not already present.
+pub fn add_to_stakers_list(env: &Env, organizer: &Address) {
+    let mut list = get_stakers_list(env);
+    for addr in list.iter() {
+        if addr == *organizer {
+            return; // already in list
+        }
+    }
+    list.push_back(organizer.clone());
+    env.storage().persistent().set(&DataKey::StakersList, &list);
+}
+
+/// Removes an organizer from the stakers list.
+pub fn remove_from_stakers_list(env: &Env, organizer: &Address) {
+    let list = get_stakers_list(env);
+    let mut new_list = Vec::new(env);
+    for addr in list.iter() {
+        if addr != *organizer {
+            new_list.push_back(addr);
+        }
+    }
+    env.storage()
+        .persistent()
+        .set(&DataKey::StakersList, &new_list);
 }

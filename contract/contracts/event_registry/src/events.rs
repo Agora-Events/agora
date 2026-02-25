@@ -19,6 +19,12 @@ pub enum AgoraEvent {
     EventPostponed,
     ScannerAuthorized,
     GoalMet,
+    // Loyalty & Staking events
+    CollateralStaked,
+    CollateralUnstaked,
+    StakerRewardsDistributed,
+    StakerRewardsClaimed,
+    LoyaltyScoreUpdated,
 }
 
 #[contracttype]
@@ -201,5 +207,51 @@ pub struct GoalMetEvent {
     pub event_id: String,
     pub min_sales_target: i128,
     pub current_supply: i128,
+    pub timestamp: u64,
+}
+
+// ── Loyalty & Staking event structs ───────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollateralStakedEvent {
+    pub organizer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub is_verified: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollateralUnstakedEvent {
+    pub organizer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StakerRewardsDistributedEvent {
+    pub total_reward: i128,
+    pub staker_count: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StakerRewardsClaimedEvent {
+    pub organizer: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoyaltyScoreUpdatedEvent {
+    pub guest: Address,
+    pub new_score: u64,
+    pub tickets_purchased: u32,
     pub timestamp: u64,
 }
