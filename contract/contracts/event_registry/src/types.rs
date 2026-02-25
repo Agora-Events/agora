@@ -36,6 +36,18 @@ pub struct SeriesPass {
     pub expires_at: u64,
 }
 
+/// Configuration for an auction ticket tier
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuctionConfig {
+    /// Starting price for the auction in stroops
+    pub start_price: i128,
+    /// Unix timestamp when the auction ends
+    pub end_time: u64,
+    /// Minimum increment for a new bid in stroops
+    pub min_increment: i128,
+}
+
 /// Represents a ticket tier with its own pricing and supply
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -50,6 +62,8 @@ pub struct TicketTier {
     pub current_sold: i128,
     /// Indicates whether tickets in this tier can be refunded by the buyer
     pub is_refundable: bool,
+    /// Optional configuration for an auction
+    pub auction_config: soroban_sdk::Vec<AuctionConfig>,
 }
 
 /// Represents an early revenue release milestone.

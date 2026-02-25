@@ -40,6 +40,11 @@ pub enum TicketPaymentError {
     OraclePriceUnavailable = 41,
     PriceOutsideSlippage = 42,
     InvalidSlippageBps = 43,
+    AuctionNotActive = 44,
+    BidTooLow = 45,
+    AuctionEnded = 46,
+    AuctionNotEnded = 47,
+    NotAuctionTier = 48,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -127,6 +132,21 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::InvalidSlippageBps => {
                 write!(f, "Slippage basis points out of range (max 5000)")
+            }
+            TicketPaymentError::AuctionNotActive => {
+                write!(f, "Auction is not currently active")
+            }
+            TicketPaymentError::BidTooLow => {
+                write!(f, "Bid amount is too low")
+            }
+            TicketPaymentError::AuctionEnded => {
+                write!(f, "Auction has already ended")
+            }
+            TicketPaymentError::AuctionNotEnded => {
+                write!(f, "Auction has not ended yet")
+            }
+            TicketPaymentError::NotAuctionTier => {
+                write!(f, "This tier is not configured for auctions")
             }
         }
     }

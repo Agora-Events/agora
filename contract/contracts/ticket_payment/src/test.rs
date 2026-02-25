@@ -46,6 +46,7 @@ impl MockCancelledRegistry {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: false,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -108,6 +109,7 @@ impl MockEventRegistry {
                             tier_limit: 100,
                             current_sold: 0,
                             is_refundable: true,
+                            auction_config: soroban_sdk::vec![&env],
                         },
                     );
                     tiers
@@ -175,6 +177,7 @@ impl MockEventRegistry2 {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -815,6 +818,7 @@ impl MockEventRegistryMaxSupply {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -921,6 +925,7 @@ impl MockEventRegistryWithInventory {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -1139,6 +1144,7 @@ impl MockEventRegistryWithMilestones {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -1456,6 +1462,7 @@ impl MockEventRegistryEarlyBird {
                         tier_limit: 1000,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -1939,6 +1946,7 @@ impl MockEventRegistryWithOrganizer {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -2392,6 +2400,7 @@ fn test_integration_full_platform_day() {
                 tier_limit: 50,
                 current_sold: 0,
                 is_refundable: true,
+                auction_config: soroban_sdk::vec![&env],
             },
         );
     }
@@ -2524,6 +2533,7 @@ fn test_integration_edge_cases() {
             tier_limit: 1,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     registry.create_event(
@@ -2627,6 +2637,7 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
             tier_limit: 10,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     registry.create_event(&event_id, &organizer, &event_payment_addr, &10, &tiers);
@@ -2708,6 +2719,7 @@ impl MockEventRegistryRefund {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -2775,6 +2787,7 @@ impl MockEventRegistryWithResaleCap {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -3014,6 +3027,7 @@ impl MockRegistryZeroCap {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -3529,6 +3543,7 @@ impl MockEventRegistryUsdPriced {
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers

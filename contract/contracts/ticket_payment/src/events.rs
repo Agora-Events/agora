@@ -19,6 +19,8 @@ pub enum AgoraEvent {
     DisputeStatusChanged,
     PartialRefundProcessed,
     TicketCheckedIn,
+    BidPlaced,
+    AuctionClosed,
 }
 
 #[contracttype]
@@ -154,5 +156,25 @@ pub struct TicketCheckedInEvent {
     pub payment_id: String,
     pub event_id: String,
     pub scanner: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BidPlacedEvent {
+    pub event_id: String,
+    pub tier_id: String,
+    pub bidder: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuctionClosedEvent {
+    pub event_id: String,
+    pub tier_id: String,
+    pub winner: Address,
+    pub amount: i128,
     pub timestamp: u64,
 }

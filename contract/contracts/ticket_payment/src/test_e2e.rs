@@ -74,6 +74,7 @@ impl MockRegistryE2E {
                         tier_limit: 1000,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -180,7 +181,8 @@ impl MockRegistryCancelledE2E {
                         usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
-                        is_refundable: false, // not normally refundable, but cancelled overrides
+                        is_refundable: false,
+                        auction_config: soroban_sdk::vec![&env], // not normally refundable, but cancelled overrides
                     },
                 );
                 tiers
@@ -272,6 +274,7 @@ impl MockRegistryWithGoal {
                         tier_limit: 1000,
                         current_sold: current_supply,
                         is_refundable: false,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -988,4 +991,157 @@ fn test_e2e_goal_failed_allows_automated_refund() {
     // Full refund (no restocking fee for goal failure)
     let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
     assert_eq!(buyer_balance, amount);
+}
+
+// =============================================================================
+// 12. Auction E2E Flow
+// =============================================================================
+
+#[soroban_sdk::contract]
+pub struct MockRegistryAuction;
+
+#[soroban_sdk::contractimpl]
+impl MockRegistryAuction {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500, // 5%
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        let organizer = Address::generate(&env);
+        let end_time = 1000;
+
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: organizer.clone(),
+            payment_address: organizer,
+            platform_fee_percent: 500,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "AuctionTier"),
+                        price: 1000,
+                        early_bird_price: 1000,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 1,
+                        current_sold: 0,
+                        is_refundable: false,
+                        auction_config: soroban_sdk::vec![
+                            &env,
+                            crate::types::AuctionConfig {
+                                start_price: 1000_0000000i128,
+                                end_time,
+                                min_increment: 100_0000000i128,
+                            }
+                        ],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+}
+
+#[test]
+fn test_e2e_auction_flow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockRegistryAuction, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let bidder1 = Address::generate(&env);
+    let bidder2 = Address::generate(&env);
+
+    fund_buyer(&env, &usdc_id, &bidder1, &client.address, 1500_0000000i128);
+    fund_buyer(&env, &usdc_id, &bidder2, &client.address, 2000_0000000i128);
+
+    // Bid 1: 1100
+    client.place_bid(
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &bidder1,
+        &usdc_id,
+        &1100_0000000i128,
+    );
+
+    assert_eq!(
+        token::Client::new(&env, &usdc_id).balance(&bidder1),
+        400_0000000i128
+    );
+
+    // Bid 2: 1300
+    client.place_bid(
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &bidder2,
+        &usdc_id,
+        &1300_0000000i128,
+    );
+
+    // Bidder 1 should have been refunded!
+    assert_eq!(
+        token::Client::new(&env, &usdc_id).balance(&bidder1),
+        1500_0000000i128
+    );
+
+    // Time travel past end_time
+    env.ledger().with_mut(|li| {
+        li.timestamp = 2000;
+    });
+
+    // Close auction
+    client.close_auction(
+        &String::from_str(&env, "pay_auc_1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+    );
+
+    let payment = client
+        .get_payment_status(&String::from_str(&env, "pay_auc_1"))
+        .unwrap();
+    assert_eq!(payment.amount, 1300_0000000i128);
+    let expected_fee = (1300_0000000i128 * 500) / 10000;
+    assert_eq!(payment.platform_fee, expected_fee);
+
+    // Escrow balance
+    let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
+    assert_eq!(escrow.platform_fee, expected_fee);
+    assert_eq!(escrow.organizer_amount, 1300_0000000i128 - expected_fee);
 }

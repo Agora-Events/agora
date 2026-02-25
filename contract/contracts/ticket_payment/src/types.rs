@@ -2,6 +2,14 @@ use soroban_sdk::{contracttype, Address, BytesN, String};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuctionConfig {
+    pub start_price: i128,
+    pub end_time: u64,
+    pub min_increment: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PaymentStatus {
     Pending,
     Confirmed,
@@ -33,6 +41,13 @@ pub struct EventBalance {
     pub organizer_amount: i128,
     pub total_withdrawn: i128,
     pub platform_fee: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HighestBid {
+    pub bidder: Address,
+    pub amount: i128,
 }
 
 #[contracttype]
@@ -74,4 +89,6 @@ pub enum DataKey {
     PartialRefundPercentage(String),     // event_id -> active refund percentage in bps
     OracleAddress,                       // Address of oracle contract
     SlippageBps,                         // u32 — slippage tolerance in bps (default 200 = 2%)
+    HighestBid(String, String),          // (event_id, tier_id) -> HighestBid
+    AuctionClosed(String, String),       // (event_id, tier_id) -> bool
 }

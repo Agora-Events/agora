@@ -1,4 +1,4 @@
-use crate::types::{DataKey, EventBalance, Payment, PaymentStatus};
+use crate::types::{DataKey, EventBalance, HighestBid, Payment, PaymentStatus};
 use soroban_sdk::{vec, Address, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
@@ -581,4 +581,31 @@ pub fn get_slippage_bps(env: &Env) -> u32 {
         .persistent()
         .get(&DataKey::SlippageBps)
         .unwrap_or(200)
+}
+
+// ── Auction functions ─────────────────────────────────────────────────────────
+
+pub fn set_highest_bid(env: &Env, event_id: String, tier_id: String, bid: HighestBid) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::HighestBid(event_id, tier_id), &bid);
+}
+
+pub fn get_highest_bid(env: &Env, event_id: String, tier_id: String) -> Option<HighestBid> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::HighestBid(event_id, tier_id))
+}
+
+pub fn set_auction_closed(env: &Env, event_id: String, tier_id: String) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::AuctionClosed(event_id, tier_id), &true);
+}
+
+pub fn is_auction_closed(env: &Env, event_id: String, tier_id: String) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AuctionClosed(event_id, tier_id))
+        .unwrap_or(false)
 }

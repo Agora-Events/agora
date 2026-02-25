@@ -388,6 +388,7 @@ fn test_register_event_success() {
             tier_limit: 100,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -829,6 +830,7 @@ fn test_increment_inventory_success() {
             tier_limit: 10,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -896,6 +898,7 @@ fn test_increment_inventory_max_supply_exceeded() {
             tier_limit: 2,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -958,6 +961,7 @@ fn test_increment_inventory_unlimited_supply() {
             tier_limit: 1000,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1038,6 +1042,7 @@ fn test_increment_inventory_inactive_event() {
             tier_limit: 100,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -1093,6 +1098,7 @@ fn test_increment_inventory_persists_across_reads() {
             tier_limit: 50,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -1153,6 +1159,7 @@ fn test_tier_limit_exceeds_max_supply() {
             tier_limit: 60,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     tiers.set(
@@ -1163,6 +1170,7 @@ fn test_tier_limit_exceeds_max_supply() {
             tier_limit: 50,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1218,6 +1226,7 @@ fn test_tier_not_found() {
             tier_limit: 100,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1274,6 +1283,7 @@ fn test_tier_supply_exceeded() {
             tier_limit: 3,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1335,6 +1345,7 @@ fn test_multiple_tiers_inventory() {
             tier_limit: 50,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     tiers.set(
@@ -1345,6 +1356,7 @@ fn test_multiple_tiers_inventory() {
             tier_limit: 20,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1706,6 +1718,7 @@ fn test_register_event_with_resale_cap() {
             tier_limit: 100,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 

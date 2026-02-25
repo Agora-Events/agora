@@ -3,25 +3,26 @@ use crate::storage::{
     add_to_active_escrow_total, add_to_daily_withdrawn_amount,
     add_to_total_fees_collected_by_token, add_to_total_volume_processed, add_token_to_whitelist,
     get_admin, get_bulk_refund_index, get_daily_withdrawn_amount, get_event_balance,
-    get_event_payments, get_event_registry, get_oracle_address, get_partial_refund_index,
-    get_partial_refund_percentage, get_payment, get_platform_wallet, get_slippage_bps,
-    get_total_fees_collected_by_token, get_transfer_fee, get_withdrawal_cap, has_price_switched,
-    is_discount_hash_used, is_discount_hash_valid, is_event_disputed, is_initialized, is_paused,
-    is_token_whitelisted, mark_discount_hash_used, remove_payment_from_buyer_index,
-    remove_token_from_whitelist, set_admin, set_bulk_refund_index, set_event_dispute_status,
-    set_event_registry, set_initialized, set_is_paused, set_oracle_address,
+    get_event_payments, get_event_registry, get_highest_bid, get_oracle_address,
+    get_partial_refund_index, get_partial_refund_percentage, get_payment, get_platform_wallet,
+    get_slippage_bps, get_total_fees_collected_by_token, get_transfer_fee, get_usdc_token,
+    get_withdrawal_cap, has_price_switched, is_auction_closed, is_discount_hash_used,
+    is_discount_hash_valid, is_event_disputed, is_initialized, is_paused, is_token_whitelisted,
+    mark_discount_hash_used, remove_payment_from_buyer_index, remove_token_from_whitelist,
+    set_admin, set_auction_closed, set_bulk_refund_index, set_event_dispute_status,
+    set_event_registry, set_highest_bid, set_initialized, set_is_paused, set_oracle_address,
     set_partial_refund_index, set_partial_refund_percentage, set_platform_wallet,
     set_price_switched, set_slippage_bps, set_transfer_fee, set_usdc_token, set_withdrawal_cap,
     store_payment, subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
     subtract_from_total_fees_collected_by_token, update_event_balance,
 };
-use crate::types::{Payment, PaymentStatus};
+use crate::types::{HighestBid, Payment, PaymentStatus};
 use crate::{
     error::TicketPaymentError,
     events::{
-        AgoraEvent, BulkRefundProcessedEvent, ContractPausedEvent, ContractUpgraded,
-        DiscountCodeAppliedEvent, DisputeStatusChangedEvent, FeeSettledEvent,
-        GlobalPromoAppliedEvent, InitializationEvent, PartialRefundProcessedEvent,
+        AgoraEvent, AuctionClosedEvent, BidPlacedEvent, BulkRefundProcessedEvent,
+        ContractPausedEvent, ContractUpgraded, DiscountCodeAppliedEvent, DisputeStatusChangedEvent,
+        FeeSettledEvent, GlobalPromoAppliedEvent, InitializationEvent, PartialRefundProcessedEvent,
         PaymentProcessedEvent, PaymentStatusChangedEvent, PriceSwitchedEvent, RevenueClaimedEvent,
         TicketTransferredEvent,
     },
@@ -82,6 +83,8 @@ pub mod event_registry {
         fn is_scanner_authorized(env: Env, event_id: String, scanner: Address) -> bool;
     }
 
+    pub use crate::types::AuctionConfig;
+
     #[soroban_sdk::contracttype]
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct TicketTier {
@@ -93,6 +96,7 @@ pub mod event_registry {
         pub tier_limit: i128,
         pub current_sold: i128,
         pub is_refundable: bool,
+        pub auction_config: soroban_sdk::Vec<AuctionConfig>,
     }
 
     #[soroban_sdk::contracttype]
@@ -1671,6 +1675,247 @@ impl TicketPaymentContract {
     pub fn get_daily_withdrawn_amount(env: Env, token: Address) -> i128 {
         let current_day = env.ledger().timestamp() / 86400;
         crate::storage::get_daily_withdrawn_amount(&env, token, current_day)
+    }
+
+    /// Places a bid for an auction tier. Escrows funds and refunds the previous highest bidder.
+    pub fn place_bid(
+        env: Env,
+        event_id: String,
+        ticket_tier_id: String,
+        bidder_address: Address,
+        token_address: Address,
+        amount: i128,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+        bidder_address.require_auth();
+
+        if !is_token_whitelisted(&env, &token_address) {
+            return Err(TicketPaymentError::TokenNotWhitelisted);
+        }
+
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+
+        let event_info = match registry_client.try_get_event(&event_id) {
+            Ok(Ok(Some(info))) => info,
+            _ => return Err(TicketPaymentError::EventNotFound),
+        };
+
+        if !event_info.is_active
+            || matches!(event_info.status, event_registry::EventStatus::Cancelled)
+        {
+            return Err(TicketPaymentError::EventInactive);
+        }
+
+        let tier = event_info
+            .tiers
+            .get(ticket_tier_id.clone())
+            .ok_or(TicketPaymentError::TierNotFound)?;
+
+        if tier.auction_config.is_empty() {
+            return Err(TicketPaymentError::NotAuctionTier);
+        }
+        let auction_config = tier.auction_config.get(0).unwrap();
+
+        let current_time = env.ledger().timestamp();
+        if current_time > auction_config.end_time {
+            return Err(TicketPaymentError::AuctionEnded);
+        }
+
+        // Check against HighestBid
+        let mut previous_bidder = None;
+        let min_required = if let Some(highest_bid) =
+            get_highest_bid(&env, event_id.clone(), ticket_tier_id.clone())
+        {
+            previous_bidder = Some(highest_bid.clone());
+            highest_bid
+                .amount
+                .checked_add(auction_config.min_increment)
+                .ok_or(TicketPaymentError::ArithmeticError)?
+        } else {
+            auction_config.start_price
+        };
+
+        if amount < min_required {
+            return Err(TicketPaymentError::BidTooLow);
+        }
+
+        // Escrow funds
+        let token_client = token::Client::new(&env, &token_address);
+        let contract_address = env.current_contract_address();
+
+        let allowance = token_client.allowance(&bidder_address, &contract_address);
+        if allowance < amount {
+            return Err(TicketPaymentError::InsufficientAllowance);
+        }
+
+        token_client.transfer_from(
+            &contract_address,
+            &bidder_address,
+            &contract_address,
+            &amount,
+        );
+        add_to_active_escrow_total(&env, amount);
+        add_to_active_escrow_by_token(&env, token_address.clone(), amount);
+
+        // Refund previous bidder if exists
+        if let Some(prev) = previous_bidder {
+            token_client.transfer(&contract_address, &prev.bidder, &prev.amount);
+            subtract_from_active_escrow_total(&env, prev.amount);
+            subtract_from_active_escrow_by_token(&env, token_address.clone(), prev.amount);
+        }
+
+        // Save new highest bid
+        let new_bid = HighestBid {
+            bidder: bidder_address.clone(),
+            amount,
+        };
+        set_highest_bid(&env, event_id.clone(), ticket_tier_id.clone(), new_bid);
+
+        env.events().publish(
+            (AgoraEvent::BidPlaced,),
+            BidPlacedEvent {
+                event_id,
+                tier_id: ticket_tier_id,
+                bidder: bidder_address,
+                amount,
+                timestamp: current_time,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Closes an auction, finalizing the highest bid and issuing exactly one ticket to the winner.
+    pub fn close_auction(
+        env: Env,
+        payment_id: String,
+        event_id: String,
+        ticket_tier_id: String,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+
+        let event_info = match registry_client.try_get_event(&event_id) {
+            Ok(Ok(Some(info))) => info,
+            _ => return Err(TicketPaymentError::EventNotFound),
+        };
+
+        if !event_info.is_active
+            || matches!(event_info.status, event_registry::EventStatus::Cancelled)
+        {
+            return Err(TicketPaymentError::EventInactive);
+        }
+
+        let tier = event_info
+            .tiers
+            .get(ticket_tier_id.clone())
+            .ok_or(TicketPaymentError::TierNotFound)?;
+
+        if tier.auction_config.is_empty() {
+            return Err(TicketPaymentError::NotAuctionTier);
+        }
+        let auction_config = tier.auction_config.get(0).unwrap();
+
+        let current_time = env.ledger().timestamp();
+        if current_time <= auction_config.end_time {
+            return Err(TicketPaymentError::AuctionNotEnded);
+        }
+
+        if is_auction_closed(&env, event_id.clone(), ticket_tier_id.clone()) {
+            return Err(TicketPaymentError::AuctionEnded); // Already closed
+        }
+
+        // Get the winning bid
+        let winning_bid = get_highest_bid(&env, event_id.clone(), ticket_tier_id.clone())
+            .ok_or(TicketPaymentError::NoFundsAvailable)?; // Fails if no bids
+
+        let amount = winning_bid.amount;
+        let bidder_address = winning_bid.bidder.clone();
+
+        // Mark auction as closed to prevent double generation of tickets
+        set_auction_closed(&env, event_id.clone(), ticket_tier_id.clone());
+
+        // Platform fee calculated based on final hammer price
+        let total_platform_fee = amount
+            .checked_mul(event_info.platform_fee_percent as i128)
+            .and_then(|v| v.checked_div(10000))
+            .ok_or(TicketPaymentError::ArithmeticError)?;
+
+        let total_organizer_amount = amount
+            .checked_sub(total_platform_fee)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
+
+        // Update protocol fees and event balances
+        let token_address = get_usdc_token(&env);
+
+        update_event_balance(
+            &env,
+            event_id.clone(),
+            total_organizer_amount,
+            total_platform_fee,
+        );
+        add_to_total_volume_processed(&env, amount);
+        add_to_total_fees_collected_by_token(&env, token_address.clone(), total_platform_fee);
+
+        // Increment inventory
+        registry_client.increment_inventory(&event_id, &ticket_tier_id, &1);
+
+        // Record the payment
+        let empty_tx_hash = String::from_str(&env, "");
+        let payment = Payment {
+            payment_id: payment_id.clone(),
+            event_id: event_id.clone(),
+            buyer_address: bidder_address.clone(),
+            ticket_tier_id: ticket_tier_id.clone(),
+            amount,
+            platform_fee: total_platform_fee,
+            organizer_amount: total_organizer_amount,
+            status: PaymentStatus::Confirmed,
+            transaction_hash: empty_tx_hash,
+            created_at: env.ledger().timestamp(),
+            confirmed_at: Some(env.ledger().timestamp()),
+            refunded_amount: 0,
+        };
+        store_payment(&env, payment);
+
+        // Emit events
+        env.events().publish(
+            (AgoraEvent::AuctionClosed,),
+            AuctionClosedEvent {
+                event_id: event_id.clone(),
+                tier_id: ticket_tier_id,
+                winner: bidder_address.clone(),
+                amount,
+                timestamp: current_time,
+            },
+        );
+
+        env.events().publish(
+            (AgoraEvent::PaymentProcessed,),
+            PaymentProcessedEvent {
+                payment_id,
+                event_id,
+                buyer_address: bidder_address,
+                amount,
+                platform_fee: total_platform_fee,
+                timestamp: current_time,
+            },
+        );
+
+        Ok(())
     }
 
     /// Allows an event organizer to register a list of SHA-256 hashed discount codes.
