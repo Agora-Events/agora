@@ -3846,4 +3846,3 @@ fn test_get_asset_price_returns_oracle_price() {
     assert_eq!(price_data.price, 8_3333333);
     assert_eq!(price_data.timestamp, 1000);
 }
-

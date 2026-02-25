@@ -21,7 +21,10 @@ fn test_register_and_get_series() {
     // Register two events for the organizer
     let event_id1 = String::from_str(&env, "event_1");
     let event_id2 = String::from_str(&env, "event_2");
-    let metadata_cid = String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id1.clone(),
@@ -80,7 +83,10 @@ fn test_issue_and_use_series_pass() {
 
     // Register event and series
     let event_id = String::from_str(&env, "event_1");
-    let metadata_cid = String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
@@ -99,7 +105,13 @@ fn test_issue_and_use_series_pass() {
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
     let meta = Some(String::from_str(&env, "series_meta"));
-    client.register_series(&series_id, &String::from_str(&env, "Series"), &event_ids, &organizer, &meta);
+    client.register_series(
+        &series_id,
+        &String::from_str(&env, "Series"),
+        &event_ids,
+        &organizer,
+        &meta,
+    );
 
     // Issue a pass
     let pass_id = String::from_str(&env, "pass_1");
