@@ -35,6 +35,7 @@ pub enum TicketPaymentError {
     EventDisputed = 36,
     UnauthorizedScanner = 37,
     TicketAlreadyUsed = 38,
+    GoalNotMet = 39,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -107,6 +108,9 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::TicketAlreadyUsed => {
                 write!(f, "Ticket has already been checked in/used")
+            }
+            TicketPaymentError::GoalNotMet => {
+                write!(f, "Minimum sales target not reached by the deadline")
             }
         }
     }

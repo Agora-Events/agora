@@ -50,6 +50,9 @@ impl MockCancelledRegistry {
             refund_deadline: 0,
             restocking_fee: 100,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
@@ -108,6 +111,9 @@ impl MockEventRegistry {
                 refund_deadline: 0,
                 restocking_fee: 0,
                 resale_cap_bps: None,
+                min_sales_target: 0,
+                target_deadline: 0,
+                goal_met: false,
             });
         }
         None
@@ -171,6 +177,9 @@ impl MockEventRegistry2 {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -807,6 +816,9 @@ impl MockEventRegistryMaxSupply {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -909,6 +921,9 @@ impl MockEventRegistryWithInventory {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -1123,6 +1138,9 @@ impl MockEventRegistryWithMilestones {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -1436,6 +1454,9 @@ impl MockEventRegistryEarlyBird {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -1915,6 +1936,9 @@ impl MockEventRegistryWithOrganizer {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -2220,6 +2244,9 @@ impl MockPlatformRegistryE2E {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         };
 
         env.storage()
@@ -2674,6 +2701,9 @@ impl MockEventRegistryRefund {
             refund_deadline: 2000,
             restocking_fee: 100,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -2737,6 +2767,9 @@ impl MockEventRegistryWithResaleCap {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: Some(1000), // 10% above face value
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -2972,6 +3005,9 @@ impl MockRegistryZeroCap {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: Some(0), // No markup allowed
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 

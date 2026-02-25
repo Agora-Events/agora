@@ -2,7 +2,7 @@ use super::contract::{event_registry, TicketPaymentContract, TicketPaymentContra
 use super::storage::*;
 use super::types::PaymentStatus;
 use crate::error::TicketPaymentError;
-use soroban_sdk::{testutils::Address as _, token, Address, Env, String, Symbol};
+use soroban_sdk::{testutils::Address as _, testutils::Ledger, token, Address, Env, String, Symbol};
 
 // =============================================================================
 // Mock Registries for E2E tests
@@ -78,6 +78,9 @@ impl MockRegistryE2E {
             refund_deadline: 0,
             restocking_fee: 50_0000000i128, // 50 USDC restocking fee
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -181,6 +184,9 @@ impl MockRegistryCancelledE2E {
             refund_deadline: 0,
             restocking_fee: 100_0000000i128,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -197,6 +203,109 @@ impl MockRegistryCancelledE2E {
     pub fn set_organizer(env: Env, organizer: Address) {
         let key = Symbol::new(&env, "organizer");
         env.storage().instance().set(&key, &organizer);
+    }
+}
+
+/// Mock registry that supports setting a goal and tracking it.
+#[soroban_sdk::contract]
+pub struct MockRegistryWithGoal;
+
+#[soroban_sdk::contractimpl]
+impl MockRegistryWithGoal {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        let organizer = Address::generate(&env);
+        let min_key = (Symbol::new(&env, "min"), event_id.clone());
+        let deadline_key = (Symbol::new(&env, "deadline"), event_id.clone());
+        let supply_key = (Symbol::new(&env, "supply"), event_id.clone());
+        let active_key = (Symbol::new(&env, "active"), event_id.clone());
+
+        let min_sales_target: i128 = env.storage().instance().get(&min_key).unwrap_or(0);
+        let target_deadline: u64 = env.storage().instance().get(&deadline_key).unwrap_or(0);
+        let current_supply: i128 = env.storage().instance().get(&supply_key).unwrap_or(0);
+        let is_active: bool = env.storage().instance().get(&active_key).unwrap_or(true);
+        
+        let mut goal_met = false;
+        if min_sales_target > 0 && current_supply >= min_sales_target {
+            goal_met = true;
+        }
+
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: organizer.clone(),
+            payment_address: organizer,
+            platform_fee_percent: 500,
+            is_active,
+            status: if is_active { event_registry::EventStatus::Active } else { event_registry::EventStatus::Inactive },
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"),
+            max_supply: 100,
+            current_supply,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000_0000000i128,
+                        early_bird_price: 1000_0000000i128,
+                        early_bird_deadline: 0,
+                        tier_limit: 1000,
+                        current_sold: current_supply,
+                        is_refundable: false,
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 100_0000000i128,
+            resale_cap_bps: None,
+            min_sales_target,
+            target_deadline,
+            goal_met,
+        })
+    }
+
+    pub fn increment_inventory(env: Env, event_id: String, _tier_id: String, quantity: u32) {
+        let key = (Symbol::new(&env, "supply"), event_id);
+        let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
+        env.storage().instance().set(&key, &(current + quantity as i128));
+    }
+
+    pub fn decrement_inventory(env: Env, event_id: String, _tier_id: String) {
+        let key = (Symbol::new(&env, "supply"), event_id);
+        let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
+        if current > 0 {
+            env.storage().instance().set(&key, &(current - 1));
+        }
+    }
+
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+
+    pub fn is_scanner_authorized(_env: Env, _event_id: String, _scanner: Address) -> bool {
+        false
+    }
+
+    pub fn set_goal(env: Env, event_id: String, min_target: i128, deadline: u64) {
+        env.storage().instance().set(&(Symbol::new(&env, "min"), event_id.clone()), &min_target);
+        env.storage().instance().set(&(Symbol::new(&env, "deadline"), event_id), &deadline);
+    }
+
+    pub fn set_active(env: Env, event_id: String, is_active: bool) {
+        env.storage().instance().set(&(Symbol::new(&env, "active"), event_id), &is_active);
     }
 }
 
@@ -761,4 +870,79 @@ fn test_e2e_ticket_transfer_lifecycle() {
         new_payments.get(0).unwrap(),
         String::from_str(&env, pay_id_str)
     );
+}
+
+// =============================================================================
+// 11. Minimum Goal Logic Tests
+// =============================================================================
+
+#[test]
+fn test_e2e_goal_not_met_blocks_withdrawal() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env.register_stellar_asset_contract_v2(Address::generate(&env)).address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockRegistryWithGoal, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    // Set a goal of 1000 tickets
+    let event_id = String::from_str(&env, "event_goal_1");
+    env.as_contract(&registry_id, || {
+        MockRegistryWithGoal::set_goal(env.clone(), event_id.clone(), 1000, 10000);
+    });
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    fund_buyer(&env, &usdc_id, &buyer, &client.address, amount);
+
+    // Buy 1 ticket (goal not met: 1 < 1000)
+    buy_ticket(&client, &env, "pay_g1", "event_goal_1", &buyer, &usdc_id, amount);
+
+    // Try to withdraw funds - should fail immediately even if active
+    let result = client.try_withdraw_organizer_funds(&event_id, &usdc_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::GoalNotMet)));
+}
+
+#[test]
+fn test_e2e_goal_failed_allows_automated_refund() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env.register_stellar_asset_contract_v2(Address::generate(&env)).address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockRegistryWithGoal, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    // Set a goal of 100 tickets with deadline 1000
+    let event_id = String::from_str(&env, "event_goal_fail");
+    env.as_contract(&registry_id, || {
+        MockRegistryWithGoal::set_goal(env.clone(), event_id.clone(), 100, 1000);
+    });
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    fund_buyer(&env, &usdc_id, &buyer, &client.address, amount);
+
+    // Buy 1 ticket
+    let pay_id = buy_ticket(&client, &env, "pay_f1", "event_goal_fail", &buyer, &usdc_id, amount);
+
+    // Set time past deadline
+    env.ledger().with_mut(|li| li.timestamp = 2000);
+
+    // Automated refund should NOW be possible because goal failed
+    client.claim_automatic_refund(&pay_id);
+
+    let payment = client.get_payment_status(&pay_id).unwrap();
+    assert_eq!(payment.status, PaymentStatus::Refunded);
+
+    // Full refund (no restocking fee for goal failure)
+    let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert_eq!(buyer_balance, amount);
 }

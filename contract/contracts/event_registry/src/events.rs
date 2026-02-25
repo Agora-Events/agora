@@ -18,6 +18,7 @@ pub enum AgoraEvent {
     GlobalPromoUpdated,
     EventPostponed,
     ScannerAuthorized,
+    GoalMet,
 }
 
 #[contracttype]
@@ -192,5 +193,13 @@ pub struct ScannerAuthorizedEvent {
     pub event_id: String,
     pub scanner: Address,
     pub authorized_by: Address,
+    pub timestamp: u64,
+}
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GoalMetEvent {
+    pub event_id: String,
+    pub min_sales_target: i128,
+    pub current_supply: i128,
     pub timestamp: u64,
 }

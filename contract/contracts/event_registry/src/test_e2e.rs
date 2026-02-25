@@ -36,6 +36,8 @@ fn make_event_args(
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     }
 }
 
@@ -307,4 +309,47 @@ fn test_e2e_inventory_decrement_after_increment() {
     // Further decrement should fail (underflow)
     let result = client.try_decrement_inventory(&event_id, &tier_id);
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyUnderflow)));
+}
+
+// ---------------------------------------------------------------------------
+// 7. Minimum Goal Tracking
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_e2e_min_goal_tracking() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+
+    let mut args = make_event_args(&env, "evt_goal", &organizer, 100, single_tier(&env, 100));
+    args.min_sales_target = Some(10);
+    args.target_deadline = Some(1000);
+    client.register_event(&args);
+
+    let ticket_payment = Address::generate(&env);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "evt_goal");
+    let tier_id = String::from_str(&env, "tier_1");
+
+    let info = client.get_event(&event_id).unwrap();
+    assert!(!info.goal_met);
+    assert_eq!(info.min_sales_target, 10);
+
+    // Increment 5 - goal still not met
+    client.increment_inventory(&event_id, &tier_id, &5);
+    let info = client.get_event(&event_id).unwrap();
+    assert!(!info.goal_met);
+
+    // Increment 5 more - goal should be met
+    client.increment_inventory(&event_id, &tier_id, &5);
+    let info = client.get_event(&event_id).unwrap();
+    assert!(info.goal_met);
+
+    // Further increments keep it met
+    client.increment_inventory(&event_id, &tier_id, &1);
+    let info = client.get_event(&event_id).unwrap();
+    assert!(info.goal_met);
 }

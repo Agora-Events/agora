@@ -5,7 +5,7 @@ use crate::events::{
     EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
     InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent,
     OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
-    ScannerAuthorizedEvent,
+    ScannerAuthorizedEvent, GoalMetEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, MultiSigConfig, PaymentInfo,
@@ -147,6 +147,9 @@ impl EventRegistry {
             resale_cap_bps: args.resale_cap_bps,
             is_postponed: false,
             grace_period_end: 0,
+            min_sales_target: args.min_sales_target.unwrap_or(0),
+            target_deadline: args.target_deadline.unwrap_or(0),
+            goal_met: false,
         };
 
         storage::store_event(&env, event_info);
@@ -450,6 +453,23 @@ impl EventRegistry {
             .ok_or(EventRegistryError::SupplyOverflow)?;
 
         let new_supply = event_info.current_supply;
+
+        // Check if goal met now
+        if !event_info.goal_met && event_info.min_sales_target > 0 {
+            if event_info.current_supply >= event_info.min_sales_target {
+                event_info.goal_met = true;
+                env.events().publish(
+                    (AgoraEvent::GoalMet,),
+                    GoalMetEvent {
+                        event_id: event_id.clone(),
+                        min_sales_target: event_info.min_sales_target,
+                        current_supply: event_info.current_supply,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+            }
+        }
+
         storage::update_event(&env, event_info);
 
         env.events().publish(

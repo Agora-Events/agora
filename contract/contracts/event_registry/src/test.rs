@@ -142,6 +142,9 @@ fn test_storage_operations() {
         resale_cap_bps: None,
         is_postponed: false,
         grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
     };
 
     client.store_event(&event_info);
@@ -192,6 +195,9 @@ fn test_organizer_events_list() {
         resale_cap_bps: None,
         is_postponed: false,
         grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
     };
 
     let event_2 = EventInfo {
@@ -215,6 +221,9 @@ fn test_organizer_events_list() {
         resale_cap_bps: None,
         is_postponed: false,
         grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -272,6 +281,8 @@ fn test_register_event_success() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -317,6 +328,8 @@ fn test_register_event_unlimited_supply() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -355,6 +368,8 @@ fn test_register_duplicate_event_fails() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -368,6 +383,8 @@ fn test_register_duplicate_event_fails() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -403,6 +420,8 @@ fn test_get_event_payment_info() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -441,6 +460,8 @@ fn test_update_event_status() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -478,6 +499,8 @@ fn test_event_inactive_error() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -516,6 +539,8 @@ fn test_complete_event_lifecycle() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -566,6 +591,8 @@ fn test_update_metadata_success() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let new_metadata_cid = String::from_str(
@@ -609,6 +636,8 @@ fn test_update_metadata_invalid_cid() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let wrong_char_cid = String::from_str(
@@ -693,6 +722,8 @@ fn test_increment_inventory_success() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -758,6 +789,8 @@ fn test_increment_inventory_max_supply_exceeded() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -818,6 +851,8 @@ fn test_increment_inventory_unlimited_supply() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     for _ in 0..10 {
@@ -895,6 +930,8 @@ fn test_increment_inventory_inactive_event() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.update_event_status(&event_id, &false);
@@ -948,6 +985,8 @@ fn test_increment_inventory_persists_across_reads() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     for _ in 0..5 {
@@ -1017,6 +1056,8 @@ fn test_tier_limit_exceeds_max_supply() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
     assert_eq!(
         result,
@@ -1070,6 +1111,8 @@ fn test_tier_not_found() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -1124,6 +1167,8 @@ fn test_tier_supply_exceeded() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1193,6 +1238,8 @@ fn test_multiple_tiers_inventory() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -1242,6 +1289,8 @@ fn test_update_event_status_noop_skips_event() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let _ = env.events().all();
@@ -1312,6 +1361,8 @@ fn test_blacklist_prevents_event_registration() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -1351,6 +1402,8 @@ fn test_update_metadata_noop_skips_event() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let _ = env.events().all();
@@ -1428,6 +1481,8 @@ fn test_blacklist_suspends_active_events() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1544,6 +1599,8 @@ fn test_register_event_with_resale_cap() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: Some(1000), // 10% above face value
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1582,6 +1639,8 @@ fn test_register_event_resale_cap_zero() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: Some(0), // No markup allowed
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1620,6 +1679,8 @@ fn test_register_event_resale_cap_none() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None, // No cap
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1658,6 +1719,8 @@ fn test_postpone_event_sets_grace_period() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     // Set ledger time and grace period end in the future
@@ -1703,6 +1766,8 @@ fn test_register_event_resale_cap_invalid() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: Some(10001), // Over 100% - invalid
+        min_sales_target: None,
+        target_deadline: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -1737,6 +1802,8 @@ fn test_cancel_event_success() {
         refund_deadline: 0,
         restocking_fee: 100,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.cancel_event(&event_id);
@@ -1775,6 +1842,8 @@ fn test_cancel_already_cancelled_fails() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.cancel_event(&event_id);
@@ -1811,6 +1880,8 @@ fn test_update_status_on_cancelled_event_fails() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.cancel_event(&event_id);

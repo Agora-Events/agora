@@ -102,6 +102,9 @@ pub mod event_registry {
         pub refund_deadline: u64,
         pub restocking_fee: i128,
         pub resale_cap_bps: Option<u32>,
+        pub min_sales_target: i128,
+        pub target_deadline: u64,
+        pub goal_met: bool,
     }
 }
 
@@ -608,8 +611,13 @@ impl TicketPaymentContract {
             _ => return Err(TicketPaymentError::EventNotFound),
         };
 
-        // Ensure the event is cancelled for automatic refund
-        if !matches!(event_info.status, event_registry::EventStatus::Cancelled) {
+        // Ensure the event is cancelled for automatic refund OR goal failed after deadline
+        let current_ts = env.ledger().timestamp();
+        let goal_failed = !event_info.goal_met
+            && event_info.min_sales_target > 0
+            && current_ts > event_info.target_deadline;
+
+        if !matches!(event_info.status, event_registry::EventStatus::Cancelled) && !goal_failed {
             return Err(TicketPaymentError::InvalidPaymentStatus);
         }
 
@@ -640,9 +648,13 @@ impl TicketPaymentContract {
             .ok_or(TicketPaymentError::TierNotFound)?;
 
         let is_cancelled = matches!(event_info.status, event_registry::EventStatus::Cancelled);
+        let current_ts = env.ledger().timestamp();
+        let goal_failed = !event_info.goal_met
+            && event_info.min_sales_target > 0
+            && current_ts > event_info.target_deadline;
 
-        // Check if refundable or if EVENT IS CANCELLED
-        if !tier.is_refundable && !is_cancelled && event_info.is_active {
+        // Check if refundable or if EVENT IS CANCELLED or GOAL FAILED
+        if !tier.is_refundable && !is_cancelled && !goal_failed && event_info.is_active {
             return Err(TicketPaymentError::TicketNotRefundable);
         }
 
@@ -656,8 +668,8 @@ impl TicketPaymentContract {
         }
 
         // Deduct restocking fee if specified (capped at payment amount)
-        // Bypass restocking fee if the event is cancelled.
-        let effective_restocking_fee = if is_cancelled {
+        // Bypass restocking fee if the event is cancelled or goal failed.
+        let effective_restocking_fee = if is_cancelled || goal_failed {
             0
         } else if event_info.restocking_fee > payment.amount {
             payment.amount
@@ -823,6 +835,11 @@ impl TicketPaymentContract {
         // Block any further organizer payouts once an event is in the Cancelled state.
         if matches!(event_info.status, event_registry::EventStatus::Cancelled) {
             return Err(TicketPaymentError::EventCancelled);
+        }
+
+        // Check if goal was met if a target was set
+        if event_info.min_sales_target > 0 && !event_info.goal_met {
+            return Err(TicketPaymentError::GoalNotMet);
         }
 
         let total_revenue = balance
@@ -1025,6 +1042,11 @@ impl TicketPaymentContract {
 
         if event_info.is_active {
             return Err(TicketPaymentError::EventNotCompleted);
+        }
+
+        // Check if goal was met if a target was set
+        if event_info.min_sales_target > 0 && !event_info.goal_met {
+            return Err(TicketPaymentError::GoalNotMet);
         }
 
         let balance = get_event_balance(&env, event_id.clone());

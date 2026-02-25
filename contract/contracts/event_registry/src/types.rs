@@ -75,6 +75,12 @@ pub struct EventInfo {
     /// Timestamp (Unix) when the temporary refund grace period for a
     /// postponed event ends. 0 means no grace period active.
     pub grace_period_end: u64,
+    /// Minimum number of tickets that must be sold for the event to proceed
+    pub min_sales_target: i128,
+    /// Deadline by which the min_sales_target must be met (Unix timestamp)
+    pub target_deadline: u64,
+    /// Whether the minimum sales target has been reached
+    pub goal_met: bool,
 }
 
 /// Payment information for an event
@@ -104,6 +110,10 @@ pub struct EventRegistrationArgs {
     pub restocking_fee: i128,
     /// Optional resale price cap in basis points above face value.
     pub resale_cap_bps: Option<u32>,
+    /// Minimum number of tickets that must be sold for the event to proceed
+    pub min_sales_target: Option<i128>,
+    /// Deadline by which the min_sales_target must be met (Unix timestamp)
+    pub target_deadline: Option<u64>,
 }
 
 /// Audit log entry for blacklist actions
