@@ -1,15 +1,15 @@
 #![no_std]
 
 use crate::events::{
-    AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, EventCancelledEvent,
-    EventPostponedEvent, EventRegisteredEvent, EventStatusUpdatedEvent, EventsSuspendedEvent,
-    FeeUpdatedEvent, GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent,
-    InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent,
+    AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, EventArchivedEvent,
+    EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent, EventStatusUpdatedEvent,
+    EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent, GoalMetEvent,
+    InitializationEvent, InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent,
     OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
-    EventArchivedEvent, ScannerAuthorizedEvent, StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
+    ScannerAuthorizedEvent, StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
 };
 use crate::types::{
-    BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, EventReceipt, GuestProfile,
+    BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
     MultiSigConfig, OrganizerStake, PaymentInfo,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
