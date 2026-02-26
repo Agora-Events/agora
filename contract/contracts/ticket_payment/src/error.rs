@@ -33,6 +33,24 @@ pub enum TicketPaymentError {
     ContractPaused = 27,
     EventCancelled = 35,
     EventDisputed = 36,
+    UnauthorizedScanner = 37,
+    TicketAlreadyUsed = 38,
+    GoalNotMet = 39,
+    OracleNotConfigured = 40,
+    OraclePriceUnavailable = 41,
+    PriceOutsideSlippage = 42,
+    InvalidSlippageBps = 43,
+    AuctionNotActive = 44,
+    BidTooLow = 45,
+    AuctionEnded = 46,
+    AuctionNotEnded = 47,
+    NotAuctionTier = 48,
+    NotGovernor = 49,
+    InvalidProposal = 50,
+    ProposalNotActive = 51,
+    AlreadyVoted = 52,
+    VotingPeriodNotMet = 53,
+    InsufficientVotes = 54,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -99,6 +117,60 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::EventDisputed => {
                 write!(f, "The event is currently under dispute")
+            }
+            TicketPaymentError::UnauthorizedScanner => {
+                write!(f, "Caller is not an authorized scanner for this event")
+            }
+            TicketPaymentError::TicketAlreadyUsed => {
+                write!(f, "Ticket has already been checked in/used")
+            }
+            TicketPaymentError::GoalNotMet => {
+                write!(f, "Minimum sales target not reached by the deadline")
+            }
+            TicketPaymentError::OracleNotConfigured => {
+                write!(f, "Oracle contract address not configured")
+            }
+            TicketPaymentError::OraclePriceUnavailable => {
+                write!(f, "Oracle returned no price for the asset")
+            }
+            TicketPaymentError::PriceOutsideSlippage => {
+                write!(f, "Payment amount outside acceptable slippage range")
+            }
+            TicketPaymentError::InvalidSlippageBps => {
+                write!(f, "Slippage basis points out of range (max 5000)")
+            }
+            TicketPaymentError::AuctionNotActive => {
+                write!(f, "Auction is not currently active")
+            }
+            TicketPaymentError::BidTooLow => {
+                write!(f, "Bid amount is too low")
+            }
+            TicketPaymentError::AuctionEnded => {
+                write!(f, "Auction has already ended")
+            }
+            TicketPaymentError::AuctionNotEnded => {
+                write!(f, "Auction has not ended yet")
+            }
+            TicketPaymentError::NotAuctionTier => {
+                write!(f, "This tier is not configured for auctions")
+            }
+            TicketPaymentError::NotGovernor => {
+                write!(f, "Caller is not an authorized governor")
+            }
+            TicketPaymentError::InvalidProposal => {
+                write!(f, "Proposal does not exist")
+            }
+            TicketPaymentError::ProposalNotActive => {
+                write!(f, "Proposal is not active")
+            }
+            TicketPaymentError::AlreadyVoted => {
+                write!(f, "Governor has already voted on this proposal")
+            }
+            TicketPaymentError::VotingPeriodNotMet => {
+                write!(f, "Voting period has not ended yet")
+            }
+            TicketPaymentError::InsufficientVotes => {
+                write!(f, "Proposal does not have enough votes to execute")
             }
         }
     }

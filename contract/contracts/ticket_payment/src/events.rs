@@ -17,6 +17,13 @@ pub enum AgoraEvent {
     GlobalPromoApplied,
     ContractPaused,
     DisputeStatusChanged,
+    PartialRefundProcessed,
+    TicketCheckedIn,
+    BidPlaced,
+    AuctionClosed,
+    ProposalCreated,
+    ProposalVoted,
+    GovernanceActionExecuted,
 }
 
 #[contracttype]
@@ -133,5 +140,69 @@ pub struct ContractPausedEvent {
 pub struct DisputeStatusChangedEvent {
     pub event_id: String,
     pub is_disputed: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PartialRefundProcessedEvent {
+    pub event_id: String,
+    pub refund_count: u32,
+    pub total_refunded: i128,
+    pub percentage_bps: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketCheckedInEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub scanner: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BidPlacedEvent {
+    pub event_id: String,
+    pub tier_id: String,
+    pub bidder: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuctionClosedEvent {
+    pub event_id: String,
+    pub tier_id: String,
+    pub winner: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProposalCreatedEvent {
+    pub proposal_id: u64,
+    pub proposer: Address,
+    pub change: crate::types::ParameterChange,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProposalVotedEvent {
+    pub proposal_id: u64,
+    pub voter: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceActionExecutedEvent {
+    pub proposal_id: u64,
+    pub change: crate::types::ParameterChange,
     pub timestamp: u64,
 }

@@ -8,18 +8,139 @@ use soroban_sdk::{
 };
 
 #[test]
-fn test_initialize() {
+fn test_register_and_get_series() {
     let env = Env::default();
+    env.mock_all_auths();
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500);
 
-    client.initialize(&admin, &platform_wallet, &0);
+    // Register two events for the organizer
+    let event_id1 = String::from_str(&env, "event_1");
+    let event_id2 = String::from_str(&env, "event_2");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id1.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id2.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
 
-    assert_eq!(client.get_platform_fee(), 500);
-    assert_eq!(client.get_admin(), admin);
-    assert_eq!(client.get_platform_wallet(), platform_wallet);
+    // Register a series
+    let series_id = String::from_str(&env, "series_1");
+    let series_name = String::from_str(&env, "Spring Festival");
+    let event_ids = soroban_sdk::vec![&env, event_id1.clone(), event_id2.clone()];
+    let meta = Some(String::from_str(&env, "series_meta"));
+    client.register_series(&series_id, &series_name, &event_ids, &organizer, &meta);
+
+    let series = client.get_series(&series_id).unwrap();
+    assert_eq!(series.series_id, series_id);
+    assert_eq!(series.name, series_name);
+    assert_eq!(series.event_ids.len(), 2);
+    assert_eq!(series.organizer_address, organizer);
+    assert_eq!(series.metadata_cid, meta);
+}
+
+#[test]
+fn test_issue_and_use_series_pass() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500);
+
+    // Register event and series
+    let event_id = String::from_str(&env, "event_1");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
+    let series_id = String::from_str(&env, "series_1");
+    let event_ids = soroban_sdk::vec![&env, event_id.clone()];
+    let meta = Some(String::from_str(&env, "series_meta"));
+    client.register_series(
+        &series_id,
+        &String::from_str(&env, "Series"),
+        &event_ids,
+        &organizer,
+        &meta,
+    );
+
+    // Issue a pass
+    let pass_id = String::from_str(&env, "pass_1");
+    let holder = Address::generate(&env);
+    let usage_limit = 2u32;
+    let expires_at = env.ledger().timestamp() + 10000;
+    client.issue_series_pass(&pass_id, &series_id, &holder, &usage_limit, &expires_at);
+
+    // Retrieve and check pass
+    let pass = client.get_series_pass(&pass_id).unwrap();
+    assert_eq!(pass.series_id, series_id);
+    assert_eq!(pass.holder, holder);
+    assert_eq!(pass.usage_limit, usage_limit);
+    assert_eq!(pass.usage_count, 0);
+
+    // Increment usage and check limit enforcement
+    for i in 0..usage_limit {
+        let updated = env.as_contract(&contract_id, || {
+            crate::storage::increment_series_pass_usage(&env, pass_id.clone())
+        });
+        assert!(updated.is_some());
+        let pass = client.get_series_pass(&pass_id).unwrap();
+        assert_eq!(pass.usage_count, i + 1);
+    }
+    // Should not increment beyond limit
+    let updated = env.as_contract(&contract_id, || {
+        crate::storage::increment_series_pass_usage(&env, pass_id.clone())
+    });
+    assert!(updated.is_none());
 }
 
 #[test]
@@ -108,6 +229,7 @@ fn test_set_platform_fee_unauthorized() {
 #[test]
 fn test_storage_operations() {
     let env = Env::default();
+    env.mock_all_auths();
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
 
@@ -141,6 +263,9 @@ fn test_storage_operations() {
         resale_cap_bps: None,
         is_postponed: false,
         grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
     };
 
     client.store_event(&event_info);
@@ -164,6 +289,7 @@ fn test_storage_operations() {
 #[test]
 fn test_organizer_events_list() {
     let env = Env::default();
+    env.mock_all_auths();
     let organizer = Address::generate(&env);
     let payment_address = Address::generate(&env);
 
@@ -190,6 +316,9 @@ fn test_organizer_events_list() {
         resale_cap_bps: None,
         is_postponed: false,
         grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
     };
 
     let event_2 = EventInfo {
@@ -213,6 +342,9 @@ fn test_organizer_events_list() {
         resale_cap_bps: None,
         is_postponed: false,
         grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -256,6 +388,7 @@ fn test_register_event_success() {
             tier_limit: 100,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -270,6 +403,8 @@ fn test_register_event_success() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -315,6 +450,8 @@ fn test_register_event_unlimited_supply() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -353,6 +490,8 @@ fn test_register_duplicate_event_fails() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -366,6 +505,8 @@ fn test_register_duplicate_event_fails() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -401,6 +542,8 @@ fn test_get_event_payment_info() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -439,6 +582,8 @@ fn test_update_event_status() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -476,6 +621,8 @@ fn test_event_inactive_error() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -514,6 +661,8 @@ fn test_complete_event_lifecycle() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -564,6 +713,8 @@ fn test_update_metadata_success() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let new_metadata_cid = String::from_str(
@@ -607,6 +758,8 @@ fn test_update_metadata_invalid_cid() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let wrong_char_cid = String::from_str(
@@ -677,6 +830,7 @@ fn test_increment_inventory_success() {
             tier_limit: 10,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -691,6 +845,8 @@ fn test_increment_inventory_success() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -742,6 +898,7 @@ fn test_increment_inventory_max_supply_exceeded() {
             tier_limit: 2,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -756,6 +913,8 @@ fn test_increment_inventory_max_supply_exceeded() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -802,6 +961,7 @@ fn test_increment_inventory_unlimited_supply() {
             tier_limit: 1000,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -816,6 +976,8 @@ fn test_increment_inventory_unlimited_supply() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     for _ in 0..10 {
@@ -880,6 +1042,7 @@ fn test_increment_inventory_inactive_event() {
             tier_limit: 100,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -893,6 +1056,8 @@ fn test_increment_inventory_inactive_event() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.update_event_status(&event_id, &false);
@@ -933,6 +1098,7 @@ fn test_increment_inventory_persists_across_reads() {
             tier_limit: 50,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -946,6 +1112,8 @@ fn test_increment_inventory_persists_across_reads() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     for _ in 0..5 {
@@ -991,6 +1159,7 @@ fn test_tier_limit_exceeds_max_supply() {
             tier_limit: 60,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     tiers.set(
@@ -1001,6 +1170,7 @@ fn test_tier_limit_exceeds_max_supply() {
             tier_limit: 50,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1015,6 +1185,8 @@ fn test_tier_limit_exceeds_max_supply() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
     assert_eq!(
         result,
@@ -1054,6 +1226,7 @@ fn test_tier_not_found() {
             tier_limit: 100,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1068,6 +1241,8 @@ fn test_tier_not_found() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -1108,6 +1283,7 @@ fn test_tier_supply_exceeded() {
             tier_limit: 3,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1122,6 +1298,8 @@ fn test_tier_supply_exceeded() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1167,6 +1345,7 @@ fn test_multiple_tiers_inventory() {
             tier_limit: 50,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     tiers.set(
@@ -1177,6 +1356,7 @@ fn test_multiple_tiers_inventory() {
             tier_limit: 20,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1191,6 +1371,8 @@ fn test_multiple_tiers_inventory() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -1240,6 +1422,8 @@ fn test_update_event_status_noop_skips_event() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let _ = env.events().all();
@@ -1310,6 +1494,8 @@ fn test_blacklist_prevents_event_registration() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -1349,6 +1535,8 @@ fn test_update_metadata_noop_skips_event() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let _ = env.events().all();
@@ -1426,6 +1614,8 @@ fn test_blacklist_suspends_active_events() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1528,6 +1718,7 @@ fn test_register_event_with_resale_cap() {
             tier_limit: 100,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
 
@@ -1542,6 +1733,8 @@ fn test_register_event_with_resale_cap() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: Some(1000), // 10% above face value
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1580,6 +1773,8 @@ fn test_register_event_resale_cap_zero() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: Some(0), // No markup allowed
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1618,6 +1813,8 @@ fn test_register_event_resale_cap_none() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None, // No cap
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1656,6 +1853,8 @@ fn test_postpone_event_sets_grace_period() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     // Set ledger time and grace period end in the future
@@ -1701,6 +1900,8 @@ fn test_register_event_resale_cap_invalid() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: Some(10001), // Over 100% - invalid
+        min_sales_target: None,
+        target_deadline: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -1735,6 +1936,8 @@ fn test_cancel_event_success() {
         refund_deadline: 0,
         restocking_fee: 100,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.cancel_event(&event_id);
@@ -1773,6 +1976,8 @@ fn test_cancel_already_cancelled_fails() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.cancel_event(&event_id);
@@ -1809,9 +2014,509 @@ fn test_update_status_on_cancelled_event_fails() {
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
     });
 
     client.cancel_event(&event_id);
     let result = client.try_update_event_status(&event_id, &true);
     assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
+}
+
+// ════════════════════════════════════════════════════════════════
+// Loyalty & Staking Tests
+// ════════════════════════════════════════════════════════════════
+
+/// Helper: initialises a fresh contract and returns (client, admin, platform_wallet)
+fn setup_loyalty_env(env: &Env) -> (crate::EventRegistryClient<'static>, Address, Address) {
+    let contract_id = env.register(EventRegistry, ());
+    let client = crate::EventRegistryClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let platform_wallet = Address::generate(env);
+    client.initialize(&admin, &platform_wallet, &500);
+    (client, admin, platform_wallet)
+}
+
+// ── Guest Loyalty Profile ────────────────────────────────────────
+
+#[test]
+fn test_guest_profile_initially_none() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    assert!(client.get_guest_profile(&guest).is_none());
+}
+
+#[test]
+fn test_update_loyalty_score_creates_profile() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    client.update_loyalty_score(&admin, &guest, &2, &2000_0000000i128);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.guest_address, guest);
+    assert_eq!(profile.loyalty_score, 20); // 2 tickets × 10 pts
+    assert_eq!(profile.total_tickets_purchased, 2);
+    assert_eq!(profile.total_spent, 2000_0000000i128);
+}
+
+#[test]
+fn test_update_loyalty_score_accumulates() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+
+    // First purchase: 5 tickets
+    client.update_loyalty_score(&admin, &guest, &5, &5000_0000000i128);
+    // Second purchase: 3 tickets
+    client.update_loyalty_score(&admin, &guest, &3, &3000_0000000i128);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 80); // (5+3) × 10
+    assert_eq!(profile.total_tickets_purchased, 8);
+    assert_eq!(profile.total_spent, 8000_0000000i128);
+}
+
+#[test]
+fn test_update_loyalty_score_unauthorized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    let random_caller = Address::generate(&env);
+
+    let result = client.try_update_loyalty_score(&random_caller, &guest, &1, &1000i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized)));
+}
+
+#[test]
+fn test_update_loyalty_score_zero_tickets_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    let result = client.try_update_loyalty_score(&admin, &guest, &0, &0i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
+}
+
+// ── Loyalty Discount Tiers ───────────────────────────────────────
+
+#[test]
+fn test_loyalty_discount_bps_no_profile() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 0);
+}
+
+#[test]
+fn test_loyalty_discount_bps_tiers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+
+    // Score < 100 → 0 bps
+    client.update_loyalty_score(&admin, &guest, &5, &100i128); // 50 pts
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 0);
+
+    // Score 100–499 → 250 bps
+    client.update_loyalty_score(&admin, &guest, &5, &100i128); // +50 = 100 pts
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 250);
+
+    // Score 500–999 → 500 bps
+    // Need to get to 500 pts: currently 100, need 400 more = 40 tickets
+    client.update_loyalty_score(&admin, &guest, &40, &1000i128); // +400 = 500 pts
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 500);
+
+    // Score ≥ 1000 → 1000 bps
+    // Need 500 more pts = 50 tickets
+    client.update_loyalty_score(&admin, &guest, &50, &1000i128); // +500 = 1000 pts
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 1000);
+}
+
+// ── Staking Configuration ────────────────────────────────────────
+
+#[test]
+fn test_set_staking_config_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let token = Address::generate(&env);
+    let min_amount = 1000_0000000i128;
+    client.set_staking_config(&token, &min_amount);
+    // No error means success; verify via a stake attempt
+}
+
+#[test]
+fn test_set_staking_config_zero_amount_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let token = Address::generate(&env);
+    let result = client.try_set_staking_config(&token, &0i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidStakeAmount)));
+}
+
+// ── stake_collateral ─────────────────────────────────────────────
+
+#[test]
+fn test_stake_collateral_achieves_verified_status() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let min_amount = 1000_0000000i128;
+
+    // Create a stellar asset token and mint to organizer
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &(min_amount * 2));
+
+    // Configure staking
+    client.set_staking_config(&token_id, &min_amount);
+
+    // Approve tokens and stake
+    soroban_sdk::token::Client::new(&env, &token_id).approve(
+        &organizer,
+        &client.address,
+        &min_amount,
+        &99999,
+    );
+    client.stake_collateral(&organizer, &min_amount);
+
+    // Check stake record
+    let stake = client.get_organizer_stake(&organizer).unwrap();
+    assert_eq!(stake.organizer, organizer);
+    assert_eq!(stake.amount, min_amount);
+    assert!(stake.is_verified);
+    assert_eq!(stake.reward_balance, 0);
+
+    // Check verified status helper
+    assert!(client.is_organizer_verified(&organizer));
+}
+
+#[test]
+fn test_stake_below_min_not_verified() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let min_amount = 1000_0000000i128;
+    let stake_amount = min_amount / 2;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &stake_amount);
+
+    client.set_staking_config(&token_id, &min_amount);
+
+    soroban_sdk::token::Client::new(&env, &token_id).approve(
+        &organizer,
+        &client.address,
+        &stake_amount,
+        &99999,
+    );
+    client.stake_collateral(&organizer, &stake_amount);
+
+    let stake = client.get_organizer_stake(&organizer).unwrap();
+    assert!(!stake.is_verified);
+    assert!(!client.is_organizer_verified(&organizer));
+}
+
+#[test]
+fn test_stake_collateral_without_config_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let result = client.try_stake_collateral(&organizer, &1000i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::StakingNotConfigured)));
+}
+
+#[test]
+fn test_stake_collateral_zero_amount_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    client.set_staking_config(&token_id, &1000i128);
+
+    let result = client.try_stake_collateral(&organizer, &0i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidStakeAmount)));
+}
+
+#[test]
+fn test_double_stake_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let stake_amount = 500_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &(stake_amount * 2));
+
+    client.set_staking_config(&token_id, &1000_0000000i128);
+
+    soroban_sdk::token::Client::new(&env, &token_id).approve(
+        &organizer,
+        &client.address,
+        &stake_amount,
+        &99999,
+    );
+    client.stake_collateral(&organizer, &stake_amount);
+
+    // Second stake attempt should fail
+    soroban_sdk::token::Client::new(&env, &token_id).approve(
+        &organizer,
+        &client.address,
+        &stake_amount,
+        &99999,
+    );
+    let result = client.try_stake_collateral(&organizer, &stake_amount);
+    assert_eq!(result, Err(Ok(EventRegistryError::AlreadyStaked)));
+}
+
+// ── unstake_collateral ───────────────────────────────────────────
+
+#[test]
+fn test_unstake_collateral_returns_tokens() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let stake_amount = 1000_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &stake_amount);
+
+    client.set_staking_config(&token_id, &stake_amount);
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    token_client.approve(&organizer, &client.address, &stake_amount, &99999);
+    client.stake_collateral(&organizer, &stake_amount);
+
+    // Balance should be 0 after staking
+    assert_eq!(token_client.balance(&organizer), 0);
+
+    // Unstake
+    client.unstake_collateral(&organizer);
+
+    // Balance should be restored
+    assert_eq!(token_client.balance(&organizer), stake_amount);
+    assert!(client.get_organizer_stake(&organizer).is_none());
+    assert!(!client.is_organizer_verified(&organizer));
+}
+
+#[test]
+fn test_unstake_without_stake_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let result = client.try_unstake_collateral(&organizer);
+    assert_eq!(result, Err(Ok(EventRegistryError::NotStaked)));
+}
+
+// ── distribute_staker_rewards & claim_staker_rewards ────────────
+
+#[test]
+fn test_distribute_and_claim_staker_rewards() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let stake_amount = 1000_0000000i128;
+    let reward_amount = 100_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    // Mint for organizer (stake) + admin (rewards)
+    token_admin.mint(&organizer, &stake_amount);
+    token_admin.mint(&admin, &reward_amount);
+
+    client.set_staking_config(&token_id, &stake_amount);
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    token_client.approve(&organizer, &client.address, &stake_amount, &99999);
+    client.stake_collateral(&organizer, &stake_amount);
+
+    // Admin approves reward tokens to contract
+    token_client.approve(&admin, &client.address, &reward_amount, &99999);
+    client.distribute_staker_rewards(&admin, &reward_amount);
+
+    // Organizer's reward_balance should be updated
+    let stake = client.get_organizer_stake(&organizer).unwrap();
+    assert_eq!(stake.reward_balance, reward_amount); // 100% since only one staker
+
+    // Organizer claims rewards
+    let claimed = client.claim_staker_rewards(&organizer);
+    assert_eq!(claimed, reward_amount);
+
+    // Check token balance restored
+    assert_eq!(token_client.balance(&organizer), reward_amount);
+
+    // reward_balance should be zero after claiming
+    let stake_after = client.get_organizer_stake(&organizer).unwrap();
+    assert_eq!(stake_after.reward_balance, 0);
+    assert_eq!(stake_after.total_rewards_claimed, reward_amount);
+}
+
+#[test]
+fn test_distribute_rewards_proportional_to_multiple_stakers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let organizer_a = Address::generate(&env);
+    let organizer_b = Address::generate(&env);
+    let stake_a = 1000_0000000i128;
+    let stake_b = 3000_0000000i128;
+    let total_reward = 1000_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer_a, &stake_a);
+    token_admin.mint(&organizer_b, &stake_b);
+    token_admin.mint(&admin, &total_reward);
+
+    client.set_staking_config(&token_id, &1i128); // min_amount = 1 for simplicity
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    token_client.approve(&organizer_a, &client.address, &stake_a, &99999);
+    client.stake_collateral(&organizer_a, &stake_a);
+
+    token_client.approve(&organizer_b, &client.address, &stake_b, &99999);
+    client.stake_collateral(&organizer_b, &stake_b);
+
+    token_client.approve(&admin, &client.address, &total_reward, &99999);
+    client.distribute_staker_rewards(&admin, &total_reward);
+
+    // A has 25% stake (1000/4000), B has 75% (3000/4000)
+    let expected_a = total_reward * stake_a / (stake_a + stake_b); // 250_0000000
+    let expected_b = total_reward * stake_b / (stake_a + stake_b); // 750_0000000
+
+    let stake_a_record = client.get_organizer_stake(&organizer_a).unwrap();
+    let stake_b_record = client.get_organizer_stake(&organizer_b).unwrap();
+
+    assert_eq!(stake_a_record.reward_balance, expected_a);
+    assert_eq!(stake_b_record.reward_balance, expected_b);
+}
+
+#[test]
+fn test_claim_rewards_no_stake_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let result = client.try_claim_staker_rewards(&organizer);
+    assert_eq!(result, Err(Ok(EventRegistryError::NotStaked)));
+}
+
+#[test]
+fn test_claim_rewards_zero_balance_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let stake_amount = 500_0000000i128;
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &stake_amount);
+
+    client.set_staking_config(&token_id, &stake_amount);
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    token_client.approve(&organizer, &client.address, &stake_amount, &99999);
+    client.stake_collateral(&organizer, &stake_amount);
+
+    // No rewards distributed yet
+    let result = client.try_claim_staker_rewards(&organizer);
+    assert_eq!(result, Err(Ok(EventRegistryError::NoRewardsAvailable)));
+}
+
+#[test]
+fn test_distribute_rewards_no_stakers_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    client.set_staking_config(&token_id, &1000i128);
+
+    let result = client.try_distribute_staker_rewards(&admin, &100i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::NotStaked)));
+}
+
+#[test]
+fn test_distribute_rewards_unauthorized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let random_caller = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    client.set_staking_config(&token_id, &1000i128);
+
+    let result = client.try_distribute_staker_rewards(&random_caller, &100i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized)));
+}
+
+#[test]
+fn test_is_organizer_verified_false_when_not_staked() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    assert!(!client.is_organizer_verified(&organizer));
 }

@@ -2,11 +2,52 @@ use soroban_sdk::{contracttype, Address, BytesN, String};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuctionConfig {
+    pub start_price: i128,
+    pub end_time: u64,
+    pub min_increment: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ParameterChange {
+    AddGovernor(Address),
+    RemoveGovernor(Address),
+    AddTokenToWhitelist(Address),
+    RemoveTokenFromWhitelist(Address),
+    UpdateWithdrawalCap(Address, i128),
+    UpdateSlippage(u32),
+    UpdateTransferFee(String, i128),
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProposalStatus {
+    Pending,
+    Executed,
+    Rejected,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParameterProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub change: ParameterChange,
+    pub status: ProposalStatus,
+    pub created_at: u64,
+    pub vote_count: u32,
+    pub voters: soroban_sdk::Vec<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PaymentStatus {
     Pending,
     Confirmed,
     Refunded,
     Failed,
+    CheckedIn,
 }
 
 #[contracttype]
@@ -23,6 +64,7 @@ pub struct Payment {
     pub transaction_hash: String,
     pub created_at: u64,
     pub confirmed_at: Option<u64>,
+    pub refunded_amount: i128,
 }
 
 #[contracttype]
@@ -34,10 +76,27 @@ pub struct EventBalance {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HighestBid {
+    pub bidder: Address,
+    pub amount: i128,
+}
+
+#[contracttype]
 pub enum DataKey {
-    Payment(String),                     // payment_id -> Payment
-    EventPayments(String),               // event_id -> Vec<payment_id>
-    BuyerPayments(Address),              // buyer_address -> Vec<payment_id>
+    Payment(String), // payment_id -> Payment
+    /// Individual entry for an event payment (Persistent)
+    EventPayment(String, String),
+    /// Sharded mapping of event_id to payment_ids (Persistent)
+    EventPaymentShard(String, u32),
+    /// Total number of payments for an event (Persistent)
+    EventPaymentCount(String),
+    /// Individual entry for a buyer payment (Persistent)
+    BuyerPayment(Address, String),
+    /// Sharded mapping of buyer_address to payment_ids (Persistent)
+    BuyerPaymentShard(Address, u32),
+    /// Total number of payments for a buyer (Persistent)
+    BuyerPaymentCount(Address),
     Admin,                               // Contract administrator address
     UsdcToken,                           // USDC token address
     PlatformWallet,                      // Platform wallet address
@@ -58,4 +117,14 @@ pub enum DataKey {
     DailyWithdrawalAmount(Address, u64), // (token_address, day_timestamp) -> amount withdrawn
     IsPaused,                            // bool – global circuit breaker flag
     DisputeStatus(String),               // event_id -> bool
+    PartialRefundIndex(String),          // event_id -> last processed payment index
+    PartialRefundPercentage(String),     // event_id -> active refund percentage in bps
+    OracleAddress,                       // Address of oracle contract
+    SlippageBps,                         // u32 — slippage tolerance in bps (default 200 = 2%)
+    HighestBid(String, String),          // (event_id, tier_id) -> HighestBid
+    AuctionClosed(String, String),       // (event_id, tier_id) -> bool
+    Governor(Address),                   // Address -> bool (is authorized governor)
+    TotalGovernors,                      // u32
+    Proposal(u64),                       // id -> ParameterProposal
+    ProposalCount,                       // u64
 }

@@ -139,11 +139,7 @@ export default function EventDetailPage({
             </div>
 
             {/* Registration Box */}
-            <RegistrationBox
-              isFree={isFree}
-              price={event.price}
-              host={host}
-            />
+            <RegistrationBox isFree={isFree} price={event.price} host={host} />
 
             {/* About Section */}
             <div className="flex flex-col gap-6 pt-4">

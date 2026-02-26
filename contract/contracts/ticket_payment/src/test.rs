@@ -1,6 +1,8 @@
-use super::contract::{event_registry, TicketPaymentContract, TicketPaymentContractClient};
+use super::contract::{
+    event_registry, price_oracle, TicketPaymentContract, TicketPaymentContractClient,
+};
 use super::storage::*;
-use super::types::{Payment, PaymentStatus};
+use super::types::{ParameterChange, Payment, PaymentStatus};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, Events, Ledger},
@@ -40,9 +42,11 @@ impl MockCancelledRegistry {
                         price: 1000,
                         early_bird_price: 1000,
                         early_bird_deadline: 0,
+                        usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: false,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -50,6 +54,9 @@ impl MockCancelledRegistry {
             refund_deadline: 0,
             restocking_fee: 100,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
@@ -98,9 +105,11 @@ impl MockEventRegistry {
                             price: 1000_0000000i128,
                             early_bird_price: 800_0000000i128,
                             early_bird_deadline: 0,
+                            usd_price: 0,
                             tier_limit: 100,
                             current_sold: 0,
                             is_refundable: true,
+                            auction_config: soroban_sdk::vec![&env],
                         },
                     );
                     tiers
@@ -108,6 +117,9 @@ impl MockEventRegistry {
                 refund_deadline: 0,
                 restocking_fee: 0,
                 resale_cap_bps: None,
+                min_sales_target: 0,
+                target_deadline: 0,
+                goal_met: false,
             });
         }
         None
@@ -161,9 +173,11 @@ impl MockEventRegistry2 {
                         price: 10000_0000000i128,
                         early_bird_price: 8000_0000000i128,
                         early_bird_deadline: 0,
+                        usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -171,6 +185,9 @@ impl MockEventRegistry2 {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -345,6 +362,7 @@ fn test_confirm_payment() {
         transaction_hash: String::from_str(&env, ""),
         created_at: 100,
         confirmed_at: None,
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -654,7 +672,7 @@ fn test_add_remove_token_whitelist() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let (client, admin, usdc_id, _, _) = setup_test(&env);
 
     let xlm_token = Address::generate(&env);
     let eurc_token = Address::generate(&env);
@@ -662,13 +680,34 @@ fn test_add_remove_token_whitelist() {
     assert!(client.is_token_allowed(&usdc_id));
     assert!(!client.is_token_allowed(&xlm_token));
 
-    client.add_token(&xlm_token);
+    let p1 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(xlm_token.clone()),
+    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p1);
+
     assert!(client.is_token_allowed(&xlm_token));
 
-    client.add_token(&eurc_token);
+    let p2 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(eurc_token.clone()),
+    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p2);
+
     assert!(client.is_token_allowed(&eurc_token));
 
-    client.remove_token(&xlm_token);
+    let p3 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::RemoveTokenFromWhitelist(xlm_token.clone()),
+    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p3);
+
     assert!(!client.is_token_allowed(&xlm_token));
     assert!(client.is_token_allowed(&eurc_token));
 }
@@ -703,13 +742,19 @@ fn test_process_payment_with_multiple_tokens() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let (client, admin, usdc_id, _platform_wallet, _) = setup_test(&env);
 
     let xlm_id = env
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();
 
-    client.add_token(&xlm_id);
+    let p1 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(xlm_id.clone()),
+    );
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p1);
 
     let buyer1 = Address::generate(&env);
     let buyer2 = Address::generate(&env);
@@ -796,9 +841,11 @@ impl MockEventRegistryMaxSupply {
                         price: 1000_0000000i128,
                         early_bird_price: 800_0000000i128,
                         early_bird_deadline: 0,
+                        usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -806,6 +853,9 @@ impl MockEventRegistryMaxSupply {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -898,9 +948,11 @@ impl MockEventRegistryWithInventory {
                         price: 1000_0000000i128,
                         early_bird_price: 800_0000000i128,
                         early_bird_deadline: 0,
+                        usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -908,6 +960,9 @@ impl MockEventRegistryWithInventory {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -1112,9 +1167,11 @@ impl MockEventRegistryWithMilestones {
                         price: 1000_000000i128,
                         early_bird_price: 800_000000i128,
                         early_bird_deadline: 0,
+                        usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -1122,6 +1179,9 @@ impl MockEventRegistryWithMilestones {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -1272,6 +1332,7 @@ fn test_transfer_ticket_success() {
         transaction_hash: String::from_str(&env, "tx_1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1331,6 +1392,7 @@ fn test_transfer_ticket_with_fee() {
         transaction_hash: String::from_str(&env, "tx_1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1372,6 +1434,7 @@ fn test_transfer_ticket_unauthorized() {
         transaction_hash: String::from_str(&env, ""),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1422,9 +1485,11 @@ impl MockEventRegistryEarlyBird {
                         price: 1500_0000000i128, // Standard 150 USDC
                         early_bird_price: 1000_0000000i128, // Early Bird 100 USDC
                         early_bird_deadline: 1000000, // Deadline at timestamp 1,000,000
+                        usd_price: 0,
                         tier_limit: 1000,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -1432,6 +1497,9 @@ impl MockEventRegistryEarlyBird {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -1901,9 +1969,11 @@ impl MockEventRegistryWithOrganizer {
                         price: 1000_0000000i128,
                         early_bird_price: 800_0000000i128,
                         early_bird_deadline: 0,
+                        usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -1911,6 +1981,9 @@ impl MockEventRegistryWithOrganizer {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -2216,6 +2289,9 @@ impl MockPlatformRegistryE2E {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         };
 
         env.storage()
@@ -2347,9 +2423,11 @@ fn test_integration_full_platform_day() {
                 price: 1000_0000000i128 + (i as i128 * 200_0000000),
                 early_bird_price: 1000_0000000i128 + (i as i128 * 200_0000000),
                 early_bird_deadline: 0,
+                usd_price: 0,
                 tier_limit: 50,
                 current_sold: 0,
                 is_refundable: true,
+                auction_config: soroban_sdk::vec![&env],
             },
         );
     }
@@ -2478,9 +2556,11 @@ fn test_integration_edge_cases() {
             price: 1000_0000000i128,
             early_bird_price: 1000_0000000i128,
             early_bird_deadline: 0,
+            usd_price: 0,
             tier_limit: 1,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     registry.create_event(
@@ -2580,9 +2660,11 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
             price: 1000_0000000i128,
             early_bird_price: 1000_0000000i128,
             early_bird_deadline: 0,
+            usd_price: 0,
             tier_limit: 10,
             current_sold: 0,
             is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
         },
     );
     registry.create_event(&event_id, &organizer, &event_payment_addr, &10, &tiers);
@@ -2660,9 +2742,11 @@ impl MockEventRegistryRefund {
                         price: 1000,
                         early_bird_price: 1000,
                         early_bird_deadline: 0,
+                        usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -2670,6 +2754,9 @@ impl MockEventRegistryRefund {
             refund_deadline: 2000,
             restocking_fee: 100,
             resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -2723,9 +2810,11 @@ impl MockEventRegistryWithResaleCap {
                         price: 1000_0000000i128, // 1000 USDC
                         early_bird_price: 800_0000000i128,
                         early_bird_deadline: 0,
+                        usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -2733,6 +2822,9 @@ impl MockEventRegistryWithResaleCap {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: Some(1000), // 10% above face value
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -2792,6 +2884,7 @@ fn test_transfer_ticket_resale_price_within_cap() {
         transaction_hash: String::from_str(&env, "tx_1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2828,6 +2921,7 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
         transaction_hash: String::from_str(&env, "tx_2"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2866,6 +2960,7 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
         transaction_hash: String::from_str(&env, "tx_3"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2902,6 +2997,7 @@ fn test_transfer_ticket_sale_price_no_cap() {
         transaction_hash: String::from_str(&env, "tx_nc1"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2954,9 +3050,11 @@ impl MockRegistryZeroCap {
                         price: 1000_0000000i128,
                         early_bird_price: 0,
                         early_bird_deadline: 0,
+                        usd_price: 0,
                         tier_limit: 100,
                         current_sold: 0,
                         is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
                     },
                 );
                 tiers
@@ -2964,6 +3062,9 @@ impl MockRegistryZeroCap {
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: Some(0), // No markup allowed
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
         })
     }
 
@@ -3289,6 +3390,7 @@ fn test_claim_automatic_refund_success() {
         transaction_hash: String::from_str(&env, "tx"),
         created_at: 100,
         confirmed_at: Some(101),
+        refunded_amount: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -3395,4 +3497,665 @@ fn test_admin_refund_during_dispute() {
     // Check buyer balance
     let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
     assert!(buyer_balance > 0);
+}
+
+// =============================================================================
+// Oracle integration — Mock contracts
+// =============================================================================
+
+/// Mock oracle that returns a fixed XLM/USD price: 8.333333 XLM per $1 (XLM at $0.12).
+#[soroban_sdk::contract]
+pub struct MockPriceOracle;
+
+#[soroban_sdk::contractimpl]
+impl MockPriceOracle {
+    pub fn lastprice(_env: Env, _asset: Address) -> Option<price_oracle::PriceData> {
+        Some(price_oracle::PriceData {
+            price: 8_3333333, // 1 / 0.12 ≈ 8.333 XLM per $1, 7-decimal scale
+            timestamp: 1000,
+        })
+    }
+}
+
+/// Mock oracle that returns None (price unavailable).
+#[soroban_sdk::contract]
+pub struct MockPriceOracleUnavailable;
+
+#[soroban_sdk::contractimpl]
+impl MockPriceOracleUnavailable {
+    pub fn lastprice(_env: Env, _asset: Address) -> Option<price_oracle::PriceData> {
+        None
+    }
+}
+
+/// Mock registry returning a tier with `usd_price: 100_0000000` ($100) and `price: 0`.
+#[soroban_sdk::contract]
+pub struct MockEventRegistryUsdPriced;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryUsdPriced {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500, // 5%
+        }
+    }
+
+    pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id: String::from_str(&env, "event_1"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 0,
+                        early_bird_price: 0,
+                        early_bird_deadline: 0,
+                        usd_price: 100_0000000, // $100 USD in 7-decimal fixed-point
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+}
+
+/// Helper: set up a TicketPayment contract with the USD-priced mock registry and oracle.
+fn setup_usd_priced_test(
+    env: &Env,
+) -> (
+    TicketPaymentContractClient<'static>,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(env, &contract_id);
+
+    let admin = Address::generate(env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(env))
+        .address();
+    let platform_wallet = Address::generate(env);
+    let registry_id = env.register(MockEventRegistryUsdPriced, ());
+
+    client.initialize(&admin, &token_id, &platform_wallet, &registry_id);
+
+    // Register and configure oracle
+    let oracle_id = env.register(MockPriceOracle, ());
+    client.set_oracle(&oracle_id);
+
+    (client, admin, token_id, platform_wallet, registry_id)
+}
+
+// =============================================================================
+// Oracle integration — Tests
+// =============================================================================
+
+// 1. Exact oracle amount accepted
+#[test]
+fn test_usd_priced_payment_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, token_id, _pw, _reg) = setup_usd_priced_test(&env);
+    let buyer = Address::generate(&env);
+
+    // expected = 100_0000000 * 8_3333333 / 1_0000000 = 833_3333300
+    let expected_amount = 833_3333300i128;
+    token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &expected_amount);
+    token::Client::new(&env, &token_id).approve(&buyer, &client.address, &expected_amount, &99999);
+
+    let result = client.try_process_payment(
+        &String::from_str(&env, "pay_usd_1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &token_id,
+        &expected_amount,
+        &1,
+        &None,
+        &None,
+    );
+    assert!(result.is_ok());
+}
+
+// 2. Slightly above, within 2% slippage
+#[test]
+fn test_usd_priced_payment_within_slippage() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, token_id, _pw, _reg) = setup_usd_priced_test(&env);
+    let buyer = Address::generate(&env);
+
+    // expected = 833_3333300, max = 833_3333300 * 10200 / 10000 = 849_9999966
+    let amount = 849_9999966i128; // exactly at 2% above
+    token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
+    token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let result = client.try_process_payment(
+        &String::from_str(&env, "pay_usd_2"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &token_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+    assert!(result.is_ok());
+}
+
+// 3. >2% over → PriceOutsideSlippage
+#[test]
+fn test_usd_priced_payment_above_slippage_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, token_id, _pw, _reg) = setup_usd_priced_test(&env);
+    let buyer = Address::generate(&env);
+
+    // max = 849_9999966, so 850_0000000 is above
+    let amount = 850_0000000i128;
+    token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
+    token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let result = client.try_process_payment(
+        &String::from_str(&env, "pay_usd_3"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &token_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::PriceOutsideSlippage)));
+}
+
+// 4. >2% under → PriceOutsideSlippage
+#[test]
+fn test_usd_priced_payment_below_slippage_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, token_id, _pw, _reg) = setup_usd_priced_test(&env);
+    let buyer = Address::generate(&env);
+
+    // min = 833_3333300 * 9800 / 10000 = 816_6666634, so 816_0000000 is below
+    let amount = 816_0000000i128;
+    token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
+    token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let result = client.try_process_payment(
+        &String::from_str(&env, "pay_usd_4"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &token_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::PriceOutsideSlippage)));
+}
+
+// 5. Oracle not configured → OracleNotConfigured
+#[test]
+fn test_usd_priced_oracle_not_configured() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Set up without configuring oracle
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryUsdPriced, ());
+    client.initialize(&admin, &token_id, &platform_wallet, &registry_id);
+    // Note: no set_oracle call
+
+    let buyer = Address::generate(&env);
+    let amount = 833_3333300i128;
+    token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
+    token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let result = client.try_process_payment(
+        &String::from_str(&env, "pay_usd_5"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &token_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::OracleNotConfigured)));
+}
+
+// 6. Oracle returns None → OraclePriceUnavailable
+#[test]
+fn test_usd_priced_oracle_unavailable() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryUsdPriced, ());
+    client.initialize(&admin, &token_id, &platform_wallet, &registry_id);
+
+    // Register the unavailable oracle
+    let oracle_id = env.register(MockPriceOracleUnavailable, ());
+    client.set_oracle(&oracle_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 833_3333300i128;
+    token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
+    token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let result = client.try_process_payment(
+        &String::from_str(&env, "pay_usd_6"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &token_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceUnavailable)));
+}
+
+// 7. Regression: usd_price=0 exact match still works
+#[test]
+fn test_token_priced_payment_unchanged() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _pw, _reg) = setup_test(&env);
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let result = client.try_process_payment(
+        &String::from_str(&env, "pay_reg_1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+    assert!(result.is_ok());
+}
+
+// 8. Unauthorized caller cannot set oracle
+#[test]
+#[should_panic]
+fn test_set_oracle_admin_only() {
+    let env = Env::default();
+    // Note: NOT calling mock_all_auths
+    let (client, _admin, _usdc_id, _pw, _reg) = setup_test(&env);
+    let oracle_id = env.register(MockPriceOracle, ());
+    client.set_oracle(&oracle_id);
+}
+
+// 10. get_asset_price returns oracle price
+#[test]
+fn test_get_asset_price_returns_oracle_price() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, token_id, _pw, _reg) = setup_usd_priced_test(&env);
+
+    let price_data = client.get_asset_price(&token_id);
+    assert_eq!(price_data.price, 8_3333333);
+    assert_eq!(price_data.timestamp, 1000);
+}
+
+// ----------------------------------------------------------------------------
+// DAO-Lite Governance Integration Tests
+// ----------------------------------------------------------------------------
+
+#[test]
+fn test_governance_propose_and_execute_time_lock() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _, _, _) = setup_test(&env);
+    let new_token = Address::generate(&env);
+
+    // Initial state
+    assert!(!client.is_token_allowed(&new_token));
+
+    // Propose
+    let proposal_id = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(new_token.clone()),
+    );
+
+    // Fast-forward inside the lock (fails)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 1000);
+    let res1 = client.try_execute_proposal(&admin, &proposal_id);
+    assert_eq!(res1, Err(Ok(TicketPaymentError::VotingPeriodNotMet)));
+
+    // Fast-forward past 48 hours
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+
+    // Execute
+    assert!(client.try_execute_proposal(&admin, &proposal_id).is_ok());
+
+    // Verify change
+    assert!(client.is_token_allowed(&new_token));
+}
+
+#[test]
+fn test_governance_add_governor_requires_new_threshold() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _, _, _) = setup_test(&env);
+    let new_governor = Address::generate(&env);
+
+    // 1. Add new governor
+    let p1 = client
+        .propose_parameter_change(&admin, &ParameterChange::AddGovernor(new_governor.clone()));
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p1);
+
+    // Total Governors is now 2. Threshold = (2/2) + 1 = 2 votes needed.
+
+    // 2. Propose another change
+    let new_token = Address::generate(&env);
+    let p2 = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::AddTokenToWhitelist(new_token.clone()),
+    );
+
+    // Try executing with only 1 vote
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    let res = client.try_execute_proposal(&admin, &p2);
+    assert_eq!(res, Err(Ok(TicketPaymentError::InsufficientVotes)));
+
+    // 3. New governor votes
+    client.vote_on_proposal(&new_governor, &p2);
+
+    // Now execute
+    assert!(client.try_execute_proposal(&admin, &p2).is_ok());
+    assert!(client.is_token_allowed(&new_token));
+}
+
+#[test]
+fn test_governance_remove_governor() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _, _, _) = setup_test(&env);
+    let gov2 = Address::generate(&env);
+    let gov3 = Address::generate(&env);
+
+    // Add gov2 and gov3
+    let p1 = client.propose_parameter_change(&admin, &ParameterChange::AddGovernor(gov2.clone()));
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p1);
+
+    let p2 = client.propose_parameter_change(&admin, &ParameterChange::AddGovernor(gov3.clone()));
+    client.vote_on_proposal(&gov2, &p2);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p2);
+
+    // Remove gov3
+    let p3 = client.propose_parameter_change(&gov2, &ParameterChange::RemoveGovernor(gov3.clone()));
+    client.vote_on_proposal(&admin, &p3);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p3);
+
+    // Total Govs: 2, Threshold is 2. Propose again by admin.
+    let p4 = client.propose_parameter_change(&admin, &ParameterChange::UpdateSlippage(100));
+
+    // gov3 tries to vote but is no longer a governor
+    let failed_vote = client.try_vote_on_proposal(&gov3, &p4);
+    assert_eq!(failed_vote, Err(Ok(TicketPaymentError::NotGovernor)));
+}
+
+#[test]
+fn test_governance_unauthorized_propose_and_vote() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _, _, _) = setup_test(&env);
+    let random_user = Address::generate(&env);
+
+    // unauthorized propose
+    let res =
+        client.try_propose_parameter_change(&random_user, &ParameterChange::UpdateSlippage(300));
+    assert_eq!(res, Err(Ok(TicketPaymentError::NotGovernor)));
+
+    // unauthorized vote
+    let res = client.try_vote_on_proposal(&random_user, &0);
+    assert_eq!(res, Err(Ok(TicketPaymentError::NotGovernor)));
+}
+
+// ════════════════════════════════════════════════════════════════
+// Loyalty Discount Integration Tests
+// ════════════════════════════════════════════════════════════════
+
+/// Mock event registry that returns a loyalty discount (1000 bps = 10%)
+/// for buyers, simulating a high-loyalty-score guest.
+#[soroban_sdk::contract]
+pub struct MockEventRegistryWithLoyalty;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryWithLoyalty {
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500, // 5%
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000_0000000i128,
+                        early_bird_price: 1000_0000000i128,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+        })
+    }
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+    /// Returns 1000 bps (10%) loyalty discount for all buyers
+    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 {
+        1000
+    }
+    pub fn update_loyalty_score(
+        _env: Env,
+        _caller: Address,
+        _guest: Address,
+        _tickets: u32,
+        _amount: i128,
+    ) {
+    }
+    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> {
+        None
+    }
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+        }
+    }
+}
+
+#[test]
+fn test_loyalty_discount_reduces_platform_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let loyalty_registry_id = env.register(MockEventRegistryWithLoyalty, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &loyalty_registry_id);
+
+    let buyer = Address::generate(&env);
+    let price = 1000_0000000i128; // 1000 USDC
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc_token.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_loyalty");
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+
+    // platform_fee = 1000 * 5% = 50 USDC
+    // loyalty_discount = 50 * 10% = 5 USDC
+    // effective_total = 1000 - 5 = 995 USDC
+    // buyer should be charged 995 USDC
+    client.process_payment(
+        &payment_id,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Buyer should have 1000 - 995 = 5 USDC remaining (not charged for the loyalty discount portion)
+    let remaining = token::Client::new(&env, &usdc_id).balance(&buyer);
+    // original = 1000, paid = 995
+    assert_eq!(remaining, 5_0000000i128);
+}
+
+#[test]
+fn test_payment_without_loyalty_discount_unchanged() {
+    // Existing mock (MockEventRegistry) returns 0 loyalty discount; behaviour unchanged
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let payment_id = String::from_str(&env, "pay_no_loyalty");
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Full price charged; buyer has no remaining balance
+    let remaining = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert_eq!(remaining, 0);
 }

@@ -1,5 +1,53 @@
 use soroban_sdk::{contracttype, Address, Map, String, Vec};
 
+/// Represents a series or festival grouping multiple events
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SeriesRegistry {
+    /// Unique identifier for the series
+    pub series_id: String,
+    /// Name or description of the series
+    pub name: String,
+    /// List of event_ids included in this series
+    pub event_ids: Vec<String>,
+    /// Organizer address for the series
+    pub organizer_address: Address,
+    /// Optional metadata (e.g., IPFS CID)
+    pub metadata_cid: Option<String>,
+}
+
+/// Represents a season pass for a series
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SeriesPass {
+    /// Unique pass ID
+    pub pass_id: String,
+    /// Series this pass is valid for
+    pub series_id: String,
+    /// Address of the pass holder
+    pub holder: Address,
+    /// Usage limit (e.g., 5 out of 10 events)
+    pub usage_limit: u32,
+    /// Number of events attended with this pass
+    pub usage_count: u32,
+    /// Timestamp when the pass was issued
+    pub issued_at: u64,
+    /// Expiry timestamp (optional, 0 = no expiry)
+    pub expires_at: u64,
+}
+
+/// Configuration for an auction ticket tier
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuctionConfig {
+    /// Starting price for the auction in stroops
+    pub start_price: i128,
+    /// Unix timestamp when the auction ends
+    pub end_time: u64,
+    /// Minimum increment for a new bid in stroops
+    pub min_increment: i128,
+}
+
 /// Represents a ticket tier with its own pricing and supply
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -14,6 +62,8 @@ pub struct TicketTier {
     pub current_sold: i128,
     /// Indicates whether tickets in this tier can be refunded by the buyer
     pub is_refundable: bool,
+    /// Optional configuration for an auction
+    pub auction_config: soroban_sdk::Vec<AuctionConfig>,
 }
 
 /// Represents an early revenue release milestone.
@@ -75,6 +125,12 @@ pub struct EventInfo {
     /// Timestamp (Unix) when the temporary refund grace period for a
     /// postponed event ends. 0 means no grace period active.
     pub grace_period_end: u64,
+    /// Minimum number of tickets that must be sold for the event to proceed
+    pub min_sales_target: i128,
+    /// Deadline by which the min_sales_target must be met (Unix timestamp)
+    pub target_deadline: u64,
+    /// Whether the minimum sales target has been reached
+    pub goal_met: bool,
 }
 
 /// Payment information for an event
@@ -104,6 +160,10 @@ pub struct EventRegistrationArgs {
     pub restocking_fee: i128,
     /// Optional resale price cap in basis points above face value.
     pub resale_cap_bps: Option<u32>,
+    /// Minimum number of tickets that must be sold for the event to proceed
+    pub min_sales_target: Option<i128>,
+    /// Deadline by which the min_sales_target must be met (Unix timestamp)
+    pub target_deadline: Option<u64>,
 }
 
 /// Audit log entry for blacklist actions
@@ -132,11 +192,79 @@ pub struct EventReceipt {
     pub archived_at: u64,
 }
 
+/// Multi-signature configuration for admin management
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultiSigConfig {
+    /// List of admin addresses
+    pub admins: Vec<Address>,
+    /// Number of approvals required to execute a proposal
+    pub threshold: u32,
+}
+
+/// Represents a governance proposal
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Proposal {
+    /// Unique identifier for the proposal
+    pub proposal_id: u64,
+    /// Address that created the proposal
+    pub proposer: Address,
+    /// Description of the proposal
+    pub description: String,
+    /// Addresses that have approved this proposal
+    pub approvals: Vec<Address>,
+    /// Whether the proposal has been executed
+    pub executed: bool,
+    /// Timestamp when the proposal was created
+    pub created_at: u64,
+    /// Timestamp when the proposal expires
+    pub expires_at: u64,
+}
+
+/// Loyalty profile for a guest (event attendee / ticket buyer)
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GuestProfile {
+    /// The wallet address of the guest
+    pub guest_address: Address,
+    /// Accumulated loyalty score (increases with each purchase)
+    pub loyalty_score: u64,
+    /// Total number of tickets purchased across all events
+    pub total_tickets_purchased: u32,
+    /// Total amount spent across all events (in token stroops)
+    pub total_spent: i128,
+    /// Timestamp of the last loyalty score update
+    pub last_updated: u64,
+}
+
+/// Represents an organizer's staked collateral for Verified status
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizerStake {
+    /// The organizer's wallet address
+    pub organizer: Address,
+    /// The token contract address used for staking
+    pub token: Address,
+    /// The amount of tokens staked
+    pub amount: i128,
+    /// Timestamp when the stake was created
+    pub staked_at: u64,
+    /// Whether the organizer currently holds Verified status
+    pub is_verified: bool,
+    /// Accumulated reward balance available to claim
+    pub reward_balance: i128,
+    /// Total rewards claimed historically
+    pub total_rewards_claimed: i128,
+}
+
 /// Storage keys for the Event Registry contract.
 #[contracttype]
 pub enum DataKey {
-    /// The administrator address for contract management
+    /// The administrator address for contract management (legacy, kept for backward compatibility)
     Admin,
+    /// Multi-signature configuration
+    MultiSigConfig,
     /// The platform wallet address for fee collection
     PlatformWallet,
     /// The global platform fee percentage
@@ -145,8 +273,12 @@ pub enum DataKey {
     Initialized,
     /// Mapping of event_id to EventInfo (Persistent)
     Event(String),
-    /// Mapping of organizer_address to a list of their event_ids (Persistent)
-    OrganizerEvents(Address),
+    /// Individual entry for an organizer's event (Persistent)
+    OrganizerEvent(Address, String),
+    /// Sharded mapping of organizer address to their event_ids (Persistent)
+    OrganizerEventShard(Address, u32),
+    /// Total number of events for an organizer (Persistent)
+    OrganizerEventCount(Address),
     /// The authorized TicketPayment contract address for inventory updates
     TicketPaymentContract,
     /// Mapping of organizer address to blacklist status (Persistent)
@@ -159,4 +291,35 @@ pub enum DataKey {
     PromoExpiry,
     /// Mapping of event_id to EventReceipt (Persistent) for archived events
     EventReceipt(String),
+    /// Counter for proposal IDs
+    ProposalCounter,
+    /// Mapping of proposal_id to Proposal
+    Proposal(u64),
+    /// List of active proposal IDs
+    ActiveProposals,
+    /// Mapping of (event_id, scanner_address) to bool
+    AuthorizedScanner(String, Address),
+
+    /// Mapping of series_id to SeriesRegistry (Persistent)
+    Series(String),
+    /// Mapping of pass_id to SeriesPass (Persistent)
+    SeriesPass(String),
+    /// Mapping of (holder, series_id) to pass_id (Persistent)
+    HolderSeriesPass(Address, String),
+    /// Mapping of (series_id, event_id) to bool (Persistent, for fast lookup)
+    SeriesEvent(String, String),
+
+    // ── Loyalty & Staking ──────────────────────────────────────────────
+    /// Guest loyalty profile keyed by guest address (Persistent)
+    GuestProfile(Address),
+    /// Organizer stake record keyed by organizer address (Persistent)
+    OrganizerStake(Address),
+    /// Minimum token amount required to unlock Verified status
+    MinStakeAmount,
+    /// Token contract address accepted for staking
+    StakingToken,
+    /// Sum of all tokens currently staked (i128, Persistent)
+    TotalStaked,
+    /// List of all currently staked organizer addresses for proportional distribution
+    StakersList,
 }

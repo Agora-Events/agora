@@ -1,0 +1,84 @@
+Overview
+
+Designed the User Profile Page following Agora’s existing design system, typography, spacing, and reusable components.
+
+This submission includes full desktop designs and clearly defined responsive behavior for implementation.
+
+Desktop Design Includes
+Profile Header
+
+Avatar
+
+Full name
+
+Bio / short description
+
+“Joined {Month Year}”
+
+Hosted Events count
+
+Attended Events count
+
+Social links (Twitter/X, LinkedIn, Instagram if available)
+
+Clear visual hierarchy and consistent spacing with the current Agora style.
+
+States Designed
+1️⃣ Empty State
+
+Triggered when user has no hosted or attended events.
+
+Friendly illustration/icon
+
+Message:
+“Nothing here yet. You have no public events at this time.”
+
+Warm, non-discouraging visual tone
+
+2️⃣ Registered / Attending State
+
+For upcoming or live events.
+
+Section: “Upcoming & In Progress”
+
+Uses existing Event Card component
+
+Status badges (“Registered”, “Live Now”)
+
+Visually distinct from empty state
+
+3️⃣ Past Attended State
+
+For completed events.
+
+Section: “Past Events”
+
+Event cards displayed in grid
+
+Clear visual distinction from upcoming events
+
+Responsiveness (Defined)
+
+Mobile: stacked layout, full-width event cards
+
+Tablet: 2-column grid
+
+Desktop: centered container with grid layout
+
+Follows Agora’s existing breakpoint system.
+
+Design System Compliance
+
+Reused existing components (Avatar, Event Card, Badge)
+
+No new visual language introduced
+
+Consistent typography, spacing, and color usage
+
+Organized Figma file for clean handoff
+
+Figma Link
+
+👉 https://www.figma.com/design/qnXwOxdJD4SBC6yjdwsilN/Agora-Profile-Page?node-id=0-1&t=uFO22ORvuFcXBCvh-1
+
+If you'd like, I can make it even tighter (like a GitHub comment-sized version).

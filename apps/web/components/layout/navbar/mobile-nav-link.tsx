@@ -9,12 +9,14 @@ export function MobileNavLink({
   text,
   i,
   isActive,
+  onClose,
 }: {
   href: string;
   icon: string;
   text: string;
   i: number;
   isActive: boolean;
+  onClose?: () => void;
 }) {
   const linkVariants = {
     closed: { opacity: 0, x: 20 },
@@ -33,6 +35,7 @@ export function MobileNavLink({
     <motion.div custom={i} variants={linkVariants}>
       <Link
         href={href}
+        onClick={onClose}
         className={`flex items-center gap-3 text-lg font-medium transition-colors p-2 rounded-lg ${
           isActive ? "text-[#FDDA23]" : "hover:opacity-80"
         }`}

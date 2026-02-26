@@ -1,21 +1,25 @@
 #![no_std]
 
 use crate::events::{
-    AgoraEvent, EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
-    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
-    InitializationEvent, InventoryIncrementedEvent, MetadataUpdatedEvent,
+    AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, EventCancelledEvent,
+    EventPostponedEvent, EventRegisteredEvent, EventStatusUpdatedEvent, EventsSuspendedEvent,
+    FeeUpdatedEvent, GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent,
+    InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent,
     OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
-    EventArchivedEvent,
+    EventArchivedEvent, ScannerAuthorizedEvent, StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
 };
 use crate::types::{
-    BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, PaymentInfo, EventReceipt,
+    BlacklistAuditEntry, EventInfo, EventRegistrationArgs, EventStatus, EventReceipt, GuestProfile,
+    MultiSigConfig, OrganizerStake, PaymentInfo,
 };
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
 pub mod error;
 pub mod events;
 pub mod storage;
 pub mod types;
+
+use crate::types::{SeriesPass, SeriesRegistry};
 
 use crate::error::EventRegistryError;
 
@@ -25,7 +29,81 @@ pub struct EventRegistry;
 #[contractimpl]
 #[allow(deprecated)]
 impl EventRegistry {
+    /// Register a new series grouping multiple events
+    pub fn register_series(
+        env: Env,
+        series_id: String,
+        name: String,
+        event_ids: Vec<String>,
+        organizer_address: Address,
+        metadata_cid: Option<String>,
+    ) -> Result<(), EventRegistryError> {
+        organizer_address.require_auth();
+        // Validate all event_ids exist and belong to organizer
+        for event_id in event_ids.iter() {
+            let event = storage::get_event(&env, event_id.clone())
+                .ok_or(EventRegistryError::EventNotFound)?;
+            if event.organizer_address != organizer_address {
+                return Err(EventRegistryError::UnauthorizedCaller);
+            }
+        }
+        let series = SeriesRegistry {
+            series_id: series_id.clone(),
+            name,
+            event_ids: event_ids.clone(),
+            organizer_address: organizer_address.clone(),
+            metadata_cid,
+        };
+        storage::store_series(&env, &series);
+        Ok(())
+    }
+
+    /// Get a series by ID
+    pub fn get_series(env: Env, series_id: String) -> Option<SeriesRegistry> {
+        storage::get_series(&env, series_id)
+    }
+
+    /// Issue a season pass for a series
+    pub fn issue_series_pass(
+        env: Env,
+        pass_id: String,
+        series_id: String,
+        holder: Address,
+        usage_limit: u32,
+        expires_at: u64,
+    ) -> Result<(), EventRegistryError> {
+        // Only organizer of the series can issue passes
+        let series = storage::get_series(&env, series_id.clone())
+            .ok_or(EventRegistryError::EventNotFound)?;
+        series.organizer_address.require_auth();
+        let pass = SeriesPass {
+            pass_id: pass_id.clone(),
+            series_id: series_id.clone(),
+            holder: holder.clone(),
+            usage_limit,
+            usage_count: 0,
+            issued_at: env.ledger().timestamp(),
+            expires_at,
+        };
+        storage::store_series_pass(&env, &pass);
+        Ok(())
+    }
+
+    /// Get a pass by ID
+    pub fn get_series_pass(env: Env, pass_id: String) -> Option<SeriesPass> {
+        storage::get_series_pass(&env, pass_id)
+    }
+
+    /// Get a pass for a holder and series
+    pub fn get_holder_series_pass(
+        env: Env,
+        holder: Address,
+        series_id: String,
+    ) -> Option<SeriesPass> {
+        storage::get_holder_series_pass(&env, &holder, series_id)
+    }
     /// Initializes the contract configuration. Can only be called once.
+    /// Sets up initial admin with multi-sig configuration (threshold = 1 for single admin).
     ///
     /// # Arguments
     /// * `admin` - The administrator address.
@@ -53,7 +131,17 @@ impl EventRegistry {
         if initial_fee > 10000 {
             return Err(EventRegistryError::InvalidFeePercent);
         }
-        storage::set_admin(&env, &admin);
+
+        // Initialize multi-sig with single admin and threshold of 1
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        let multisig_config = MultiSigConfig {
+            admins,
+            threshold: 1,
+        };
+
+        storage::set_admin(&env, &admin); // Legacy support
+        storage::set_multisig_config(&env, &multisig_config);
         storage::set_platform_wallet(&env, &platform_wallet);
         storage::set_platform_fee(&env, initial_fee);
         storage::set_initialized(&env, true);
@@ -136,6 +224,9 @@ impl EventRegistry {
             resale_cap_bps: args.resale_cap_bps,
             is_postponed: false,
             grace_period_end: 0,
+            min_sales_target: args.min_sales_target.unwrap_or(0),
+            target_deadline: args.target_deadline.unwrap_or(0),
+            goal_met: false,
         };
 
         storage::store_event(&env, event_info);
@@ -325,7 +416,8 @@ impl EventRegistry {
 
     /// Stores or updates an event (legacy function for backward compatibility).
     pub fn store_event(env: Env, event_info: EventInfo) {
-        // In a real scenario, we would check authorization here.
+        // Require authorization to ensure only the organizer can store/update their event directly
+        event_info.organizer_address.require_auth();
         storage::store_event(&env, event_info);
     }
 
@@ -475,6 +567,24 @@ impl EventRegistry {
             .ok_or(EventRegistryError::SupplyOverflow)?;
 
         let new_supply = event_info.current_supply;
+
+        // Check if goal met now
+        if !event_info.goal_met
+            && event_info.min_sales_target > 0
+            && event_info.current_supply >= event_info.min_sales_target
+        {
+            event_info.goal_met = true;
+            env.events().publish(
+                (AgoraEvent::GoalMet,),
+                GoalMetEvent {
+                    event_id: event_id.clone(),
+                    min_sales_target: event_info.min_sales_target,
+                    current_supply: event_info.current_supply,
+                    timestamp: env.ledger().timestamp(),
+                },
+            );
+        }
+
         storage::update_event(&env, event_info);
 
         env.events().publish(
@@ -757,6 +867,382 @@ impl EventRegistry {
 
         Ok(())
     }
+
+    /// Authorizes a new scanner wallet for a specific event
+    pub fn authorize_scanner(
+        env: Env,
+        event_id: String,
+        scanner: Address,
+    ) -> Result<(), EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Only the organizer can authorize scanners
+        event_info.organizer_address.require_auth();
+
+        storage::authorize_scanner(&env, event_id.clone(), &scanner);
+
+        env.events().publish(
+            (AgoraEvent::ScannerAuthorized,),
+            ScannerAuthorizedEvent {
+                event_id,
+                scanner,
+                authorized_by: event_info.organizer_address,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Checks if a scanner is authorized for a specific event
+    pub fn is_scanner_authorized(env: Env, event_id: String, scanner: Address) -> bool {
+        storage::is_scanner_authorized(&env, event_id, &scanner)
+    }
+
+    // ── Loyalty & Staking ──────────────────────────────────────────────────────
+
+    /// Configures staking parameters. Only callable by the admin.
+    ///
+    /// # Arguments
+    /// * `token` - Token contract address accepted for staking
+    /// * `min_amount` - Minimum token amount to stake to achieve Verified status
+    pub fn set_staking_config(
+        env: Env,
+        token: Address,
+        min_amount: i128,
+    ) -> Result<(), EventRegistryError> {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+
+        if min_amount <= 0 {
+            return Err(EventRegistryError::InvalidStakeAmount);
+        }
+
+        storage::set_staking_token(&env, &token);
+        storage::set_min_stake_amount(&env, min_amount);
+        Ok(())
+    }
+
+    /// Allows an organizer to stake collateral tokens to unlock Verified status.
+    /// The organizer must approve this contract to spend `amount` of the staking token
+    /// before calling this function.
+    ///
+    /// # Arguments
+    /// * `organizer` - The organizer's wallet address (must sign)
+    /// * `amount` - Amount of staking token to lock
+    pub fn stake_collateral(
+        env: Env,
+        organizer: Address,
+        amount: i128,
+    ) -> Result<(), EventRegistryError> {
+        organizer.require_auth();
+
+        if amount <= 0 {
+            return Err(EventRegistryError::InvalidStakeAmount);
+        }
+
+        if storage::get_organizer_stake(&env, &organizer).is_some() {
+            return Err(EventRegistryError::AlreadyStaked);
+        }
+
+        let token =
+            storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
+        let min_amount = storage::get_min_stake_amount(&env);
+
+        // Transfer tokens from organizer to this contract
+        let token_client = token::Client::new(&env, &token);
+        token_client.transfer_from(
+            &env.current_contract_address(),
+            &organizer,
+            &env.current_contract_address(),
+            &amount,
+        );
+
+        let is_verified = amount >= min_amount;
+
+        let stake = OrganizerStake {
+            organizer: organizer.clone(),
+            token: token.clone(),
+            amount,
+            staked_at: env.ledger().timestamp(),
+            is_verified,
+            reward_balance: 0,
+            total_rewards_claimed: 0,
+        };
+
+        storage::set_organizer_stake(&env, &stake);
+        storage::add_to_total_staked(&env, amount);
+        storage::add_to_stakers_list(&env, &organizer);
+
+        env.events().publish(
+            (AgoraEvent::CollateralStaked,),
+            CollateralStakedEvent {
+                organizer,
+                token,
+                amount,
+                is_verified,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Allows an organizer to unstake their collateral and reclaim their tokens.
+    /// All accrued rewards must be claimed before unstaking.
+    ///
+    /// # Arguments
+    /// * `organizer` - The organizer's wallet address (must sign)
+    pub fn unstake_collateral(env: Env, organizer: Address) -> Result<(), EventRegistryError> {
+        organizer.require_auth();
+
+        let stake =
+            storage::get_organizer_stake(&env, &organizer).ok_or(EventRegistryError::NotStaked)?;
+
+        // Transfer tokens back to organizer
+        let token_client = token::Client::new(&env, &stake.token);
+        token_client.transfer(&env.current_contract_address(), &organizer, &stake.amount);
+
+        storage::subtract_from_total_staked(&env, stake.amount);
+        storage::remove_organizer_stake(&env, &organizer);
+        storage::remove_from_stakers_list(&env, &organizer);
+
+        env.events().publish(
+            (AgoraEvent::CollateralUnstaked,),
+            CollateralUnstakedEvent {
+                organizer,
+                token: stake.token,
+                amount: stake.amount,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Distributes rewards proportionally to all active stakers based on their
+    /// share of the total staked amount. The caller must approve the reward tokens
+    /// to this contract before calling.
+    ///
+    /// This should be called by the admin periodically based on ticket sales volume,
+    /// or by an authorized contract (e.g., TicketPayment) after settling fees.
+    ///
+    /// # Arguments
+    /// * `caller` - Admin or authorized contract address
+    /// * `token` - Token to distribute as rewards (must match staking token)
+    /// * `total_reward` - Total reward amount to distribute across all stakers
+    pub fn distribute_staker_rewards(
+        env: Env,
+        caller: Address,
+        total_reward: i128,
+    ) -> Result<(), EventRegistryError> {
+        caller.require_auth();
+
+        // Only admin can call this function
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        if caller != admin {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        if total_reward <= 0 {
+            return Err(EventRegistryError::InvalidRewardAmount);
+        }
+
+        let token =
+            storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
+
+        let total_staked = storage::get_total_staked(&env);
+        if total_staked == 0 {
+            return Err(EventRegistryError::NotStaked);
+        }
+
+        // Transfer reward tokens from caller to this contract
+        let token_client = token::Client::new(&env, &token);
+        token_client.transfer_from(
+            &env.current_contract_address(),
+            &caller,
+            &env.current_contract_address(),
+            &total_reward,
+        );
+
+        // Distribute proportionally to each staker
+        let stakers = storage::get_stakers_list(&env);
+        let staker_count = stakers.len();
+
+        for organizer in stakers.iter() {
+            if let Some(mut stake) = storage::get_organizer_stake(&env, &organizer) {
+                // reward = total_reward * stake.amount / total_staked
+                let reward = total_reward
+                    .checked_mul(stake.amount)
+                    .and_then(|v| v.checked_div(total_staked))
+                    .unwrap_or(0);
+                if reward > 0 {
+                    stake.reward_balance = stake.reward_balance.saturating_add(reward);
+                    storage::set_organizer_stake(&env, &stake);
+                }
+            }
+        }
+
+        env.events().publish(
+            (AgoraEvent::StakerRewardsDistributed,),
+            StakerRewardsDistributedEvent {
+                total_reward,
+                staker_count,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Allows an organizer to claim their accumulated staking rewards.
+    ///
+    /// # Arguments
+    /// * `organizer` - The organizer's wallet address (must sign)
+    pub fn claim_staker_rewards(env: Env, organizer: Address) -> Result<i128, EventRegistryError> {
+        organizer.require_auth();
+
+        let mut stake =
+            storage::get_organizer_stake(&env, &organizer).ok_or(EventRegistryError::NotStaked)?;
+
+        if stake.reward_balance == 0 {
+            return Err(EventRegistryError::NoRewardsAvailable);
+        }
+
+        let reward_to_claim = stake.reward_balance;
+
+        // Transfer reward tokens to organizer
+        let token_client = token::Client::new(&env, &stake.token);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &organizer,
+            &reward_to_claim,
+        );
+
+        stake.total_rewards_claimed = stake.total_rewards_claimed.saturating_add(reward_to_claim);
+        stake.reward_balance = 0;
+        storage::set_organizer_stake(&env, &stake);
+
+        env.events().publish(
+            (AgoraEvent::StakerRewardsClaimed,),
+            StakerRewardsClaimedEvent {
+                organizer,
+                amount: reward_to_claim,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(reward_to_claim)
+    }
+
+    /// Returns the stake record for an organizer, or None if not staked.
+    pub fn get_organizer_stake(env: Env, organizer: Address) -> Option<OrganizerStake> {
+        storage::get_organizer_stake(&env, &organizer)
+    }
+
+    /// Returns true if the organizer has staked the minimum required amount.
+    pub fn is_organizer_verified(env: Env, organizer: Address) -> bool {
+        storage::get_organizer_stake(&env, &organizer)
+            .map(|s| s.is_verified)
+            .unwrap_or(false)
+    }
+
+    /// Updates the loyalty score for a guest after a ticket purchase.
+    /// Callable by the admin or the authorized TicketPayment contract.
+    ///
+    /// # Arguments
+    /// * `caller` - Admin or authorized TicketPayment contract address
+    /// * `guest` - Guest wallet address
+    /// * `tickets_purchased` - Number of tickets purchased in this transaction
+    /// * `amount_spent` - Amount spent in this transaction (in token stroops)
+    pub fn update_loyalty_score(
+        env: Env,
+        caller: Address,
+        guest: Address,
+        tickets_purchased: u32,
+        amount_spent: i128,
+    ) -> Result<(), EventRegistryError> {
+        caller.require_auth();
+
+        // Only admin or authorized ticket payment contract can update loyalty scores
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        let ticket_payment_contract = storage::get_ticket_payment_contract(&env);
+
+        let is_authorized = caller == admin
+            || ticket_payment_contract
+                .as_ref()
+                .map(|c| c == &caller)
+                .unwrap_or(false);
+
+        if !is_authorized {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        if tickets_purchased == 0 {
+            return Err(EventRegistryError::InvalidQuantity);
+        }
+
+        let mut profile = storage::get_guest_profile(&env, &guest).unwrap_or(GuestProfile {
+            guest_address: guest.clone(),
+            loyalty_score: 0,
+            total_tickets_purchased: 0,
+            total_spent: 0,
+            last_updated: 0,
+        });
+
+        // Award 10 points per ticket purchased
+        let points_earned = (tickets_purchased as u64).saturating_mul(10);
+        profile.loyalty_score = profile.loyalty_score.saturating_add(points_earned);
+        profile.total_tickets_purchased = profile
+            .total_tickets_purchased
+            .saturating_add(tickets_purchased);
+        profile.total_spent = profile.total_spent.saturating_add(amount_spent);
+        profile.last_updated = env.ledger().timestamp();
+
+        storage::set_guest_profile(&env, &profile);
+
+        env.events().publish(
+            (AgoraEvent::LoyaltyScoreUpdated,),
+            LoyaltyScoreUpdatedEvent {
+                guest,
+                new_score: profile.loyalty_score,
+                tickets_purchased,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns the guest's loyalty profile, or None if no profile exists.
+    pub fn get_guest_profile(env: Env, guest: Address) -> Option<GuestProfile> {
+        storage::get_guest_profile(&env, &guest)
+    }
+
+    /// Returns the platform-fee discount in basis points for a guest based on
+    /// their current loyalty score.
+    ///
+    /// Score tiers:
+    /// - Score  0  –  99 : 0 bps  (no discount)
+    /// - Score 100 – 499 : 250 bps (2.5% off platform fee)
+    /// - Score 500 – 999 : 500 bps (5% off platform fee)
+    /// - Score 1000+     : 1000 bps (10% off platform fee)
+    pub fn get_loyalty_discount_bps(env: Env, guest: Address) -> u32 {
+        let score = storage::get_guest_profile(&env, &guest)
+            .map(|p| p.loyalty_score)
+            .unwrap_or(0);
+
+        if score >= 1000 {
+            1000
+        } else if score >= 500 {
+            500
+        } else if score >= 100 {
+            250
+        } else {
+            0
+        }
+    }
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
@@ -822,3 +1308,10 @@ fn suspend_organizer_events(
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod test_e2e;
+
+// TODO: Uncomment when multisig functions are implemented
+// #[cfg(test)]
+// mod test_multisig;
