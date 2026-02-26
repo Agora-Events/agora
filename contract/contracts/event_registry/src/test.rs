@@ -266,6 +266,7 @@ fn test_storage_operations() {
         min_sales_target: 0,
         target_deadline: 0,
         goal_met: false,
+        custom_fee_bps: None,
     };
 
     client.store_event(&event_info);
@@ -319,6 +320,7 @@ fn test_organizer_events_list() {
         min_sales_target: 0,
         target_deadline: 0,
         goal_met: false,
+        custom_fee_bps: None,
     };
 
     let event_2 = EventInfo {
@@ -345,6 +347,7 @@ fn test_organizer_events_list() {
         min_sales_target: 0,
         target_deadline: 0,
         goal_met: false,
+        custom_fee_bps: None,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -795,6 +798,69 @@ fn test_set_ticket_payment_contract() {
     client.set_ticket_payment_contract(&ticket_payment);
 
     assert_eq!(client.get_ticket_payment_contract(), ticket_payment);
+}
+
+#[test]
+fn test_set_custom_event_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "event_001");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: Address::generate(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
+
+    // Default fee
+    let info = client.get_event_payment_info(&event_id);
+    assert_eq!(info.platform_fee_percent, 500);
+    assert_eq!(info.custom_fee_bps, None);
+
+    // Set custom fee
+    client.set_custom_event_fee(&event_id, &Some(100));
+
+    let info = client.get_event_payment_info(&event_id);
+    assert_eq!(info.platform_fee_percent, 500);
+    assert_eq!(info.custom_fee_bps, Some(100));
+
+    // Clear custom fee
+    client.set_custom_event_fee(&event_id, &None);
+    let info = client.get_event_payment_info(&event_id);
+    assert_eq!(info.custom_fee_bps, None);
 }
 
 #[test]

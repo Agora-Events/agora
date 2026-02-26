@@ -1,12 +1,13 @@
 #![no_std]
 
 use crate::events::{
-    AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, EventArchivedEvent,
-    EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent, EventStatusUpdatedEvent,
-    EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent, GoalMetEvent,
-    InitializationEvent, InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent,
-    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
-    ScannerAuthorizedEvent, StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
+    AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, CustomFeeSetEvent,
+    EventArchivedEvent, EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
+    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
+    GoalMetEvent, InitializationEvent, InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent,
+    MetadataUpdatedEvent, OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent,
+    RegistryUpgradedEvent, ScannerAuthorizedEvent, StakerRewardsClaimedEvent,
+    StakerRewardsDistributedEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
@@ -227,6 +228,7 @@ impl EventRegistry {
             min_sales_target: args.min_sales_target.unwrap_or(0),
             target_deadline: args.target_deadline.unwrap_or(0),
             goal_met: false,
+            custom_fee_bps: None,
         };
 
         storage::store_event(&env, event_info);
@@ -257,6 +259,7 @@ impl EventRegistry {
                 Ok(PaymentInfo {
                     payment_address: event_info.payment_address,
                     platform_fee_percent: event_info.platform_fee_percent,
+                    custom_fee_bps: event_info.custom_fee_bps,
                     tiers: event_info.tiers,
                 })
             }
@@ -459,6 +462,41 @@ impl EventRegistry {
     /// Returns the current platform fee percentage.
     pub fn get_platform_fee(env: Env) -> u32 {
         storage::get_platform_fee(&env)
+    }
+
+    /// Sets a custom fee for a specific event. Only callable by the administrator.
+    pub fn set_custom_event_fee(
+        env: Env,
+        event_id: String,
+        custom_fee_bps: Option<u32>,
+    ) -> Result<(), EventRegistryError> {
+        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+
+        if let Some(fee) = custom_fee_bps {
+            if fee > 10000 {
+                return Err(EventRegistryError::InvalidFeePercent);
+            }
+        }
+
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        event_info.custom_fee_bps = custom_fee_bps;
+        storage::update_event(&env, event_info);
+
+        // Emit custom fee set event
+        env.events().publish(
+            (AgoraEvent::CustomFeeSet,),
+            CustomFeeSetEvent {
+                event_id,
+                custom_fee_bps,
+                admin_address: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
     /// Returns the current administrator address.

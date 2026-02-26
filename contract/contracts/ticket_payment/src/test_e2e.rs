@@ -20,7 +20,8 @@ impl MockRegistryE2E {
     pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
-            platform_fee_percent: 500, // 5%
+            platform_fee_percent: 500,
+            custom_fee_bps: None, // 5%
         }
     }
 
@@ -51,6 +52,7 @@ impl MockRegistryE2E {
             organizer_address: organizer,
             payment_address,
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -143,6 +145,7 @@ impl MockRegistryCancelledE2E {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
 
@@ -159,6 +162,7 @@ impl MockRegistryCancelledE2E {
             organizer_address: organizer.clone(),
             payment_address: organizer,
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: false,
             status: event_registry::EventStatus::Cancelled,
             created_at: 0,
@@ -222,6 +226,7 @@ impl MockRegistryWithGoal {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
 
@@ -247,6 +252,7 @@ impl MockRegistryWithGoal {
             organizer_address: organizer.clone(),
             payment_address: organizer,
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active,
             status: if is_active {
                 event_registry::EventStatus::Active
@@ -1005,7 +1011,8 @@ impl MockRegistryAuction {
     pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
-            platform_fee_percent: 500, // 5%
+            platform_fee_percent: 500,
+            custom_fee_bps: None, // 5%
         }
     }
 
@@ -1018,6 +1025,7 @@ impl MockRegistryAuction {
             organizer_address: organizer.clone(),
             payment_address: organizer,
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,

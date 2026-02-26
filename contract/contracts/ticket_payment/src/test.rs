@@ -18,6 +18,7 @@ impl MockCancelledRegistry {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
@@ -26,6 +27,7 @@ impl MockCancelledRegistry {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: false,
             status: event_registry::EventStatus::Cancelled,
             created_at: 0,
@@ -71,7 +73,8 @@ impl MockEventRegistry {
     pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
-            platform_fee_percent: 500, // 5%
+            platform_fee_percent: 500,
+            custom_fee_bps: None, // 5%
         }
     }
 
@@ -86,6 +89,7 @@ impl MockEventRegistry {
                 organizer_address: Address::generate(&env), // This will be different each call unless mocked specifically
                 payment_address: Address::generate(&env),
                 platform_fee_percent: 500,
+                custom_fee_bps: None,
                 is_active: true,
                 status: event_registry::EventStatus::Active,
                 created_at: 0,
@@ -144,7 +148,8 @@ impl MockEventRegistry2 {
     pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
-            platform_fee_percent: 250, // 2.5%
+            platform_fee_percent: 250,
+            custom_fee_bps: None, // 2.5%
         }
     }
 
@@ -154,6 +159,7 @@ impl MockEventRegistry2 {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 250,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -822,6 +828,7 @@ impl MockEventRegistryMaxSupply {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -917,6 +924,7 @@ impl MockEventRegistryWithInventory {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
 
@@ -929,6 +937,7 @@ impl MockEventRegistryWithInventory {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -1126,6 +1135,7 @@ impl MockEventRegistryWithMilestones {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
 
@@ -1148,6 +1158,7 @@ impl MockEventRegistryWithMilestones {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -1456,7 +1467,8 @@ impl MockEventRegistryEarlyBird {
     pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
-            platform_fee_percent: 500, // 5%
+            platform_fee_percent: 500,
+            custom_fee_bps: None, // 5%
         }
     }
 
@@ -1466,6 +1478,7 @@ impl MockEventRegistryEarlyBird {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -1929,6 +1942,7 @@ impl MockEventRegistryWithOrganizer {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
 
@@ -1950,6 +1964,7 @@ impl MockEventRegistryWithOrganizer {
             organizer_address: organizer,
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -2275,6 +2290,7 @@ impl MockPlatformRegistryE2E {
             organizer_address: organizer,
             payment_address,
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: env.ledger().timestamp(),
@@ -2325,6 +2341,7 @@ impl MockPlatformRegistryE2E {
         event_registry::PaymentInfo {
             payment_address: event.payment_address,
             platform_fee_percent: event.platform_fee_percent,
+            custom_fee_bps: None,
         }
     }
 
@@ -2714,6 +2731,7 @@ impl MockEventRegistryRefund {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
 
@@ -2723,6 +2741,7 @@ impl MockEventRegistryRefund {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -2782,6 +2801,7 @@ impl MockEventRegistryWithResaleCap {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
 
@@ -2791,6 +2811,7 @@ impl MockEventRegistryWithResaleCap {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -3022,6 +3043,7 @@ impl MockRegistryZeroCap {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
 
@@ -3031,6 +3053,7 @@ impl MockRegistryZeroCap {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -3537,7 +3560,8 @@ impl MockEventRegistryUsdPriced {
     pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
-            platform_fee_percent: 500, // 5%
+            platform_fee_percent: 500,
+            custom_fee_bps: None, // 5%
         }
     }
 
@@ -3547,6 +3571,7 @@ impl MockEventRegistryUsdPriced {
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -4011,7 +4036,8 @@ impl MockEventRegistryWithLoyalty {
             event_id,
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
-            platform_fee_percent: 500, // 5%
+            platform_fee_percent: 500,
+            custom_fee_bps: None, // 5%
             is_active: true,
             status: event_registry::EventStatus::Active,
             created_at: 0,
@@ -4074,6 +4100,7 @@ impl MockEventRegistryWithLoyalty {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
+            custom_fee_bps: None,
         }
     }
 }
@@ -4158,4 +4185,127 @@ fn test_payment_without_loyalty_discount_unchanged() {
     // Full price charged; buyer has no remaining balance
     let remaining = token::Client::new(&env, &usdc_id).balance(&buyer);
     assert_eq!(remaining, 0);
+}
+
+// Mock with custom fee override
+#[soroban_sdk::contract]
+pub struct MockEventRegistryCustomFee;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryCustomFee {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: Some(100), // 1%
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 10000_0000000i128,
+                        early_bird_price: 10000_0000000i128,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: false,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            custom_fee_bps: Some(100),
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 {
+        0
+    }
+    pub fn update_loyalty_score(
+        _env: Env,
+        _caller: Address,
+        _guest: Address,
+        _quantity: u32,
+        _spent: i128,
+    ) {
+    }
+    pub fn is_scanner_authorized(_env: Env, _event_id: String, _scanner: Address) -> bool {
+        false
+    }
+    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> {
+        None
+    }
+}
+
+#[test]
+fn test_process_payment_with_custom_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryCustomFee, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 10000_0000000i128;
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    client.process_payment(
+        &String::from_str(&env, "p1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    let payment = client
+        .get_payment_status(&String::from_str(&env, "p1"))
+        .unwrap();
+    // 1% of 10000 is 100. In stroops (base 10^7), it's 100_0000000.
+    assert_eq!(payment.platform_fee, 100_0000000);
+    assert_eq!(payment.organizer_amount, 9900_0000000);
 }

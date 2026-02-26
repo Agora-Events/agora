@@ -26,6 +26,7 @@ pub enum AgoraEvent {
     StakerRewardsDistributed,
     StakerRewardsClaimed,
     LoyaltyScoreUpdated,
+    CustomFeeSet,
 }
 
 #[contracttype]
@@ -262,5 +263,13 @@ pub struct LoyaltyScoreUpdatedEvent {
     pub guest: Address,
     pub new_score: u64,
     pub tickets_purchased: u32,
+    pub timestamp: u64,
+}
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CustomFeeSetEvent {
+    pub event_id: String,
+    pub custom_fee_bps: Option<u32>,
+    pub admin_address: Address,
     pub timestamp: u64,
 }

@@ -68,6 +68,7 @@ pub mod event_registry {
     pub struct PaymentInfo {
         pub payment_address: Address,
         pub platform_fee_percent: u32,
+        pub custom_fee_bps: Option<u32>,
     }
 
     #[soroban_sdk::contracttype]
@@ -152,6 +153,7 @@ pub mod event_registry {
         pub min_sales_target: i128,
         pub target_deadline: u64,
         pub goal_met: bool,
+        pub custom_fee_bps: Option<u32>,
     }
 }
 
@@ -618,9 +620,13 @@ impl TicketPaymentContract {
             );
         }
 
-        // 2. Calculate platform fee (platform_fee_percent is in bps, 10000 = 100%)
+        // 2. Calculate platform fee
+        let fee_bps = event_info
+            .custom_fee_bps
+            .unwrap_or(event_info.platform_fee_percent);
+
         let mut total_platform_fee = effective_total
-            .checked_mul(event_info.platform_fee_percent as i128)
+            .checked_mul(fee_bps as i128)
             .and_then(|v| v.checked_div(10000))
             .ok_or(TicketPaymentError::ArithmeticError)?;
 
@@ -1445,7 +1451,9 @@ impl TicketPaymentContract {
                     event_id: event_id.clone(),
                     platform_wallet: platform_wallet.clone(),
                     fee_amount: platform_fee_amount,
-                    fee_bps: event_info.platform_fee_percent,
+                    fee_bps: event_info
+                        .custom_fee_bps
+                        .unwrap_or(event_info.platform_fee_percent),
                     timestamp,
                 },
             );
@@ -2036,8 +2044,12 @@ impl TicketPaymentContract {
         set_auction_closed(&env, event_id.clone(), ticket_tier_id.clone());
 
         // Platform fee calculated based on final hammer price
+        let fee_bps = event_info
+            .custom_fee_bps
+            .unwrap_or(event_info.platform_fee_percent);
+
         let total_platform_fee = amount
-            .checked_mul(event_info.platform_fee_percent as i128)
+            .checked_mul(fee_bps as i128)
             .and_then(|v| v.checked_div(10000))
             .ok_or(TicketPaymentError::ArithmeticError)?;
 

@@ -131,6 +131,8 @@ pub struct EventInfo {
     pub target_deadline: u64,
     /// Whether the minimum sales target has been reached
     pub goal_met: bool,
+    /// Optional special fee rate for high-volume partners or charitable events (in basis points)
+    pub custom_fee_bps: Option<u32>,
 }
 
 /// Payment information for an event
@@ -141,6 +143,8 @@ pub struct PaymentInfo {
     pub payment_address: Address,
     /// The percentage fee taken by the platform
     pub platform_fee_percent: u32,
+    /// Optional special fee rate for high-volume partners or charitable events
+    pub custom_fee_bps: Option<u32>,
     /// Map of tier_id to TicketTier for multi-tiered pricing
     pub tiers: Map<String, TicketTier>,
 }
