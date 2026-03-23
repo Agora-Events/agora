@@ -41,8 +41,10 @@ pub async fn health_check(State(pool): State<PgPool>) -> Response {
         }
         Err(e) => {
             tracing::error!("Health check failed: {:?}", e);
-            AppError::ExternalServiceError(format!("API is not ready: database is unreachable ({e})"))
-                .into_response()
+            AppError::ExternalServiceError(format!(
+                "API is not ready: database is unreachable ({e})"
+            ))
+            .into_response()
         }
     }
 }
@@ -94,8 +96,8 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::StatusCode;
     use crate::utils::error::AppError;
+    use axum::http::StatusCode;
 
     #[tokio::test]
     async fn test_health_response_ok_status() {
@@ -116,4 +118,3 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }
-
