@@ -76,9 +76,7 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
         };
         success(payload, "Service is ready").into_response()
     } else {
-        AppError::ExternalServiceError(
-            "Service is not ready: database is unreachable".to_string(),
-        )
-        .into_response()
+        AppError::ExternalServiceError("Service is not ready: database is unreachable".to_string())
+            .into_response()
     }
 }

@@ -203,10 +203,7 @@ mod tests {
     #[test]
     fn test_public_message_passthrough() {
         let msg = "email is required";
-        assert_eq!(
-            AppError::ValidationError(msg.into()).public_message(),
-            msg
-        );
+        assert_eq!(AppError::ValidationError(msg.into()).public_message(), msg);
     }
 
     #[test]
@@ -228,8 +225,7 @@ mod tests {
     #[test]
     fn test_public_message_database_hides_details() {
         // DatabaseError must never expose raw SQL details.
-        let raw_sql_error =
-            sqlx::Error::RowNotFound; // simplest sqlx variant that needs no DB
+        let raw_sql_error = sqlx::Error::RowNotFound; // simplest sqlx variant that needs no DB
         let err = AppError::DatabaseError(raw_sql_error);
         assert_eq!(err.public_message(), "A database error occurred");
     }
@@ -311,7 +307,10 @@ mod tests {
     async fn test_into_response_body_has_error_object() {
         let resp = AppError::NotFound("thing".into()).into_response();
         let json = body_json(resp).await;
-        assert!(json["error"].is_object(), "expected 'error' key to be an object");
+        assert!(
+            json["error"].is_object(),
+            "expected 'error' key to be an object"
+        );
     }
 
     #[tokio::test]
@@ -349,8 +348,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_into_response_external_service_body() {
-        let resp = AppError::ExternalServiceError("payment gateway unreachable".into())
-            .into_response();
+        let resp =
+            AppError::ExternalServiceError("payment gateway unreachable".into()).into_response();
         let json = body_json(resp).await;
         assert_eq!(json["error"]["code"], "EXTERNAL_SERVICE_ERROR");
         assert_eq!(json["error"]["message"], "payment gateway unreachable");
