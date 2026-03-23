@@ -6,11 +6,12 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
 use agora_server::routes::create_routes;
+use agora_server::utils::logging::init_logging;
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    tracing_subscriber::fmt::init();
+    init_logging();
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let pool = PgPoolOptions::new()
