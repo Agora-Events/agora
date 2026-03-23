@@ -31,7 +31,7 @@ pub enum AppError {
     #[error("Database error")]
     DatabaseError(#[from] sqlx::Error),
 
-    /// 500 – a downstream service call failed.
+    /// 503 – a downstream service or database call is unreachable.
     #[error("External service error: {0}")]
     ExternalServiceError(String),
 
@@ -49,7 +49,7 @@ impl AppError {
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::ExternalServiceError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::ExternalServiceError(_) => StatusCode::SERVICE_UNAVAILABLE,
             AppError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -165,7 +165,7 @@ mod tests {
         );
         assert_eq!(
             AppError::ExternalServiceError("x".into()).status_code(),
-            StatusCode::INTERNAL_SERVER_ERROR
+            StatusCode::SERVICE_UNAVAILABLE
         );
         assert_eq!(
             AppError::InternalServerError("x".into()).status_code(),
@@ -277,7 +277,7 @@ mod tests {
     #[tokio::test]
     async fn test_into_response_external_service_status() {
         let resp = AppError::ExternalServiceError("upstream timeout".into()).into_response();
-        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]

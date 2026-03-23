@@ -26,15 +26,25 @@ struct HealthReadyResponse {
     database: &'static str,
 }
 
-/// GET /health – Basic liveness check.
-/// Returns 200 if the API process is running.
-pub async fn health_check() -> Response {
-    let payload = HealthResponse {
-        status: "ok",
-        timestamp: Utc::now().to_rfc3339(),
-    };
-
-    success(payload, "API is healthy").into_response()
+/// GET /health – Combined check for API and Database.
+///
+/// Returns 200 when both the API process and the database are healthy.
+/// On failure it returns a structured JSON 503 error (via [`AppError`]).
+pub async fn health_check(State(pool): State<PgPool>) -> Response {
+    match sqlx::query("SELECT 1").fetch_one(&pool).await {
+        Ok(_) => {
+            let payload = HealthResponse {
+                status: "ok",
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "API is healthy").into_response()
+        }
+        Err(e) => {
+            tracing::error!("Health check failed: {:?}", e);
+            AppError::ExternalServiceError(format!("API is not ready: database is unreachable ({e})"))
+                .into_response()
+        }
+    }
 }
 
 /// GET /health/db – Database connectivity check.
@@ -80,3 +90,30 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
             .into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use crate::utils::error::AppError;
+
+    #[tokio::test]
+    async fn test_health_response_ok_status() {
+        // Success case for health check response.
+        let payload = HealthResponse {
+            status: "ok",
+            timestamp: Utc::now().to_rfc3339(),
+        };
+        let resp = success(payload, "API is healthy").into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_health_db_error_status() {
+        // DB Failure case for health check response (via AppError).
+        let err = AppError::ExternalServiceError("database is unreachable".to_string());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+}
+
