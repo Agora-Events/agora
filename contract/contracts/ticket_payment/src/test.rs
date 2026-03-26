@@ -4083,6 +4083,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4288,6 +4289,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
