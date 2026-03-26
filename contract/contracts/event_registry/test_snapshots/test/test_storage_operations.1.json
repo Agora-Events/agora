@@ -117,6 +117,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": "Test event description"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {

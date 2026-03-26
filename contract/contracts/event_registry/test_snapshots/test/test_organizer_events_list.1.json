@@ -75,6 +75,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": "Event 1 description"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
@@ -197,6 +205,14 @@
                       },
                       "val": {
                         "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": "Event 2 description"
                       }
                     },
                     {

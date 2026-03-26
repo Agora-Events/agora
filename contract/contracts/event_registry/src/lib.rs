@@ -74,6 +74,8 @@ impl EventRegistry {
     /// * `metadata_cid` - IPFS CID for event metadata
     /// * `max_supply` - Maximum number of tickets (0 = unlimited)
     /// * `tiers` - Map of tier_id to TicketTier for multi-tiered pricing
+    /// * `description` - Short description of the event
+    #[allow(clippy::too_many_arguments)]
     pub fn register_event(
         env: Env,
         event_id: String,
@@ -82,6 +84,7 @@ impl EventRegistry {
         metadata_cid: String,
         max_supply: i128,
         tiers: Map<String, TicketTier>,
+        description: String,
     ) -> Result<(), EventRegistryError> {
         if !storage::is_initialized(&env) {
             return Err(EventRegistryError::NotInitialized);
@@ -120,6 +123,7 @@ impl EventRegistry {
             max_supply,
             current_supply: 0,
             tiers,
+            description,
         };
 
         storage::store_event(&env, event_info);

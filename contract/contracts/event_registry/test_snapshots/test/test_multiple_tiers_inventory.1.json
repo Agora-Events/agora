@@ -68,6 +68,14 @@
                           },
                           {
                             "key": {
+                              "symbol": "is_refundable"
+                            },
+                            "val": {
+                              "bool": true
+                            }
+                          },
+                          {
+                            "key": {
                               "symbol": "name"
                             },
                             "val": {
@@ -109,6 +117,14 @@
                           },
                           {
                             "key": {
+                              "symbol": "is_refundable"
+                            },
+                            "val": {
+                              "bool": true
+                            }
+                          },
+                          {
+                            "key": {
                               "symbol": "name"
                             },
                             "val": {
@@ -135,6 +151,9 @@
                       }
                     }
                   ]
+                },
+                {
+                  "string": "Test event description"
                 }
               ]
             }
@@ -315,6 +334,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": "Test event description"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
@@ -391,6 +418,14 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "is_refundable"
+                                  },
+                                  "val": {
+                                    "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "name"
                                   },
                                   "val": {
@@ -428,6 +463,14 @@
                                   },
                                   "val": {
                                     "i128": "1"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "is_refundable"
+                                  },
+                                  "val": {
+                                    "bool": true
                                   }
                                 },
                                 {

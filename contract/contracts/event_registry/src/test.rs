@@ -130,6 +130,7 @@ fn test_storage_operations() {
         max_supply: 100,
         current_supply: 0,
         tiers,
+        description: String::from_str(&env, "Test event description"),
     };
 
     client.store_event(&event_info);
@@ -172,6 +173,7 @@ fn test_organizer_events_list() {
         max_supply: 50,
         current_supply: 0,
         tiers: tiers.clone(),
+        description: String::from_str(&env, "Event 1 description"),
     };
 
     let event_2 = EventInfo {
@@ -188,6 +190,7 @@ fn test_organizer_events_list() {
         max_supply: 0,
         current_supply: 0,
         tiers,
+        description: String::from_str(&env, "Event 2 description"),
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -241,6 +244,7 @@ fn test_register_event_success() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -280,6 +284,7 @@ fn test_register_event_unlimited_supply() {
         &metadata_cid,
         &0,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -314,6 +319,7 @@ fn test_register_duplicate_event_fails() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     let result = client.try_register_event(
@@ -323,6 +329,7 @@ fn test_register_duplicate_event_fails() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -354,6 +361,7 @@ fn test_get_event_payment_info() {
         &metadata_cid,
         &50,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     let info = client.get_event_payment_info(&event_id);
@@ -388,6 +396,7 @@ fn test_update_event_status() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
     client.update_event_status(&event_id, &false);
 
@@ -421,6 +430,7 @@ fn test_event_inactive_error() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
     client.update_event_status(&event_id, &false);
 
@@ -455,6 +465,7 @@ fn test_complete_event_lifecycle() {
         &metadata_cid,
         &200,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -501,6 +512,7 @@ fn test_update_metadata_success() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     let new_metadata_cid = String::from_str(
@@ -540,6 +552,7 @@ fn test_update_metadata_invalid_cid() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     let wrong_char_cid = String::from_str(
@@ -620,6 +633,7 @@ fn test_increment_inventory_success() {
         &metadata_cid,
         &10,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     client.increment_inventory(&event_id, &tier_id);
@@ -681,6 +695,7 @@ fn test_increment_inventory_max_supply_exceeded() {
         &metadata_cid,
         &2,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     client.increment_inventory(&event_id, &tier_id);
@@ -737,6 +752,7 @@ fn test_increment_inventory_unlimited_supply() {
         &metadata_cid,
         &0,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     for _ in 0..10 {
@@ -810,6 +826,7 @@ fn test_increment_inventory_inactive_event() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     client.update_event_status(&event_id, &false);
@@ -859,6 +876,7 @@ fn test_increment_inventory_persists_across_reads() {
         &metadata_cid,
         &50,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     for _ in 0..5 {
@@ -924,6 +942,7 @@ fn test_tier_limit_exceeds_max_supply() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
     assert_eq!(
         result,
@@ -973,6 +992,7 @@ fn test_tier_not_found() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -1023,6 +1043,7 @@ fn test_tier_supply_exceeded() {
         &metadata_cid,
         &100,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     client.increment_inventory(&event_id, &tier_id);
@@ -1088,6 +1109,7 @@ fn test_multiple_tiers_inventory() {
         &metadata_cid,
         &70,
         &tiers,
+        &String::from_str(&env, "Test event description"),
     );
 
     client.increment_inventory(&event_id, &general_id);
@@ -1102,4 +1124,42 @@ fn test_multiple_tiers_inventory() {
 
     let vip_tier = event_info.tiers.get(vip_id).unwrap();
     assert_eq!(vip_tier.current_sold, 1);
+}
+
+#[test]
+fn test_event_description() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500);
+
+    let event_id = String::from_str(&env, "event_with_description");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let description = String::from_str(&env, "This is a test event with a description");
+    let tiers = Map::new(&env);
+
+    client.register_event(
+        &event_id,
+        &organizer,
+        &payment_addr,
+        &metadata_cid,
+        &100,
+        &tiers,
+        &description,
+    );
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.description, description);
+    assert_eq!(event_info.event_id, event_id);
 }

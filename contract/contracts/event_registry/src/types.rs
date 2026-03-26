@@ -40,6 +40,8 @@ pub struct EventInfo {
     pub current_supply: i128,
     /// Map of tier_id to TicketTier for multi-tiered pricing
     pub tiers: Map<String, TicketTier>,
+    /// Short description of the event
+    pub description: String,
 }
 
 /// Payment information for an event

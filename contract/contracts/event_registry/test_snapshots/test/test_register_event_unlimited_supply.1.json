@@ -33,6 +33,9 @@
                 },
                 {
                   "map": []
+                },
+                {
+                  "string": "Test event description"
                 }
               ]
             }
@@ -143,6 +146,14 @@
                       },
                       "val": {
                         "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": "Test event description"
                       }
                     },
                     {
