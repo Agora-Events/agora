@@ -963,6 +963,56 @@ fn test_set_custom_event_fee() {
 }
 
 #[test]
+fn test_set_custom_event_fee_exceeds_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_001");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: Address::generate(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    // Try to set custom fee exceeding 10000 bps (100%)
+    let result = client.try_set_custom_event_fee(&event_id, &Some(10001));
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
+
+    // Try to set custom fee at exactly 10000 bps (100%) - should succeed
+    client.set_custom_event_fee(&event_id, &Some(10000));
+    let info = client.get_event_payment_info(&event_id);
+    assert_eq!(info.custom_fee_bps, Some(10000));
+
+    // Try to set custom fee way above limit
+    let result = client.try_set_custom_event_fee(&event_id, &Some(50000));
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
+}
+
+#[test]
 fn test_increment_inventory_success() {
     let env = Env::default();
     env.mock_all_auths();
@@ -3131,15 +3181,15 @@ fn test_event_description() {
 
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
-    let event_id = String::from_str(&env, "event_with_description");
+    let event_id = String::from_str(&env, "event_with_banner");
     let metadata_cid = String::from_str(
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    let description = String::from_str(
+    let banner_cid = Some(String::from_str(
         &env,
-        "This is a comprehensive test event with a detailed description",
-    );
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    ));
     let tiers = Map::new(&env);
 
     client.register_event(&EventRegistrationArgs {
@@ -3155,11 +3205,11 @@ fn test_event_description() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
-        description: description.clone(),
+        banner_cid: banner_cid.clone(),
     });
 
     let event_info = client.get_event(&event_id).unwrap();
-    assert_eq!(event_info.description, description);
+    assert_eq!(event_info.banner_cid, banner_cid);
     assert_eq!(event_info.event_id, event_id);
     assert_eq!(event_info.organizer_address, organizer);
 }
