@@ -46,6 +46,23 @@ pub enum EventRegistryError {
     InvalidRewardAmount = 32,
     /// Milestone release percentages sum exceeds 100%
     InvalidMilestonePlan = 33,
+    // ── Governance / Multi-Sig errors ──────────────────────────────────
+    /// Admin already exists in the multi-sig configuration
+    AdminAlreadyExists = 33,
+    /// Admin not found in the multi-sig configuration
+    AdminNotFound = 34,
+    /// Cannot remove the last admin
+    CannotRemoveLastAdmin = 35,
+    /// Invalid threshold value
+    InvalidThreshold = 36,
+    /// Proposal not found
+    ProposalNotFound = 37,
+    /// Proposal has already been executed
+    ProposalAlreadyExecuted = 38,
+    /// Proposal has expired
+    ProposalExpired = 39,
+    /// Insufficient approvals to execute proposal
+    InsufficientApprovals = 40,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -138,6 +155,29 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::InvalidMilestonePlan => {
                 write!(f, "Milestone release percentages must not exceed 100%")
+            EventRegistryError::AdminAlreadyExists => {
+                write!(f, "Admin already exists in the multi-sig configuration")
+            }
+            EventRegistryError::AdminNotFound => {
+                write!(f, "Admin not found in the multi-sig configuration")
+            }
+            EventRegistryError::CannotRemoveLastAdmin => {
+                write!(f, "Cannot remove the last admin")
+            }
+            EventRegistryError::InvalidThreshold => {
+                write!(f, "Invalid threshold value")
+            }
+            EventRegistryError::ProposalNotFound => {
+                write!(f, "Proposal not found")
+            }
+            EventRegistryError::ProposalAlreadyExecuted => {
+                write!(f, "Proposal has already been executed")
+            }
+            EventRegistryError::ProposalExpired => {
+                write!(f, "Proposal has expired")
+            }
+            EventRegistryError::InsufficientApprovals => {
+                write!(f, "Insufficient approvals to execute proposal")
             }
         }
     }

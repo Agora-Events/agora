@@ -83,6 +83,13 @@ pub struct HighestBid {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventBalance {
+    pub organizer_amount: i128,
+    pub platform_fee: i128,
+}
+
+#[contracttype]
 pub enum DataKey {
     Payment(String), // payment_id -> Payment
     /// Individual entry for an event payment (Persistent)

@@ -174,7 +174,29 @@ pub fn get_next_proposal_id(env: &Env) -> u64 {
     current
 }
 
+/// Gets the current proposal counter without incrementing.
+pub fn get_proposal_counter(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ProposalCounter)
+        .unwrap_or(0)
+}
+
+/// Sets the proposal counter.
+pub fn set_proposal_counter(env: &Env, counter: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ProposalCounter, &counter);
+}
+
 /// Stores a proposal.
+pub fn set_proposal(env: &Env, proposal: &Proposal) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Proposal(proposal.proposal_id), proposal);
+}
+
+/// Stores a proposal (legacy name for compatibility).
 pub fn store_proposal(env: &Env, proposal: &Proposal) {
     env.storage()
         .persistent()
@@ -214,7 +236,38 @@ pub fn get_active_proposals(env: &Env) -> Vec<u64> {
         .unwrap_or_else(|| Vec::new(env))
 }
 
+/// Adds a proposal to the active proposals list.
+pub fn add_active_proposal(env: &Env, proposal_id: u64) {
+    let mut active_proposals = get_active_proposals(env);
+    // Check if already exists
+    for id in active_proposals.iter() {
+        if id == proposal_id {
+            return;
+        }
+    }
+    active_proposals.push_back(proposal_id);
+    env.storage()
+        .persistent()
+        .set(&DataKey::ActiveProposals, &active_proposals);
+}
+
 /// Removes a proposal from the active list (when executed or expired).
+pub fn remove_active_proposal(env: &Env, proposal_id: u64) {
+    let active_proposals: Vec<u64> = get_active_proposals(env);
+    let mut new_proposals = Vec::new(env);
+
+    for id in active_proposals.iter() {
+        if id != proposal_id {
+            new_proposals.push_back(id);
+        }
+    }
+
+    env.storage()
+        .persistent()
+        .set(&DataKey::ActiveProposals, &new_proposals);
+}
+
+/// Removes a proposal from the active list (legacy name for compatibility).
 pub fn remove_from_active_proposals(env: &Env, proposal_id: u64) {
     let active_proposals: Vec<u64> = get_active_proposals(env);
     let mut new_proposals = Vec::new(env);
