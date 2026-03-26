@@ -40,6 +40,7 @@ fn test_register_and_get_series() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
@@ -54,6 +55,7 @@ fn test_register_and_get_series() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     // Register a series
@@ -103,6 +105,7 @@ fn test_issue_and_use_series_pass() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
@@ -276,6 +279,7 @@ fn test_storage_operations() {
         target_deadline: 0,
         goal_met: false,
         custom_fee_bps: None,
+        banner_cid: None,
     };
 
     client.store_event(&event_info);
@@ -330,6 +334,7 @@ fn test_organizer_events_list() {
         target_deadline: 0,
         goal_met: false,
         custom_fee_bps: None,
+        banner_cid: None,
     };
 
     let event_2 = EventInfo {
@@ -357,6 +362,7 @@ fn test_organizer_events_list() {
         target_deadline: 0,
         goal_met: false,
         custom_fee_bps: None,
+        banner_cid: None,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -418,6 +424,7 @@ fn test_register_event_success() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -466,6 +473,7 @@ fn test_register_event_unlimited_supply() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -507,6 +515,7 @@ fn test_register_duplicate_event_fails() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -522,6 +531,7 @@ fn test_register_duplicate_event_fails() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -560,6 +570,7 @@ fn test_get_event_payment_info() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -601,6 +612,7 @@ fn test_update_event_status() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -641,6 +653,7 @@ fn test_event_inactive_error() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -682,6 +695,7 @@ fn test_complete_event_lifecycle() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -735,6 +749,7 @@ fn test_update_metadata_success() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let new_metadata_cid = String::from_str(
@@ -781,6 +796,7 @@ fn test_update_metadata_invalid_cid() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let wrong_char_cid = String::from_str(
@@ -863,6 +879,7 @@ fn test_set_custom_event_fee() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     // Default fee
@@ -934,6 +951,7 @@ fn test_increment_inventory_success() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1003,6 +1021,7 @@ fn test_increment_inventory_max_supply_exceeded() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1067,6 +1086,7 @@ fn test_increment_inventory_unlimited_supply() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     for _ in 0..10 {
@@ -1149,6 +1169,7 @@ fn test_increment_inventory_inactive_event() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     client.update_event_status(&event_id, &false);
@@ -1206,6 +1227,7 @@ fn test_increment_inventory_persists_across_reads() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     for _ in 0..5 {
@@ -1280,6 +1302,7 @@ fn test_tier_limit_exceeds_max_supply() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
     assert_eq!(
         result,
@@ -1337,6 +1360,7 @@ fn test_tier_not_found() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -1395,6 +1419,7 @@ fn test_tier_supply_exceeded() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1469,6 +1494,7 @@ fn test_multiple_tiers_inventory() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -1521,6 +1547,7 @@ fn test_update_event_status_noop_skips_event() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let _ = env.events().all();
@@ -1595,6 +1622,7 @@ fn test_blacklist_prevents_event_registration() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -1637,6 +1665,7 @@ fn test_update_metadata_noop_skips_event() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let _ = env.events().all();
@@ -1718,6 +1747,7 @@ fn test_blacklist_suspends_active_events() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1841,6 +1871,7 @@ fn test_register_event_with_resale_cap() {
         resale_cap_bps: Some(1000), // 10% above face value
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1882,6 +1913,7 @@ fn test_register_event_resale_cap_zero() {
         resale_cap_bps: Some(0), // No markup allowed
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1923,6 +1955,7 @@ fn test_register_event_resale_cap_none() {
         resale_cap_bps: None, // No cap
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1964,6 +1997,7 @@ fn test_postpone_event_sets_grace_period() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     // Set ledger time and grace period end in the future
@@ -2012,6 +2046,7 @@ fn test_register_event_resale_cap_invalid() {
         resale_cap_bps: Some(10001), // Over 100% - invalid
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -2049,6 +2084,7 @@ fn test_cancel_event_success() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     client.cancel_event(&event_id);
@@ -2090,6 +2126,7 @@ fn test_cancel_already_cancelled_fails() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     client.cancel_event(&event_id);
@@ -2129,6 +2166,7 @@ fn test_update_status_on_cancelled_event_fails() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     });
 
     client.cancel_event(&event_id);
@@ -2732,4 +2770,82 @@ fn test_non_admin_cannot_add_token_to_whitelist() {
     let env2 = Env::default();
     let client2 = EventRegistryClient::new(&env2, &contract_id);
     client2.add_to_token_whitelist(&new_token);
+}
+
+#[test]
+fn test_register_event_with_banner_cid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_banner");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let banner_cid = Some(String::from_str(
+        &env,
+        "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku",
+    ));
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: Address::generate(&env),
+        payment_address: Address::generate(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: soroban_sdk::Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: banner_cid.clone(),
+    });
+
+    let event = client.get_event(&event_id).unwrap();
+    assert_eq!(event.banner_cid, banner_cid);
+}
+
+#[test]
+fn test_register_event_without_banner_cid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_no_banner");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: Address::generate(&env),
+        payment_address: Address::generate(&env),
+        metadata_cid,
+        max_supply: 50,
+        milestone_plan: None,
+        tiers: soroban_sdk::Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    let event = client.get_event(&event_id).unwrap();
+    assert!(event.banner_cid.is_none());
 }

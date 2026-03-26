@@ -87,6 +87,7 @@ impl MockRegistryE2E {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -197,6 +198,7 @@ impl MockRegistryCancelledE2E {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -291,6 +293,7 @@ impl MockRegistryWithGoal {
             min_sales_target,
             target_deadline,
             goal_met,
+            banner_cid: None,
         })
     }
 
@@ -1064,6 +1067,7 @@ impl MockRegistryAuction {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 

@@ -39,6 +39,7 @@ fn make_event_args(
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        banner_cid: None,
     }
 }
 
