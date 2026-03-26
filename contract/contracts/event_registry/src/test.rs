@@ -2733,3 +2733,27 @@ fn test_non_admin_cannot_add_token_to_whitelist() {
     let client2 = EventRegistryClient::new(&env2, &contract_id);
     client2.add_to_token_whitelist(&new_token);
 }
+
+// ── Display message tests for refined tier error messages ────────────────────
+
+extern crate alloc;
+
+#[test]
+fn test_tier_not_found_display() {
+    let err = EventRegistryError::TierNotFound;
+    let msg = alloc::format!("{}", err);
+    assert_eq!(
+        msg,
+        "The specified ticket tier does not exist for this event"
+    );
+}
+
+#[test]
+fn test_tier_supply_exceeded_display() {
+    let err = EventRegistryError::TierSupplyExceeded;
+    let msg = alloc::format!("{}", err);
+    assert_eq!(
+        msg,
+        "Cannot purchase tickets: the requested tier has reached its maximum supply limit"
+    );
+}

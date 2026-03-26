@@ -75,10 +75,13 @@ impl core::fmt::Display for EventRegistryError {
                 write!(f, "Sum of tier limits exceeds event max supply")
             }
             EventRegistryError::TierNotFound => {
-                write!(f, "Ticket tier not found")
+                write!(f, "The specified ticket tier does not exist for this event")
             }
             EventRegistryError::TierSupplyExceeded => {
-                write!(f, "Tier has reached its maximum supply")
+                write!(
+                    f,
+                    "Cannot purchase tickets: the requested tier has reached its maximum supply limit"
+                )
             }
             EventRegistryError::SupplyUnderflow => {
                 write!(f, "Supply counter underflow")
