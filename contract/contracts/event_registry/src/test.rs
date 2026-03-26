@@ -4913,6 +4913,15 @@ fn test_register_event_no_milestone_plan_succeeds() {
 
     // None milestone_plan should always pass validation
     client.register_event(&base_args(&env, &organizer, None));
+=======
+        banner_cid: banner_cid.clone(),
+    });
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.banner_cid, banner_cid);
+    assert_eq!(event_info.event_id, event_id);
+    assert_eq!(event_info.organizer_address, organizer);
+>>>>>>> 123b1ce (feat: Add payment search by status functionality (#201))
 }
 
 // ==================== Governance / Multi-Sig Tests ====================

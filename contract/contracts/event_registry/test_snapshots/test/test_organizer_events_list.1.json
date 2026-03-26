@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 2,
+    "address": 3,
     "nonce": 0,
     "mux_id": 0
   },
@@ -12,28 +12,14 @@
         {
           "function": {
             "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
               "function_name": "store_event",
               "args": [
                 {
                   "map": [
                     {
                       "key": {
-                        "symbol": "accepted_tokens"
-                      },
-                      "val": {
-                        "vec": []
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "banner_cid"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
-                        "symbol": "cancellation_reason"
                       },
                       "val": "void"
                     },
@@ -61,25 +47,11 @@
                     },
                     {
                       "key": {
-                        "symbol": "end_time"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
                         "string": "e1"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "feedback_cid"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
@@ -108,14 +80,6 @@
                     {
                       "key": {
                         "symbol": "is_postponed"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "is_private"
                       },
                       "val": {
                         "bool": false
@@ -153,14 +117,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "name"
-                      },
-                      "val": {
-                        "string": "Test Event 1"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "organizer_address"
                       },
                       "val": {
@@ -172,7 +128,7 @@
                         "symbol": "payment_address"
                       },
                       "val": {
-                        "address": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
                     },
                     {
@@ -207,14 +163,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "start_time"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -224,12 +172,6 @@
                           }
                         ]
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "tags"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
@@ -245,22 +187,6 @@
                       },
                       "val": {
                         "map": []
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "transfer_lock_duration"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "use_global_whitelist"
-                      },
-                      "val": {
-                        "bool": true
                       }
                     }
                   ]
@@ -278,28 +204,14 @@
         {
           "function": {
             "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
               "function_name": "store_event",
               "args": [
                 {
                   "map": [
                     {
                       "key": {
-                        "symbol": "accepted_tokens"
-                      },
-                      "val": {
-                        "vec": []
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "banner_cid"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
-                        "symbol": "cancellation_reason"
                       },
                       "val": "void"
                     },
@@ -327,25 +239,11 @@
                     },
                     {
                       "key": {
-                        "symbol": "end_time"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
                         "string": "e2"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "feedback_cid"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
@@ -374,14 +272,6 @@
                     {
                       "key": {
                         "symbol": "is_postponed"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "is_private"
                       },
                       "val": {
                         "bool": false
@@ -419,14 +309,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "name"
-                      },
-                      "val": {
-                        "string": "Test Event 2"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "organizer_address"
                       },
                       "val": {
@@ -438,7 +320,7 @@
                         "symbol": "payment_address"
                       },
                       "val": {
-                        "address": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
                     },
                     {
@@ -473,14 +355,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "start_time"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -490,12 +364,6 @@
                           }
                         ]
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "tags"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
@@ -511,22 +379,6 @@
                       },
                       "val": {
                         "map": []
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "transfer_lock_duration"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "use_global_whitelist"
-                      },
-                      "val": {
-                        "bool": true
                       }
                     }
                   ]
@@ -619,7 +471,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
             "key": {
               "vec": [
                 {
@@ -639,7 +491,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -655,21 +507,7 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "accepted_tokens"
-                      },
-                      "val": {
-                        "vec": []
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "banner_cid"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
-                        "symbol": "cancellation_reason"
                       },
                       "val": "void"
                     },
@@ -697,25 +535,11 @@
                     },
                     {
                       "key": {
-                        "symbol": "end_time"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
                         "string": "e1"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "feedback_cid"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
@@ -744,14 +568,6 @@
                     {
                       "key": {
                         "symbol": "is_postponed"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "is_private"
                       },
                       "val": {
                         "bool": false
@@ -789,14 +605,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "name"
-                      },
-                      "val": {
-                        "string": "Test Event 1"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "organizer_address"
                       },
                       "val": {
@@ -808,7 +616,7 @@
                         "symbol": "payment_address"
                       },
                       "val": {
-                        "address": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
                     },
                     {
@@ -843,14 +651,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "start_time"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -860,12 +660,6 @@
                           }
                         ]
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "tags"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
@@ -882,22 +676,6 @@
                       "val": {
                         "map": []
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "transfer_lock_duration"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "use_global_whitelist"
-                      },
-                      "val": {
-                        "bool": true
-                      }
                     }
                   ]
                 }
@@ -911,7 +689,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
             "key": {
               "vec": [
                 {
@@ -931,7 +709,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -947,21 +725,7 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "accepted_tokens"
-                      },
-                      "val": {
-                        "vec": []
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "banner_cid"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
-                        "symbol": "cancellation_reason"
                       },
                       "val": "void"
                     },
@@ -989,25 +753,11 @@
                     },
                     {
                       "key": {
-                        "symbol": "end_time"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
                         "string": "e2"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "feedback_cid"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
@@ -1036,14 +786,6 @@
                     {
                       "key": {
                         "symbol": "is_postponed"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "is_private"
                       },
                       "val": {
                         "bool": false
@@ -1081,14 +823,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "name"
-                      },
-                      "val": {
-                        "string": "Test Event 2"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "organizer_address"
                       },
                       "val": {
@@ -1100,7 +834,7 @@
                         "symbol": "payment_address"
                       },
                       "val": {
-                        "address": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
                     },
                     {
@@ -1135,14 +869,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "start_time"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -1152,12 +878,6 @@
                           }
                         ]
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "tags"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
@@ -1174,22 +894,6 @@
                       "val": {
                         "map": []
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "transfer_lock_duration"
-                      },
-                      "val": {
-                        "u64": "0"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "use_global_whitelist"
-                      },
-                      "val": {
-                        "bool": true
-                      }
                     }
                   ]
                 }
@@ -1203,85 +907,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "GlobalActiveEventCount"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "GlobalActiveEventCount"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u32": 2
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "GlobalEventCount"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "GlobalEventCount"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u32": 2
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
             "key": {
               "vec": [
                 {
@@ -1304,7 +930,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -1332,7 +958,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
             "key": {
               "vec": [
                 {
@@ -1355,7 +981,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -1383,7 +1009,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
             "key": {
               "vec": [
                 {
@@ -1403,7 +1029,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -1428,7 +1054,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
             "key": {
               "vec": [
                 {
@@ -1451,7 +1077,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -1486,7 +1112,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -1497,7 +1123,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": "ledger_key_contract_instance",
                 "durability": "persistent",
                 "val": {

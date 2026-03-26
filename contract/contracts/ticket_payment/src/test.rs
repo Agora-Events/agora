@@ -6296,6 +6296,7 @@ fn test_get_payments_by_status_multiple_payments() {
     let payment_id2 = String::from_str(&env, "payment_002");
     let payment_id3 = String::from_str(&env, "payment_003");
 
+<<<<<<< HEAD
     let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id1,
@@ -6405,12 +6406,16 @@ fn test_get_payments_by_status_with_refunds() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     // Process and confirm a payment
+<<<<<<< HEAD
     let (_secret, hash) = test_secret(&env);
+=======
+>>>>>>> 123b1ce (feat: Add payment search by status functionality (#201))
     client.process_payment(
         &payment_id,
         &event_id,
         &tier_id,
         &buyer,
+<<<<<<< HEAD
         &None::<Address>,
         &usdc_id,
         &amount,
@@ -6421,6 +6426,13 @@ fn test_get_payments_by_status_with_refunds() {
             discount_code: None,
         },
         &hash,
+=======
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+>>>>>>> 123b1ce (feat: Add payment search by status functionality (#201))
     );
 
     client.confirm_payment(&payment_id, &String::from_str(&env, "tx_hash_confirmed"));
@@ -8500,3 +8512,5 @@ fn test_transfer_no_lock_always_allowed() {
         "transfer with no lock must succeed immediately"
     );
 }
+=======
+>>>>>>> 123b1ce (feat: Add payment search by status functionality (#201))
