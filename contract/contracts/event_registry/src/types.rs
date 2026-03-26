@@ -133,6 +133,8 @@ pub struct EventInfo {
     pub goal_met: bool,
     /// Optional special fee rate for high-volume partners or charitable events (in basis points)
     pub custom_fee_bps: Option<u32>,
+    /// Short description of the event
+    pub description: String,
 }
 
 /// Payment information for an event
@@ -168,6 +170,8 @@ pub struct EventRegistrationArgs {
     pub min_sales_target: Option<i128>,
     /// Deadline by which the min_sales_target must be met (Unix timestamp)
     pub target_deadline: Option<u64>,
+    /// Short description of the event
+    pub description: String,
 }
 
 /// Audit log entry for blacklist actions

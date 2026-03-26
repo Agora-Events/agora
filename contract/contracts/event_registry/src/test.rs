@@ -40,6 +40,7 @@ fn test_register_and_get_series() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
@@ -54,6 +55,7 @@ fn test_register_and_get_series() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     // Register a series
@@ -103,6 +105,7 @@ fn test_issue_and_use_series_pass() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
@@ -276,6 +279,7 @@ fn test_storage_operations() {
         target_deadline: 0,
         goal_met: false,
         custom_fee_bps: None,
+        description: String::from_str(&env, "Test event description"),
     };
 
     client.store_event(&event_info);
@@ -330,6 +334,7 @@ fn test_organizer_events_list() {
         target_deadline: 0,
         goal_met: false,
         custom_fee_bps: None,
+        description: String::from_str(&env, "Event 1 description"),
     };
 
     let event_2 = EventInfo {
@@ -357,6 +362,7 @@ fn test_organizer_events_list() {
         target_deadline: 0,
         goal_met: false,
         custom_fee_bps: None,
+        description: String::from_str(&env, "Event 2 description"),
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -418,6 +424,7 @@ fn test_register_event_success() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -466,6 +473,7 @@ fn test_register_event_unlimited_supply() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -507,6 +515,7 @@ fn test_register_duplicate_event_fails() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -522,6 +531,7 @@ fn test_register_duplicate_event_fails() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -556,6 +566,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
     assert_eq!(
         short_result,
@@ -579,6 +590,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
     assert_eq!(
         wrong_prefix_result,
@@ -620,6 +632,7 @@ fn test_get_event_payment_info() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -661,6 +674,7 @@ fn test_update_event_status() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
     client.update_event_status(&event_id, &false);
 
@@ -701,6 +715,7 @@ fn test_event_inactive_error() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
     client.update_event_status(&event_id, &false);
 
@@ -742,6 +757,7 @@ fn test_complete_event_lifecycle() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -795,6 +811,7 @@ fn test_update_metadata_success() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let new_metadata_cid = String::from_str(
@@ -841,6 +858,7 @@ fn test_update_metadata_invalid_cid() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let wrong_char_cid = String::from_str(
@@ -923,6 +941,7 @@ fn test_set_custom_event_fee() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     // Default fee
@@ -994,6 +1013,7 @@ fn test_increment_inventory_success() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1063,6 +1083,7 @@ fn test_increment_inventory_max_supply_exceeded() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1127,6 +1148,7 @@ fn test_increment_inventory_unlimited_supply() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     for _ in 0..10 {
@@ -1209,6 +1231,7 @@ fn test_increment_inventory_inactive_event() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     client.update_event_status(&event_id, &false);
@@ -1266,6 +1289,7 @@ fn test_increment_inventory_persists_across_reads() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     for _ in 0..5 {
@@ -1340,6 +1364,7 @@ fn test_tier_limit_exceeds_max_supply() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
     assert_eq!(
         result,
@@ -1397,6 +1422,7 @@ fn test_tier_not_found() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -1455,6 +1481,7 @@ fn test_tier_supply_exceeded() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1529,6 +1556,7 @@ fn test_multiple_tiers_inventory() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -1581,6 +1609,7 @@ fn test_update_event_status_noop_skips_event() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let _ = env.events().all();
@@ -1655,6 +1684,7 @@ fn test_blacklist_prevents_event_registration() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -1697,6 +1727,7 @@ fn test_update_metadata_noop_skips_event() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let _ = env.events().all();
@@ -1778,6 +1809,7 @@ fn test_blacklist_suspends_active_events() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1901,6 +1933,7 @@ fn test_register_event_with_resale_cap() {
         resale_cap_bps: Some(1000), // 10% above face value
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1942,6 +1975,7 @@ fn test_register_event_resale_cap_zero() {
         resale_cap_bps: Some(0), // No markup allowed
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1983,6 +2017,7 @@ fn test_register_event_resale_cap_none() {
         resale_cap_bps: None, // No cap
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2024,6 +2059,7 @@ fn test_postpone_event_sets_grace_period() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     // Set ledger time and grace period end in the future
@@ -2072,6 +2108,7 @@ fn test_register_event_resale_cap_invalid() {
         resale_cap_bps: Some(10001), // Over 100% - invalid
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -2109,6 +2146,7 @@ fn test_cancel_event_success() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     client.cancel_event(&event_id);
@@ -2149,6 +2187,7 @@ fn test_archive_event_rejects_active_event() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     let result = client.try_archive_event(&event_id);
@@ -2187,6 +2226,7 @@ fn test_cancel_already_cancelled_fails() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     client.cancel_event(&event_id);
@@ -2226,6 +2266,7 @@ fn test_update_status_on_cancelled_event_fails() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     client.cancel_event(&event_id);
@@ -2882,6 +2923,7 @@ fn test_goal_met_event_fires_only_once() {
         resale_cap_bps: None,
         min_sales_target: Some(10),
         target_deadline: Some(1000),
+        description: String::from_str(&env, "Test event description"),
     });
 
     // Drain setup events
@@ -2946,6 +2988,7 @@ fn test_series_pass_issued_at_timestamp() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
+        description: String::from_str(&env, "Test event description"),
     });
 
     // Register a series
@@ -2982,4 +3025,53 @@ fn test_series_pass_issued_at_timestamp() {
     assert_eq!(pass.series_id, series_id);
     assert_eq!(pass.usage_limit, 5);
     assert_eq!(pass.usage_count, 0);
+}
+
+#[test]
+fn test_event_description() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_with_description");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let description = String::from_str(
+        &env,
+        "This is a comprehensive test event with a detailed description",
+    );
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr.clone(),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: env.ledger().timestamp() + 86400,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        description: description.clone(),
+    });
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.description, description);
+    assert_eq!(event_info.event_id, event_id);
+    assert_eq!(event_info.organizer_address, organizer);
 }
