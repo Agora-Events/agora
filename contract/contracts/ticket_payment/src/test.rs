@@ -4628,6 +4628,7 @@ impl MockEventRegistryHighPrice {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -4733,6 +4734,7 @@ impl MockEventRegistryRefundDeadline {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 

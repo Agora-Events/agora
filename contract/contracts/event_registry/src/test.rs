@@ -2879,11 +2879,43 @@ fn test_register_event_with_banner_cid() {
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let usdc_token = Address::generate(&env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
     let event_id = String::from_str(&env, "event_banner");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let banner_cid = Some(String::from_str(
+        &env,
+        "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku",
+    ));
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: banner_cid.clone(),
+    });
+
+    let event = client.get_event(&event_id).unwrap();
+    assert_eq!(event.banner_cid, banner_cid);
+}
+
+#[test]
 fn test_goal_met_event_fires_only_once() {
     let env = Env::default();
     env.mock_all_auths();
@@ -2892,8 +2924,8 @@ fn test_goal_met_event_fires_only_once() {
     let client = EventRegistryClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let payment_addr = Address::generate(&env);
+    let _organizer = Address::generate(&env);
+    let _payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
 
@@ -2933,6 +2965,24 @@ fn test_goal_met_event_fires_only_once() {
 
 #[test]
 fn test_register_event_without_banner_cid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "event_no_banner");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
 
     let mut tiers = Map::new(&env);
     let tier_id = String::from_str(&env, "general");
@@ -2961,6 +3011,7 @@ fn test_register_event_without_banner_cid() {
         resale_cap_bps: None,
         min_sales_target: Some(10),
         target_deadline: Some(1000),
+        banner_cid: None,
     });
 
     // Drain setup events
@@ -3005,7 +3056,6 @@ fn test_series_pass_issued_at_timestamp() {
     let usdc_token = Address::generate(&env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
-    let event_id = String::from_str(&env, "event_no_banner");
     // Register an event for the series
     let event_id = String::from_str(&env, "event_ts");
     let metadata_cid = String::from_str(
@@ -3015,31 +3065,18 @@ fn test_series_pass_issued_at_timestamp() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        organizer_address: Address::generate(&env),
+        organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid,
         max_supply: 50,
         milestone_plan: None,
         tiers: soroban_sdk::Map::new(&env),
-    let tiers = Map::new(&env);
-    client.register_event(&EventRegistrationArgs {
-        event_id: event_id.clone(),
-        organizer_address: organizer.clone(),
-        payment_address: Address::generate(&env),
-        metadata_cid: metadata_cid.clone(),
-        max_supply: 100,
-        milestone_plan: None,
-        tiers,
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-    });
-
-    let event = client.get_event(&event_id).unwrap();
-    assert!(event.banner_cid.is_none());
     });
 
     // Register a series
