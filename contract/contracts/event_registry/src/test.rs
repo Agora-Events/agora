@@ -3114,3 +3114,117 @@ fn test_series_pass_issued_at_timestamp() {
     assert_eq!(pass.usage_limit, 5);
     assert_eq!(pass.usage_count, 0);
 }
+
+// ── Milestone percentage validation ──────────────────────────────────────────
+
+use crate::types::Milestone;
+
+fn setup_client(env: &Env) -> (EventRegistryClient<'_>, Address) {
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let platform_wallet = Address::generate(env);
+    let usdc_token = Address::generate(env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    let organizer = Address::generate(env);
+    (client, organizer)
+}
+
+fn base_args(
+    env: &Env,
+    organizer: &Address,
+    milestone_plan: Option<soroban_sdk::Vec<Milestone>>,
+) -> EventRegistrationArgs {
+    EventRegistrationArgs {
+        event_id: String::from_str(env, "evt_milestone"),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(env),
+        metadata_cid: String::from_str(
+            env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 100,
+        milestone_plan,
+        tiers: Map::new(env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    }
+}
+
+#[test]
+fn test_register_event_milestone_plan_valid_exact_100() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, organizer) = setup_client(&env);
+
+    let milestones = soroban_sdk::vec![
+        &env,
+        Milestone {
+            sales_threshold: 50,
+            release_percent: 5000
+        },
+        Milestone {
+            sales_threshold: 100,
+            release_percent: 5000
+        },
+    ];
+    // Should succeed: 5000 + 5000 = 10000 bps (exactly 100%)
+    client.register_event(&base_args(&env, &organizer, Some(milestones)));
+}
+
+#[test]
+fn test_register_event_milestone_plan_valid_under_100() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, organizer) = setup_client(&env);
+
+    let milestones = soroban_sdk::vec![
+        &env,
+        Milestone {
+            sales_threshold: 50,
+            release_percent: 3000
+        },
+        Milestone {
+            sales_threshold: 100,
+            release_percent: 4000
+        },
+    ];
+    // Should succeed: 3000 + 4000 = 7000 bps (70%)
+    client.register_event(&base_args(&env, &organizer, Some(milestones)));
+}
+
+#[test]
+fn test_register_event_milestone_plan_exceeds_100_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, organizer) = setup_client(&env);
+
+    let milestones = soroban_sdk::vec![
+        &env,
+        Milestone {
+            sales_threshold: 50,
+            release_percent: 6000
+        },
+        Milestone {
+            sales_threshold: 100,
+            release_percent: 5000
+        },
+    ];
+    // Should fail: 6000 + 5000 = 11000 bps (110%)
+    let result = client.try_register_event(&base_args(&env, &organizer, Some(milestones)));
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidMilestonePlan)));
+}
+
+#[test]
+fn test_register_event_no_milestone_plan_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, organizer) = setup_client(&env);
+
+    // None milestone_plan should always pass validation
+    client.register_event(&base_args(&env, &organizer, None));
+}

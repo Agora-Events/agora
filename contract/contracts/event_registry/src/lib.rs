@@ -233,6 +233,14 @@ impl EventRegistry {
             }
         }
 
+        // Validate milestone plan: total release_percent must not exceed 10000 bps (100%)
+        if let Some(ref milestones) = args.milestone_plan {
+            let total: u32 = milestones.iter().map(|m| m.release_percent).sum();
+            if total > 10000 {
+                return Err(EventRegistryError::InvalidMilestonePlan);
+            }
+        }
+
         let platform_fee_percent = storage::get_platform_fee(&env);
 
         let event_info = EventInfo {
