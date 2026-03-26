@@ -1315,11 +1315,13 @@ impl EventRegistry {
 
     /// Returns the current multi-sig configuration
     pub fn get_multisig_config(env: Env) -> MultiSigConfig {
-        storage::get_multisig_config(&env)
-            .unwrap_or_else(|| {
-                let admins = Vec::new(&env);
-                MultiSigConfig { admins, threshold: 1 }
-            })
+        storage::get_multisig_config(&env).unwrap_or_else(|| {
+            let admins = Vec::new(&env);
+            MultiSigConfig {
+                admins,
+                threshold: 1,
+            }
+        })
     }
 
     /// Checks if an address is an admin
@@ -1347,9 +1349,9 @@ impl EventRegistry {
         proposer.require_auth();
 
         // Verify proposer is an admin
-        let config = storage::get_multisig_config(&env)
-            .ok_or(EventRegistryError::NotInitialized)?;
-        
+        let config =
+            storage::get_multisig_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+
         if !config.admins.contains(&proposer) {
             return Err(EventRegistryError::Unauthorized);
         }
@@ -1483,16 +1485,16 @@ impl EventRegistry {
         approver.require_auth();
 
         // Verify approver is an admin
-        let config = storage::get_multisig_config(&env)
-            .ok_or(EventRegistryError::NotInitialized)?;
-        
+        let config =
+            storage::get_multisig_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+
         if !config.admins.contains(&approver) {
             return Err(EventRegistryError::Unauthorized);
         }
 
         // Get proposal
-        let mut proposal = storage::get_proposal(&env, proposal_id)
-            .ok_or(EventRegistryError::ProposalNotFound)?;
+        let mut proposal =
+            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::ProposalNotFound)?;
 
         // Check if already executed
         if proposal.executed {
@@ -1526,16 +1528,16 @@ impl EventRegistry {
         executor.require_auth();
 
         // Verify executor is an admin
-        let config = storage::get_multisig_config(&env)
-            .ok_or(EventRegistryError::NotInitialized)?;
-        
+        let config =
+            storage::get_multisig_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+
         if !config.admins.contains(&executor) {
             return Err(EventRegistryError::Unauthorized);
         }
 
         // Get proposal
-        let mut proposal = storage::get_proposal(&env, proposal_id)
-            .ok_or(EventRegistryError::ProposalNotFound)?;
+        let mut proposal =
+            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::ProposalNotFound)?;
 
         // Check if already executed
         if proposal.executed {
@@ -1569,12 +1571,12 @@ impl EventRegistry {
                     }
                 }
                 new_config.admins = new_admins;
-                
+
                 // Adjust threshold if necessary
                 if new_config.threshold > new_config.admins.len() {
                     new_config.threshold = new_config.admins.len();
                 }
-                
+
                 storage::set_multisig_config(&env, &new_config);
             }
             types::ParameterChange::SetThreshold(new_threshold) => {

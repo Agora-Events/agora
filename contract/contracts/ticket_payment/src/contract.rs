@@ -848,11 +848,11 @@ impl TicketPaymentContract {
             payment.status = PaymentStatus::Confirmed;
             payment.confirmed_at = Some(env.ledger().timestamp());
             payment.transaction_hash = transaction_hash.clone();
-            
+
             // Update payment in storage
             let key = DataKey::Payment(payment_id.clone());
             env.storage().persistent().set(&key, &payment);
-            
+
             // Update status index
             if old_status != PaymentStatus::Confirmed {
                 crate::storage::update_payment_status_index(
@@ -1001,7 +1001,7 @@ impl TicketPaymentContract {
         // Update payment in storage
         let key = DataKey::Payment(payment_id.clone());
         env.storage().persistent().set(&key, &payment);
-        
+
         // Update status index
         if old_status != PaymentStatus::Refunded {
             crate::storage::update_payment_status_index(
