@@ -3075,3 +3075,227 @@ fn test_event_description() {
     assert_eq!(event_info.event_id, event_id);
     assert_eq!(event_info.organizer_address, organizer);
 }
+
+// ==================== Governance / Multi-Sig Tests ====================
+
+#[test]
+fn test_propose_and_execute_update_platform_wallet() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let new_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Verify initial wallet
+    assert_eq!(client.get_platform_wallet(), platform_wallet);
+
+    // Propose to update platform wallet
+    let proposal_id = client.propose_set_platform_wallet(&admin, &new_wallet, &0);
+
+    // Verify proposal was created
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(proposal.proposal_id, proposal_id);
+    assert_eq!(proposal.proposer, admin);
+    assert!(!proposal.executed);
+
+    // Execute proposal (threshold = 1, so already approved)
+    client.execute_proposal(&admin, &proposal_id);
+
+    // Verify wallet was updated
+    assert_eq!(client.get_platform_wallet(), new_wallet);
+
+    // Verify proposal was marked as executed
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert!(proposal.executed);
+}
+
+#[test]
+fn test_update_platform_wallet_with_multisig() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let new_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // Add admin2
+    let proposal_id = client.propose_add_admin(&admin1, &admin2, &0);
+    client.execute_proposal(&admin1, &proposal_id);
+
+    // Set threshold to 2
+    let proposal_id = client.propose_set_threshold(&admin1, &2, &0);
+    client.execute_proposal(&admin1, &proposal_id);
+
+    // Propose to update platform wallet
+    let proposal_id = client.propose_set_platform_wallet(&admin1, &new_wallet, &0);
+
+    // Try to execute with only 1 approval - should fail
+    let result = client.try_execute_proposal(&admin1, &proposal_id);
+    assert!(result.is_err());
+
+    // Admin2 approves
+    client.approve_proposal(&admin2, &proposal_id);
+
+    // Now execute should succeed
+    client.execute_proposal(&admin1, &proposal_id);
+
+    // Verify wallet was updated
+    assert_eq!(client.get_platform_wallet(), new_wallet);
+}
+
+#[test]
+fn test_propose_update_platform_wallet_invalid_address() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Try to set platform wallet to contract address (invalid)
+    let result = client.try_propose_set_platform_wallet(&admin, &contract_id, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
+}
+
+#[test]
+fn test_propose_update_platform_wallet_unauthorized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let new_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Try to propose as non-admin - should fail
+    let result = client.try_propose_set_platform_wallet(&non_admin, &new_wallet, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized)));
+}
+
+#[test]
+fn test_parameter_change_variants() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // Test AddAdmin
+    let proposal_id = client.propose_add_admin(&admin1, &admin2, &0);
+    client.execute_proposal(&admin1, &proposal_id);
+    assert!(client.is_admin(&admin2));
+
+    // Test SetThreshold
+    let proposal_id = client.propose_set_threshold(&admin1, &2, &0);
+    client.execute_proposal(&admin1, &proposal_id);
+    let config = client.get_multisig_config();
+    assert_eq!(config.threshold, 2);
+
+    // Test UpdatePlatformWallet
+    let new_wallet = Address::generate(&env);
+    let proposal_id = client.propose_set_platform_wallet(&admin1, &new_wallet, &0);
+    client.approve_proposal(&admin2, &proposal_id);
+    client.execute_proposal(&admin1, &proposal_id);
+    assert_eq!(client.get_platform_wallet(), new_wallet);
+
+    // Test RemoveAdmin
+    let proposal_id = client.propose_remove_admin(&admin1, &admin2, &0);
+    client.approve_proposal(&admin2, &proposal_id);
+    client.execute_proposal(&admin1, &proposal_id);
+    assert!(!client.is_admin(&admin2));
+}
+
+#[test]
+fn test_proposal_expiry() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let new_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Create proposal with short expiry (10 ledgers)
+    let proposal_id = client.propose_set_platform_wallet(&admin, &new_wallet, &10);
+
+    // Advance ledger past expiration
+    env.ledger().with_mut(|li| {
+        li.timestamp += 11;
+    });
+
+    // Try to execute expired proposal - should fail
+    let result = client.try_execute_proposal(&admin, &proposal_id);
+    assert_eq!(result, Err(Ok(EventRegistryError::ProposalExpired)));
+}
+
+#[test]
+fn test_active_proposals_list() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Create multiple proposals
+    let proposal_id1 = client.propose_add_admin(&admin, &admin2, &0);
+    let proposal_id2 = client.propose_add_admin(&admin, &admin3, &0);
+
+    let active_proposals = client.get_active_proposals();
+    assert_eq!(active_proposals.len(), 2);
+    assert!(active_proposals.contains(&proposal_id1));
+    assert!(active_proposals.contains(&proposal_id2));
+
+    // Execute one proposal
+    client.execute_proposal(&admin, &proposal_id1);
+
+    // Should have one less active proposal
+    let active_proposals = client.get_active_proposals();
+    assert_eq!(active_proposals.len(), 1);
+    assert!(!active_proposals.contains(&proposal_id1));
+    assert!(active_proposals.contains(&proposal_id2));
+}

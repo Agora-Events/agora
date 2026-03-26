@@ -1310,6 +1310,300 @@ impl EventRegistry {
             0
         }
     }
+
+    // ── Governance / Multi-Sig ─────────────────────────────────────────────────
+
+    /// Returns the current multi-sig configuration
+    pub fn get_multisig_config(env: Env) -> MultiSigConfig {
+        storage::get_multisig_config(&env)
+            .unwrap_or_else(|| {
+                let admins = Vec::new(&env);
+                MultiSigConfig { admins, threshold: 1 }
+            })
+    }
+
+    /// Checks if an address is an admin
+    pub fn is_admin(env: Env, address: Address) -> bool {
+        if let Some(config) = storage::get_multisig_config(&env) {
+            config.admins.contains(&address)
+        } else {
+            false
+        }
+    }
+
+    /// Proposes a parameter change. Only callable by an existing admin.
+    /// The proposer automatically approves the proposal.
+    ///
+    /// # Arguments
+    /// * `proposer` - Admin address creating the proposal
+    /// * `change` - The parameter change to propose
+    /// * `expiry_ledgers` - Number of ledgers until proposal expires (0 = default 100800 ledgers ~7 days)
+    pub fn propose_parameter_change(
+        env: Env,
+        proposer: Address,
+        change: types::ParameterChange,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        proposer.require_auth();
+
+        // Verify proposer is an admin
+        let config = storage::get_multisig_config(&env)
+            .ok_or(EventRegistryError::NotInitialized)?;
+        
+        if !config.admins.contains(&proposer) {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        // Validate the proposed change
+        match &change {
+            types::ParameterChange::AddAdmin(addr) => {
+                validate_address(&env, addr)?;
+                if config.admins.contains(addr) {
+                    return Err(EventRegistryError::AdminAlreadyExists);
+                }
+            }
+            types::ParameterChange::RemoveAdmin(addr) => {
+                if !config.admins.contains(addr) {
+                    return Err(EventRegistryError::AdminNotFound);
+                }
+                // Ensure we don't remove the last admin
+                if config.admins.len() <= 1 {
+                    return Err(EventRegistryError::CannotRemoveLastAdmin);
+                }
+            }
+            types::ParameterChange::SetThreshold(threshold) => {
+                if *threshold == 0 {
+                    return Err(EventRegistryError::InvalidThreshold);
+                }
+                if *threshold > config.admins.len() {
+                    return Err(EventRegistryError::InvalidThreshold);
+                }
+            }
+            types::ParameterChange::UpdatePlatformWallet(addr) => {
+                validate_address(&env, addr)?;
+            }
+        }
+
+        // Create proposal
+        let proposal_id = storage::get_proposal_counter(&env);
+        storage::set_proposal_counter(&env, proposal_id + 1);
+
+        let default_expiry = 100800u64; // ~7 days at 5s per ledger
+        let expiry = if expiry_ledgers == 0 {
+            default_expiry
+        } else {
+            expiry_ledgers
+        };
+
+        let mut approvals = Vec::new(&env);
+        approvals.push_back(proposer.clone());
+
+        let proposal = types::Proposal {
+            proposal_id,
+            proposer: proposer.clone(),
+            change,
+            approvals,
+            executed: false,
+            created_at: env.ledger().timestamp(),
+            expires_at: env.ledger().timestamp() + expiry,
+        };
+
+        storage::set_proposal(&env, &proposal);
+        storage::add_active_proposal(&env, proposal_id);
+
+        Ok(proposal_id)
+    }
+
+    /// Convenience function to propose adding an admin
+    pub fn propose_add_admin(
+        env: Env,
+        proposer: Address,
+        new_admin: Address,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::AddAdmin(new_admin),
+            expiry_ledgers,
+        )
+    }
+
+    /// Convenience function to propose removing an admin
+    pub fn propose_remove_admin(
+        env: Env,
+        proposer: Address,
+        admin_to_remove: Address,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::RemoveAdmin(admin_to_remove),
+            expiry_ledgers,
+        )
+    }
+
+    /// Convenience function to propose setting the threshold
+    pub fn propose_set_threshold(
+        env: Env,
+        proposer: Address,
+        new_threshold: u32,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::SetThreshold(new_threshold),
+            expiry_ledgers,
+        )
+    }
+
+    /// Convenience function to propose updating the platform wallet
+    pub fn propose_set_platform_wallet(
+        env: Env,
+        proposer: Address,
+        new_wallet: Address,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::UpdatePlatformWallet(new_wallet),
+            expiry_ledgers,
+        )
+    }
+
+    /// Approves a proposal. Only callable by an admin.
+    pub fn approve_proposal(
+        env: Env,
+        approver: Address,
+        proposal_id: u64,
+    ) -> Result<(), EventRegistryError> {
+        approver.require_auth();
+
+        // Verify approver is an admin
+        let config = storage::get_multisig_config(&env)
+            .ok_or(EventRegistryError::NotInitialized)?;
+        
+        if !config.admins.contains(&approver) {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        // Get proposal
+        let mut proposal = storage::get_proposal(&env, proposal_id)
+            .ok_or(EventRegistryError::ProposalNotFound)?;
+
+        // Check if already executed
+        if proposal.executed {
+            return Err(EventRegistryError::ProposalAlreadyExecuted);
+        }
+
+        // Check if expired
+        if env.ledger().timestamp() > proposal.expires_at {
+            return Err(EventRegistryError::ProposalExpired);
+        }
+
+        // Check if already approved by this admin
+        if proposal.approvals.contains(&approver) {
+            return Ok(()); // Already approved, no-op
+        }
+
+        // Add approval
+        proposal.approvals.push_back(approver);
+        storage::set_proposal(&env, &proposal);
+
+        Ok(())
+    }
+
+    /// Executes a proposal if it has met the approval threshold.
+    /// Only callable by an admin.
+    pub fn execute_proposal(
+        env: Env,
+        executor: Address,
+        proposal_id: u64,
+    ) -> Result<(), EventRegistryError> {
+        executor.require_auth();
+
+        // Verify executor is an admin
+        let config = storage::get_multisig_config(&env)
+            .ok_or(EventRegistryError::NotInitialized)?;
+        
+        if !config.admins.contains(&executor) {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        // Get proposal
+        let mut proposal = storage::get_proposal(&env, proposal_id)
+            .ok_or(EventRegistryError::ProposalNotFound)?;
+
+        // Check if already executed
+        if proposal.executed {
+            return Err(EventRegistryError::ProposalAlreadyExecuted);
+        }
+
+        // Check if expired
+        if env.ledger().timestamp() > proposal.expires_at {
+            return Err(EventRegistryError::ProposalExpired);
+        }
+
+        // Check if threshold is met
+        if proposal.approvals.len() < config.threshold {
+            return Err(EventRegistryError::InsufficientApprovals);
+        }
+
+        // Execute the proposal
+        match &proposal.change {
+            types::ParameterChange::AddAdmin(new_admin) => {
+                let mut new_config = config.clone();
+                new_config.admins.push_back(new_admin.clone());
+                storage::set_multisig_config(&env, &new_config);
+                storage::set_admin(&env, new_admin); // Update legacy admin storage
+            }
+            types::ParameterChange::RemoveAdmin(admin_to_remove) => {
+                let mut new_config = config.clone();
+                let mut new_admins = Vec::new(&env);
+                for admin in new_config.admins.iter() {
+                    if admin != *admin_to_remove {
+                        new_admins.push_back(admin);
+                    }
+                }
+                new_config.admins = new_admins;
+                
+                // Adjust threshold if necessary
+                if new_config.threshold > new_config.admins.len() {
+                    new_config.threshold = new_config.admins.len();
+                }
+                
+                storage::set_multisig_config(&env, &new_config);
+            }
+            types::ParameterChange::SetThreshold(new_threshold) => {
+                let mut new_config = config.clone();
+                new_config.threshold = *new_threshold;
+                storage::set_multisig_config(&env, &new_config);
+            }
+            types::ParameterChange::UpdatePlatformWallet(new_wallet) => {
+                storage::set_platform_wallet(&env, new_wallet);
+            }
+        }
+
+        // Mark as executed
+        proposal.executed = true;
+        storage::set_proposal(&env, &proposal);
+        storage::remove_active_proposal(&env, proposal_id);
+
+        Ok(())
+    }
+
+    /// Gets a proposal by ID
+    pub fn get_proposal(env: Env, proposal_id: u64) -> Option<types::Proposal> {
+        storage::get_proposal(&env, proposal_id)
+    }
+
+    /// Gets all active proposal IDs
+    pub fn get_active_proposals(env: Env) -> Vec<u64> {
+        storage::get_active_proposals(&env)
+    }
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {

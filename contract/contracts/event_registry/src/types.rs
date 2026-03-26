@@ -218,8 +218,8 @@ pub struct Proposal {
     pub proposal_id: u64,
     /// Address that created the proposal
     pub proposer: Address,
-    /// Description of the proposal
-    pub description: String,
+    /// The parameter change being proposed
+    pub change: ParameterChange,
     /// Addresses that have approved this proposal
     pub approvals: Vec<Address>,
     /// Whether the proposal has been executed
@@ -264,6 +264,20 @@ pub struct OrganizerStake {
     pub reward_balance: i128,
     /// Total rewards claimed historically
     pub total_rewards_claimed: i128,
+}
+
+/// Represents a parameter change proposal for governance
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ParameterChange {
+    /// Add a new admin to the multi-sig configuration
+    AddAdmin(Address),
+    /// Remove an admin from the multi-sig configuration
+    RemoveAdmin(Address),
+    /// Update the approval threshold for proposals
+    SetThreshold(u32),
+    /// Update the platform wallet address
+    UpdatePlatformWallet(Address),
 }
 
 /// Storage keys for the Event Registry contract.
