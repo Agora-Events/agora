@@ -3942,6 +3942,28 @@ fn test_governance_propose_and_execute_time_lock() {
 }
 
 #[test]
+fn test_governance_can_update_withdrawal_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, usdc_id, _, _) = setup_test(&env);
+    let new_cap = 42_0000000i128;
+
+    assert_eq!(client.get_withdrawal_cap(&usdc_id), 0);
+
+    let proposal_id = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::UpdateWithdrawalCap(usdc_id.clone(), new_cap),
+    );
+
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &proposal_id);
+
+    assert_eq!(client.get_withdrawal_cap(&usdc_id), new_cap);
+}
+
+#[test]
 fn test_governance_add_governor_requires_new_threshold() {
     let env = Env::default();
     env.mock_all_auths();

@@ -440,6 +440,77 @@ fn test_register_event_success() {
 }
 
 #[test]
+fn test_register_event_rejects_contract_as_organizer() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    env.mock_all_auths();
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "event_bad_org_contract"),
+        organizer_address: client.address.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
+}
+
+#[test]
+fn test_register_event_rejects_zero_organizer_address() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    env.mock_all_auths();
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let zero_organizer = Address::from_string(&String::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+    ));
+
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "event_bad_org_zero"),
+        organizer_address: zero_organizer,
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
+}
+
+#[test]
 fn test_register_event_unlimited_supply() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());

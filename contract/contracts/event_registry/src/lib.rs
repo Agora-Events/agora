@@ -28,7 +28,6 @@ use crate::error::EventRegistryError;
 pub struct EventRegistry;
 
 #[contractimpl]
-#[allow(deprecated)]
 impl EventRegistry {
     /// Register a new series grouping multiple events
     pub fn register_series(
@@ -200,6 +199,7 @@ impl EventRegistry {
         if !storage::is_initialized(&env) {
             return Err(EventRegistryError::NotInitialized);
         }
+        validate_address(&env, &args.organizer_address)?;
         args.organizer_address.require_auth();
 
         // Check if organizer is blacklisted
@@ -1617,10 +1617,18 @@ impl EventRegistry {
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
-    if address == &env.current_contract_address() {
+    if address == &env.current_contract_address() || is_zero_address(env, address) {
         return Err(EventRegistryError::InvalidAddress);
     }
     Ok(())
+}
+
+fn is_zero_address(env: &Env, address: &Address) -> bool {
+    let zero_account = String::from_str(
+        env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+    );
+    address.to_string() == zero_account
 }
 
 fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryError> {
@@ -1662,7 +1670,6 @@ fn suspend_organizer_events(
     // Emit suspension event if any events were suspended
     if suspended_count > 0 {
         let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        #[allow(deprecated)]
         env.events().publish(
             (AgoraEvent::EventsSuspended,),
             EventsSuspendedEvent {
