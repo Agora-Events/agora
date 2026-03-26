@@ -301,6 +301,77 @@ fn test_storage_operations() {
 }
 
 #[test]
+fn test_get_total_tickets_sold_uses_event_current_supply() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let organizer = Address::generate(&env);
+    let payment_address = Address::generate(&env);
+    let event_id = String::from_str(&env, "sold_event");
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 1_000,
+            tier_limit: 100,
+            current_sold: 3,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+    tiers.set(
+        String::from_str(&env, "vip"),
+        TicketTier {
+            name: String::from_str(&env, "VIP"),
+            price: 2_000,
+            tier_limit: 50,
+            current_sold: 4,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    client.store_event(&EventInfo {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address,
+        platform_fee_percent: 500,
+        is_active: true,
+        status: EventStatus::Active,
+        created_at: env.ledger().timestamp(),
+        metadata_cid: String::from_str(
+            &env,
+            "bafkreifh22222222222222222222222222222222222222222222222222",
+        ),
+        max_supply: 150,
+        current_supply: 9,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
+        custom_fee_bps: None,
+        banner_cid: None,
+    });
+
+    assert_eq!(client.get_total_tickets_sold(&event_id), 9);
+}
+
+#[test]
 fn test_organizer_events_list() {
     let env = Env::default();
     env.mock_all_auths();

@@ -404,9 +404,7 @@ impl TicketPaymentContract {
                 set_withdrawal_cap(&env, token.clone(), *cap);
             }
             ParameterChange::UpdateSlippage(bps) => {
-                if *bps <= 5000 {
-                    set_slippage_bps(&env, *bps);
-                }
+                set_slippage_bps(&env, *bps)?;
             }
             ParameterChange::UpdateTransferFee(event_id, fee) => {
                 set_transfer_fee(&env, event_id.clone(), *fee);

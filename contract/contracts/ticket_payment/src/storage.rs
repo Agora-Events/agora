@@ -1,4 +1,7 @@
-use crate::types::{DataKey, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus};
+use crate::{
+    error::TicketPaymentError,
+    types::{DataKey, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus},
+};
 use soroban_sdk::{vec, Address, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
@@ -592,8 +595,13 @@ pub fn get_oracle_address(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&DataKey::OracleAddress)
 }
 
-pub fn set_slippage_bps(env: &Env, bps: u32) {
+pub fn set_slippage_bps(env: &Env, bps: u32) -> Result<(), TicketPaymentError> {
+    if bps > 5000 {
+        return Err(TicketPaymentError::InvalidSlippageBps);
+    }
+
     env.storage().persistent().set(&DataKey::SlippageBps, &bps);
+    Ok(())
 }
 
 pub fn get_slippage_bps(env: &Env) -> u32 {

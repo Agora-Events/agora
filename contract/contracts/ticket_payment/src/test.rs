@@ -209,6 +209,77 @@ impl MockEventRegistry2 {
     }
 }
 
+#[soroban_sdk::contract]
+pub struct MockAuctionEventRegistry;
+
+#[soroban_sdk::contractimpl]
+impl MockAuctionEventRegistry {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        let mut tiers = soroban_sdk::Map::new(&env);
+        tiers.set(
+            String::from_str(&env, "tier_1"),
+            event_registry::TicketTier {
+                name: String::from_str(&env, "AuctionTier"),
+                price: 1000_0000000i128,
+                early_bird_price: 1000_0000000i128,
+                early_bird_deadline: 0,
+                usd_price: 0,
+                tier_limit: 1,
+                current_sold: 0,
+                is_refundable: false,
+                auction_config: soroban_sdk::vec![
+                    &env,
+                    crate::types::AuctionConfig {
+                        start_price: 1000_0000000i128,
+                        end_time: 1000,
+                        min_increment: 100_0000000i128,
+                    }
+                ],
+            },
+        );
+
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers,
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            banner_cid: None,
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+}
+
 // Mock Event Registry returning EventNotFound
 #[soroban_sdk::contract]
 pub struct MockEventRegistryNotFound;
@@ -265,6 +336,30 @@ fn setup_test(
         .address();
     let platform_wallet = Address::generate(env);
     let event_registry_id = env.register(MockEventRegistry, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &event_registry_id);
+
+    (client, admin, usdc_id, platform_wallet, event_registry_id)
+}
+
+fn setup_auction_test(
+    env: &Env,
+) -> (
+    TicketPaymentContractClient<'static>,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(env, &contract_id);
+
+    let admin = Address::generate(env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(env))
+        .address();
+    let platform_wallet = Address::generate(env);
+    let event_registry_id = env.register(MockAuctionEventRegistry, ());
 
     client.initialize(&admin, &usdc_id, &platform_wallet, &event_registry_id);
 
@@ -4031,6 +4126,97 @@ fn test_governance_unauthorized_propose_and_vote() {
     // unauthorized vote
     let res = client.try_vote_on_proposal(&random_user, &0);
     assert_eq!(res, Err(Ok(TicketPaymentError::NotGovernor)));
+}
+
+#[test]
+fn test_place_bid_rejects_bid_below_min_increment() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_auction_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let bidder_one = Address::generate(&env);
+    let bidder_two = Address::generate(&env);
+    let funded_amount = 20_000_000_000i128;
+
+    usdc_token.mint(&bidder_one, &funded_amount);
+    usdc_token.mint(&bidder_two, &funded_amount);
+    token::Client::new(&env, &usdc_id).approve(
+        &bidder_one,
+        &client.address,
+        &funded_amount,
+        &99999,
+    );
+    token::Client::new(&env, &usdc_id).approve(
+        &bidder_two,
+        &client.address,
+        &funded_amount,
+        &99999,
+    );
+
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+
+    client.place_bid(
+        &event_id,
+        &tier_id,
+        &bidder_one,
+        &usdc_id,
+        &1100_0000000i128,
+    );
+
+    let result = client.try_place_bid(
+        &event_id,
+        &tier_id,
+        &bidder_two,
+        &usdc_id,
+        &1199_0000000i128,
+    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::BidTooLow)));
+
+    let highest_bid = env
+        .as_contract(&client.address, || {
+            get_highest_bid(&env, event_id.clone(), tier_id.clone())
+        })
+        .unwrap();
+    assert_eq!(highest_bid.bidder, bidder_one);
+    assert_eq!(highest_bid.amount, 1100_0000000i128);
+}
+
+#[test]
+fn test_close_auction_rejects_early_closure() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_auction_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+
+    let result =
+        client.try_close_auction(&String::from_str(&env, "payment_1"), &event_id, &tier_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::AuctionNotEnded)));
+    let auction_closed = env.as_contract(&client.address, || {
+        is_auction_closed(&env, event_id.clone(), tier_id.clone())
+    });
+    assert!(!auction_closed);
+}
+
+#[test]
+fn test_governance_rejects_slippage_above_fifty_percent() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _, _, _) = setup_test(&env);
+    let proposal_id =
+        client.propose_parameter_change(&admin, &ParameterChange::UpdateSlippage(5001));
+
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+
+    let result = client.try_execute_proposal(&admin, &proposal_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidSlippageBps)));
+    assert_eq!(client.get_slippage(), 200);
 }
 
 // ════════════════════════════════════════════════════════════════

@@ -466,6 +466,12 @@ impl EventRegistry {
         storage::get_event(&env, event_id)
     }
 
+    /// Returns the total number of tickets sold for an event across all tiers.
+    pub fn get_total_tickets_sold(env: Env, event_id: String) -> Result<i128, EventRegistryError> {
+        let event = storage::get_event(&env, event_id).ok_or(EventRegistryError::EventNotFound)?;
+        Ok(event.current_supply)
+    }
+
     /// Checks if an event exists.
     pub fn event_exists(env: Env, event_id: String) -> bool {
         storage::event_exists(&env, event_id)
