@@ -639,10 +639,13 @@ impl TicketPaymentContract {
             .unwrap_or(0);
 
         let loyalty_discount_amount = if loyalty_discount_bps > 0 {
-            total_platform_fee
-                .checked_mul(loyalty_discount_bps as i128)
-                .and_then(|v| v.checked_div(10000))
-                .ok_or(TicketPaymentError::ArithmeticError)?
+            core::cmp::min(
+                total_platform_fee
+                    .checked_mul(loyalty_discount_bps as i128)
+                    .and_then(|v| v.checked_div(10000))
+                    .ok_or(TicketPaymentError::ArithmeticError)?,
+                total_platform_fee,
+            )
         } else {
             0
         };
