@@ -3131,15 +3131,15 @@ fn test_event_description() {
 
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
-    let event_id = String::from_str(&env, "event_with_description");
+    let event_id = String::from_str(&env, "event_with_banner");
     let metadata_cid = String::from_str(
         &env,
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    let description = String::from_str(
+    let banner_cid = Some(String::from_str(
         &env,
-        "This is a comprehensive test event with a detailed description",
-    );
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    ));
     let tiers = Map::new(&env);
 
     client.register_event(&EventRegistrationArgs {
@@ -3155,11 +3155,11 @@ fn test_event_description() {
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
-        description: description.clone(),
+        banner_cid: banner_cid.clone(),
     });
 
     let event_info = client.get_event(&event_id).unwrap();
-    assert_eq!(event_info.description, description);
+    assert_eq!(event_info.banner_cid, banner_cid);
     assert_eq!(event_info.event_id, event_id);
     assert_eq!(event_info.organizer_address, organizer);
 }

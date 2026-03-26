@@ -4791,3 +4791,317 @@ fn test_refund_rejected_after_deadline() {
     let res = client.try_request_guest_refund(&payment_id);
     assert_eq!(res, Err(Ok(TicketPaymentError::RefundDeadlinePassed)));
 }
+
+// ==================== Payment Status Index Tests ====================
+
+#[test]
+fn test_get_payments_by_status_empty() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _platform_wallet, _) = setup_test(&env);
+
+    let event_id = String::from_str(&env, "event_1");
+
+    // Query for Pending payments when none exist
+    let pending_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Pending);
+    assert_eq!(pending_payments.len(), 0);
+
+    // Query for Confirmed payments when none exist
+    let confirmed_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Confirmed);
+    assert_eq!(confirmed_payments.len(), 0);
+}
+
+#[test]
+fn test_get_payments_by_status_single_payment() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let payment_id = String::from_str(&env, "payment_001");
+    let tier_id = String::from_str(&env, "tier_1");
+    let amount = 1000_0000000i128; // Match MockEventRegistry tier price
+
+    // Mint tokens to buyer
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    // Process a payment
+    client.process_payment(
+        &payment_id,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Payment should be in Pending status initially
+    let pending_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Pending);
+    assert_eq!(pending_payments.len(), 1);
+    assert_eq!(pending_payments.get(0).unwrap(), payment_id);
+
+    // No confirmed payments yet
+    let confirmed_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Confirmed);
+    assert_eq!(confirmed_payments.len(), 0);
+
+    // Confirm the payment
+    client.confirm_payment(&payment_id, &String::from_str(&env, "tx_hash_confirmed"));
+
+    // Now payment should be in Confirmed status
+    let confirmed_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Confirmed);
+    assert_eq!(confirmed_payments.len(), 1);
+    assert_eq!(confirmed_payments.get(0).unwrap(), payment_id);
+
+    // No longer in Pending
+    let pending_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Pending);
+    assert_eq!(pending_payments.len(), 0);
+}
+
+#[test]
+fn test_get_payments_by_status_multiple_payments() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer1 = Address::generate(&env);
+    let buyer2 = Address::generate(&env);
+    let buyer3 = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let amount = 1000_0000000i128; // Match MockEventRegistry tier price
+
+    // Mint tokens to buyers
+    usdc_token.mint(&buyer1, &amount);
+    usdc_token.mint(&buyer2, &amount);
+    usdc_token.mint(&buyer3, &amount);
+
+    token::Client::new(&env, &usdc_id).approve(&buyer1, &client.address, &amount, &99999);
+    token::Client::new(&env, &usdc_id).approve(&buyer2, &client.address, &amount, &99999);
+    token::Client::new(&env, &usdc_id).approve(&buyer3, &client.address, &amount, &99999);
+
+    // Process three payments
+    let payment_id1 = String::from_str(&env, "payment_001");
+    let payment_id2 = String::from_str(&env, "payment_002");
+    let payment_id3 = String::from_str(&env, "payment_003");
+
+    client.process_payment(
+        &payment_id1,
+        &event_id,
+        &tier_id,
+        &buyer1,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    client.process_payment(
+        &payment_id2,
+        &event_id,
+        &tier_id,
+        &buyer2,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    client.process_payment(
+        &payment_id3,
+        &event_id,
+        &tier_id,
+        &buyer3,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    // All three should be in Pending status
+    let pending_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Pending);
+    assert_eq!(pending_payments.len(), 3);
+    assert!(pending_payments.contains(&payment_id1));
+    assert!(pending_payments.contains(&payment_id2));
+    assert!(pending_payments.contains(&payment_id3));
+
+    // Confirm first payment
+    client.confirm_payment(&payment_id1, &String::from_str(&env, "tx_hash_1"));
+
+    // Now we should have 2 pending and 1 confirmed
+    let pending_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Pending);
+    assert_eq!(pending_payments.len(), 2);
+    assert!(pending_payments.contains(&payment_id2));
+    assert!(pending_payments.contains(&payment_id3));
+
+    let confirmed_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Confirmed);
+    assert_eq!(confirmed_payments.len(), 1);
+    assert_eq!(confirmed_payments.get(0).unwrap(), payment_id1);
+
+    // Confirm second payment
+    client.confirm_payment(&payment_id2, &String::from_str(&env, "tx_hash_2"));
+
+    // Now we should have 1 pending and 2 confirmed
+    let pending_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Pending);
+    assert_eq!(pending_payments.len(), 1);
+    assert_eq!(pending_payments.get(0).unwrap(), payment_id3);
+
+    let confirmed_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Confirmed);
+    assert_eq!(confirmed_payments.len(), 2);
+    assert!(confirmed_payments.contains(&payment_id1));
+    assert!(confirmed_payments.contains(&payment_id2));
+}
+
+#[test]
+fn test_get_payments_by_status_with_refunds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, platform_wallet, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let payment_id = String::from_str(&env, "payment_001");
+    let tier_id = String::from_str(&env, "tier_1");
+    let amount = 1000_0000000i128; // Match MockEventRegistry tier price
+
+    // Mint tokens to buyer and platform wallet
+    usdc_token.mint(&buyer, &amount);
+    usdc_token.mint(&platform_wallet, &amount);
+
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    // Process and confirm a payment
+    client.process_payment(
+        &payment_id,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    client.confirm_payment(&payment_id, &String::from_str(&env, "tx_hash_confirmed"));
+
+    // Payment should be in Confirmed status
+    let confirmed_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Confirmed);
+    assert_eq!(confirmed_payments.len(), 1);
+
+    // Request a refund
+    client.request_guest_refund(&payment_id);
+
+    // Payment should now be in Refunded status
+    let refunded_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Refunded);
+    assert_eq!(refunded_payments.len(), 1);
+    assert_eq!(refunded_payments.get(0).unwrap(), payment_id);
+
+    // No longer in Confirmed
+    let confirmed_payments = client.get_payments_by_status(&event_id, &PaymentStatus::Confirmed);
+    assert_eq!(confirmed_payments.len(), 0);
+}
+
+#[test]
+fn test_get_payments_by_status_multiple_events() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let amount = 1000_0000000i128; // Match MockEventRegistry tier price
+
+    // Mint tokens to buyer
+    usdc_token.mint(&buyer, &(amount * 2));
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &(amount * 2), &99999);
+
+    // Process two payments for the same event
+    let payment_id1 = String::from_str(&env, "payment_001");
+    let payment_id2 = String::from_str(&env, "payment_002");
+
+    client.process_payment(
+        &payment_id1,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    client.process_payment(
+        &payment_id2,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Both should be pending
+    let pending = client.get_payments_by_status(&event_id, &PaymentStatus::Pending);
+    assert_eq!(pending.len(), 2);
+    assert!(pending.contains(&payment_id1));
+    assert!(pending.contains(&payment_id2));
+
+    // Confirm first payment
+    client.confirm_payment(&payment_id1, &String::from_str(&env, "tx_hash_1"));
+
+    // Event should have 1 confirmed and 1 pending
+    let confirmed = client.get_payments_by_status(&event_id, &PaymentStatus::Confirmed);
+    assert_eq!(confirmed.len(), 1);
+    assert_eq!(confirmed.get(0).unwrap(), payment_id1);
+
+    let pending = client.get_payments_by_status(&event_id, &PaymentStatus::Pending);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending.get(0).unwrap(), payment_id2);
+}
+
+#[test]
+fn test_get_payments_by_status_all_statuses() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _platform_wallet, _) = setup_test(&env);
+
+    let event_id = String::from_str(&env, "event_1");
+
+    // Test all status types return empty initially
+    let pending = client.get_payments_by_status(&event_id, &PaymentStatus::Pending);
+    assert_eq!(pending.len(), 0);
+
+    let confirmed = client.get_payments_by_status(&event_id, &PaymentStatus::Confirmed);
+    assert_eq!(confirmed.len(), 0);
+
+    let refunded = client.get_payments_by_status(&event_id, &PaymentStatus::Refunded);
+    assert_eq!(refunded.len(), 0);
+
+    let failed = client.get_payments_by_status(&event_id, &PaymentStatus::Failed);
+    assert_eq!(failed.len(), 0);
+
+    let checked_in = client.get_payments_by_status(&event_id, &PaymentStatus::CheckedIn);
+    assert_eq!(checked_in.len(), 0);
+}

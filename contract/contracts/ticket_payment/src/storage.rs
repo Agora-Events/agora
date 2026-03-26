@@ -27,6 +27,14 @@ pub fn store_payment(env: &Env, payment: Payment) {
             payment.buyer_address.clone(),
             payment.payment_id.clone(),
         );
+
+        // Index by status
+        add_payment_to_status_index(
+            env,
+            payment.event_id.clone(),
+            payment.status.clone(),
+            payment.payment_id.clone(),
+        );
     }
 }
 
@@ -42,10 +50,22 @@ pub fn update_payment_status(
     confirmed_at: Option<u64>,
 ) {
     if let Some(mut payment) = get_payment(env, payment_id.clone()) {
-        payment.status = status;
+        let old_status = payment.status.clone();
+        payment.status = status.clone();
         payment.confirmed_at = confirmed_at;
-        let key = DataKey::Payment(payment_id);
+        let key = DataKey::Payment(payment_id.clone());
         env.storage().persistent().set(&key, &payment);
+
+        // Update status index if status changed
+        if old_status != status {
+            update_payment_status_index(
+                env,
+                payment.event_id.clone(),
+                old_status,
+                status,
+                payment_id,
+            );
+        }
     }
 }
 
@@ -661,4 +681,108 @@ pub fn increment_proposal_count(env: &Env) -> u64 {
         .persistent()
         .set(&DataKey::ProposalCount, &count);
     count
+}
+
+// ── Payment Status Index ──────────────────────────────────────────────────────
+
+/// Adds a payment to the status index for an event
+pub fn add_payment_to_status_index(
+    env: &Env,
+    event_id: String,
+    status: PaymentStatus,
+    payment_id: String,
+) {
+    // Check if already indexed
+    if env.storage().persistent().has(&DataKey::EventPaymentStatusEntry(
+        event_id.clone(),
+        status.clone(),
+        payment_id.clone(),
+    )) {
+        return;
+    }
+
+    // Get current list for this event and status
+    let mut payment_ids: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::EventPaymentStatus(event_id.clone(), status.clone()))
+        .unwrap_or_else(|| vec![env]);
+
+    // Add payment_id to the list
+    payment_ids.push_back(payment_id.clone());
+
+    // Store updated list
+    env.storage().persistent().set(
+        &DataKey::EventPaymentStatus(event_id.clone(), status.clone()),
+        &payment_ids,
+    );
+
+    // Mark as indexed
+    env.storage().persistent().set(
+        &DataKey::EventPaymentStatusEntry(event_id, status, payment_id),
+        &true,
+    );
+}
+
+/// Removes a payment from the status index (used when status changes)
+pub fn remove_payment_from_status_index(
+    env: &Env,
+    event_id: String,
+    status: PaymentStatus,
+    payment_id: String,
+) {
+    // Get current list for this event and status
+    let payment_ids: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::EventPaymentStatus(event_id.clone(), status.clone()))
+        .unwrap_or_else(|| vec![env]);
+
+    // Filter out the payment_id
+    let mut new_payment_ids = vec![env];
+    for id in payment_ids.iter() {
+        if id != payment_id {
+            new_payment_ids.push_back(id);
+        }
+    }
+
+    // Store updated list
+    env.storage().persistent().set(
+        &DataKey::EventPaymentStatus(event_id.clone(), status.clone()),
+        &new_payment_ids,
+    );
+
+    // Remove index marker
+    env.storage().persistent().remove(&DataKey::EventPaymentStatusEntry(
+        event_id,
+        status,
+        payment_id,
+    ));
+}
+
+/// Updates the status index when a payment status changes
+pub fn update_payment_status_index(
+    env: &Env,
+    event_id: String,
+    old_status: PaymentStatus,
+    new_status: PaymentStatus,
+    payment_id: String,
+) {
+    // Remove from old status index
+    remove_payment_from_status_index(env, event_id.clone(), old_status, payment_id.clone());
+    
+    // Add to new status index
+    add_payment_to_status_index(env, event_id, new_status, payment_id);
+}
+
+/// Gets all payment IDs for an event with a specific status
+pub fn get_payments_by_status(
+    env: &Env,
+    event_id: String,
+    status: PaymentStatus,
+) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventPaymentStatus(event_id, status))
+        .unwrap_or_else(|| vec![env])
 }

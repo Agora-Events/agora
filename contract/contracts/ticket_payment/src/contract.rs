@@ -19,7 +19,7 @@ use crate::storage::{
     subtract_from_total_fees_collected_by_token, update_event_balance,
 };
 use crate::types::{
-    HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus, ProposalStatus,
+    DataKey, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus, ProposalStatus,
 };
 use crate::{
     error::TicketPaymentError,
@@ -844,10 +844,25 @@ impl TicketPaymentContract {
         admin.require_auth();
         // In a real scenario, this would be restricted to a specific backend/admin address.
         if let Some(mut payment) = get_payment(&env, payment_id.clone()) {
+            let old_status = payment.status.clone();
             payment.status = PaymentStatus::Confirmed;
             payment.confirmed_at = Some(env.ledger().timestamp());
             payment.transaction_hash = transaction_hash.clone();
-            store_payment(&env, payment);
+            
+            // Update payment in storage
+            let key = DataKey::Payment(payment_id.clone());
+            env.storage().persistent().set(&key, &payment);
+            
+            // Update status index
+            if old_status != PaymentStatus::Confirmed {
+                crate::storage::update_payment_status_index(
+                    &env,
+                    payment.event_id.clone(),
+                    old_status.clone(),
+                    PaymentStatus::Confirmed,
+                    payment_id.clone(),
+                );
+            }
         }
 
         // Emit confirmation event
@@ -983,7 +998,20 @@ impl TicketPaymentContract {
         payment.status = PaymentStatus::Refunded;
         payment.confirmed_at = Some(env.ledger().timestamp());
 
-        store_payment(&env, payment.clone());
+        // Update payment in storage
+        let key = DataKey::Payment(payment_id.clone());
+        env.storage().persistent().set(&key, &payment);
+        
+        // Update status index
+        if old_status != PaymentStatus::Refunded {
+            crate::storage::update_payment_status_index(
+                &env,
+                payment.event_id.clone(),
+                old_status.clone(),
+                PaymentStatus::Refunded,
+                payment_id.clone(),
+            );
+        }
 
         // Process token transfer
         if refund_amount > 0 {
@@ -1508,6 +1536,23 @@ impl TicketPaymentContract {
     /// Returns all payments for a specific buyer.
     pub fn get_buyer_payments(env: Env, buyer_address: Address) -> soroban_sdk::Vec<String> {
         crate::storage::get_buyer_payments(&env, buyer_address)
+    }
+
+    /// Returns all payment IDs for an event with a specific status.
+    /// This allows querying payments by status (e.g., Pending, Confirmed, Refunded, Failed, CheckedIn).
+    ///
+    /// # Arguments
+    /// * `event_id` - The event ID to query
+    /// * `status` - The payment status to filter by
+    ///
+    /// # Returns
+    /// A vector of payment IDs matching the specified status for the event
+    pub fn get_payments_by_status(
+        env: Env,
+        event_id: String,
+        status: PaymentStatus,
+    ) -> soroban_sdk::Vec<String> {
+        crate::storage::get_payments_by_status(&env, event_id, status)
     }
 
     /// Sets the transfer fee for an event. Only the organizer can call this.

@@ -83,13 +83,6 @@ pub struct HighestBid {
 }
 
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EventBalance {
-    pub organizer_amount: i128,
-    pub platform_fee: i128,
-}
-
-#[contracttype]
 pub enum DataKey {
     Payment(String), // payment_id -> Payment
     /// Individual entry for an event payment (Persistent)
@@ -134,4 +127,8 @@ pub enum DataKey {
     TotalGovernors,                      // u32
     Proposal(u64),                       // id -> ParameterProposal
     ProposalCount,                       // u64
+    /// Status index for payments: (event_id, status) -> Vec<payment_id>
+    EventPaymentStatus(String, PaymentStatus),
+    /// Individual entry for status index: (event_id, status, payment_id) -> bool
+    EventPaymentStatusEntry(String, PaymentStatus, String),
 }
