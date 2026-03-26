@@ -2896,12 +2896,90 @@ fn test_goal_met_event_fires_only_once() {
     // Cross the threshold (5 + 5 = 10 >= 10): GoalMet + InventoryIncremented
     client.increment_inventory(&event_id, &tier_id, &5);
     let events = env.events().all();
-    assert_eq!(events.len(), 2, "expected GoalMet and InventoryIncremented events");
+    assert_eq!(
+        events.len(),
+        2,
+        "expected GoalMet and InventoryIncremented events"
+    );
     assert!(client.get_event(&event_id).unwrap().goal_met);
 
     // Past threshold: only InventoryIncremented, no second GoalMet
     client.increment_inventory(&event_id, &tier_id, &5);
     let events = env.events().all();
-    assert_eq!(events.len(), 1, "GoalMet must not fire again after threshold already crossed");
+    assert_eq!(
+        events.len(),
+        1,
+        "GoalMet must not fire again after threshold already crossed"
+    );
     assert!(client.get_event(&event_id).unwrap().goal_met);
+}
+
+#[test]
+fn test_series_pass_issued_at_timestamp() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Register an event for the series
+    let event_id = String::from_str(&env, "event_ts");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
+
+    // Register a series
+    let series_id = String::from_str(&env, "series_ts");
+    let event_ids = soroban_sdk::vec![&env, event_id.clone()];
+    client.register_series(
+        &series_id,
+        &String::from_str(&env, "Timestamp Series"),
+        &event_ids,
+        &organizer,
+        &None,
+    );
+
+    // Set a specific ledger timestamp
+    let expected_timestamp = 1700000000u64;
+    env.ledger()
+        .with_mut(|li| li.timestamp = expected_timestamp);
+
+    // Issue the pass
+    let pass_id = String::from_str(&env, "pass_ts");
+    let holder = Address::generate(&env);
+    client.issue_series_pass(
+        &pass_id,
+        &series_id,
+        &holder,
+        &5,
+        &(expected_timestamp + 10000),
+    );
+
+    // Verify issued_at matches the ledger timestamp
+    let pass = client.get_series_pass(&pass_id).unwrap();
+    assert_eq!(pass.issued_at, expected_timestamp);
+    assert_eq!(pass.holder, holder);
+    assert_eq!(pass.series_id, series_id);
+    assert_eq!(pass.usage_limit, 5);
+    assert_eq!(pass.usage_count, 0);
 }

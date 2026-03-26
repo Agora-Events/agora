@@ -4641,11 +4641,11 @@ fn test_process_payment_extremely_high_ticket_price() {
     client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
 
     let buyer = Address::generate(&env);
-    let amount = i128::MAX / 10000;
+    let amount = i128::MAX / 2 + 1;
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
-    // quantity=2 causes total_amount = amount * 2 to overflow in checked_mul
+    // quantity=2 causes total_amount = amount * 2 to overflow i128::MAX in checked_mul
     let res = client.try_process_payment(
         &String::from_str(&env, "p1"),
         &String::from_str(&env, "event_1"),
