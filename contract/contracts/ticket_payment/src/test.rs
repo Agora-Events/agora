@@ -4572,3 +4572,220 @@ fn test_process_payment_with_custom_fee() {
     assert_eq!(payment.platform_fee, 100_0000000);
     assert_eq!(payment.organizer_amount, 9900_0000000);
 }
+
+// Mock registry returning an extremely high ticket price to test checked math overflow
+#[soroban_sdk::contract]
+pub struct MockEventRegistryHighPrice;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryHighPrice {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: i128::MAX / 10000,
+                        early_bird_price: i128::MAX / 10000,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+}
+
+#[test]
+fn test_process_payment_extremely_high_ticket_price() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryHighPrice, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let amount = i128::MAX / 2 + 1;
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    // quantity=2 causes total_amount = amount * 2 to overflow i128::MAX in checked_mul
+    let res = client.try_process_payment(
+        &String::from_str(&env, "p1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &2,
+        &None,
+        &None,
+    );
+    assert_eq!(res, Err(Ok(TicketPaymentError::ArithmeticError)));
+}
+
+// ==================== Refund Deadline Tests ====================
+
+#[soroban_sdk::contract]
+pub struct MockEventRegistryRefundDeadline;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryRefundDeadline {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 100,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000,
+                        early_bird_price: 1000,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 5000,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+        })
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+}
+
+#[test]
+fn test_refund_rejected_after_deadline() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Set timestamp BEFORE the deadline (5000)
+    env.ledger().with_mut(|li| li.timestamp = 3000);
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryRefundDeadline, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &2000);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &2000, &99999);
+
+    let payment_id = String::from_str(&env, "p_deadline");
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "e1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &1000,
+        &1,
+        &None,
+        &None,
+    );
+
+    // Advance time past the refund deadline (5000)
+    env.ledger().with_mut(|li| li.timestamp = 6000);
+
+    // Attempt refund after deadline - should fail
+    let res = client.try_request_guest_refund(&payment_id);
+    assert_eq!(res, Err(Ok(TicketPaymentError::RefundDeadlinePassed)));
+}
