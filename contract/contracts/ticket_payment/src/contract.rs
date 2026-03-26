@@ -154,6 +154,7 @@ pub mod event_registry {
         pub target_deadline: u64,
         pub goal_met: bool,
         pub custom_fee_bps: Option<u32>,
+        pub banner_cid: Option<String>,
     }
 }
 

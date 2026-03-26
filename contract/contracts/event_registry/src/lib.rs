@@ -257,7 +257,7 @@ impl EventRegistry {
             target_deadline: args.target_deadline.unwrap_or(0),
             goal_met: false,
             custom_fee_bps: None,
-            description: args.description.clone(),
+            banner_cid: args.banner_cid,
         };
 
         storage::store_event(&env, event_info);

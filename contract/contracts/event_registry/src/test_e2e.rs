@@ -39,7 +39,7 @@ fn make_event_args(
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
-        description: String::from_str(env, "Test event description"),
+        banner_cid: None,
     }
 }
 

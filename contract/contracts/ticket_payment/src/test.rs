@@ -59,6 +59,7 @@ impl MockCancelledRegistry {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
@@ -124,6 +125,7 @@ impl MockEventRegistry {
                 min_sales_target: 0,
                 target_deadline: 0,
                 goal_met: false,
+                banner_cid: None,
             });
         }
         None
@@ -194,6 +196,7 @@ impl MockEventRegistry2 {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -863,6 +866,7 @@ impl MockEventRegistryMaxSupply {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -972,6 +976,7 @@ impl MockEventRegistryWithInventory {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -1193,6 +1198,7 @@ impl MockEventRegistryWithMilestones {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -1513,6 +1519,7 @@ impl MockEventRegistryEarlyBird {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -1999,6 +2006,7 @@ impl MockEventRegistryWithOrganizer {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -2308,6 +2316,7 @@ impl MockPlatformRegistryE2E {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         };
 
         env.storage()
@@ -2776,6 +2785,7 @@ impl MockEventRegistryRefund {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -2846,6 +2856,7 @@ impl MockEventRegistryWithResaleCap {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -3088,6 +3099,7 @@ impl MockRegistryZeroCap {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -3606,6 +3618,7 @@ impl MockEventRegistryUsdPriced {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -4070,6 +4083,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4195,6 +4209,7 @@ impl MockEventRegistryWithLoyalty {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4274,6 +4289,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4485,6 +4501,7 @@ impl MockEventRegistryCustomFee {
             target_deadline: 0,
             goal_met: false,
             custom_fee_bps: Some(100),
+            banner_cid: None,
         })
     }
 
@@ -4611,6 +4628,7 @@ impl MockEventRegistryHighPrice {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
@@ -4716,6 +4734,7 @@ impl MockEventRegistryRefundDeadline {
             min_sales_target: 0,
             target_deadline: 0,
             goal_met: false,
+            banner_cid: None,
         })
     }
 
