@@ -640,10 +640,13 @@ impl TicketPaymentContract {
             .unwrap_or(0);
 
         let loyalty_discount_amount = if loyalty_discount_bps > 0 {
-            total_platform_fee
-                .checked_mul(loyalty_discount_bps as i128)
-                .and_then(|v| v.checked_div(10000))
-                .ok_or(TicketPaymentError::ArithmeticError)?
+            core::cmp::min(
+                total_platform_fee
+                    .checked_mul(loyalty_discount_bps as i128)
+                    .and_then(|v| v.checked_div(10000))
+                    .ok_or(TicketPaymentError::ArithmeticError)?,
+                total_platform_fee,
+            )
         } else {
             0
         };
@@ -790,12 +793,14 @@ impl TicketPaymentContract {
         );
 
         // 8a. Award loyalty points to buyer (best-effort; ignore failures)
-        let _ = registry_client_promo.try_update_loyalty_score(
+        match registry_client_promo.try_update_loyalty_score(
             &env.current_contract_address(),
             &buyer_address,
             &quantity,
             &effective_total,
-        );
+        ) {
+            Ok(_) | Err(_) => {}
+        }
 
         // 9. Emit discount applied event if a code was used
         if let Some(hash) = discount_code_hash {
