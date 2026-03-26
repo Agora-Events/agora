@@ -1624,6 +1624,137 @@ fn test_multiple_tiers_inventory() {
 }
 
 #[test]
+fn test_increment_inventory_supply_overflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "overflow_event");
+    let tier_id = String::from_str(&env, "general");
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        tier_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: i128::MAX,
+            current_sold: i128::MAX - 1,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    // Store event with current_supply near i128::MAX to trigger overflow
+    client.store_event(&EventInfo {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr,
+        platform_fee_percent: 500,
+        is_active: true,
+        status: EventStatus::Active,
+        created_at: env.ledger().timestamp(),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 0, // unlimited so max_supply check is skipped
+        current_supply: i128::MAX,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
+        custom_fee_bps: None,
+        banner_cid: None,
+    });
+
+    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
+}
+
+#[test]
+fn test_increment_inventory_tier_sold_overflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "tier_overflow_event");
+    let tier_id = String::from_str(&env, "general");
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        tier_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: i128::MAX,
+            current_sold: i128::MAX, // tier current_sold at max
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    client.store_event(&EventInfo {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr,
+        platform_fee_percent: 500,
+        is_active: true,
+        status: EventStatus::Active,
+        created_at: env.ledger().timestamp(),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 0,
+        current_supply: 0,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
+        custom_fee_bps: None,
+        banner_cid: None,
+    });
+
+    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
+}
+
+#[test]
 fn test_update_event_status_noop_skips_event() {
     let env = Env::new_with_config(EnvTestConfig {
         capture_snapshot_at_drop: false,
