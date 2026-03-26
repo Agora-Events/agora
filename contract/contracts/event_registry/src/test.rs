@@ -527,6 +527,66 @@ fn test_register_duplicate_event_fails() {
 }
 
 #[test]
+fn test_register_event_invalid_metadata_cid_formats() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let tiers = Map::new(&env);
+    let short_cid = String::from_str(&env, "bafy");
+    let short_result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "event_short_cid"),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr.clone(),
+        metadata_cid: short_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
+    assert_eq!(
+        short_result,
+        Err(Ok(EventRegistryError::InvalidMetadataCid))
+    );
+
+    let wrong_prefix_cid = String::from_str(
+        &env,
+        "Qafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let wrong_prefix_result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "event_wrong_prefix_cid"),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid: wrong_prefix_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+    });
+    assert_eq!(
+        wrong_prefix_result,
+        Err(Ok(EventRegistryError::InvalidMetadataCid))
+    );
+}
+
+#[test]
 fn test_get_event_payment_info() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
