@@ -1,14 +1,119 @@
-use crate::types::{DataKey, EventInfo};
-use soroban_sdk::{Address, Env, String, Vec};
+use crate::types::{
+    BlacklistAuditEntry, DataKey, EventInfo, GuestProfile, MultiSigConfig, OrganizerStake, Proposal,
+};
+use crate::types::{SeriesPass, SeriesRegistry};
+use soroban_sdk::{vec, Address, Env, String, Vec};
+// --- SeriesRegistry Storage ---
+pub fn store_series(env: &Env, series: &SeriesRegistry) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Series(series.series_id.clone()), series);
+    // Index each event_id for fast lookup
+    for event_id in series.event_ids.iter() {
+        env.storage().persistent().set(
+            &DataKey::SeriesEvent(series.series_id.clone(), event_id.clone()),
+            &true,
+        );
+    }
+}
 
-/// Sets the administrator address of the contract.
+pub fn get_series(env: &Env, series_id: String) -> Option<SeriesRegistry> {
+    env.storage().persistent().get(&DataKey::Series(series_id))
+}
+
+pub fn series_contains_event(env: &Env, series_id: String, event_id: String) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::SeriesEvent(series_id, event_id))
+}
+
+// --- SeriesPass Storage ---
+pub fn store_series_pass(env: &Env, pass: &SeriesPass) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::SeriesPass(pass.pass_id.clone()), pass);
+    env.storage().persistent().set(
+        &DataKey::HolderSeriesPass(pass.holder.clone(), pass.series_id.clone()),
+        &pass.pass_id,
+    );
+}
+
+pub fn get_series_pass(env: &Env, pass_id: String) -> Option<SeriesPass> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SeriesPass(pass_id))
+}
+
+pub fn get_holder_series_pass(
+    env: &Env,
+    holder: &Address,
+    series_id: String,
+) -> Option<SeriesPass> {
+    if let Some(pass_id) = env
+        .storage()
+        .persistent()
+        .get::<_, String>(&DataKey::HolderSeriesPass(
+            holder.clone(),
+            series_id.clone(),
+        ))
+    {
+        env.storage()
+            .persistent()
+            .get(&DataKey::SeriesPass(pass_id))
+    } else {
+        None
+    }
+}
+
+/// Increments usage count for a pass, enforcing usage limit. Returns Some(pass) if incremented, None if not allowed.
+pub fn increment_series_pass_usage(env: &Env, pass_id: String) -> Option<SeriesPass> {
+    if let Some(mut pass) = get_series_pass(env, pass_id.clone()) {
+        if pass.usage_count < pass.usage_limit {
+            pass.usage_count += 1;
+            store_series_pass(env, &pass);
+            Some(pass)
+        } else {
+            None // Usage limit reached
+        }
+    } else {
+        None
+    }
+}
+
+const SHARD_SIZE: u32 = 50;
+
+/// Sets the administrator address of the contract (legacy function).
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&DataKey::Admin, admin);
 }
 
-/// Retrieves the administrator address of the contract.
+/// Retrieves the administrator address of the contract (legacy function).
 pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&DataKey::Admin)
+}
+
+/// Sets the multi-signature configuration.
+pub fn set_multisig_config(env: &Env, config: &MultiSigConfig) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::MultiSigConfig, config);
+}
+
+/// Retrieves the multi-signature configuration.
+pub fn get_multisig_config(env: &Env) -> Option<MultiSigConfig> {
+    env.storage().persistent().get(&DataKey::MultiSigConfig)
+}
+
+/// Checks if an address is an admin.
+pub fn is_admin(env: &Env, address: &Address) -> bool {
+    if let Some(config) = get_multisig_config(env) {
+        for admin in config.admins.iter() {
+            if admin == *address {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Sets the platform wallet address of the contract.
@@ -56,6 +161,75 @@ pub fn is_initialized(env: &Env) -> bool {
         .unwrap_or(false)
 }
 
+/// Gets the next proposal ID and increments the counter.
+pub fn get_next_proposal_id(env: &Env) -> u64 {
+    let current: u64 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::ProposalCounter)
+        .unwrap_or(0);
+    env.storage()
+        .persistent()
+        .set(&DataKey::ProposalCounter, &(current + 1));
+    current
+}
+
+/// Stores a proposal.
+pub fn store_proposal(env: &Env, proposal: &Proposal) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Proposal(proposal.proposal_id), proposal);
+
+    // Add to active proposals list if not executed
+    if !proposal.executed {
+        let mut active_proposals: Vec<u64> = get_active_proposals(env);
+        let mut exists = false;
+        for id in active_proposals.iter() {
+            if id == proposal.proposal_id {
+                exists = true;
+                break;
+            }
+        }
+        if !exists {
+            active_proposals.push_back(proposal.proposal_id);
+            env.storage()
+                .persistent()
+                .set(&DataKey::ActiveProposals, &active_proposals);
+        }
+    }
+}
+
+/// Retrieves a proposal by ID.
+pub fn get_proposal(env: &Env, proposal_id: u64) -> Option<Proposal> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Proposal(proposal_id))
+}
+
+/// Retrieves all active proposal IDs.
+pub fn get_active_proposals(env: &Env) -> Vec<u64> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ActiveProposals)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Removes a proposal from the active list (when executed or expired).
+pub fn remove_from_active_proposals(env: &Env, proposal_id: u64) {
+    let active_proposals: Vec<u64> = get_active_proposals(env);
+    let mut new_proposals = Vec::new(env);
+
+    for id in active_proposals.iter() {
+        if id != proposal_id {
+            new_proposals.push_back(id);
+        }
+    }
+
+    env.storage()
+        .persistent()
+        .set(&DataKey::ActiveProposals, &new_proposals);
+}
+
 /// Stores a new event or updates an existing one.
 /// Also updates the organizer's list of events.
 pub fn store_event(env: &Env, event_info: EventInfo) {
@@ -67,29 +241,65 @@ pub fn store_event(env: &Env, event_info: EventInfo) {
         .persistent()
         .set(&DataKey::Event(event_id.clone()), &event_info);
 
-    // Update organizer's event list
-    let mut organizer_events: Vec<String> = get_organizer_events(env, &organizer);
+    // Update organizer's event index if it doesn't exist
+    if !has_organizer_event(env, &organizer, event_id.clone()) {
+        let count = get_organizer_event_count(env, &organizer);
+        let shard_id = count / SHARD_SIZE;
 
-    // Check if event_id is already in the list to avoid duplicates on updates
-    let mut exists = false;
-    for id in organizer_events.iter() {
-        if id == event_id {
-            exists = true;
-            break;
-        }
-    }
+        let mut shard: Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OrganizerEventShard(organizer.clone(), shard_id))
+            .unwrap_or_else(|| vec![env]);
 
-    if !exists {
-        organizer_events.push_back(event_id);
+        shard.push_back(event_id.clone());
+        env.storage().persistent().set(
+            &DataKey::OrganizerEventShard(organizer.clone(), shard_id),
+            &shard,
+        );
+
+        env.storage().persistent().set(
+            &DataKey::OrganizerEventCount(organizer.clone()),
+            &(count + 1),
+        );
+
         env.storage()
             .persistent()
-            .set(&DataKey::OrganizerEvents(organizer), &organizer_events);
+            .set(&DataKey::OrganizerEvent(organizer, event_id), &true);
     }
 }
 
-/// Retrieves event information by event_id.
+/// Updates event data without touching organizer index.
+/// Use this for mutations on already-registered events.
+pub fn update_event(env: &Env, event_info: EventInfo) {
+    let event_id = event_info.event_id.clone();
+    env.storage()
+        .persistent()
+        .set(&DataKey::Event(event_id), &event_info);
+}
+
+/// Integrates storage functions to get, remove events and handle their receipts.
 pub fn get_event(env: &Env, event_id: String) -> Option<EventInfo> {
     env.storage().persistent().get(&DataKey::Event(event_id))
+}
+
+/// Removes an event from storage
+pub fn remove_event(env: &Env, event_id: String) {
+    env.storage().persistent().remove(&DataKey::Event(event_id));
+}
+
+/// Stores an event receipt
+pub fn store_event_receipt(env: &Env, receipt: crate::types::EventReceipt) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventReceipt(receipt.event_id.clone()), &receipt);
+}
+
+/// Retrieves an event receipt by its event_id
+pub fn get_event_receipt(env: &Env, event_id: String) -> Option<crate::types::EventReceipt> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventReceipt(event_id))
 }
 
 /// Checks if an event with the given event_id exists.
@@ -97,12 +307,51 @@ pub fn event_exists(env: &Env, event_id: String) -> bool {
     env.storage().persistent().has(&DataKey::Event(event_id))
 }
 
-/// Retrieves all event_ids associated with an organizer.
-pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
+/// Retrieves the total number of events for an organizer.
+pub fn get_organizer_event_count(env: &Env, organizer: &Address) -> u32 {
     env.storage()
         .persistent()
-        .get(&DataKey::OrganizerEvents(organizer.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+        .get(&DataKey::OrganizerEventCount(organizer.clone()))
+        .unwrap_or(0)
+}
+
+/// Checks if an organizer has a specific event in their index.
+pub fn has_organizer_event(env: &Env, organizer: &Address, event_id: String) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::OrganizerEvent(organizer.clone(), event_id))
+}
+
+/// Retrieves all event_ids associated with an organizer by iterating through shards.
+/// NOTE: For very large lists, this may exceed gas limits. Use shard-based iteration for scale.
+pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
+    let count = get_organizer_event_count(env, organizer);
+    let mut all_events = vec![env];
+
+    if count == 0 {
+        return all_events;
+    }
+
+    let num_shards = count.div_ceil(SHARD_SIZE);
+    for i in 0..num_shards {
+        let shard: Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OrganizerEventShard(organizer.clone(), i))
+            .unwrap_or_else(|| vec![env]);
+        for id in shard.iter() {
+            all_events.push_back(id);
+        }
+    }
+    all_events
+}
+
+/// Retrieves a specific shard of event_ids for an organizer.
+pub fn get_organizer_event_shard(env: &Env, organizer: &Address, shard_id: u32) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OrganizerEventShard(organizer.clone(), shard_id))
+        .unwrap_or_else(|| vec![env])
 }
 
 /// Sets the authorized TicketPayment contract address.
@@ -117,4 +366,244 @@ pub fn get_ticket_payment_contract(env: &Env) -> Option<Address> {
     env.storage()
         .persistent()
         .get(&DataKey::TicketPaymentContract)
+}
+
+/// Checks if an organizer is blacklisted.
+pub fn is_blacklisted(env: &Env, organizer: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::BlacklistedOrganizer(organizer.clone()))
+        .unwrap_or(false)
+}
+
+/// Adds an organizer to the blacklist.
+pub fn add_to_blacklist(env: &Env, organizer: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::BlacklistedOrganizer(organizer.clone()), &true);
+}
+
+/// Removes an organizer from the blacklist.
+pub fn remove_from_blacklist(env: &Env, organizer: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::BlacklistedOrganizer(organizer.clone()));
+}
+
+/// Adds an audit log entry for blacklist actions.
+pub fn add_blacklist_audit_entry(env: &Env, entry: BlacklistAuditEntry) {
+    let mut audit_log: Vec<BlacklistAuditEntry> = get_blacklist_audit_log(env);
+    audit_log.push_back(entry);
+    env.storage()
+        .persistent()
+        .set(&DataKey::BlacklistLog, &audit_log);
+}
+
+/// Retrieves the blacklist audit log.
+pub fn get_blacklist_audit_log(env: &Env) -> Vec<BlacklistAuditEntry> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::BlacklistLog)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Sets the global promotional discount in basis points.
+pub fn set_global_promo_bps(env: &Env, bps: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalPromoBps, &bps);
+}
+
+/// Retrieves the global promotional discount in basis points.
+pub fn get_global_promo_bps(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::GlobalPromoBps)
+        .unwrap_or(0)
+}
+
+/// Sets the expiry timestamp for the global promotional discount.
+pub fn set_promo_expiry(env: &Env, expiry: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PromoExpiry, &expiry);
+}
+
+/// Retrieves the expiry timestamp for the global promotional discount.
+pub fn get_promo_expiry(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PromoExpiry)
+        .unwrap_or(0)
+}
+
+/// Authorizes a scanner for an event.
+pub fn authorize_scanner(env: &Env, event_id: String, scanner: &Address) {
+    env.storage().persistent().set(
+        &DataKey::AuthorizedScanner(event_id, scanner.clone()),
+        &true,
+    );
+}
+
+/// Removes authorization for a scanner from an event.
+pub fn remove_scanner(env: &Env, event_id: String, scanner: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::AuthorizedScanner(event_id, scanner.clone()));
+}
+
+/// Checks if a scanner is authorized for an event.
+pub fn is_scanner_authorized(env: &Env, event_id: String, scanner: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AuthorizedScanner(event_id, scanner.clone()))
+        .unwrap_or(false)
+}
+
+// ── Loyalty & Staking Storage ─────────────────────────────────────────────────
+
+/// Retrieves a guest's loyalty profile.
+pub fn get_guest_profile(env: &Env, guest: &Address) -> Option<GuestProfile> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::GuestProfile(guest.clone()))
+}
+
+/// Stores (creates or updates) a guest's loyalty profile.
+pub fn set_guest_profile(env: &Env, profile: &GuestProfile) {
+    env.storage().persistent().set(
+        &DataKey::GuestProfile(profile.guest_address.clone()),
+        profile,
+    );
+}
+
+/// Retrieves an organizer's stake record.
+pub fn get_organizer_stake(env: &Env, organizer: &Address) -> Option<OrganizerStake> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OrganizerStake(organizer.clone()))
+}
+
+/// Stores (creates or updates) an organizer's stake record.
+pub fn set_organizer_stake(env: &Env, stake: &OrganizerStake) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::OrganizerStake(stake.organizer.clone()), stake);
+}
+
+/// Removes an organizer's stake record (used on unstake).
+pub fn remove_organizer_stake(env: &Env, organizer: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::OrganizerStake(organizer.clone()));
+}
+
+/// Gets the minimum stake amount required for Verified status.
+pub fn get_min_stake_amount(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::MinStakeAmount)
+        .unwrap_or(0)
+}
+
+/// Sets the minimum stake amount required for Verified status.
+pub fn set_min_stake_amount(env: &Env, amount: i128) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::MinStakeAmount, &amount);
+}
+
+/// Gets the token contract address accepted for staking.
+pub fn get_staking_token(env: &Env) -> Option<Address> {
+    env.storage().persistent().get(&DataKey::StakingToken)
+}
+
+/// Sets the token contract address accepted for staking.
+pub fn set_staking_token(env: &Env, token: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::StakingToken, token);
+}
+
+/// Gets the total amount currently staked across all organizers.
+pub fn get_total_staked(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalStaked)
+        .unwrap_or(0)
+}
+
+/// Adds `amount` to the total staked counter.
+pub fn add_to_total_staked(env: &Env, amount: i128) {
+    let current = get_total_staked(env);
+    env.storage()
+        .persistent()
+        .set(&DataKey::TotalStaked, &(current + amount));
+}
+
+/// Subtracts `amount` from the total staked counter.
+pub fn subtract_from_total_staked(env: &Env, amount: i128) {
+    let current = get_total_staked(env);
+    let new_val = current.saturating_sub(amount);
+    env.storage()
+        .persistent()
+        .set(&DataKey::TotalStaked, &new_val);
+}
+
+/// Gets the list of all currently staked organizer addresses.
+pub fn get_stakers_list(env: &Env) -> Vec<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::StakersList)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Adds an organizer to the stakers list if not already present.
+pub fn add_to_stakers_list(env: &Env, organizer: &Address) {
+    let mut list = get_stakers_list(env);
+    for addr in list.iter() {
+        if addr == *organizer {
+            return; // already in list
+        }
+    }
+    list.push_back(organizer.clone());
+    env.storage().persistent().set(&DataKey::StakersList, &list);
+}
+
+/// Removes an organizer from the stakers list.
+pub fn remove_from_stakers_list(env: &Env, organizer: &Address) {
+    let list = get_stakers_list(env);
+    let mut new_list = Vec::new(env);
+    for addr in list.iter() {
+        if addr != *organizer {
+            new_list.push_back(addr);
+        }
+    }
+    env.storage()
+        .persistent()
+        .set(&DataKey::StakersList, &new_list);
+}
+
+// ── Token Whitelist Storage ───────────────────────────────────────────────────
+
+/// Adds a token address to the payment token whitelist.
+pub fn add_to_token_whitelist(env: &Env, token: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::TokenWhitelist(token.clone()), &true);
+}
+
+/// Removes a token address from the payment token whitelist.
+pub fn remove_from_token_whitelist(env: &Env, token: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::TokenWhitelist(token.clone()));
+}
+
+/// Returns true if the given token address is whitelisted for payments.
+pub fn is_token_whitelisted(env: &Env, token: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TokenWhitelist(token.clone()))
+        .unwrap_or(false)
 }

@@ -9,3 +9,6 @@ dist
 **/target
 server/target
 contract/target
+
+# Contract test snapshots
+**/test_snapshots/

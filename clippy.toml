@@ -1,0 +1,11 @@
+# Clippy configuration for Agora project
+# See https://doc.rust-lang.org/nightly/clippy/lint_configuration.html
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 50
+
+# Type complexity threshold
+type-complexity-threshold = 300
+
+# Too many arguments threshold
+too-many-arguments-threshold = 10

@@ -93,7 +93,6 @@ export function Navbar() {
             </div>
           </button>
         </div>
-
       </nav>
 
       <AnimatePresence>
@@ -145,13 +144,18 @@ export function Navbar() {
                       icon="/icons/home.svg"
                       text="Home"
                       isActive={pathname === "/"}
+                      onClose={() => setIsOpen(false)}
                     />
                     <MobileNavLink
                       i={1}
                       href="/discover"
                       icon="/icons/earth-yellow.svg"
                       text="Discover Events"
-                      isActive={pathname === "/discover"}
+                      isActive={
+                        pathname === "/discover" ||
+                        pathname.startsWith("/events")
+                      }
+                      onClose={() => setIsOpen(false)}
                     />
                     <MobileNavLink
                       i={2}
@@ -159,6 +163,7 @@ export function Navbar() {
                       icon="/icons/user-group.svg"
                       text="Organizers"
                       isActive={pathname === "/organizers"}
+                      onClose={() => setIsOpen(false)}
                     />
                     <MobileNavLink
                       i={3}
@@ -166,6 +171,7 @@ export function Navbar() {
                       icon="/icons/stellar-xlm-logo 1.svg"
                       text="Stellar Ecosystem"
                       isActive={pathname === "/stellar"}
+                      onClose={() => setIsOpen(false)}
                     />
                   </>
                 ) : (
@@ -175,7 +181,11 @@ export function Navbar() {
                       href="/discover"
                       icon="/icons/earth.svg"
                       text="Discover Events"
-                      isActive={pathname === "/discover"}
+                      isActive={
+                        pathname === "/discover" ||
+                        pathname.startsWith("/events")
+                      }
+                      onClose={() => setIsOpen(false)}
                     />
                     <MobileNavLink
                       i={1}
@@ -183,6 +193,7 @@ export function Navbar() {
                       icon="/icons/dollar-circle.svg"
                       text="Pricing"
                       isActive={pathname === "/pricing"}
+                      onClose={() => setIsOpen(false)}
                     />
                     <MobileNavLink
                       i={2}
@@ -190,6 +201,7 @@ export function Navbar() {
                       icon="/icons/stellar-xlm-logo 1.svg"
                       text="Stellar Ecosystem"
                       isActive={pathname === "/stellar"}
+                      onClose={() => setIsOpen(false)}
                     />
                     <MobileNavLink
                       i={3}
@@ -197,6 +209,7 @@ export function Navbar() {
                       icon="/icons/help-circle.svg"
                       text="FAQs"
                       isActive={pathname === "/faqs"}
+                      onClose={() => setIsOpen(false)}
                     />
                   </>
                 )}

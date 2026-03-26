@@ -5,12 +5,44 @@ use soroban_sdk::{contracttype, Address, String};
 pub enum AgoraEvent {
     EventRegistered,
     EventStatusUpdated,
+    EventCancelled,
     FeeUpdated,
     ContractInitialized,
     ContractUpgraded,
     MetadataUpdated,
     InventoryIncremented,
     InventoryDecremented,
+    OrganizerBlacklisted,
+    OrganizerRemovedFromBlacklist,
+    EventsSuspended,
+    GlobalPromoUpdated,
+    EventPostponed,
+    EventArchived,
+    ScannerAuthorized,
+    GoalMet,
+    // Loyalty & Staking events
+    CollateralStaked,
+    CollateralUnstaked,
+    StakerRewardsDistributed,
+    StakerRewardsClaimed,
+    LoyaltyScoreUpdated,
+    CustomFeeSet,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventCancelledEvent {
+    pub event_id: String,
+    pub cancelled_by: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventArchivedEvent {
+    pub event_id: String,
+    pub organizer_address: Address,
+    pub timestamp: u64,
 }
 
 #[contracttype]
@@ -67,7 +99,6 @@ pub struct MetadataUpdatedEvent {
 pub struct InventoryIncrementedEvent {
     pub event_id: String,
     pub new_supply: i128,
-    pub max_supply: i128,
     pub timestamp: u64,
 }
 
@@ -76,6 +107,169 @@ pub struct InventoryIncrementedEvent {
 pub struct InventoryDecrementedEvent {
     pub event_id: String,
     pub new_supply: i128,
-    pub max_supply: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizerBlacklistedEvent {
+    pub organizer_address: Address,
+    pub admin_address: Address,
+    pub reason: String,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizerRemovedFromBlacklistEvent {
+    pub organizer_address: Address,
+    pub admin_address: Address,
+    pub reason: String,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventsSuspendedEvent {
+    pub organizer_address: Address,
+    pub suspended_event_count: u32,
+    pub admin_address: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GlobalPromoUpdatedEvent {
+    pub global_promo_bps: u32,
+    pub promo_expiry: u64,
+    pub admin_address: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventPostponedEvent {
+    pub event_id: String,
+    pub organizer_address: Address,
+    pub grace_period_end: u64,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProposalCreatedEvent {
+    pub proposal_id: u64,
+    pub proposer: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProposalApprovedEvent {
+    pub proposal_id: u64,
+    pub approver: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProposalExecutedEvent {
+    pub proposal_id: u64,
+    pub executor: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminAddedEvent {
+    pub admin: Address,
+    pub added_by: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminRemovedEvent {
+    pub admin: Address,
+    pub removed_by: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThresholdUpdatedEvent {
+    pub old_threshold: u32,
+    pub new_threshold: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScannerAuthorizedEvent {
+    pub event_id: String,
+    pub scanner: Address,
+    pub authorized_by: Address,
+    pub timestamp: u64,
+}
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GoalMetEvent {
+    pub event_id: String,
+    pub min_sales_target: i128,
+    pub current_supply: i128,
+    pub timestamp: u64,
+}
+
+// ── Loyalty & Staking event structs ───────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollateralStakedEvent {
+    pub organizer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub is_verified: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollateralUnstakedEvent {
+    pub organizer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StakerRewardsDistributedEvent {
+    pub total_reward: i128,
+    pub staker_count: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StakerRewardsClaimedEvent {
+    pub organizer: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoyaltyScoreUpdatedEvent {
+    pub guest: Address,
+    pub new_score: u64,
+    pub tickets_purchased: u32,
+    pub timestamp: u64,
+}
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CustomFeeSetEvent {
+    pub event_id: String,
+    pub custom_fee_bps: Option<u32>,
+    pub admin_address: Address,
     pub timestamp: u64,
 }

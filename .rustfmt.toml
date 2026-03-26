@@ -1,0 +1,21 @@
+# Rustfmt configuration for Agora project
+# Enforces consistent code style across the codebase
+
+# Edition
+edition = "2021"
+
+# Basic formatting
+max_width = 100
+tab_spaces = 4
+hard_tabs = false
+
+# Imports
+reorder_imports = true
+reorder_modules = true
+
+# Functions
+fn_params_layout = "Tall"
+
+# Misc
+use_field_init_shorthand = true
+merge_derives = true

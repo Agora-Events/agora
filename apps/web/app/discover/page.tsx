@@ -10,7 +10,7 @@ export default function DiscoverPage() {
       <Navbar />
       <CategorySection />
       <PopularEventsSection />
-      <OrganizerComponent/>
+      <OrganizerComponent />
       <Footer />
     </main>
   );

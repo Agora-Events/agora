@@ -3,6 +3,7 @@ use chrono::Utc;
 use serde::Serialize;
 use sqlx::PgPool;
 
+use crate::utils::error::AppError;
 use crate::utils::response::success;
 
 #[derive(Serialize)]
@@ -25,19 +26,34 @@ struct HealthReadyResponse {
     database: &'static str,
 }
 
-/// GET /health - Basic health check endpoint
-/// Returns 200 if the API is running
-pub async fn health_check() -> Response {
-    let payload = HealthResponse {
-        status: "ok",
-        timestamp: Utc::now().to_rfc3339(),
-    };
-
-    success(payload, "API is healthy").into_response()
+/// GET /health – Combined check for API and Database.
+///
+/// Returns 200 when both the API process and the database are healthy.
+/// On failure it returns a structured JSON 503 error (via [`AppError`]).
+pub async fn health_check(State(pool): State<PgPool>) -> Response {
+    match sqlx::query("SELECT 1").fetch_one(&pool).await {
+        Ok(_) => {
+            let payload = HealthResponse {
+                status: "ok",
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "API is healthy").into_response()
+        }
+        Err(e) => {
+            tracing::error!("Health check failed: {:?}", e);
+            AppError::ExternalServiceError(format!(
+                "API is not ready: database is unreachable ({e})"
+            ))
+            .into_response()
+        }
+    }
 }
 
-/// GET /health/db - Database health check endpoint
-/// Returns 200 if database is connected, 503 if down
+/// GET /health/db – Database connectivity check.
+///
+/// Returns 200 when the database is reachable.
+/// Returns a structured JSON error (via [`AppError`]) when it is not,
+/// ensuring the error payload matches the API-wide error schema.
 pub async fn health_check_db(State(pool): State<PgPool>) -> Response {
     match sqlx::query("SELECT 1").fetch_one(&pool).await {
         Ok(_) => {
@@ -49,51 +65,56 @@ pub async fn health_check_db(State(pool): State<PgPool>) -> Response {
             success(payload, "Database is healthy").into_response()
         }
         Err(e) => {
-            tracing::error!("Database health check failed: {:?}", e);
-            let payload = HealthDbResponse {
-                status: "error",
-                database: "disconnected",
-                timestamp: Utc::now().to_rfc3339(),
-            };
-            (
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                axum::Json(payload),
-            )
+            // Delegate to AppError so the error body is identical to every
+            // other error response in the API.
+            AppError::ExternalServiceError(format!("Database health check failed: {e}"))
                 .into_response()
         }
     }
 }
 
-/// GET /health/ready - Readiness check endpoint
-/// Returns 200 only if both API and database are healthy
+/// GET /health/ready – Readiness check.
+///
+/// Returns 200 only when both the API process and the database are healthy.
+/// On failure the response uses [`AppError`] for a consistent error schema.
 pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
-    let db_status = match sqlx::query("SELECT 1").fetch_one(&pool).await {
-        Ok(_) => "ok",
-        Err(e) => {
-            tracing::error!("Database readiness check failed: {:?}", e);
-            "error"
-        }
-    };
+    let db_ok = sqlx::query("SELECT 1").fetch_one(&pool).await.is_ok();
 
-    let api_status = "ok";
-
-    if db_status == "ok" && api_status == "ok" {
+    if db_ok {
         let payload = HealthReadyResponse {
             status: "ready",
-            api: api_status,
-            database: db_status,
+            api: "ok",
+            database: "ok",
         };
         success(payload, "Service is ready").into_response()
     } else {
-        let payload = HealthReadyResponse {
-            status: "not_ready",
-            api: api_status,
-            database: db_status,
-        };
-        (
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            axum::Json(payload),
-        )
+        AppError::ExternalServiceError("Service is not ready: database is unreachable".to_string())
             .into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::error::AppError;
+    use axum::http::StatusCode;
+
+    #[tokio::test]
+    async fn test_health_response_ok_status() {
+        // Success case for health check response.
+        let payload = HealthResponse {
+            status: "ok",
+            timestamp: Utc::now().to_rfc3339(),
+        };
+        let resp = success(payload, "API is healthy").into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_health_db_error_status() {
+        // DB Failure case for health check response (via AppError).
+        let err = AppError::ExternalServiceError("database is unreachable".to_string());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }
