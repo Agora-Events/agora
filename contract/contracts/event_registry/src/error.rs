@@ -45,7 +45,7 @@ pub enum EventRegistryError {
     /// Reward distribution total must be positive
     InvalidRewardAmount = 32,
     /// Milestone release percentages sum exceeds 100%
-    InvalidMilestonePlan = 33,
+    InvalidMilestonePlan = 41,
     // ── Governance / Multi-Sig errors ──────────────────────────────────
     /// Admin already exists in the multi-sig configuration
     AdminAlreadyExists = 33,
@@ -155,6 +155,7 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::InvalidMilestonePlan => {
                 write!(f, "Milestone release percentages must not exceed 100%")
+            }
             EventRegistryError::AdminAlreadyExists => {
                 write!(f, "Admin already exists in the multi-sig configuration")
             }

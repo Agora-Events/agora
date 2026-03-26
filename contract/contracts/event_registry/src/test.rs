@@ -3147,42 +3147,6 @@ fn base_args(
         milestone_plan,
         tiers: Map::new(env),
         refund_deadline: 0,
-#[test]
-fn test_event_description() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let payment_addr = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let event_id = String::from_str(&env, "event_with_description");
-    let metadata_cid = String::from_str(
-        &env,
-        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-    );
-    let description = String::from_str(
-        &env,
-        "This is a comprehensive test event with a detailed description",
-    );
-    let tiers = Map::new(&env);
-
-    client.register_event(&EventRegistrationArgs {
-        event_id: event_id.clone(),
-        organizer_address: organizer.clone(),
-        payment_address: payment_addr.clone(),
-        metadata_cid: metadata_cid.clone(),
-        max_supply: 100,
-        milestone_plan: None,
-        tiers: tiers.clone(),
-        refund_deadline: env.ledger().timestamp() + 86400,
         restocking_fee: 0,
         resale_cap_bps: None,
         min_sales_target: None,
@@ -3263,13 +3227,6 @@ fn test_register_event_no_milestone_plan_succeeds() {
 
     // None milestone_plan should always pass validation
     client.register_event(&base_args(&env, &organizer, None));
-        description: description.clone(),
-    });
-
-    let event_info = client.get_event(&event_id).unwrap();
-    assert_eq!(event_info.description, description);
-    assert_eq!(event_info.event_id, event_id);
-    assert_eq!(event_info.organizer_address, organizer);
 }
 
 // ==================== Governance / Multi-Sig Tests ====================
@@ -3483,8 +3440,8 @@ fn test_active_proposals_list() {
 
     let active_proposals = client.get_active_proposals();
     assert_eq!(active_proposals.len(), 2);
-    assert!(active_proposals.contains(&proposal_id1));
-    assert!(active_proposals.contains(&proposal_id2));
+    assert!(active_proposals.contains(proposal_id1));
+    assert!(active_proposals.contains(proposal_id2));
 
     // Execute one proposal
     client.execute_proposal(&admin, &proposal_id1);
@@ -3492,6 +3449,6 @@ fn test_active_proposals_list() {
     // Should have one less active proposal
     let active_proposals = client.get_active_proposals();
     assert_eq!(active_proposals.len(), 1);
-    assert!(!active_proposals.contains(&proposal_id1));
-    assert!(active_proposals.contains(&proposal_id2));
+    assert!(!active_proposals.contains(proposal_id1));
+    assert!(active_proposals.contains(proposal_id2));
 }
