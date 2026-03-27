@@ -47,6 +47,9 @@ impl EventRegistry {
             if event.organizer_address != organizer_address {
                 return Err(EventRegistryError::UnauthorizedCaller);
             }
+            if matches!(event.status, EventStatus::Cancelled) {
+                return Err(EventRegistryError::EventCancelled);
+            }
         }
         let series = SeriesRegistry {
             series_id: series_id.clone(),
@@ -426,6 +429,10 @@ impl EventRegistry {
                 // Verify organizer signature
                 event_info.organizer_address.require_auth();
 
+                if matches!(event_info.status, EventStatus::Cancelled) {
+                    return Err(EventRegistryError::EventCancelled);
+                }
+
                 // Validate new metadata CID
                 validate_metadata_cid(&env, &new_metadata_cid)?;
 
@@ -525,6 +532,10 @@ impl EventRegistry {
 
         let mut event_info =
             storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        if matches!(event_info.status, EventStatus::Cancelled) {
+            return Err(EventRegistryError::EventCancelled);
+        }
 
         event_info.custom_fee_bps = custom_fee_bps;
         storage::update_event(&env, event_info);
@@ -927,6 +938,10 @@ impl EventRegistry {
 
         // Only the organizer may postpone their event.
         event_info.organizer_address.require_auth();
+
+        if matches!(event_info.status, EventStatus::Cancelled) {
+            return Err(EventRegistryError::EventCancelled);
+        }
 
         let now = env.ledger().timestamp();
         if grace_period_end <= now {
