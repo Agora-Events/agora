@@ -52,6 +52,7 @@ pub enum TicketPaymentError {
     VotingPeriodNotMet = 53,
     InsufficientVotes = 54,
     ProposalExpired = 55,
+    OraclePriceStale = 56,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -133,6 +134,9 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::OraclePriceUnavailable => {
                 write!(f, "Oracle returned no price for the asset")
+            }
+            TicketPaymentError::OraclePriceStale => {
+                write!(f, "Oracle price is stale")
             }
             TicketPaymentError::PriceOutsideSlippage => {
                 write!(f, "Payment amount outside acceptable slippage range")

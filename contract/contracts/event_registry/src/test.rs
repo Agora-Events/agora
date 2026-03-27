@@ -738,6 +738,30 @@ fn test_register_event_invalid_metadata_cid_formats() {
         wrong_prefix_result,
         Err(Ok(EventRegistryError::InvalidMetadataCid))
     );
+
+    let oversized_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    let oversized_result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "event_oversized_cid"),
+        organizer_address: Address::generate(&env),
+        payment_address: Address::generate(&env),
+        metadata_cid: oversized_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+    assert_eq!(
+        oversized_result,
+        Err(Ok(EventRegistryError::InvalidMetadataCid))
+    );
 }
 
 #[test]
@@ -1016,6 +1040,16 @@ fn test_update_metadata_invalid_cid() {
     let short_cid = String::from_str(&env, "bafy");
     let result = client.try_update_metadata(&event_id, &short_cid);
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidMetadataCid)));
+
+    let oversized_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    let oversized_result = client.try_update_metadata(&event_id, &oversized_cid);
+    assert_eq!(
+        oversized_result,
+        Err(Ok(EventRegistryError::InvalidMetadataCid))
+    );
 }
 
 // ==================== Inventory / Supply Tests ====================

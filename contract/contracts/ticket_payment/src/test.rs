@@ -3464,6 +3464,60 @@ fn test_claim_revenue_paused() {
 }
 
 #[test]
+fn test_claim_revenue_rejects_event_not_marked_inactive() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let event_payment_addr = Address::generate(&env);
+
+    let registry_id = env.register(MockPlatformRegistryE2E, ());
+    let registry = MockPlatformRegistryE2EClient::new(&env, &registry_id);
+    registry.initialize(&admin);
+    registry.signup_organizer(&organizer);
+
+    let event_id = String::from_str(&env, "premature-claim-event");
+    let tier_id = String::from_str(&env, "tier-1");
+    let mut tiers = soroban_sdk::Map::new(&env);
+    tiers.set(
+        tier_id,
+        event_registry::TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 1000_0000000i128,
+            early_bird_price: 1000_0000000i128,
+            early_bird_deadline: 0,
+            usd_price: 0,
+            tier_limit: 10,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+    registry.create_event(&event_id, &organizer, &event_payment_addr, &10, &tiers);
+    registry.set_event_active(&event_id, &false);
+
+    let payment_contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &payment_contract_id);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    env.as_contract(&client.address, || {
+        update_event_balance(&env, event_id.clone(), 950_0000000, 50_0000000);
+    });
+
+    let result = client.try_claim_revenue(&event_id, &usdc_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::EventNotCompleted)));
+
+    let balance = client.get_event_escrow_balance(&event_id);
+    assert_eq!(balance.organizer_amount, 950_0000000);
+    assert_eq!(balance.platform_fee, 50_0000000);
+}
+
+#[test]
 fn test_transfer_ticket_paused() {
     let env = Env::default();
     env.mock_all_auths();
@@ -3707,6 +3761,20 @@ pub struct MockPriceOracleUnavailable;
 impl MockPriceOracleUnavailable {
     pub fn lastprice(_env: Env, _asset: Address) -> Option<price_oracle::PriceData> {
         None
+    }
+}
+
+/// Mock oracle that returns a stale price timestamp.
+#[soroban_sdk::contract]
+pub struct MockPriceOracleStale;
+
+#[soroban_sdk::contractimpl]
+impl MockPriceOracleStale {
+    pub fn lastprice(_env: Env, _asset: Address) -> Option<price_oracle::PriceData> {
+        Some(price_oracle::PriceData {
+            price: 8_3333333,
+            timestamp: 1000,
+        })
     }
 }
 
@@ -4000,6 +4068,44 @@ fn test_usd_priced_oracle_unavailable() {
     assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceUnavailable)));
 }
 
+#[test]
+fn test_usd_priced_oracle_stale() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(4601);
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryUsdPriced, ());
+    client.initialize(&admin, &token_id, &platform_wallet, &registry_id);
+
+    let oracle_id = env.register(MockPriceOracleStale, ());
+    client.set_oracle(&oracle_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 833_3333300i128;
+    token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
+    token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let result = client.try_process_payment(
+        &String::from_str(&env, "pay_usd_stale"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &token_id,
+        &amount,
+        &1,
+        &None,
+        &None,
+    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceStale)));
+}
+
 // 7. Regression: usd_price=0 exact match still works
 #[test]
 fn test_token_priced_payment_unchanged() {
@@ -4043,12 +4149,27 @@ fn test_set_oracle_admin_only() {
 fn test_get_asset_price_returns_oracle_price() {
     let env = Env::default();
     env.mock_all_auths();
+    env.ledger().set_timestamp(4600);
 
     let (client, _admin, token_id, _pw, _reg) = setup_usd_priced_test(&env);
 
     let price_data = client.get_asset_price(&token_id);
     assert_eq!(price_data.price, 8_3333333);
     assert_eq!(price_data.timestamp, 1000);
+}
+
+#[test]
+fn test_get_asset_price_rejects_stale_oracle_price() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(4601);
+
+    let (client, _admin, token_id, _pw, _reg) = setup_test(&env);
+    let oracle_id = env.register(MockPriceOracleStale, ());
+    client.set_oracle(&oracle_id);
+
+    let result = client.try_get_asset_price(&token_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceStale)));
 }
 
 // ----------------------------------------------------------------------------
@@ -4270,6 +4391,27 @@ fn test_close_auction_rejects_early_closure() {
     let result =
         client.try_close_auction(&String::from_str(&env, "payment_1"), &event_id, &tier_id);
     assert_eq!(result, Err(Ok(TicketPaymentError::AuctionNotEnded)));
+    let auction_closed = env.as_contract(&client.address, || {
+        is_auction_closed(&env, event_id.clone(), tier_id.clone())
+    });
+    assert!(!auction_closed);
+}
+
+#[test]
+fn test_close_auction_rejects_when_no_bids_exist() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_auction_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+
+    env.ledger().set_timestamp(1001);
+
+    let result =
+        client.try_close_auction(&String::from_str(&env, "payment_1"), &event_id, &tier_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::NoFundsAvailable)));
+
     let auction_closed = env.as_contract(&client.address, || {
         is_auction_closed(&env, event_id.clone(), tier_id.clone())
     });

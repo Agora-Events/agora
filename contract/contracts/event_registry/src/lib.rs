@@ -24,6 +24,9 @@ use crate::types::{SeriesPass, SeriesRegistry};
 
 use crate::error::EventRegistryError;
 
+const MIN_METADATA_CID_LEN: u32 = 46;
+const MAX_METADATA_CID_LEN: u32 = 100;
+
 #[contract]
 pub struct EventRegistry;
 
@@ -1654,7 +1657,8 @@ fn is_zero_address(env: &Env, address: &Address) -> bool {
 }
 
 fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryError> {
-    if cid.len() < 46 {
+    let cid_len = cid.len();
+    if !(MIN_METADATA_CID_LEN..=MAX_METADATA_CID_LEN).contains(&cid_len) {
         return Err(EventRegistryError::InvalidMetadataCid);
     }
 

@@ -37,6 +37,8 @@ use soroban_sdk::{
     contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Symbol, Vec,
 };
 
+const MAX_ORACLE_PRICE_AGE_SECS: u64 = 3600;
+
 // Price Oracle interface
 pub mod price_oracle {
     use soroban_sdk::{contractclient, Address, Env};
@@ -482,12 +484,7 @@ impl TicketPaymentContract {
         env: Env,
         asset: Address,
     ) -> Result<price_oracle::PriceData, TicketPaymentError> {
-        let oracle_addr =
-            get_oracle_address(&env).ok_or(TicketPaymentError::OracleNotConfigured)?;
-        let oracle_client = price_oracle::OracleClient::new(&env, &oracle_addr);
-        oracle_client
-            .lastprice(&asset)
-            .ok_or(TicketPaymentError::OraclePriceUnavailable)
+        fetch_fresh_asset_price(&env, &asset)
     }
 
     /// Returns the current slippage tolerance in basis points.
@@ -600,12 +597,7 @@ impl TicketPaymentContract {
 
         if tier.usd_price > 0 {
             // ── Oracle-based USD pricing ──────────────────────────────────
-            let oracle_addr =
-                get_oracle_address(&env).ok_or(TicketPaymentError::OracleNotConfigured)?;
-            let oracle_client = price_oracle::OracleClient::new(&env, &oracle_addr);
-            let price_data = oracle_client
-                .lastprice(&token_address)
-                .ok_or(TicketPaymentError::OraclePriceUnavailable)?;
+            let price_data = fetch_fresh_asset_price(&env, &token_address)?;
 
             // expected = usd_price * oracle_price / 1_0000000
             let expected = tier
@@ -1490,7 +1482,9 @@ impl TicketPaymentContract {
 
         event_info.organizer_address.require_auth();
 
-        if event_info.is_active {
+        if event_info.is_active
+            || !matches!(event_info.status, event_registry::EventStatus::Inactive)
+        {
             return Err(TicketPaymentError::EventNotCompleted);
         }
 
@@ -2241,4 +2235,22 @@ fn validate_address(env: &Env, address: &Address) -> Result<(), TicketPaymentErr
         return Err(TicketPaymentError::InvalidAddress);
     }
     Ok(())
+}
+
+fn fetch_fresh_asset_price(
+    env: &Env,
+    asset: &Address,
+) -> Result<price_oracle::PriceData, TicketPaymentError> {
+    let oracle_addr = get_oracle_address(env).ok_or(TicketPaymentError::OracleNotConfigured)?;
+    let oracle_client = price_oracle::OracleClient::new(env, &oracle_addr);
+    let price_data = oracle_client
+        .lastprice(asset)
+        .ok_or(TicketPaymentError::OraclePriceUnavailable)?;
+
+    let current_time = env.ledger().timestamp();
+    if current_time.saturating_sub(price_data.timestamp) > MAX_ORACLE_PRICE_AGE_SECS {
+        return Err(TicketPaymentError::OraclePriceStale);
+    }
+
+    Ok(price_data)
 }
