@@ -5810,8 +5810,8 @@ fn test_cannot_remove_last_governor() {
     let (client, admin, _, _, _) = setup_test(&env);
 
     // admin is the only governor; try to remove them
-    let proposal_id = client
-        .propose_parameter_change(&admin, &ParameterChange::RemoveGovernor(admin.clone()));
+    let proposal_id =
+        client.propose_parameter_change(&admin, &ParameterChange::RemoveGovernor(admin.clone()));
 
     // Advance past 48h time lock
     env.ledger()

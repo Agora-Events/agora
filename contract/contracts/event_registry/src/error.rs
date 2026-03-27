@@ -186,10 +186,7 @@ impl core::fmt::Display for EventRegistryError {
                 write!(f, "Proposal has expired")
             }
             EventRegistryError::InsufficientApprovals => {
-                write!(
-                    f,
-                    "Proposal does not have enough approvals to be executed"
-                )
+                write!(f, "Proposal does not have enough approvals to be executed")
             }
             EventRegistryError::RestockingFeeExceedsTicketPrice => {
                 write!(

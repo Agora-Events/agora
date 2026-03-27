@@ -3973,7 +3973,10 @@ fn buf_starts_with(buf: &[u8; 256], expected: &str) -> bool {
 fn test_tier_not_found_error_message() {
     let buf = fmt_to_str(EventRegistryError::TierNotFound);
     assert!(
-        buf_starts_with(&buf, "The specified ticket tier ID does not exist for this event"),
+        buf_starts_with(
+            &buf,
+            "The specified ticket tier ID does not exist for this event"
+        ),
         "unexpected message"
     );
 }
@@ -4148,7 +4151,10 @@ fn test_register_event_restocking_fee_zero_always_valid() {
 fn test_restocking_fee_exceeds_ticket_price_error_message() {
     let buf = fmt_to_str(EventRegistryError::RestockingFeeExceedsTicketPrice);
     assert!(
-        buf_starts_with(&buf, "Restocking fee must not exceed the original ticket price"),
+        buf_starts_with(
+            &buf,
+            "Restocking fee must not exceed the original ticket price"
+        ),
         "unexpected message"
     );
 }
