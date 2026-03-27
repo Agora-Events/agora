@@ -3936,3 +3936,219 @@ fn test_cancelled_status_guard() {
     let result = client.try_set_custom_event_fee(&event_id, &Some(100));
     assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 }
+
+// ── Issue #194: Tier Error Message Tests ─────────────────────────────────────
+
+/// Helper to format a Display value into a fixed-size stack buffer.
+fn fmt_to_str<T: core::fmt::Display>(val: T) -> [u8; 256] {
+    struct Buf {
+        data: [u8; 256],
+        pos: usize,
+    }
+    impl core::fmt::Write for Buf {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            let bytes = s.as_bytes();
+            let end = self.pos + bytes.len();
+            if end <= self.data.len() {
+                self.data[self.pos..end].copy_from_slice(bytes);
+                self.pos = end;
+            }
+            Ok(())
+        }
+    }
+    let mut buf = Buf {
+        data: [0u8; 256],
+        pos: 0,
+    };
+    core::fmt::write(&mut buf, format_args!("{}", val)).ok();
+    buf.data
+}
+
+fn buf_starts_with(buf: &[u8; 256], expected: &str) -> bool {
+    let e = expected.as_bytes();
+    buf.len() >= e.len() && &buf[..e.len()] == e && (e.len() == 256 || buf[e.len()] == 0)
+}
+
+#[test]
+fn test_tier_not_found_error_message() {
+    let buf = fmt_to_str(EventRegistryError::TierNotFound);
+    assert!(
+        buf_starts_with(&buf, "The specified ticket tier ID does not exist for this event"),
+        "unexpected message"
+    );
+}
+
+#[test]
+fn test_tier_supply_exceeded_error_message() {
+    let buf = fmt_to_str(EventRegistryError::TierSupplyExceeded);
+    assert!(
+        buf_starts_with(
+            &buf,
+            "The requested ticket tier has sold out and cannot accept more registrations"
+        ),
+        "unexpected message"
+    );
+}
+
+// ── Issue #211: Restocking Fee Guard Tests ────────────────────────────────────
+
+#[test]
+fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let organizer = Address::generate(&env);
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5_000_000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    // restocking_fee (6_000_000) > tier price (5_000_000) — must fail
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_restocking_guard"),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 6_000_000,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    assert_eq!(
+        result,
+        Err(Ok(EventRegistryError::RestockingFeeExceedsTicketPrice))
+    );
+}
+
+#[test]
+fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let organizer = Address::generate(&env);
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5_000_000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    // restocking_fee == tier price — should succeed
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_restocking_equal"),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 5_000_000,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_register_event_restocking_fee_zero_always_valid() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let organizer = Address::generate(&env);
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 1_000,
+            tier_limit: 50,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_restocking_zero"),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 50,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_restocking_fee_exceeds_ticket_price_error_message() {
+    let buf = fmt_to_str(EventRegistryError::RestockingFeeExceedsTicketPrice);
+    assert!(
+        buf_starts_with(&buf, "Restocking fee must not exceed the original ticket price"),
+        "unexpected message"
+    );
+}

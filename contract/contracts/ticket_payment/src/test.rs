@@ -5643,3 +5643,210 @@ fn test_proposal_executes_before_expiry() {
     assert!(client.try_execute_proposal(&admin, &proposal_id).is_ok());
     assert!(client.is_token_allowed(&new_token));
 }
+
+// ── Issue #196: Dust Handling in Revenue Claim ────────────────────────────────
+
+#[soroban_sdk::contract]
+pub struct MockEventRegistryForDust;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryForDust {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        let organizer = env
+            .storage()
+            .instance()
+            .get::<Symbol, Address>(&Symbol::new(&env, "organizer"))
+            .unwrap_or_else(|| Address::generate(&env));
+        let payment_addr = env
+            .storage()
+            .instance()
+            .get::<Symbol, Address>(&Symbol::new(&env, "payment_addr"))
+            .unwrap_or_else(|| Address::generate(&env));
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: organizer,
+            payment_address: payment_addr,
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            is_active: false,
+            status: event_registry::EventStatus::Inactive,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 100,
+            current_supply: 10,
+            milestone_plan: None,
+            tiers: soroban_sdk::Map::new(&env),
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: true,
+            banner_cid: None,
+        })
+    }
+
+    pub fn set_organizer(env: Env, organizer: Address, payment_addr: Address) {
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "organizer"), &organizer);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "payment_addr"), &payment_addr);
+    }
+
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+}
+
+#[test]
+fn test_claim_revenue_dust_swept_in_full() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+
+    let registry_id = env.register(MockEventRegistryForDust, ());
+    let registry = MockEventRegistryForDustClient::new(&env, &registry_id);
+    registry.set_organizer(&organizer, &payment_addr);
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let event_id = String::from_str(&env, "dust_event");
+
+    // Organizer amount is 5_000 stroops (below DUST_THRESHOLD of 10_000)
+    // Contract holds 5_000 (organizer) + 0 platform fee
+    let dust_amount: i128 = 5_000;
+    usdc_token.mint(&client.address, &dust_amount);
+
+    env.as_contract(&client.address, || {
+        update_event_balance(&env, event_id.clone(), dust_amount, 0);
+    });
+
+    let claimed = client.claim_revenue(&event_id, &usdc_id);
+
+    // The full contract balance should be swept (dust handling)
+    assert!(claimed >= dust_amount);
+
+    // Payment address should have received the funds
+    let payment_balance = token::Client::new(&env, &usdc_id).balance(&payment_addr);
+    assert!(payment_balance >= dust_amount);
+}
+
+#[test]
+fn test_claim_revenue_above_dust_threshold_normal_behavior() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+
+    let registry_id = env.register(MockEventRegistryForDust, ());
+    let registry = MockEventRegistryForDustClient::new(&env, &registry_id);
+    registry.set_organizer(&organizer, &payment_addr);
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let event_id = String::from_str(&env, "normal_event");
+
+    // Organizer amount is 1_000_000 stroops (well above DUST_THRESHOLD)
+    let organizer_amount: i128 = 1_000_000;
+    let platform_fee: i128 = 50_000;
+    usdc_token.mint(&client.address, &(organizer_amount + platform_fee));
+
+    env.as_contract(&client.address, || {
+        update_event_balance(&env, event_id.clone(), organizer_amount, platform_fee);
+    });
+
+    let claimed = client.claim_revenue(&event_id, &usdc_id);
+
+    // Normal path: exactly the organizer_amount is transferred
+    assert_eq!(claimed, organizer_amount);
+
+    let payment_balance = token::Client::new(&env, &usdc_id).balance(&payment_addr);
+    assert_eq!(payment_balance, organizer_amount);
+}
+
+// ── Issue #216: Governor Removal Threshold Tests ──────────────────────────────
+
+#[test]
+fn test_cannot_remove_last_governor() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _, _, _) = setup_test(&env);
+
+    // admin is the only governor; try to remove them
+    let proposal_id = client
+        .propose_parameter_change(&admin, &ParameterChange::RemoveGovernor(admin.clone()));
+
+    // Advance past 48h time lock
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+
+    let result = client.try_execute_proposal(&admin, &proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::CannotRemoveLastGovernor))
+    );
+}
+
+#[test]
+fn test_remove_governor_succeeds_when_multiple_governors_exist() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _, _, _) = setup_test(&env);
+    let gov2 = Address::generate(&env);
+
+    // Add gov2
+    let p1 = client.propose_parameter_change(&admin, &ParameterChange::AddGovernor(gov2.clone()));
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    client.execute_proposal(&admin, &p1);
+
+    // Now remove gov2 — should succeed since admin still remains
+    let p2 =
+        client.propose_parameter_change(&admin, &ParameterChange::RemoveGovernor(gov2.clone()));
+    client.vote_on_proposal(&gov2, &p2);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    assert!(client.try_execute_proposal(&admin, &p2).is_ok());
+
+    // gov2 should no longer be a governor
+    let failed = client.try_vote_on_proposal(&gov2, &p2);
+    assert_eq!(failed, Err(Ok(TicketPaymentError::NotGovernor)));
+}
