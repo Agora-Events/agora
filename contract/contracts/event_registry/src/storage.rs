@@ -336,9 +336,71 @@ pub fn get_event(env: &Env, event_id: String) -> Option<EventInfo> {
     env.storage().persistent().get(&DataKey::Event(event_id))
 }
 
-/// Removes an event from storage
+/// Removes an event and cleans up organizer indexes
 pub fn remove_event(env: &Env, event_id: String) {
-    env.storage().persistent().remove(&DataKey::Event(event_id));
+    if let Some(event_info) = get_event(env, event_id.clone()) {
+        let organizer = event_info.organizer_address;
+
+        // Remove from main mapping
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Event(event_id.clone()));
+
+        // Remove from organizer's individual event record
+        env.storage().persistent().remove(&DataKey::OrganizerEvent(
+            organizer.clone(),
+            event_id.clone(),
+        ));
+
+        // Remove from organizer's sharded list
+        remove_from_organizer_index(env, &organizer, event_id);
+    }
+}
+
+/// Helper to remove an event_id from an organizer's sharded index
+fn remove_from_organizer_index(env: &Env, organizer: &Address, event_id: String) {
+    let count = get_organizer_event_count(env, organizer);
+    if count == 0 {
+        return;
+    }
+
+    let num_shards = count.div_ceil(SHARD_SIZE);
+    let mut found = false;
+
+    for i in 0..num_shards {
+        let shard: Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OrganizerEventShard(organizer.clone(), i))
+            .unwrap_or_else(|| vec![env]);
+
+        let mut found_in_shard = false;
+        let mut new_shard = vec![env];
+
+        for id in shard.iter() {
+            if id == event_id {
+                found_in_shard = true;
+                found = true;
+            } else {
+                new_shard.push_back(id);
+            }
+        }
+
+        if found_in_shard {
+            env.storage().persistent().set(
+                &DataKey::OrganizerEventShard(organizer.clone(), i),
+                &new_shard,
+            );
+            break;
+        }
+    }
+
+    if found {
+        env.storage().persistent().set(
+            &DataKey::OrganizerEventCount(organizer.clone()),
+            &(count - 1),
+        );
+    }
 }
 
 /// Stores an event receipt

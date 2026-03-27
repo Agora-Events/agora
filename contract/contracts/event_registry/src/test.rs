@@ -3840,3 +3840,70 @@ fn test_active_proposals_list() {
     assert!(!active_proposals.contains(proposal_id1));
     assert!(active_proposals.contains(proposal_id2));
 }
+
+#[test]
+fn test_archive_event_cleanup() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "cleanup_event");
+
+    // Register event
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 1000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    // Verify it exists in organizer's index
+    let organizer_events = client.get_organizer_events(&organizer);
+    assert!(organizer_events.contains(event_id.clone()));
+
+    // Archive (which calls remove_event)
+    // Archive requires is_active = false
+    client.update_event_status(&event_id, &false);
+    client.archive_event(&event_id);
+
+    // Verify it's gone from main mapping
+    assert!(!client.event_exists(&event_id));
+    assert!(client.get_event(&event_id).is_none());
+
+    // Verify it's gone from organizer's index
+    let organizer_events_after = client.get_organizer_events(&organizer);
+    assert!(!organizer_events_after.contains(event_id.clone()));
+    assert_eq!(organizer_events_after.len(), 0);
+}
