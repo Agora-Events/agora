@@ -39,6 +39,10 @@ use soroban_sdk::{
 
 const MAX_ORACLE_PRICE_AGE_SECS: u64 = 3600;
 
+/// Minimum claimable amount in stroops (0.01 USDC).
+/// Balances at or below this threshold are swept in full to avoid dust.
+const DUST_THRESHOLD: i128 = 10_000;
+
 // Price Oracle interface
 pub mod price_oracle {
     use soroban_sdk::{contractclient, Address, Env};
@@ -430,7 +434,10 @@ impl TicketPaymentContract {
                 }
             }
             ParameterChange::RemoveGovernor(old_governor) => {
-                if is_governor(&env, old_governor) && total_governors > 1 {
+                if total_governors <= 1 {
+                    return Err(TicketPaymentError::CannotRemoveLastGovernor);
+                }
+                if is_governor(&env, old_governor) {
                     set_governor(&env, old_governor, false);
                     set_total_governors(&env, total_governors - 1);
                 }
@@ -1505,6 +1512,21 @@ impl TicketPaymentContract {
 
         let platform_fee_amount = balance.platform_fee;
         let organizer_amount = balance.organizer_amount;
+
+        // If the organizer's remaining balance is at or below the dust threshold,
+        // sweep the full contract balance for this event to avoid leaving tiny amounts.
+        let contract_token_balance = token_client.balance(&contract_address);
+        let organizer_amount = if organizer_amount > 0
+            && organizer_amount <= DUST_THRESHOLD
+            && contract_token_balance >= organizer_amount
+        {
+            contract_token_balance
+                .checked_sub(platform_fee_amount)
+                .unwrap_or(organizer_amount)
+                .max(organizer_amount)
+        } else {
+            organizer_amount
+        };
 
         // Settlement logic: platform fees stay in the contract but are cleared from EventBalance.
         // They are already tracked in TotalFeesCollected.

@@ -240,6 +240,15 @@ impl EventRegistry {
             }
         }
 
+        // Validate restocking fee does not exceed any tier's ticket price
+        if args.restocking_fee > 0 {
+            for tier in args.tiers.values() {
+                if args.restocking_fee > tier.price {
+                    return Err(EventRegistryError::RestockingFeeExceedsTicketPrice);
+                }
+            }
+        }
+
         // Validate milestone plan: total release_percent must not exceed 10000 bps (100%)
         if let Some(ref milestones) = args.milestone_plan {
             let total: u32 = milestones.iter().map(|m| m.release_percent).sum();

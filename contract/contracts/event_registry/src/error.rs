@@ -46,6 +46,8 @@ pub enum EventRegistryError {
     InvalidRewardAmount = 32,
     /// Milestone release percentages sum exceeds 100%
     InvalidMilestonePlan = 41,
+    /// Restocking fee exceeds the ticket price
+    RestockingFeeExceedsTicketPrice = 42,
     // ── Governance / Multi-Sig errors ──────────────────────────────────
     /// Admin already exists in the multi-sig configuration
     AdminAlreadyExists = 33,
@@ -94,10 +96,16 @@ impl core::fmt::Display for EventRegistryError {
                 write!(f, "Sum of tier limits exceeds event max supply")
             }
             EventRegistryError::TierNotFound => {
-                write!(f, "Ticket tier not found")
+                write!(
+                    f,
+                    "The specified ticket tier ID does not exist for this event"
+                )
             }
             EventRegistryError::TierSupplyExceeded => {
-                write!(f, "Tier has reached its maximum supply")
+                write!(
+                    f,
+                    "The requested ticket tier has sold out and cannot accept more registrations"
+                )
             }
             EventRegistryError::SupplyUnderflow => {
                 write!(f, "Supply counter underflow")
@@ -178,7 +186,16 @@ impl core::fmt::Display for EventRegistryError {
                 write!(f, "Proposal has expired")
             }
             EventRegistryError::InsufficientApprovals => {
-                write!(f, "Insufficient approvals to execute proposal")
+                write!(
+                    f,
+                    "Proposal does not have enough approvals to be executed"
+                )
+            }
+            EventRegistryError::RestockingFeeExceedsTicketPrice => {
+                write!(
+                    f,
+                    "Restocking fee must not exceed the original ticket price"
+                )
             }
         }
     }

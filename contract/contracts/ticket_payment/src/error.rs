@@ -53,6 +53,8 @@ pub enum TicketPaymentError {
     InsufficientVotes = 54,
     ProposalExpired = 55,
     OraclePriceStale = 56,
+    /// Cannot remove the last remaining governor
+    CannotRemoveLastGovernor = 57,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -179,6 +181,12 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::ProposalExpired => {
                 write!(f, "Proposal has expired")
+            }
+            TicketPaymentError::CannotRemoveLastGovernor => {
+                write!(
+                    f,
+                    "Cannot remove the last governor; at least one governor must remain"
+                )
             }
         }
     }
