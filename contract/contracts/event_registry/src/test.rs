@@ -3840,3 +3840,24 @@ fn test_active_proposals_list() {
     assert!(!active_proposals.contains(proposal_id1));
     assert!(active_proposals.contains(proposal_id2));
 }
+
+#[test]
+fn test_set_platform_fee_boundary() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Set to 100% (10000 bps) - should pass
+    client.set_platform_fee(&10000);
+    assert_eq!(client.get_platform_fee(), 10000);
+
+    // Set to 100.01% (10001 bps) - should fail
+    let result = client.try_set_platform_fee(&10001);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
+}
