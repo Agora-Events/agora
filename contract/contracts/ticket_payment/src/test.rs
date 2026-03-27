@@ -2,7 +2,7 @@ use super::contract::{
     event_registry, price_oracle, TicketPaymentContract, TicketPaymentContractClient,
 };
 use super::storage::*;
-use super::types::{ParameterChange, Payment, PaymentStatus};
+use super::types::{DataKey, ParameterChange, Payment, PaymentStatus};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, Events, Ledger},
@@ -753,6 +753,43 @@ fn test_upgrade_preserves_initialization_addresses_and_emits_event() {
         });
         assert!(upgraded_event.is_some());
     }
+}
+
+#[test]
+fn test_upgrade_verification_failure() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    let dummy_id = env.register(DummyUpgradeable, ());
+    let new_wasm_hash = match dummy_id.executable() {
+        Some(soroban_sdk::Executable::Wasm(hash)) => hash,
+        _ => panic!("Dummy contract is not a Wasm contract"),
+    };
+
+    // Simulate losing a key during upgrade (this is artificial for testing the verification logic)
+    env.as_contract(&client.address, || {
+        env.storage().persistent().remove(&DataKey::EventRegistry);
+    });
+
+    client.upgrade(&new_wasm_hash);
+
+    // Check for ContractVerificationFailed event
+    let events = env.events().all();
+    let topic_name = Symbol::new(&env, "ContractVerificationFailed");
+    let failure_event = events.iter().find(|e| {
+        for t in e.1.iter() {
+            let s_res: Result<Symbol, _> = t.clone().try_into_val(&env);
+            if let Ok(s) = s_res {
+                if s == topic_name {
+                    return true;
+                }
+            }
+        }
+        false
+    });
+    assert!(failure_event.is_some());
 }
 
 #[test]
