@@ -24,6 +24,7 @@ pub enum AgoraEvent {
     ProposalCreated,
     ProposalVoted,
     GovernanceActionExecuted,
+    ContractVerificationFailed,
 }
 
 #[contracttype]
@@ -204,5 +205,12 @@ pub struct ProposalVotedEvent {
 pub struct GovernanceActionExecutedEvent {
     pub proposal_id: u64,
     pub change: crate::types::ParameterChange,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractVerificationFailedEvent {
+    pub missing_key: String,
     pub timestamp: u64,
 }
