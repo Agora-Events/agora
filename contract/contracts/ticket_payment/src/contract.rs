@@ -25,14 +25,17 @@ use crate::{
     error::TicketPaymentError,
     events::{
         AgoraEvent, AuctionClosedEvent, BidPlacedEvent, BulkRefundProcessedEvent,
-        ContractPausedEvent, ContractUpgraded, DiscountCodeAppliedEvent, DisputeStatusChangedEvent,
-        FeeSettledEvent, GlobalPromoAppliedEvent, GovernanceActionExecutedEvent,
-        InitializationEvent, PartialRefundProcessedEvent, PaymentProcessedEvent,
-        PaymentStatusChangedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
-        RevenueClaimedEvent, TicketTransferredEvent,
+        ContractPausedEvent, ContractUpgraded, ContractVerificationFailedEvent,
+        DiscountCodeAppliedEvent, DisputeStatusChangedEvent, FeeSettledEvent,
+        GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
+        PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
+        PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent, RevenueClaimedEvent,
+        TicketTransferredEvent,
     },
 };
-use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Vec};
+use soroban_sdk::{
+    contract, contractimpl, token, Address, Bytes, BytesN, Env, String, Symbol, Vec,
+};
 
 // Price Oracle interface
 pub mod price_oracle {
@@ -275,6 +278,33 @@ impl TicketPaymentContract {
                 new_wasm_hash,
             },
         );
+
+        // Post-upgrade state verification
+        let mut missing_keys = soroban_sdk::Vec::new(&env);
+        if !env.storage().persistent().has(&DataKey::Admin) {
+            missing_keys.push_back(String::from_str(&env, "Admin"));
+        }
+        if !env.storage().persistent().has(&DataKey::UsdcToken) {
+            missing_keys.push_back(String::from_str(&env, "UsdcToken"));
+        }
+        if !env.storage().persistent().has(&DataKey::PlatformWallet) {
+            missing_keys.push_back(String::from_str(&env, "PlatformWallet"));
+        }
+        if !env.storage().persistent().has(&DataKey::EventRegistry) {
+            missing_keys.push_back(String::from_str(&env, "EventRegistry"));
+        }
+
+        if !missing_keys.is_empty() {
+            for key in missing_keys.iter() {
+                env.events().publish(
+                    (Symbol::new(&env, "ContractVerificationFailed"),),
+                    ContractVerificationFailedEvent {
+                        missing_key: key,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+            }
+        }
     }
 
     /// Proposes a parameter change for the platform. Only callable by a governor.

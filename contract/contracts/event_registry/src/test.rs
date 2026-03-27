@@ -3842,7 +3842,7 @@ fn test_active_proposals_list() {
 }
 
 #[test]
-fn test_archive_event_cleanup() {
+fn test_cancelled_status_guard() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(EventRegistry, ());
@@ -3854,22 +3854,10 @@ fn test_archive_event_cleanup() {
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
     let organizer = Address::generate(&env);
-    let event_id = String::from_str(&env, "cleanup_event");
+    let event_id = String::from_str(&env, "cancelled_event");
 
     // Register event
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        String::from_str(&env, "general"),
-        TicketTier {
-            name: String::from_str(&env, "General"),
-            price: 1000,
-            tier_limit: 100,
-            current_sold: 0,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-
+    let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
         organizer_address: organizer.clone(),
@@ -3889,21 +3877,28 @@ fn test_archive_event_cleanup() {
         banner_cid: None,
     });
 
-    // Verify it exists in organizer's index
-    let organizer_events = client.get_organizer_events(&organizer);
-    assert!(organizer_events.contains(event_id.clone()));
+    // Cancel event
+    client.cancel_event(&event_id);
 
-    // Archive (which calls remove_event)
-    // Archive requires is_active = false
-    client.update_event_status(&event_id, &false);
-    client.archive_event(&event_id);
+    // Try to update status - should fail
+    let result = client.try_update_event_status(&event_id, &true);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 
-    // Verify it's gone from main mapping
-    assert!(!client.event_exists(&event_id));
-    assert!(client.get_event(&event_id).is_none());
+    // Try to postpone - should fail
+    let result = client.try_postpone_event(&event_id, &10000000);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 
-    // Verify it's gone from organizer's index
-    let organizer_events_after = client.get_organizer_events(&organizer);
-    assert!(!organizer_events_after.contains(event_id.clone()));
-    assert_eq!(organizer_events_after.len(), 0);
+    // Try to update metadata - should fail
+    let result = client.try_update_metadata(
+        &event_id,
+        &String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+    );
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
+
+    // Try to set custom fee - should fail
+    let result = client.try_set_custom_event_fee(&event_id, &Some(100));
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 }
