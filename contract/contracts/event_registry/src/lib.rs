@@ -28,6 +28,7 @@ use crate::error::EventRegistryError;
 pub struct EventRegistry;
 
 #[contractimpl]
+#[allow(deprecated)]
 impl EventRegistry {
     /// Register a new series grouping multiple events
     pub fn register_series(
@@ -1650,6 +1651,7 @@ fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryErr
 
 /// Suspends all active events for a blacklisted organizer.
 /// This implements the "Suspension" ripple effect.
+#[allow(deprecated)]
 fn suspend_organizer_events(
     env: Env,
     organizer_address: Address,

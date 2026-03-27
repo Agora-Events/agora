@@ -162,6 +162,7 @@ pub mod event_registry {
 pub struct TicketPaymentContract;
 
 #[contractimpl]
+#[allow(deprecated)]
 impl TicketPaymentContract {
     /// Initializes the contract with necessary configurations.
     pub fn initialize(
