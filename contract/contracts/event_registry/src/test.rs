@@ -519,6 +519,102 @@ fn test_register_event_success() {
 }
 
 #[test]
+fn test_register_event_invalid_target_deadline() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    env.mock_all_auths();
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_deadline");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    let now = env.ledger().timestamp();
+
+    // Past deadline should fail
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr.clone(),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: Some(now - 1),
+        banner_cid: None,
+        tags: None,
+    });
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
+
+    // Present deadline should fail
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr.clone(),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: Some(now),
+        banner_cid: None,
+        tags: None,
+    });
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
+
+    // Future deadline should succeed
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: Some(now + 100),
+        banner_cid: None,
+        tags: None,
+    });
+
+    let stored = client.get_event(&event_id).unwrap();
+    assert_eq!(stored.target_deadline, now + 100);
+}
+
+#[test]
 fn test_register_event_rejects_contract_as_organizer() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());

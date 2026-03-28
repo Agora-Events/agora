@@ -269,6 +269,12 @@ impl EventRegistry {
             }
         }
 
+        if let Some(deadline) = args.target_deadline {
+            if deadline <= env.ledger().timestamp() {
+                return Err(EventRegistryError::InvalidTargetDeadline);
+            }
+        }
+
         let platform_fee_percent = storage::get_platform_fee(&env);
 
         let event_info = EventInfo {

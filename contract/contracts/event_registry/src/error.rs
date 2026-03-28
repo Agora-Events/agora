@@ -67,6 +67,8 @@ pub enum EventRegistryError {
     ProposalExpired = 39,
     /// Insufficient approvals to execute proposal
     InsufficientApprovals = 40,
+    /// Target deadline must be in the future
+    InvalidTargetDeadline = 44,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -166,6 +168,18 @@ impl core::fmt::Display for EventRegistryError {
             EventRegistryError::InvalidMilestonePlan => {
                 write!(f, "Milestone release percentages must not exceed 100%")
             }
+            EventRegistryError::RestockingFeeExceedsTicketPrice => {
+                write!(
+                    f,
+                    "Restocking fee must not exceed the original ticket price"
+                )
+            }
+            EventRegistryError::InvalidTags => {
+                write!(
+                    f,
+                    "Tags are invalid: max 10 tags, each at most 32 characters"
+                )
+            }
             EventRegistryError::AdminAlreadyExists => {
                 write!(f, "Admin already exists in the multi-sig configuration")
             }
@@ -190,17 +204,8 @@ impl core::fmt::Display for EventRegistryError {
             EventRegistryError::InsufficientApprovals => {
                 write!(f, "Proposal does not have enough approvals to be executed")
             }
-            EventRegistryError::RestockingFeeExceedsTicketPrice => {
-                write!(
-                    f,
-                    "Restocking fee must not exceed the original ticket price"
-                )
-            }
-            EventRegistryError::InvalidTags => {
-                write!(
-                    f,
-                    "Tags are invalid: max 10 tags, each at most 32 characters"
-                )
+            EventRegistryError::InvalidTargetDeadline => {
+                write!(f, "Target deadline must be in the future")
             }
         }
     }
