@@ -6139,6 +6139,259 @@ fn test_referral_reward_does_not_exceed_platform_fee_invariant() {
     assert!(referrer_balance <= original_platform_fee);
 }
 
+// ── Withdrawal Cap Period / Daily Reset Tests ────────────────────────────────
+
+/// Helper: set up a contract with a funded escrow and settled fees ready to withdraw.
+/// Returns (client, admin, usdc_id, platform_wallet, settled_fee_amount).
+fn setup_withdrawal_cap_test(
+    env: &Env,
+) -> (
+    TicketPaymentContractClient<'static>,
+    Address,
+    Address,
+    Address,
+    i128,
+) {
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(env, &contract_id);
+
+    let admin = Address::generate(env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(env))
+        .address();
+    let platform_wallet = Address::generate(env);
+    let registry_id = env.register(MockEventRegistryForReferral, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    // Fund a buyer and process a payment so fees accumulate
+    let buyer = Address::generate(env);
+    let price = 1000_0000000i128;
+    token::StellarAssetClient::new(env, &usdc_id).mint(&buyer, &(price * 10));
+    token::Client::new(env, &usdc_id).approve(&buyer, &client.address, &(price * 10), &99999);
+
+    // Process several payments to build up fees
+    for i in 0u32..5 {
+        let pid = match i {
+            0 => String::from_str(env, "p0"),
+            1 => String::from_str(env, "p1"),
+            2 => String::from_str(env, "p2"),
+            3 => String::from_str(env, "p3"),
+            _ => String::from_str(env, "p4"),
+        };
+        client.process_payment(
+            &pid,
+            &String::from_str(env, "event_1"),
+            &String::from_str(env, "tier_1"),
+            &buyer,
+            &usdc_id,
+            &price,
+            &1,
+            &None,
+            &None,
+        );
+    }
+
+    // Settle all fees into the withdrawable pool
+    let settled = client.settle_platform_fees(
+        &String::from_str(env, "event_1"),
+        &usdc_id,
+    );
+
+    (client, admin, usdc_id, platform_wallet, settled)
+}
+
+/// Day calculation: timestamp / 86400 produces the correct day bucket.
+/// Two timestamps in the same UTC day must share the same bucket; timestamps
+/// 86400 seconds apart must land in different buckets.
+#[test]
+fn test_day_calculation_same_day_shares_bucket() {
+    // Day 1: timestamps 0 and 86399 both map to day 0
+    assert_eq!(0u64 / 86400, 0);
+    assert_eq!(86399u64 / 86400, 0);
+
+    // Day 2: timestamp 86400 maps to day 1
+    assert_eq!(86400u64 / 86400, 1);
+    assert_eq!(172799u64 / 86400, 1);
+
+    // Arbitrary real-world timestamp (2024-01-01 00:00:00 UTC = 1704067200)
+    let day_a = 1_704_067_200u64 / 86400;
+    let day_b = (1_704_067_200u64 + 86399) / 86400;
+    let day_c = (1_704_067_200u64 + 86400) / 86400;
+    assert_eq!(day_a, day_b); // same day
+    assert_ne!(day_a, day_c); // next day
+}
+
+/// Withdrawal cap is enforced within a single day: a second withdrawal that
+/// would push the total over the cap must be rejected.
+#[test]
+fn test_withdrawal_cap_enforced_within_same_day() {
+    let env = Env::default();
+    env.mock_all_auths();
+    // Start at a known timestamp (day 0)
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) =
+        setup_withdrawal_cap_test(&env);
+
+    // Set cap to half the settled amount
+    let cap = settled / 2;
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // First withdrawal up to the cap — must succeed
+    client.withdraw_platform_fees(&cap, &usdc_id);
+
+    // Second withdrawal of even 1 stroop more — must fail
+    let result = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    let _ = admin; // suppress unused warning
+}
+
+/// The daily cap resets when the ledger advances to the next day.
+/// A withdrawal that was blocked on day N must succeed on day N+1.
+#[test]
+fn test_withdrawal_cap_resets_on_new_day() {
+    let env = Env::default();
+    env.mock_all_auths();
+    // Start at beginning of day 0
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) =
+        setup_withdrawal_cap_test(&env);
+
+    // Cap = half the settled fees
+    let cap = settled / 2;
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // Day 0: withdraw up to the cap
+    client.withdraw_platform_fees(&cap, &usdc_id);
+
+    // Still day 0: any further withdrawal is blocked
+    let blocked = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(blocked, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Advance to day 1 (exactly 86400 seconds later)
+    env.ledger().set_timestamp(86400);
+
+    // Day 1: cap has reset — withdraw up to the cap again
+    let result = client.try_withdraw_platform_fees(&cap, &usdc_id);
+    assert!(
+        result.is_ok(),
+        "withdrawal should succeed after daily cap reset"
+    );
+
+    let _ = admin;
+}
+
+/// Withdrawals across three consecutive days each get a fresh cap.
+#[test]
+fn test_withdrawal_cap_resets_across_multiple_days() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) =
+        setup_withdrawal_cap_test(&env);
+
+    // Cap = one-third of settled fees so we can withdraw once per day for 3 days
+    let cap = settled / 3;
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // Day 0
+    client.withdraw_platform_fees(&cap, &usdc_id);
+    let blocked = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(blocked, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Day 1
+    env.ledger().set_timestamp(86400);
+    client.withdraw_platform_fees(&cap, &usdc_id);
+    let blocked = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(blocked, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Day 2
+    env.ledger().set_timestamp(172800);
+    client.withdraw_platform_fees(&cap, &usdc_id);
+
+    // All fees should now be drained (3 × cap ≈ settled)
+    let remaining = client.get_total_fees_collected(&usdc_id);
+    assert!(remaining <= cap, "remaining fees should be at most one cap's worth");
+
+    let _ = admin;
+}
+
+/// When no cap is set (cap == 0) withdrawals are unlimited regardless of day.
+#[test]
+fn test_no_cap_allows_unlimited_withdrawal() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) =
+        setup_withdrawal_cap_test(&env);
+
+    // No cap set — withdraw the full settled amount in one call
+    let result = client.try_withdraw_platform_fees(&settled, &usdc_id);
+    assert!(result.is_ok(), "unlimited withdrawal should succeed with no cap");
+
+    let _ = admin;
+}
+
+/// Partial withdrawals within a day accumulate correctly against the cap.
+/// Cap is set to 3 chunks so the first three succeed and the fourth is blocked.
+#[test]
+fn test_partial_withdrawals_accumulate_within_day() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) =
+        setup_withdrawal_cap_test(&env);
+
+    // Use a chunk that divides evenly; cap = 3 chunks so the 4th is blocked by cap
+    let chunk = settled / 5; // settled = 5 payments × fee, so chunk is 1/5 of that
+    let cap = chunk * 3;     // cap covers exactly 3 chunks per day
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // Three partial withdrawals — each should succeed
+    client.withdraw_platform_fees(&chunk, &usdc_id);
+    client.withdraw_platform_fees(&chunk, &usdc_id);
+    client.withdraw_platform_fees(&chunk, &usdc_id);
+
+    // Accumulated = 3 × chunk = cap; one more stroop must be rejected by cap
+    let result = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Advance to next day — cap resets, remaining fees can be withdrawn
+    env.ledger().set_timestamp(86400);
+    client.withdraw_platform_fees(&chunk, &usdc_id); // day-1 first withdrawal succeeds
+
+    let _ = admin;
+}
+
+/// get_daily_withdrawn_amount returns 0 for a day with no withdrawals.
+#[test]
+fn test_get_daily_withdrawn_amount_returns_zero_for_new_day() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) =
+        setup_withdrawal_cap_test(&env);
+
+    let cap = settled;
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // Day 0: withdraw something
+    client.withdraw_platform_fees(&(settled / 2), &usdc_id);
+    assert_eq!(client.get_daily_withdrawn_amount(&usdc_id), settled / 2);
+
+    // Advance to day 1 — counter must read 0
+    env.ledger().set_timestamp(86400);
+    assert_eq!(client.get_daily_withdrawn_amount(&usdc_id), 0);
+
+    let _ = admin;
+}
+
 /// Without a referrer, no reward is paid and the full platform fee stays in escrow.
 #[test]
 fn test_no_referral_reward_without_referrer() {
