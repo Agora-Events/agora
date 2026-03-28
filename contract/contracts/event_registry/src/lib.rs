@@ -564,7 +564,7 @@ impl EventRegistry {
         event_id: String,
         custom_fee_bps: Option<u32>,
     ) -> Result<(), EventRegistryError> {
-        require_admin(&env)?;
+        let admin = require_admin(&env)?;
 
         if let Some(fee) = custom_fee_bps {
             if fee > 10000 {
