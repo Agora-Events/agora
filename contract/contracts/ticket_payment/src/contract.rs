@@ -102,6 +102,7 @@ pub mod event_registry {
     pub trait EventRegistryInterface {
         fn get_event_payment_info(env: Env, event_id: String) -> PaymentInfo;
         fn get_event(env: Env, event_id: String) -> Option<EventInfo>;
+        fn get_organizer_address(env: Env, event_id: String) -> Result<Address, ()>;
         fn increment_inventory(env: Env, event_id: String, tier_id: String, quantity: u32);
         fn decrement_inventory(env: Env, event_id: String, tier_id: String);
         fn get_global_promo_bps(env: Env) -> u32;
