@@ -168,6 +168,12 @@ pub mod event_registry {
     }
 }
 
+fn require_admin(env: &Env) -> Result<Address, TicketPaymentError> {
+    let admin = get_admin(env).ok_or(TicketPaymentError::NotInitialized)?;
+    admin.require_auth();
+    Ok(admin)
+}
+
 #[contract]
 pub struct TicketPaymentContract;
 
@@ -218,8 +224,7 @@ impl TicketPaymentContract {
     /// Pauses or resumes the contract. Only callable by the multi-sig admin.
     /// Upgrade and emergency-withdrawal remain available while the contract is paused.
     pub fn set_pause(env: Env, paused: bool) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
         set_is_paused(&env, paused);
         #[allow(deprecated)]
         env.events().publish(
@@ -248,8 +253,7 @@ impl TicketPaymentContract {
         event_id: String,
         disputed: bool,
     ) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         set_event_dispute_status(&env, event_id.clone(), disputed);
 
@@ -271,8 +275,7 @@ impl TicketPaymentContract {
     }
 
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let admin = get_admin(&env).expect("Admin not set");
-        admin.require_auth();
+        let admin = require_admin(&env).expect("Admin not set");
 
         let old_wasm_hash = match env.current_contract_address().executable() {
             Some(soroban_sdk::Executable::Wasm(hash)) => hash,
@@ -486,8 +489,7 @@ impl TicketPaymentContract {
 
     /// Sets the oracle contract address. Only callable by admin.
     pub fn set_oracle(env: Env, oracle_address: Address) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
         set_oracle_address(&env, &oracle_address);
         Ok(())
     }
@@ -884,9 +886,7 @@ impl TicketPaymentContract {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
         }
-        let admin = get_admin(&env).expect("Admin not set");
-        admin.require_auth();
-        // In a real scenario, this would be restricted to a specific backend/admin address.
+        let admin = require_admin(&env).expect("Admin not set");
         if let Some(mut payment) = get_payment(&env, payment_id.clone()) {
             let old_status = payment.status.clone();
             payment.status = PaymentStatus::Confirmed;
@@ -936,8 +936,7 @@ impl TicketPaymentContract {
 
     /// Triggers a refund as an administrator, regardless of dispute status.
     pub fn admin_refund(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         Self::internal_refund(env, payment_id)
     }
@@ -1371,8 +1370,7 @@ impl TicketPaymentContract {
         event_id: String,
         _token_address: Address,
     ) -> Result<i128, TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         let balance = get_event_balance(&env, event_id.clone());
         if balance.platform_fee == 0 {
@@ -1414,8 +1412,7 @@ impl TicketPaymentContract {
         amount: i128,
         token_address: Address,
     ) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         if amount <= 0 {
             return Err(TicketPaymentError::ArithmeticError);
@@ -1465,8 +1462,7 @@ impl TicketPaymentContract {
         token: Address,
         amount: i128,
     ) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         if amount < 0 {
             return Err(TicketPaymentError::ArithmeticError);

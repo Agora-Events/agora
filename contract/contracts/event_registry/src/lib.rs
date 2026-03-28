@@ -173,8 +173,7 @@ impl EventRegistry {
 
     /// Adds a token address to the payment token whitelist. Only callable by the administrator.
     pub fn add_to_token_whitelist(env: Env, token: Address) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
         validate_address(&env, &token)?;
         storage::add_to_token_whitelist(&env, &token);
         Ok(())
@@ -182,8 +181,7 @@ impl EventRegistry {
 
     /// Removes a token address from the payment token whitelist. Only callable by the administrator.
     pub fn remove_from_token_whitelist(env: Env, token: Address) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
         storage::remove_from_token_whitelist(&env, &token);
         Ok(())
     }
@@ -538,8 +536,7 @@ impl EventRegistry {
 
     /// Updates the platform fee percentage. Only callable by the administrator.
     pub fn set_platform_fee(env: Env, new_fee_percent: u32) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         if new_fee_percent > 10000 {
             return Err(EventRegistryError::InvalidFeePercent);
@@ -567,8 +564,7 @@ impl EventRegistry {
         event_id: String,
         custom_fee_bps: Option<u32>,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         if let Some(fee) = custom_fee_bps {
             if fee > 10000 {
@@ -619,8 +615,7 @@ impl EventRegistry {
         env: Env,
         ticket_payment_address: Address,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         validate_address(&env, &ticket_payment_address)?;
 
@@ -808,8 +803,7 @@ impl EventRegistry {
     /// Upgrades the contract to a new WASM hash. Only callable by the administrator.
     /// Performs post-upgrade state verification to ensure critical storage is intact.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         env.deployer().update_current_contract_wasm(new_wasm_hash);
 
@@ -835,8 +829,7 @@ impl EventRegistry {
         organizer_address: Address,
         reason: String,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         validate_address(&env, &organizer_address)?;
 
@@ -882,8 +875,7 @@ impl EventRegistry {
         organizer_address: Address,
         reason: String,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         validate_address(&env, &organizer_address)?;
 
@@ -940,8 +932,7 @@ impl EventRegistry {
         global_promo_bps: u32,
         promo_expiry: u64,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         if global_promo_bps > 10000 {
             return Err(EventRegistryError::InvalidPromoBps);
@@ -1057,8 +1048,7 @@ impl EventRegistry {
         token: Address,
         min_amount: i128,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = require_admin(&env)?;
 
         if min_amount <= 0 {
             return Err(EventRegistryError::InvalidStakeAmount);
@@ -1733,6 +1723,12 @@ impl EventRegistry {
     pub fn get_active_proposals(env: Env) -> Vec<u64> {
         storage::get_active_proposals(&env)
     }
+}
+
+fn require_admin(env: &Env) -> Result<Address, EventRegistryError> {
+    let admin = storage::get_admin(env).ok_or(EventRegistryError::NotInitialized)?;
+    admin.require_auth();
+    Ok(admin)
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
