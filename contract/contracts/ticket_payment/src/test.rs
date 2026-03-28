@@ -6456,3 +6456,97 @@ fn test_no_referral_reward_without_referrer() {
     assert_eq!(escrow.platform_fee, 50_0000000i128);
     assert_eq!(escrow.organizer_amount, 950_0000000i128);
 }
+
+// ── Ticket Transfer Recipient Validation Tests ────────────────────────────────
+
+/// Helper: insert a confirmed payment directly into contract storage.
+fn insert_confirmed_payment(env: &Env, client_address: &Address, payment_id: &String, buyer: &Address, event_id: &str) {
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(env, event_id),
+        buyer_address: buyer.clone(),
+        ticket_tier_id: String::from_str(env, "tier_1"),
+        amount: 1000_0000000,
+        platform_fee: 50_0000000,
+        organizer_amount: 950_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(env, "tx_hash"),
+        created_at: 100,
+        confirmed_at: Some(101),
+        refunded_amount: 0,
+    };
+    env.as_contract(client_address, || {
+        store_payment(env, payment);
+    });
+}
+
+/// Self-transfer must be rejected with InvalidAddress.
+#[test]
+fn test_transfer_ticket_self_transfer_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_self");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    // Attempt to transfer to self
+    let result = client.try_transfer_ticket(&payment_id, &buyer, &None);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+
+/// Transfer to the Stellar zero/burn address must be rejected with InvalidAddress.
+#[test]
+fn test_transfer_ticket_zero_address_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_zero");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    // Construct the Stellar zero address from its well-known strkey
+    let zero_addr = Address::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+    );
+
+    let result = client.try_transfer_ticket(&payment_id, &zero_addr, &None);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+
+/// Transfer to the contract's own address must be rejected with InvalidAddress.
+#[test]
+fn test_transfer_ticket_contract_address_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_contract");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    // The contract's own address is an invalid recipient
+    let result = client.try_transfer_ticket(&payment_id, &client.address, &None);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+
+/// A valid transfer to a distinct, non-zero recipient must succeed.
+#[test]
+fn test_transfer_ticket_valid_recipient_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_valid");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    client.transfer_ticket(&payment_id, &recipient, &None);
+
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(updated.buyer_address, recipient);
+}
