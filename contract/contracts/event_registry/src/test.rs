@@ -4220,9 +4220,7 @@ fn test_restocking_fee_exceeds_ticket_price_error_message() {
 // ── Tags Tests ────────────────────────────────────────────────────────────────
 
 /// Helper: initialise the registry and return (client, admin, organizer).
-fn setup_tags_test(
-    env: &Env,
-) -> (EventRegistryClient<'static>, Address, Address) {
+fn setup_tags_test(env: &Env) -> (EventRegistryClient<'static>, Address, Address) {
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(env, &contract_id);
     let admin = Address::generate(env);

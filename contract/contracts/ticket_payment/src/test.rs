@@ -127,7 +127,7 @@ impl MockEventRegistry {
                 target_deadline: 0,
                 goal_met: false,
                 banner_cid: None,
-            tags: None,
+                tags: None,
             });
         }
         None
@@ -5923,11 +5923,26 @@ impl MockEventRegistryForReferral {
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn get_global_promo_bps(_env: Env) -> u32 { 0 }
-    pub fn get_promo_expiry(_env: Env) -> u64 { 0 }
-    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 { 0 }
-    pub fn update_loyalty_score(_env: Env, _caller: Address, _guest: Address, _tickets: u32, _amount: i128) {}
-    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> { None }
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 {
+        0
+    }
+    pub fn update_loyalty_score(
+        _env: Env,
+        _caller: Address,
+        _guest: Address,
+        _tickets: u32,
+        _amount: i128,
+    ) {
+    }
+    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> {
+        None
+    }
     pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
@@ -5987,12 +6002,27 @@ impl MockEventRegistryFullLoyaltyDiscount {
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn get_global_promo_bps(_env: Env) -> u32 { 0 }
-    pub fn get_promo_expiry(_env: Env) -> u64 { 0 }
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
     /// 100% loyalty discount — wipes the entire platform fee before referral runs.
-    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 { 10_000 }
-    pub fn update_loyalty_score(_env: Env, _caller: Address, _guest: Address, _tickets: u32, _amount: i128) {}
-    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> { None }
+    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 {
+        10_000
+    }
+    pub fn update_loyalty_score(
+        _env: Env,
+        _caller: Address,
+        _guest: Address,
+        _tickets: u32,
+        _amount: i128,
+    ) {
+    }
+    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> {
+        None
+    }
     pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
         event_registry::PaymentInfo {
             payment_address: Address::generate(&env),
@@ -6157,7 +6187,10 @@ fn test_referral_reward_does_not_exceed_platform_fee_invariant() {
     let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
 
     // Core invariant: reward + escrow_fee == original_platform_fee (no tokens created/lost)
-    assert_eq!(referrer_balance + escrow.platform_fee, original_platform_fee);
+    assert_eq!(
+        referrer_balance + escrow.platform_fee,
+        original_platform_fee
+    );
     // Reward must not exceed the original platform fee
     assert!(referrer_balance <= original_platform_fee);
 }
@@ -6215,10 +6248,7 @@ fn setup_withdrawal_cap_test(
     }
 
     // Settle all fees into the withdrawable pool
-    let settled = client.settle_platform_fees(
-        &String::from_str(env, "event_1"),
-        &usdc_id,
-    );
+    let settled = client.settle_platform_fees(&String::from_str(env, "event_1"), &usdc_id);
 
     (client, admin, usdc_id, platform_wallet, settled)
 }
@@ -6253,8 +6283,7 @@ fn test_withdrawal_cap_enforced_within_same_day() {
     // Start at a known timestamp (day 0)
     env.ledger().set_timestamp(0);
 
-    let (client, admin, usdc_id, _platform_wallet, settled) =
-        setup_withdrawal_cap_test(&env);
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
 
     // Set cap to half the settled amount
     let cap = settled / 2;
@@ -6279,8 +6308,7 @@ fn test_withdrawal_cap_resets_on_new_day() {
     // Start at beginning of day 0
     env.ledger().set_timestamp(0);
 
-    let (client, admin, usdc_id, _platform_wallet, settled) =
-        setup_withdrawal_cap_test(&env);
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
 
     // Cap = half the settled fees
     let cap = settled / 2;
@@ -6313,8 +6341,7 @@ fn test_withdrawal_cap_resets_across_multiple_days() {
     env.mock_all_auths();
     env.ledger().set_timestamp(0);
 
-    let (client, admin, usdc_id, _platform_wallet, settled) =
-        setup_withdrawal_cap_test(&env);
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
 
     // Cap = one-third of settled fees so we can withdraw once per day for 3 days
     let cap = settled / 3;
@@ -6337,7 +6364,10 @@ fn test_withdrawal_cap_resets_across_multiple_days() {
 
     // All fees should now be drained (3 × cap ≈ settled)
     let remaining = client.get_total_fees_collected(&usdc_id);
-    assert!(remaining <= cap, "remaining fees should be at most one cap's worth");
+    assert!(
+        remaining <= cap,
+        "remaining fees should be at most one cap's worth"
+    );
 
     let _ = admin;
 }
@@ -6349,12 +6379,14 @@ fn test_no_cap_allows_unlimited_withdrawal() {
     env.mock_all_auths();
     env.ledger().set_timestamp(0);
 
-    let (client, admin, usdc_id, _platform_wallet, settled) =
-        setup_withdrawal_cap_test(&env);
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
 
     // No cap set — withdraw the full settled amount in one call
     let result = client.try_withdraw_platform_fees(&settled, &usdc_id);
-    assert!(result.is_ok(), "unlimited withdrawal should succeed with no cap");
+    assert!(
+        result.is_ok(),
+        "unlimited withdrawal should succeed with no cap"
+    );
 
     let _ = admin;
 }
@@ -6367,12 +6399,11 @@ fn test_partial_withdrawals_accumulate_within_day() {
     env.mock_all_auths();
     env.ledger().set_timestamp(0);
 
-    let (client, admin, usdc_id, _platform_wallet, settled) =
-        setup_withdrawal_cap_test(&env);
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
 
     // Use a chunk that divides evenly; cap = 3 chunks so the 4th is blocked by cap
     let chunk = settled / 5; // settled = 5 payments × fee, so chunk is 1/5 of that
-    let cap = chunk * 3;     // cap covers exactly 3 chunks per day
+    let cap = chunk * 3; // cap covers exactly 3 chunks per day
     client.set_withdrawal_cap(&usdc_id, &cap);
 
     // Three partial withdrawals — each should succeed
@@ -6398,8 +6429,7 @@ fn test_get_daily_withdrawn_amount_returns_zero_for_new_day() {
     env.mock_all_auths();
     env.ledger().set_timestamp(0);
 
-    let (client, admin, usdc_id, _platform_wallet, settled) =
-        setup_withdrawal_cap_test(&env);
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
 
     let cap = settled;
     client.set_withdrawal_cap(&usdc_id, &cap);
@@ -6460,7 +6490,13 @@ fn test_no_referral_reward_without_referrer() {
 // ── Ticket Transfer Recipient Validation Tests ────────────────────────────────
 
 /// Helper: insert a confirmed payment directly into contract storage.
-fn insert_confirmed_payment(env: &Env, client_address: &Address, payment_id: &String, buyer: &Address, event_id: &str) {
+fn insert_confirmed_payment(
+    env: &Env,
+    client_address: &Address,
+    payment_id: &String,
+    buyer: &Address,
+    event_id: &str,
+) {
     let payment = Payment {
         payment_id: payment_id.clone(),
         event_id: String::from_str(env, event_id),
