@@ -505,15 +505,9 @@ impl EventRegistry {
         storage::get_event(&env, event_id)
     }
 
-    /// Returns the organizer address for a given event ID.
-    /// Returns `EventNotFound` if the event does not exist.
-    pub fn get_organizer_address(
-        env: Env,
-        event_id: String,
-    ) -> Result<Address, EventRegistryError> {
-        storage::get_event(&env, event_id)
-            .map(|e| e.organizer_address)
-            .ok_or(EventRegistryError::EventNotFound)
+    /// Returns the organizer address for a given event ID, or `None` if the event does not exist.
+    pub fn get_organizer_address(env: Env, event_id: String) -> Option<Address> {
+        storage::get_event(&env, event_id).map(|e| e.organizer_address)
     }
 
     /// Returns the total number of tickets sold for an event across all tiers.
@@ -1030,7 +1024,8 @@ impl EventRegistry {
         event_id: String,
         scanner: Address,
     ) -> Result<(), EventRegistryError> {
-        let organizer = Self::get_organizer_address(env.clone(), event_id.clone())?;
+        let organizer = Self::get_organizer_address(env.clone(), event_id.clone())
+            .ok_or(EventRegistryError::EventNotFound)?;
         organizer.require_auth();
 
         storage::authorize_scanner(&env, event_id.clone(), &scanner);
