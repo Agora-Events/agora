@@ -5850,3 +5850,333 @@ fn test_remove_governor_succeeds_when_multiple_governors_exist() {
     let failed = client.try_vote_on_proposal(&gov2, &p2);
     assert_eq!(failed, Err(Ok(TicketPaymentError::NotGovernor)));
 }
+
+// ── Referral Reward Cap Validation Tests ─────────────────────────────────────
+
+/// Mock registry with 5% platform fee and no loyalty discount — baseline for referral tests.
+#[soroban_sdk::contract]
+pub struct MockEventRegistryForReferral;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryForReferral {
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500, // 5%
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000_0000000i128,
+                        early_bird_price: 1000_0000000i128,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            banner_cid: None,
+        })
+    }
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 { 0 }
+    pub fn get_promo_expiry(_env: Env) -> u64 { 0 }
+    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 { 0 }
+    pub fn update_loyalty_score(_env: Env, _caller: Address, _guest: Address, _tickets: u32, _amount: i128) {}
+    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> { None }
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+        }
+    }
+}
+
+/// Mock registry with 5% platform fee AND a 100% loyalty discount (fee reduced to 0),
+/// combined with a referrer — the referral reward must be capped at 0, not go negative.
+#[soroban_sdk::contract]
+pub struct MockEventRegistryFullLoyaltyDiscount;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryFullLoyaltyDiscount {
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500, // 5%
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000_0000000i128,
+                        early_bird_price: 1000_0000000i128,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            banner_cid: None,
+        })
+    }
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 { 0 }
+    pub fn get_promo_expiry(_env: Env) -> u64 { 0 }
+    /// 100% loyalty discount — wipes the entire platform fee before referral runs.
+    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 { 10_000 }
+    pub fn update_loyalty_score(_env: Env, _caller: Address, _guest: Address, _tickets: u32, _amount: i128) {}
+    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> { None }
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+        }
+    }
+}
+
+/// Normal referral: reward = 20% of platform fee, remainder stays in escrow.
+/// price=1000, fee_bps=500 → platform_fee=50, reward=10, escrow_fee=40, organizer=950.
+#[test]
+fn test_referral_reward_is_20_percent_of_platform_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryForReferral, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let referrer = Address::generate(&env);
+    let price = 1000_0000000i128; // 1000 USDC
+
+    let usdc = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_ref_1");
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // platform_fee = 1000 * 5% = 50 USDC
+    // referral_reward = 50 * 20% = 10 USDC  → sent to referrer
+    // escrow platform_fee = 50 - 10 = 40 USDC
+    // organizer_amount = 1000 - 50 = 950 USDC
+    let expected_platform_fee = 50_0000000i128;
+    let expected_reward = 10_0000000i128;
+    let expected_escrow_fee = expected_platform_fee - expected_reward; // 40
+
+    let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
+    assert_eq!(escrow.platform_fee, expected_escrow_fee);
+    assert_eq!(escrow.organizer_amount, 950_0000000i128);
+
+    // Referrer received the reward
+    let referrer_balance = token::Client::new(&env, &usdc_id).balance(&referrer);
+    assert_eq!(referrer_balance, expected_reward);
+
+    // Buyer paid the full price (no loyalty discount)
+    let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert_eq!(buyer_balance, 0);
+}
+
+/// Referral reward must not exceed the platform fee.
+/// With a 100% loyalty discount the platform fee is 0; reward must also be 0.
+#[test]
+fn test_referral_reward_capped_when_platform_fee_is_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryFullLoyaltyDiscount, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let referrer = Address::generate(&env);
+    // price=1000, fee=5%=50, loyalty_discount=100% of fee=50 → platform_fee=0
+    // buyer pays 1000 - 50 = 950
+    let price = 1000_0000000i128;
+
+    let usdc = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_ref_cap");
+    // Must succeed — reward is capped at 0, no underflow
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
+    // platform_fee in escrow must be 0 (fully discounted, nothing left for referral either)
+    assert_eq!(escrow.platform_fee, 0);
+    // organizer gets everything the buyer actually paid (950)
+    assert_eq!(escrow.organizer_amount, 950_0000000i128);
+
+    // Referrer receives nothing — reward was capped at 0
+    let referrer_balance = token::Client::new(&env, &usdc_id).balance(&referrer);
+    assert_eq!(referrer_balance, 0);
+}
+
+/// Referral reward + remaining escrow fee must always sum to exactly the original platform fee.
+/// Verifies the invariant: reward <= platform_fee and no tokens are created or lost.
+#[test]
+fn test_referral_reward_does_not_exceed_platform_fee_invariant() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryForReferral, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let referrer = Address::generate(&env);
+    let price = 1000_0000000i128;
+
+    let usdc = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_ref_inv");
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // platform_fee = 1000 * 5% = 50
+    let original_platform_fee = 50_0000000i128;
+    let referrer_balance = token::Client::new(&env, &usdc_id).balance(&referrer);
+    let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
+
+    // Core invariant: reward + escrow_fee == original_platform_fee (no tokens created/lost)
+    assert_eq!(referrer_balance + escrow.platform_fee, original_platform_fee);
+    // Reward must not exceed the original platform fee
+    assert!(referrer_balance <= original_platform_fee);
+}
+
+/// Without a referrer, no reward is paid and the full platform fee stays in escrow.
+#[test]
+fn test_no_referral_reward_without_referrer() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryForReferral, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let price = 1000_0000000i128;
+
+    let usdc = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_no_ref");
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &None, // no referrer
+    );
+
+    // Full platform fee stays in escrow
+    let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
+    assert_eq!(escrow.platform_fee, 50_0000000i128);
+    assert_eq!(escrow.organizer_amount, 950_0000000i128);
+}

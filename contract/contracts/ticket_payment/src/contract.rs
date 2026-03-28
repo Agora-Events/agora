@@ -704,6 +704,8 @@ impl TicketPaymentContract {
                 .checked_mul(20)
                 .and_then(|v| v.checked_div(100))
                 .ok_or(TicketPaymentError::ArithmeticError)?; // 20%
+            // Cap: referral reward must never exceed the remaining platform fee.
+            let reward = core::cmp::min(reward, total_platform_fee);
             total_platform_fee = total_platform_fee
                 .checked_sub(reward)
                 .ok_or(TicketPaymentError::ArithmeticError)?;
