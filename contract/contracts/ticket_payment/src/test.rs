@@ -4466,6 +4466,51 @@ fn test_close_auction_rejects_when_no_bids_exist() {
 }
 
 #[test]
+fn test_close_auction_rejects_double_closure() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_auction_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let bidder = Address::generate(&env);
+    let funded_amount = 20_000_000_000i128;
+    usdc_token.mint(&bidder, &funded_amount);
+    token::Client::new(&env, &usdc_id).approve(
+        &bidder,
+        &client.address,
+        &funded_amount,
+        &99999,
+    );
+
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let first_payment_id = String::from_str(&env, "payment_1");
+    let second_payment_id = String::from_str(&env, "payment_2");
+
+    client.place_bid(&event_id, &tier_id, &bidder, &usdc_id, &1100_0000000i128);
+
+    env.ledger().set_timestamp(1001);
+
+    let first_close = client.try_close_auction(&first_payment_id, &event_id, &tier_id);
+    assert_eq!(first_close, Ok(Ok(())));
+
+    let second_close = client.try_close_auction(&second_payment_id, &event_id, &tier_id);
+    assert_eq!(second_close, Err(Ok(TicketPaymentError::AuctionEnded)));
+
+    let auction_closed = env.as_contract(&client.address, || {
+        is_auction_closed(&env, event_id.clone(), tier_id.clone())
+    });
+    assert!(auction_closed);
+
+    let payment = client.get_payment_status(&first_payment_id).unwrap();
+    assert_eq!(payment.payment_id, first_payment_id);
+    assert_eq!(payment.buyer_address, bidder);
+    assert_eq!(payment.status, PaymentStatus::Confirmed);
+    assert_eq!(client.get_payment_status(&second_payment_id), None);
+}
+
+#[test]
 fn test_governance_rejects_slippage_above_fifty_percent() {
     let env = Env::default();
     env.mock_all_auths();
