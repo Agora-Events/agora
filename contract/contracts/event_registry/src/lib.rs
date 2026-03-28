@@ -1,3 +1,88 @@
+//! # Event Registry Contract
+//!
+//! ## Overview
+//!
+//! The `event-registry` crate is the central on-chain registry for the Agora Events platform,
+//! deployed on the [Soroban](https://soroban.stellar.org) smart-contract runtime on Stellar.
+//! It is the single source of truth for every event that exists on the platform: creation,
+//! status transitions, inventory tracking, organizer management, and fee configuration all
+//! live here.
+//!
+//! ## Architecture
+//!
+//! The crate is organised into five focused modules:
+//!
+//! | Module | Responsibility |
+//! |--------|---------------|
+//! | [`lib`](crate) | Public contract entry-points exposed via `#[contractimpl]` |
+//! | [`types`] | All `#[contracttype]` structs and enums shared across modules |
+//! | [`storage`] | Thin wrappers around `env.storage()` – one function per data key |
+//! | [`events`] | Soroban event structs and the [`AgoraEvent`](crate::events::AgoraEvent) topic enum |
+//! | [`error`] | The [`EventRegistryError`](crate::error::EventRegistryError) enum returned by every fallible function |
+//!
+//! ### Key data types
+//!
+//! * [`EventInfo`](crate::types::EventInfo) – the full on-chain record for a registered event,
+//!   including tiered pricing ([`TicketTier`](crate::types::TicketTier)), supply counters,
+//!   milestone plans, and status flags.
+//! * [`MultiSigConfig`](crate::types::MultiSigConfig) – multi-admin governance configuration
+//!   with a configurable approval threshold.
+//! * [`OrganizerStake`](crate::types::OrganizerStake) – collateral staked by organizers to
+//!   unlock *Verified* status and earn proportional staking rewards.
+//! * [`GuestProfile`](crate::types::GuestProfile) – per-attendee loyalty score and spend history.
+//! * [`SeriesRegistry`](crate::types::SeriesRegistry) / [`SeriesPass`](crate::types::SeriesPass) –
+//!   grouping of related events into a series with reusable season passes.
+//!
+//! ### Storage strategy
+//!
+//! All state is kept in **persistent** storage so that it survives ledger expiry.  Large
+//! per-organizer lists (event IDs, receipts) are sharded into fixed-size buckets of 50 entries
+//! each to stay within Soroban's per-entry size limits.
+//!
+//! ## Usage
+//!
+//! ### Initialisation
+//!
+//! The contract must be initialised exactly once by calling [`EventRegistry::initialize`]:
+//!
+//! ```text
+//! EventRegistry::initialize(env, admin, platform_wallet, platform_fee_bps, usdc_token)
+//! ```
+//!
+//! This sets the admin, platform wallet, default fee rate (in basis points), and automatically
+//! whitelists the provided USDC token for payments.
+//!
+//! ### Registering an event
+//!
+//! Organizers call [`EventRegistry::register_event`] with an
+//! [`EventRegistrationArgs`](crate::types::EventRegistrationArgs) struct that bundles the event
+//! ID, payment address, IPFS metadata CID, supply cap, and one or more
+//! [`TicketTier`](crate::types::TicketTier) entries.
+//!
+//! ### Interaction with TicketPayment
+//!
+//! `EventRegistry` and the companion `TicketPayment` contract work together to process ticket
+//! sales while keeping inventory consistent:
+//!
+//! 1. **Registration** – the platform admin calls
+//!    [`EventRegistry::set_ticket_payment_contract`] once to record the `TicketPayment`
+//!    contract address on-chain.
+//! 2. **Purchase flow** – when a buyer purchases a ticket, `TicketPayment` handles the token
+//!    transfer and fee split, then calls [`EventRegistry::increment_inventory`] to atomically
+//!    increment the per-tier and global supply counters.  `EventRegistry` enforces that only
+//!    the registered `TicketPayment` address may call this function
+//!    (`ticket_payment_addr.require_auth()`), preventing unauthorised supply manipulation.
+//! 3. **Refund flow** – when a refund is approved, `TicketPayment` calls
+//!    [`EventRegistry::decrement_inventory`] to roll back the supply counters, again gated
+//!    behind the same address check.
+//! 4. **Payment info** – `TicketPayment` can query [`EventRegistry::get_event_payment_info`]
+//!    to retrieve the current fee rates and tier pricing for a given event before processing
+//!    a payment.
+//!
+//! This separation of concerns means `EventRegistry` never touches tokens directly; all
+//! financial logic lives in `TicketPayment`, while `EventRegistry` remains the authoritative
+//! registry for event state and inventory.
+
 #![no_std]
 
 use crate::events::{
