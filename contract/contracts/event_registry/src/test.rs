@@ -4158,3 +4158,170 @@ fn test_restocking_fee_exceeds_ticket_price_error_message() {
         "unexpected message"
     );
 }
+
+#[test]
+fn test_register_event_tier_limit_overflow() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "overflow_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let mut tiers = Map::new(&env);
+    // Two tiers that sum to > i128::MAX
+    tiers.set(
+        String::from_str(&env, "t1"),
+        TicketTier {
+            name: String::from_str(&env, "T1"),
+            price: 100,
+            tier_limit: i128::MAX / 2 + 10,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+    tiers.set(
+        String::from_str(&env, "t2"),
+        TicketTier {
+            name: String::from_str(&env, "T2"),
+            price: 100,
+            tier_limit: i128::MAX / 2 + 10,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id,
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 0, // unlimited global supply, but tier limits still overflow
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+    assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
+}
+
+#[test]
+fn test_register_event_invalid_tier_limit_negative() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "negative_tier_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "bad"),
+        TicketTier {
+            name: String::from_str(&env, "Bad"),
+            price: 100,
+            tier_limit: -1,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+        },
+    );
+
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id,
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 0,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
+}
+
+#[test]
+fn test_register_event_milestone_overflow() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "milestone_overflow");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let milestones = soroban_sdk::vec![
+        &env,
+        crate::types::Milestone {
+            sales_threshold: 10,
+            release_percent: u32::MAX,
+        },
+        crate::types::Milestone {
+            sales_threshold: 20,
+            release_percent: 1,
+        },
+    ];
+
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id,
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: Some(milestones),
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+    assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
+}

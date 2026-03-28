@@ -220,17 +220,24 @@ impl EventRegistry {
             return Err(EventRegistryError::EventAlreadyExists);
         }
 
-        // Validate tier limits don't exceed max_supply
-        if args.max_supply > 0 {
-            let mut total_tier_limit: i128 = 0;
-            for tier in args.tiers.values() {
-                total_tier_limit = total_tier_limit
-                    .checked_add(tier.tier_limit)
-                    .ok_or(EventRegistryError::SupplyOverflow)?;
+        // Validate tier limits and supply consistency
+        let mut total_tier_limit: i128 = 0;
+        for tier in args.tiers.values() {
+            if tier.tier_limit < 0 {
+                return Err(EventRegistryError::InvalidQuantity);
             }
-            if total_tier_limit > args.max_supply {
-                return Err(EventRegistryError::TierLimitExceedsMaxSupply);
+            total_tier_limit = total_tier_limit
+                .checked_add(tier.tier_limit)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
+
+            // Combined validation: Ensure restocking fee does not exceed any tier price
+            if args.restocking_fee > 0 && args.restocking_fee > tier.price {
+                return Err(EventRegistryError::RestockingFeeExceedsTicketPrice);
             }
+        }
+
+        if args.max_supply > 0 && total_tier_limit > args.max_supply {
+            return Err(EventRegistryError::TierLimitExceedsMaxSupply);
         }
 
         // Validate resale cap if provided
@@ -240,19 +247,15 @@ impl EventRegistry {
             }
         }
 
-        // Validate restocking fee does not exceed any tier's ticket price
-        if args.restocking_fee > 0 {
-            for tier in args.tiers.values() {
-                if args.restocking_fee > tier.price {
-                    return Err(EventRegistryError::RestockingFeeExceedsTicketPrice);
-                }
-            }
-        }
-
         // Validate milestone plan: total release_percent must not exceed 10000 bps (100%)
         if let Some(ref milestones) = args.milestone_plan {
-            let total: u32 = milestones.iter().map(|m| m.release_percent).sum();
-            if total > 10000 {
+            let mut total_release: u32 = 0;
+            for m in milestones.iter() {
+                total_release = total_release
+                    .checked_add(m.release_percent)
+                    .ok_or(EventRegistryError::SupplyOverflow)?;
+            }
+            if total_release > 10000 {
                 return Err(EventRegistryError::InvalidMilestonePlan);
             }
         }
