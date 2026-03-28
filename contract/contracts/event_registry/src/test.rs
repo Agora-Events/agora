@@ -552,6 +552,10 @@ fn test_register_event_invalid_target_deadline() {
         },
     );
 
+    // Advance ledger timestamp so `now - 1` does not underflow
+    env.ledger().with_mut(|li| {
+        li.timestamp = 1000;
+    });
     let now = env.ledger().timestamp();
 
     // Past deadline should fail

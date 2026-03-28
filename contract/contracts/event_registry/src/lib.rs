@@ -1394,6 +1394,55 @@ impl EventRegistry {
         }
     }
 
+    /// Sets the multi-sig configuration directly. Only callable by an existing admin.
+    ///
+    /// Validates that:
+    /// - `new_admins` is not empty
+    /// - All addresses in `new_admins` are valid
+    /// - `new_threshold` is at least 1
+    /// - `new_threshold` is not greater than the total number of admins
+    ///
+    /// # Arguments
+    /// * `caller` - An existing admin authorizing this change
+    /// * `new_admins` - The new list of admin addresses
+    /// * `new_threshold` - The new approval threshold
+    pub fn set_multisig_config(
+        env: Env,
+        caller: Address,
+        new_admins: Vec<Address>,
+        new_threshold: u32,
+    ) -> Result<(), EventRegistryError> {
+        caller.require_auth();
+
+        let config =
+            storage::get_multisig_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+
+        if !config.admins.contains(&caller) {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        if new_admins.is_empty() {
+            return Err(EventRegistryError::CannotRemoveLastAdmin);
+        }
+
+        for addr in new_admins.iter() {
+            validate_address(&env, &addr)?;
+        }
+
+        if new_threshold == 0 || new_threshold > new_admins.len() {
+            return Err(EventRegistryError::InvalidThreshold);
+        }
+
+        let multisig_config = MultiSigConfig {
+            admins: new_admins,
+            threshold: new_threshold,
+        };
+
+        storage::set_multisig_config(&env, &multisig_config);
+
+        Ok(())
+    }
+
     /// Proposes a parameter change. Only callable by an existing admin.
     /// The proposer automatically approves the proposal.
     ///
@@ -1569,7 +1618,7 @@ impl EventRegistry {
 
         // Check if already approved by this admin
         if proposal.approvals.contains(&approver) {
-            return Ok(()); // Already approved, no-op
+            return Err(EventRegistryError::AlreadyApproved);
         }
 
         // Add approval
@@ -1745,6 +1794,5 @@ mod test;
 #[cfg(test)]
 mod test_e2e;
 
-// TODO: Uncomment when multisig functions are implemented
-// #[cfg(test)]
-// mod test_multisig;
+#[cfg(test)]
+mod test_multisig;

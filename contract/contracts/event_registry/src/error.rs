@@ -69,6 +69,8 @@ pub enum EventRegistryError {
     InsufficientApprovals = 40,
     /// Target deadline must be in the future
     InvalidTargetDeadline = 44,
+    /// Admin has already approved this proposal
+    AlreadyApproved = 45,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -206,6 +208,9 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::InvalidTargetDeadline => {
                 write!(f, "Target deadline must be in the future")
+            }
+            EventRegistryError::AlreadyApproved => {
+                write!(f, "Admin has already approved this proposal")
             }
         }
     }
