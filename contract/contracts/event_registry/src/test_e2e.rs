@@ -40,6 +40,7 @@ fn make_event_args(
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     }
 }
 

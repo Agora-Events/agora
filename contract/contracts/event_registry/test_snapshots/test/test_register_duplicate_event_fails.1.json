@@ -100,6 +100,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "tags"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "target_deadline"
                       },
                       "val": "void"
@@ -364,6 +370,12 @@
                           }
                         ]
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "tags"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {

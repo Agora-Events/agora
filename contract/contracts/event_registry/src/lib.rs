@@ -257,6 +257,18 @@ impl EventRegistry {
             }
         }
 
+        // Validate tags: max 10 tags, each at most 32 characters
+        if let Some(ref tags) = args.tags {
+            if tags.len() > 10 {
+                return Err(EventRegistryError::InvalidTags);
+            }
+            for tag in tags.iter() {
+                if tag.len() > 32 {
+                    return Err(EventRegistryError::InvalidTags);
+                }
+            }
+        }
+
         let platform_fee_percent = storage::get_platform_fee(&env);
 
         let event_info = EventInfo {
@@ -282,6 +294,7 @@ impl EventRegistry {
             goal_met: false,
             custom_fee_bps: None,
             banner_cid: args.banner_cid,
+            tags: args.tags,
         };
 
         storage::store_event(&env, event_info);

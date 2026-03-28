@@ -135,6 +135,8 @@ pub struct EventInfo {
     pub custom_fee_bps: Option<u32>,
     /// Optional IPFS CID for the event banner image
     pub banner_cid: Option<String>,
+    /// Optional categorical tags for the event (e.g., "Music", "Tech")
+    pub tags: Option<Vec<String>>,
 }
 
 /// Payment information for an event
@@ -172,6 +174,8 @@ pub struct EventRegistrationArgs {
     pub target_deadline: Option<u64>,
     /// Optional IPFS CID for the event banner image
     pub banner_cid: Option<String>,
+    /// Optional categorical tags for the event (e.g., "Music", "Tech")
+    pub tags: Option<Vec<String>>,
 }
 
 /// Audit log entry for blacklist actions

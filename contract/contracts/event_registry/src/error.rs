@@ -48,6 +48,8 @@ pub enum EventRegistryError {
     InvalidMilestonePlan = 41,
     /// Restocking fee exceeds the ticket price
     RestockingFeeExceedsTicketPrice = 42,
+    /// Tags list is invalid (too many tags or a tag string is too long)
+    InvalidTags = 43,
     // ── Governance / Multi-Sig errors ──────────────────────────────────
     /// Admin already exists in the multi-sig configuration
     AdminAlreadyExists = 33,
@@ -192,6 +194,12 @@ impl core::fmt::Display for EventRegistryError {
                 write!(
                     f,
                     "Restocking fee must not exceed the original ticket price"
+                )
+            }
+            EventRegistryError::InvalidTags => {
+                write!(
+                    f,
+                    "Tags are invalid: max 10 tags, each at most 32 characters"
                 )
             }
         }

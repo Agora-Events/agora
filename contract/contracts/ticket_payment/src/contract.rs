@@ -164,6 +164,7 @@ pub mod event_registry {
         pub goal_met: bool,
         pub custom_fee_bps: Option<u32>,
         pub banner_cid: Option<String>,
+        pub tags: Option<soroban_sdk::Vec<String>>,
     }
 }
 

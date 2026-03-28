@@ -41,6 +41,7 @@ fn test_register_and_get_series() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
@@ -56,6 +57,7 @@ fn test_register_and_get_series() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     // Register a series
@@ -106,6 +108,7 @@ fn test_issue_and_use_series_pass() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
@@ -280,6 +283,7 @@ fn test_storage_operations() {
         goal_met: false,
         custom_fee_bps: None,
         banner_cid: None,
+        tags: None,
     };
 
     client.store_event(&event_info);
@@ -366,6 +370,7 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
         goal_met: false,
         custom_fee_bps: None,
         banner_cid: None,
+        tags: None,
     });
 
     assert_eq!(client.get_total_tickets_sold(&event_id), 9);
@@ -406,6 +411,7 @@ fn test_organizer_events_list() {
         goal_met: false,
         custom_fee_bps: None,
         banner_cid: None,
+        tags: None,
     };
 
     let event_2 = EventInfo {
@@ -434,6 +440,7 @@ fn test_organizer_events_list() {
         goal_met: false,
         custom_fee_bps: None,
         banner_cid: None,
+        tags: None,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -496,6 +503,7 @@ fn test_register_event_success() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -538,6 +546,7 @@ fn test_register_event_rejects_contract_as_organizer() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -576,6 +585,7 @@ fn test_register_event_rejects_zero_organizer_address() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -616,6 +626,7 @@ fn test_register_event_unlimited_supply() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -658,6 +669,7 @@ fn test_register_duplicate_event_fails() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -674,6 +686,7 @@ fn test_register_duplicate_event_fails() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -709,6 +722,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     assert_eq!(
         short_result,
@@ -733,6 +747,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     assert_eq!(
         wrong_prefix_result,
@@ -757,6 +772,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     assert_eq!(
         oversized_result,
@@ -799,6 +815,7 @@ fn test_get_event_payment_info() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -841,6 +858,7 @@ fn test_update_event_status() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -882,6 +900,7 @@ fn test_event_inactive_error() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -924,6 +943,7 @@ fn test_complete_event_lifecycle() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -978,6 +998,7 @@ fn test_update_metadata_success() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let new_metadata_cid = String::from_str(
@@ -1025,6 +1046,7 @@ fn test_update_metadata_invalid_cid() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let wrong_char_cid = String::from_str(
@@ -1118,6 +1140,7 @@ fn test_set_custom_event_fee() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     // Default fee
@@ -1172,6 +1195,7 @@ fn test_set_custom_event_fee_exceeds_max() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     // Try to set custom fee exceeding 10000 bps (100%)
@@ -1240,6 +1264,7 @@ fn test_increment_inventory_success() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1310,6 +1335,7 @@ fn test_increment_inventory_max_supply_exceeded() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1375,6 +1401,7 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     // Fill one slot, then attempt a bulk call that overshoots max_supply in one shot
@@ -1440,6 +1467,7 @@ fn test_increment_inventory_unlimited_supply() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     for _ in 0..10 {
@@ -1523,6 +1551,7 @@ fn test_increment_inventory_inactive_event() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     client.update_event_status(&event_id, &false);
@@ -1581,6 +1610,7 @@ fn test_increment_inventory_persists_across_reads() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     for _ in 0..5 {
@@ -1656,6 +1686,7 @@ fn test_tier_limit_exceeds_max_supply() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     assert_eq!(
         result,
@@ -1714,6 +1745,7 @@ fn test_tier_not_found() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -1773,6 +1805,7 @@ fn test_tier_supply_exceeded() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1848,6 +1881,7 @@ fn test_multiple_tiers_inventory() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -1924,6 +1958,7 @@ fn test_increment_inventory_supply_overflow() {
         goal_met: false,
         custom_fee_bps: None,
         banner_cid: None,
+        tags: None,
     });
 
     let result = client.try_increment_inventory(&event_id, &tier_id, &1);
@@ -1989,6 +2024,7 @@ fn test_increment_inventory_tier_sold_overflow() {
         goal_met: false,
         custom_fee_bps: None,
         banner_cid: None,
+        tags: None,
     });
 
     let result = client.try_increment_inventory(&event_id, &tier_id, &1);
@@ -2032,6 +2068,7 @@ fn test_update_event_status_noop_skips_event() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let _ = env.events().all();
@@ -2107,6 +2144,7 @@ fn test_blacklist_prevents_event_registration() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -2150,6 +2188,7 @@ fn test_update_metadata_noop_skips_event() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let _ = env.events().all();
@@ -2232,6 +2271,7 @@ fn test_blacklist_suspends_active_events() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2356,6 +2396,7 @@ fn test_register_event_with_resale_cap() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2398,6 +2439,7 @@ fn test_register_event_resale_cap_zero() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2440,6 +2482,7 @@ fn test_register_event_resale_cap_none() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2482,6 +2525,7 @@ fn test_postpone_event_sets_grace_period() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     // Set ledger time and grace period end in the future
@@ -2531,6 +2575,7 @@ fn test_register_event_resale_cap_invalid() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -2569,6 +2614,7 @@ fn test_cancel_event_success() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     client.cancel_event(&event_id);
@@ -2610,6 +2656,7 @@ fn test_archive_event_rejects_active_event() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     let result = client.try_archive_event(&event_id);
@@ -2649,6 +2696,7 @@ fn test_cancel_already_cancelled_fails() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     client.cancel_event(&event_id);
@@ -2689,6 +2737,7 @@ fn test_update_status_on_cancelled_event_fails() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     client.cancel_event(&event_id);
@@ -3331,6 +3380,7 @@ fn test_register_event_with_banner_cid() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: banner_cid.clone(),
+        tags: None,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -3379,6 +3429,7 @@ fn test_goal_met_event_fires_only_once() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: banner_cid.clone(),
+        tags: None,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -3434,6 +3485,7 @@ fn test_register_event_without_banner_cid() {
         min_sales_target: Some(10),
         target_deadline: Some(1000),
         banner_cid: None,
+        tags: None,
     });
 
     // Drain setup events
@@ -3499,6 +3551,7 @@ fn test_series_pass_issued_at_timestamp() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     // Register a series
@@ -3574,6 +3627,7 @@ fn base_args(
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     }
 }
 
@@ -3909,6 +3963,7 @@ fn test_cancelled_status_guard() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     // Cancel event
@@ -4040,6 +4095,7 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     assert_eq!(
@@ -4093,6 +4149,7 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     assert!(result.is_ok());
@@ -4142,6 +4199,7 @@ fn test_register_event_restocking_fee_zero_always_valid() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
+        tags: None,
     });
 
     assert!(result.is_ok());
@@ -4157,4 +4215,216 @@ fn test_restocking_fee_exceeds_ticket_price_error_message() {
         ),
         "unexpected message"
     );
+}
+
+// ── Tags Tests ────────────────────────────────────────────────────────────────
+
+/// Helper: initialise the registry and return (client, admin, organizer).
+fn setup_tags_test(
+    env: &Env,
+) -> (EventRegistryClient<'static>, Address, Address) {
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let platform_wallet = Address::generate(env);
+    let usdc_token = Address::generate(env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    let organizer = Address::generate(env);
+    (client, admin, organizer)
+}
+
+fn tags_base_args(env: &Env, event_id: &str, organizer: &Address) -> EventRegistrationArgs {
+    EventRegistrationArgs {
+        event_id: String::from_str(env, event_id),
+        organizer_address: organizer.clone(),
+        payment_address: organizer.clone(),
+        metadata_cid: String::from_str(
+            env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 0,
+        milestone_plan: None,
+        tiers: Map::new(env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+    }
+}
+
+/// Registering with no tags (None) succeeds and EventInfo.tags is None.
+#[test]
+fn test_register_event_without_tags() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, organizer) = setup_tags_test(&env);
+
+    let args = tags_base_args(&env, "evt_no_tags", &organizer);
+    client.register_event(&args);
+
+    let info = client
+        .get_event(&String::from_str(&env, "evt_no_tags"))
+        .unwrap();
+    assert!(info.tags.is_none());
+}
+
+/// Registering with a valid set of tags stores them correctly.
+#[test]
+fn test_register_event_with_tags_stored_correctly() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, organizer) = setup_tags_test(&env);
+
+    let tags = soroban_sdk::vec![
+        &env,
+        String::from_str(&env, "Music"),
+        String::from_str(&env, "Tech"),
+        String::from_str(&env, "Outdoor"),
+    ];
+
+    let mut args = tags_base_args(&env, "evt_tags", &organizer);
+    args.tags = Some(tags.clone());
+    client.register_event(&args);
+
+    let info = client
+        .get_event(&String::from_str(&env, "evt_tags"))
+        .unwrap();
+    let stored = info.tags.unwrap();
+    assert_eq!(stored.len(), 3);
+    assert_eq!(stored.get(0).unwrap(), String::from_str(&env, "Music"));
+    assert_eq!(stored.get(1).unwrap(), String::from_str(&env, "Tech"));
+    assert_eq!(stored.get(2).unwrap(), String::from_str(&env, "Outdoor"));
+}
+
+/// Exactly 10 tags is the maximum allowed — must succeed.
+#[test]
+fn test_register_event_with_exactly_10_tags_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, organizer) = setup_tags_test(&env);
+
+    let tags = soroban_sdk::vec![
+        &env,
+        String::from_str(&env, "Tag1"),
+        String::from_str(&env, "Tag2"),
+        String::from_str(&env, "Tag3"),
+        String::from_str(&env, "Tag4"),
+        String::from_str(&env, "Tag5"),
+        String::from_str(&env, "Tag6"),
+        String::from_str(&env, "Tag7"),
+        String::from_str(&env, "Tag8"),
+        String::from_str(&env, "Tag9"),
+        String::from_str(&env, "Tag10"),
+    ];
+
+    let mut args = tags_base_args(&env, "evt_10_tags", &organizer);
+    args.tags = Some(tags);
+    let result = client.try_register_event(&args);
+    assert!(result.is_ok(), "10 tags should be accepted");
+}
+
+/// 11 tags exceeds the maximum — must return InvalidTags.
+#[test]
+fn test_register_event_with_11_tags_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, organizer) = setup_tags_test(&env);
+
+    let tags = soroban_sdk::vec![
+        &env,
+        String::from_str(&env, "T1"),
+        String::from_str(&env, "T2"),
+        String::from_str(&env, "T3"),
+        String::from_str(&env, "T4"),
+        String::from_str(&env, "T5"),
+        String::from_str(&env, "T6"),
+        String::from_str(&env, "T7"),
+        String::from_str(&env, "T8"),
+        String::from_str(&env, "T9"),
+        String::from_str(&env, "T10"),
+        String::from_str(&env, "T11"),
+    ];
+
+    let mut args = tags_base_args(&env, "evt_11_tags", &organizer);
+    args.tags = Some(tags);
+    let result = client.try_register_event(&args);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidTags)));
+}
+
+/// A tag of exactly 32 characters is the maximum allowed length — must succeed.
+#[test]
+fn test_register_event_tag_exactly_32_chars_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, organizer) = setup_tags_test(&env);
+
+    // 32 characters exactly
+    let tag_32 = String::from_str(&env, "12345678901234567890123456789012");
+    let tags = soroban_sdk::vec![&env, tag_32];
+
+    let mut args = tags_base_args(&env, "evt_tag_32", &organizer);
+    args.tags = Some(tags);
+    let result = client.try_register_event(&args);
+    assert!(result.is_ok(), "32-char tag should be accepted");
+}
+
+/// A tag of 33 characters exceeds the maximum length — must return InvalidTags.
+#[test]
+fn test_register_event_tag_33_chars_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, organizer) = setup_tags_test(&env);
+
+    // 33 characters
+    let tag_33 = String::from_str(&env, "123456789012345678901234567890123");
+    let tags = soroban_sdk::vec![&env, tag_33];
+
+    let mut args = tags_base_args(&env, "evt_tag_33", &organizer);
+    args.tags = Some(tags);
+    let result = client.try_register_event(&args);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidTags)));
+}
+
+/// A single empty-string tag is valid (length 0 ≤ 32).
+#[test]
+fn test_register_event_empty_tag_is_valid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, organizer) = setup_tags_test(&env);
+
+    let tags = soroban_sdk::vec![&env, String::from_str(&env, "")];
+    let mut args = tags_base_args(&env, "evt_empty_tag", &organizer);
+    args.tags = Some(tags);
+    let result = client.try_register_event(&args);
+    assert!(result.is_ok(), "empty tag string should be accepted");
+}
+
+/// Tags are independent of other fields — an event with tags and a banner_cid
+/// stores both correctly.
+#[test]
+fn test_register_event_tags_and_banner_cid_coexist() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, organizer) = setup_tags_test(&env);
+
+    let banner = String::from_str(&env, "bafybeibanner123");
+    let tags = soroban_sdk::vec![
+        &env,
+        String::from_str(&env, "Music"),
+        String::from_str(&env, "Festival"),
+    ];
+
+    let mut args = tags_base_args(&env, "evt_both", &organizer);
+    args.banner_cid = Some(banner.clone());
+    args.tags = Some(tags);
+    client.register_event(&args);
+
+    let info = client
+        .get_event(&String::from_str(&env, "evt_both"))
+        .unwrap();
+    assert_eq!(info.banner_cid.unwrap(), banner);
+    assert_eq!(info.tags.unwrap().len(), 2);
 }
