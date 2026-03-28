@@ -49,6 +49,7 @@ impl MockRegistryE2E {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address,
             platform_fee_percent: 500,
@@ -161,6 +162,7 @@ impl MockRegistryCancelledE2E {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer.clone(),
             payment_address: organizer,
             platform_fee_percent: 500,
@@ -253,6 +255,7 @@ impl MockRegistryWithGoal {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer.clone(),
             payment_address: organizer,
             platform_fee_percent: 500,
@@ -1028,6 +1031,7 @@ impl MockRegistryAuction {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer.clone(),
             payment_address: organizer,
             platform_fee_percent: 500,

@@ -25,6 +25,7 @@ fn make_event_args(
 ) -> EventRegistrationArgs {
     EventRegistrationArgs {
         event_id: String::from_str(env, event_id),
+        name: String::from_str(env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: organizer.clone(),
         metadata_cid: String::from_str(

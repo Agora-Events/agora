@@ -145,6 +145,7 @@ pub mod event_registry {
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct EventInfo {
         pub event_id: String,
+        pub name: String,
         pub organizer_address: Address,
         pub payment_address: Address,
         pub platform_fee_percent: u32,

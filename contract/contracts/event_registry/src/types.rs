@@ -90,6 +90,8 @@ pub enum EventStatus {
 pub struct EventInfo {
     /// Unique identifier for the event
     pub event_id: String,
+    /// Human-readable name for the event (trimmed of leading/trailing whitespace)
+    pub name: String,
     /// The wallet address of the event organizer
     pub organizer_address: Address,
     /// The address where payments for this event should be routed
@@ -158,6 +160,8 @@ pub struct PaymentInfo {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EventRegistrationArgs {
     pub event_id: String,
+    /// Human-readable name for the event. Leading/trailing whitespace will be trimmed on registration.
+    pub name: String,
     pub organizer_address: Address,
     pub payment_address: Address,
     pub metadata_cid: String,

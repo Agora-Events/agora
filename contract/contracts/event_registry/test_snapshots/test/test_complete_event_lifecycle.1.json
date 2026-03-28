@@ -62,6 +62,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "name"
+                      },
+                      "val": {
+                        "string": "Test Event"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "organizer_address"
                       },
                       "val": {
@@ -336,6 +344,14 @@
                       },
                       "val": {
                         "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "name"
+                      },
+                      "val": {
+                        "string": "Test Event"
                       }
                     },
                     {

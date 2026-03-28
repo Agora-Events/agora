@@ -29,6 +29,7 @@ fn test_register_and_get_series() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id1.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid: metadata_cid.clone(),
@@ -45,6 +46,7 @@ fn test_register_and_get_series() {
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid: metadata_cid.clone(),
@@ -96,6 +98,7 @@ fn test_issue_and_use_series_pass() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid: metadata_cid.clone(),
@@ -259,6 +262,7 @@ fn test_storage_operations() {
     let tiers = Map::new(&env);
     let event_info = EventInfo {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_address.clone(),
         platform_fee_percent: 5,
@@ -346,6 +350,7 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
 
     client.store_event(&EventInfo {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address,
         platform_fee_percent: 500,
@@ -387,6 +392,7 @@ fn test_organizer_events_list() {
 
     let event_1 = EventInfo {
         event_id: String::from_str(&env, "e1"),
+        name: String::from_str(&env, "Test Event 1"),
         organizer_address: organizer.clone(),
         payment_address: payment_address.clone(),
         platform_fee_percent: 5,
@@ -416,6 +422,7 @@ fn test_organizer_events_list() {
 
     let event_2 = EventInfo {
         event_id: String::from_str(&env, "e2"),
+        name: String::from_str(&env, "Test Event 2"),
         organizer_address: organizer.clone(),
         payment_address: payment_address.clone(),
         platform_fee_percent: 5,
@@ -491,6 +498,7 @@ fn test_register_event_success() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr.clone(),
         metadata_cid,
@@ -516,6 +524,52 @@ fn test_register_event_success() {
     assert_eq!(event_info.current_supply, 0);
     assert!(!event_info.is_postponed);
     assert_eq!(event_info.grace_period_end, 0);
+}
+
+#[test]
+fn test_register_event_name_trimming() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    env.mock_all_auths();
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_trim_test");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    // Register with intentionally messy name (leading/trailing whitespace)
+    let messy_name = String::from_str(&env, "  Summer Fest 2025  ");
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: messy_name,
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+    });
+
+    let stored = client.get_event(&event_id).unwrap();
+    // Name should be trimmed of leading and trailing whitespace
+    assert_eq!(stored.name, String::from_str(&env, "Summer Fest 2025"));
 }
 
 #[test]
@@ -561,6 +615,7 @@ fn test_register_event_invalid_target_deadline() {
     // Past deadline should fail
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr.clone(),
         metadata_cid: metadata_cid.clone(),
@@ -580,6 +635,7 @@ fn test_register_event_invalid_target_deadline() {
     // Present deadline should fail
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr.clone(),
         metadata_cid: metadata_cid.clone(),
@@ -599,6 +655,7 @@ fn test_register_event_invalid_target_deadline() {
     // Future deadline should succeed
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -631,6 +688,7 @@ fn test_register_event_rejects_contract_as_organizer() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "event_bad_org_contract"),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: client.address.clone(),
         payment_address: Address::generate(&env),
         metadata_cid: String::from_str(
@@ -670,6 +728,7 @@ fn test_register_event_rejects_zero_organizer_address() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "event_bad_org_zero"),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: zero_organizer,
         payment_address: Address::generate(&env),
         metadata_cid: String::from_str(
@@ -714,6 +773,7 @@ fn test_register_event_unlimited_supply() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -757,6 +817,7 @@ fn test_register_duplicate_event_fails() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr.clone(),
         metadata_cid: metadata_cid.clone(),
@@ -774,6 +835,7 @@ fn test_register_duplicate_event_fails() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id,
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -810,6 +872,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
     let short_cid = String::from_str(&env, "bafy");
     let short_result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "event_short_cid"),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr.clone(),
         metadata_cid: short_cid,
@@ -835,6 +898,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
     );
     let wrong_prefix_result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "event_wrong_prefix_cid"),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid: wrong_prefix_cid,
@@ -860,6 +924,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
     );
     let oversized_result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "event_oversized_cid"),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: Address::generate(&env),
         payment_address: Address::generate(&env),
         metadata_cid: oversized_cid,
@@ -903,6 +968,7 @@ fn test_get_event_payment_info() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr.clone(),
         metadata_cid,
@@ -946,6 +1012,7 @@ fn test_update_event_status() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -988,6 +1055,7 @@ fn test_event_inactive_error() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1031,6 +1099,7 @@ fn test_complete_event_lifecycle() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr.clone(),
         metadata_cid,
@@ -1086,6 +1155,7 @@ fn test_update_metadata_success() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1134,6 +1204,7 @@ fn test_update_metadata_invalid_cid() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1228,6 +1299,7 @@ fn test_set_custom_event_fee() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: Address::generate(&env),
         metadata_cid,
@@ -1283,6 +1355,7 @@ fn test_set_custom_event_fee_exceeds_max() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: Address::generate(&env),
         metadata_cid,
@@ -1352,6 +1425,7 @@ fn test_increment_inventory_success() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1423,6 +1497,7 @@ fn test_increment_inventory_max_supply_exceeded() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1489,6 +1564,7 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1555,6 +1631,7 @@ fn test_increment_inventory_unlimited_supply() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1639,6 +1716,7 @@ fn test_increment_inventory_inactive_event() {
     );
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1698,6 +1776,7 @@ fn test_increment_inventory_persists_across_reads() {
     );
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1774,6 +1853,7 @@ fn test_tier_limit_exceeds_max_supply() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1833,6 +1913,7 @@ fn test_tier_not_found() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1893,6 +1974,7 @@ fn test_tier_supply_exceeded() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1969,6 +2051,7 @@ fn test_multiple_tiers_inventory() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2034,6 +2117,7 @@ fn test_increment_inventory_supply_overflow() {
     // Store event with current_supply near i128::MAX to trigger overflow
     client.store_event(&EventInfo {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr,
         platform_fee_percent: 500,
@@ -2100,6 +2184,7 @@ fn test_increment_inventory_tier_sold_overflow() {
 
     client.store_event(&EventInfo {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr,
         platform_fee_percent: 500,
@@ -2156,6 +2241,7 @@ fn test_update_event_status_noop_skips_event() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2232,6 +2318,7 @@ fn test_blacklist_prevents_event_registration() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id,
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2276,6 +2363,7 @@ fn test_update_metadata_noop_skips_event() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr,
         metadata_cid: metadata_cid.clone(),
@@ -2359,6 +2447,7 @@ fn test_blacklist_suspends_active_events() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr,
         metadata_cid: metadata_cid.clone(),
@@ -2484,6 +2573,7 @@ fn test_register_event_with_resale_cap() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2527,6 +2617,7 @@ fn test_register_event_resale_cap_zero() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2570,6 +2661,7 @@ fn test_register_event_resale_cap_none() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2613,6 +2705,7 @@ fn test_postpone_event_sets_grace_period() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2663,6 +2756,7 @@ fn test_register_event_resale_cap_invalid() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id,
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2702,6 +2796,7 @@ fn test_cancel_event_success() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr,
         metadata_cid,
@@ -2741,6 +2836,7 @@ fn test_archive_event_rejects_active_event() {
     let event_id = String::from_str(&env, "archive_active");
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid: String::from_str(
@@ -2784,6 +2880,7 @@ fn test_cancel_already_cancelled_fails() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid,
@@ -2825,6 +2922,7 @@ fn test_update_status_on_cancelled_event_fails() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid,
@@ -3468,6 +3566,7 @@ fn test_register_event_with_banner_cid() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -3517,6 +3616,7 @@ fn test_goal_met_event_fires_only_once() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: Address::generate(&env),
         payment_address: Address::generate(&env),
         metadata_cid,
@@ -3573,6 +3673,7 @@ fn test_register_event_without_banner_cid() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -3639,6 +3740,7 @@ fn test_series_pass_issued_at_timestamp() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid,
@@ -3712,6 +3814,7 @@ fn base_args(
 ) -> EventRegistrationArgs {
     EventRegistrationArgs {
         event_id: String::from_str(env, "evt_milestone"),
+        name: String::from_str(env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(env),
         metadata_cid: String::from_str(
@@ -4048,6 +4151,7 @@ fn test_cancelled_status_guard() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid: String::from_str(
@@ -4180,6 +4284,7 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
     // restocking_fee (6_000_000) > tier price (5_000_000) — must fail
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "evt_restocking_guard"),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid: String::from_str(
@@ -4234,6 +4339,7 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
     // restocking_fee == tier price — should succeed
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "evt_restocking_equal"),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid: String::from_str(
@@ -4284,6 +4390,7 @@ fn test_register_event_restocking_fee_zero_always_valid() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "evt_restocking_zero"),
+        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: Address::generate(&env),
         metadata_cid: String::from_str(
@@ -4334,6 +4441,7 @@ fn setup_tags_test(env: &Env) -> (EventRegistryClient<'static>, Address, Address
 fn tags_base_args(env: &Env, event_id: &str, organizer: &Address) -> EventRegistrationArgs {
     EventRegistrationArgs {
         event_id: String::from_str(env, event_id),
+        name: String::from_str(env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: organizer.clone(),
         metadata_cid: String::from_str(

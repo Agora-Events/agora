@@ -277,8 +277,12 @@ impl EventRegistry {
 
         let platform_fee_percent = storage::get_platform_fee(&env);
 
+        // Sanitize: trim leading/trailing whitespace from the event name
+        let trimmed_name = trim_string(&env, &args.name);
+
         let event_info = EventInfo {
             event_id: args.event_id.clone(),
+            name: trimmed_name,
             organizer_address: args.organizer_address.clone(),
             payment_address: args.payment_address.clone(),
             platform_fee_percent,
@@ -1731,6 +1735,49 @@ fn is_zero_address(env: &Env, address: &Address) -> bool {
         "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
     );
     address.to_string() == zero_account
+}
+
+/// Trims leading and trailing ASCII whitespace from a Soroban `String`.
+fn trim_string(env: &Env, s: &String) -> String {
+    let len = s.len();
+    if len == 0 {
+        return s.clone();
+    }
+
+    // Copy string bytes into a stack buffer for manipulation
+    let mut buf = [0u8; 256];
+    let len_usize = len as usize;
+    // If name exceeds buffer, return as-is (shouldn't happen in practice)
+    if len_usize > buf.len() {
+        return s.clone();
+    }
+    s.copy_into_slice(&mut buf[..len_usize]);
+
+    let mut start = 0usize;
+    while start < len_usize {
+        let b = buf[start];
+        if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r' {
+            start += 1;
+        } else {
+            break;
+        }
+    }
+
+    let mut end = len_usize;
+    while end > start {
+        let b = buf[end - 1];
+        if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r' {
+            end -= 1;
+        } else {
+            break;
+        }
+    }
+
+    if start == 0 && end == len_usize {
+        return s.clone();
+    }
+
+    String::from_bytes(env, &buf[start..end])
 }
 
 fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryError> {

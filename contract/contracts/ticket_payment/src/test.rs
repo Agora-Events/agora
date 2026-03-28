@@ -24,6 +24,7 @@ impl MockCancelledRegistry {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -88,6 +89,7 @@ impl MockEventRegistry {
         if event_id == String::from_str(&env, "event_1") {
             return Some(event_registry::EventInfo {
                 event_id: String::from_str(&env, "event_1"),
+                name: String::from_str(&env, "Test Event"),
                 organizer_address: Address::generate(&env), // This will be different each call unless mocked specifically
                 payment_address: Address::generate(&env),
                 platform_fee_percent: 500,
@@ -160,6 +162,7 @@ impl MockEventRegistry2 {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 250,
@@ -251,6 +254,7 @@ impl MockAuctionEventRegistry {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -964,6 +968,7 @@ impl MockEventRegistryMaxSupply {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1075,6 +1080,7 @@ impl MockEventRegistryWithInventory {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1298,6 +1304,7 @@ impl MockEventRegistryWithMilestones {
 
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "milestone_event"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1620,6 +1627,7 @@ impl MockEventRegistryEarlyBird {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_eb_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -2110,6 +2118,7 @@ impl MockEventRegistryWithOrganizer {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -2438,6 +2447,7 @@ impl MockPlatformRegistryE2E {
 
         let event = event_registry::EventInfo {
             event_id: event_id.clone(),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address,
             platform_fee_percent: 500,
@@ -2891,6 +2901,7 @@ impl MockEventRegistryRefund {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -2963,6 +2974,7 @@ impl MockEventRegistryWithResaleCap {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_capped"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -3207,6 +3219,7 @@ impl MockRegistryZeroCap {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_zero_cap"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -3821,6 +3834,7 @@ impl MockEventRegistryUsdPriced {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4474,6 +4488,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4601,6 +4616,7 @@ impl MockEventRegistryWithLoyalty {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4682,6 +4698,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4898,6 +4915,7 @@ impl MockEventRegistryCustomFee {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -5023,6 +5041,7 @@ impl MockEventRegistryHighPrice {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -5130,6 +5149,7 @@ impl MockEventRegistryRefundDeadline {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -5705,6 +5725,7 @@ impl MockEventRegistryForDust {
             .unwrap_or_else(|| Address::generate(&env));
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address: payment_addr,
             platform_fee_percent: 500,
@@ -5896,6 +5917,7 @@ impl MockEventRegistryForReferral {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500, // 5%
@@ -5975,6 +5997,7 @@ impl MockEventRegistryFullLoyaltyDiscount {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500, // 5%
