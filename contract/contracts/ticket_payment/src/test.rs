@@ -2,7 +2,7 @@ use super::contract::{
     event_registry, price_oracle, TicketPaymentContract, TicketPaymentContractClient,
 };
 use super::storage::*;
-use super::types::{DataKey, ParameterChange, Payment, PaymentStatus};
+use super::types::{DataKey, ParameterChange, Payment, PaymentStatus, MAX_BPS, TRANSFER_FEE_BPS};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, Events, Ledger},
@@ -24,6 +24,7 @@ impl MockCancelledRegistry {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -60,6 +61,7 @@ impl MockCancelledRegistry {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
@@ -87,6 +89,7 @@ impl MockEventRegistry {
         if event_id == String::from_str(&env, "event_1") {
             return Some(event_registry::EventInfo {
                 event_id: String::from_str(&env, "event_1"),
+                name: String::from_str(&env, "Test Event"),
                 organizer_address: Address::generate(&env), // This will be different each call unless mocked specifically
                 payment_address: Address::generate(&env),
                 platform_fee_percent: 500,
@@ -126,6 +129,7 @@ impl MockEventRegistry {
                 target_deadline: 0,
                 goal_met: false,
                 banner_cid: None,
+                tags: None,
             });
         }
         None
@@ -158,6 +162,7 @@ impl MockEventRegistry2 {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 250,
@@ -197,6 +202,7 @@ impl MockEventRegistry2 {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -248,6 +254,7 @@ impl MockAuctionEventRegistry {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -267,6 +274,7 @@ impl MockAuctionEventRegistry {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -692,6 +700,26 @@ fn test_initialize_invalid_address() {
 }
 
 #[test]
+fn test_initialize_zero_platform_wallet_rejected() {
+    let env = Env::default();
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+    );
+    let event_registry_id = env.register(MockEventRegistry, ());
+
+    let result = client.try_initialize(&admin, &usdc_id, &platform_wallet, &event_registry_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+
+#[test]
 fn test_upgrade_preserves_initialization_addresses_and_emits_event() {
     let env = Env::default();
     env.mock_all_auths();
@@ -960,6 +988,7 @@ impl MockEventRegistryMaxSupply {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -999,6 +1028,7 @@ impl MockEventRegistryMaxSupply {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -1070,6 +1100,7 @@ impl MockEventRegistryWithInventory {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1109,6 +1140,7 @@ impl MockEventRegistryWithInventory {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -1292,6 +1324,7 @@ impl MockEventRegistryWithMilestones {
 
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "milestone_event"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1331,6 +1364,7 @@ impl MockEventRegistryWithMilestones {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -1463,7 +1497,8 @@ fn test_withdraw_with_milestones() {
 fn test_transfer_ticket_success() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
@@ -1487,6 +1522,11 @@ fn test_transfer_ticket_success() {
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
     });
+
+    // Account for default transfer fee (1%)
+    let expected_fee = (1000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     client.transfer_ticket(&payment_id, &new_owner, &None);
 
@@ -1514,16 +1554,25 @@ fn test_transfer_ticket_with_fee() {
     let new_owner = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
     let event_id = String::from_str(&env, "event_1");
-    let transfer_fee = 100i128;
+
+    // Use the central constant for testing
+    let transfer_fee_bps = TRANSFER_FEE_BPS;
+    let ticket_amount = 1000i128;
+    let expected_absolute_fee = (ticket_amount * transfer_fee_bps as i128) / MAX_BPS as i128;
 
     // Set transfer fee
     env.as_contract(&client.address, || {
-        set_transfer_fee(&env, event_id.clone(), transfer_fee);
+        set_transfer_fee(&env, event_id.clone(), transfer_fee_bps);
     });
 
     // Mint USDC to buyer for fee
-    usdc_token.mint(&buyer, &transfer_fee);
-    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &transfer_fee, &9999);
+    usdc_token.mint(&buyer, &expected_absolute_fee);
+    token::Client::new(&env, &usdc_id).approve(
+        &buyer,
+        &client.address,
+        &expected_absolute_fee,
+        &9999,
+    );
 
     // Initial escrow balance
     let initial_escrow = client.get_event_escrow_balance(&event_id);
@@ -1534,7 +1583,7 @@ fn test_transfer_ticket_with_fee() {
         event_id: event_id.clone(),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
-        amount: 1000,
+        amount: ticket_amount,
         platform_fee: 50,
         organizer_amount: 950,
         status: PaymentStatus::Confirmed,
@@ -1554,7 +1603,7 @@ fn test_transfer_ticket_with_fee() {
     let new_escrow = client.get_event_escrow_balance(&event_id);
     assert_eq!(
         new_escrow.organizer_amount,
-        initial_escrow.organizer_amount + transfer_fee
+        initial_escrow.organizer_amount + expected_absolute_fee
     );
 
     let updated = client.get_payment_status(&payment_id).unwrap();
@@ -1613,6 +1662,7 @@ impl MockEventRegistryEarlyBird {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_eb_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1652,6 +1702,7 @@ impl MockEventRegistryEarlyBird {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -2102,6 +2153,7 @@ impl MockEventRegistryWithOrganizer {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -2141,6 +2193,7 @@ impl MockEventRegistryWithOrganizer {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -2337,7 +2390,7 @@ fn test_discount_code_one_time_use() {
         &Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
         &None,
     );
-    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeAlreadyUsed)));
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeUsed)));
 }
 
 #[test]
@@ -2429,6 +2482,7 @@ impl MockPlatformRegistryE2E {
 
         let event = event_registry::EventInfo {
             event_id: event_id.clone(),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address,
             platform_fee_percent: 500,
@@ -2451,6 +2505,7 @@ impl MockPlatformRegistryE2E {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         };
 
         env.storage()
@@ -2881,6 +2936,7 @@ impl MockEventRegistryRefund {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -2920,6 +2976,7 @@ impl MockEventRegistryRefund {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -2952,6 +3009,7 @@ impl MockEventRegistryWithResaleCap {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_capped"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -2991,6 +3049,7 @@ impl MockEventRegistryWithResaleCap {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -3032,7 +3091,8 @@ fn setup_test_with_resale_cap(
 fn test_transfer_ticket_resale_price_within_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3057,6 +3117,11 @@ fn test_transfer_ticket_resale_price_within_cap() {
         store_payment(&env, payment);
     });
 
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
+
     // Sale price at exactly the cap: 1000 * (10000 + 1000) / 10000 = 1100 USDC
     let sale_price = Some(1100_0000000i128);
     client.transfer_ticket(&payment_id, &new_owner, &sale_price);
@@ -3069,7 +3134,8 @@ fn test_transfer_ticket_resale_price_within_cap() {
 fn test_transfer_ticket_resale_price_exceeds_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3094,6 +3160,11 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
         store_payment(&env, payment);
     });
 
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
+
     // Sale price above the cap: 1200 USDC > 1100 USDC max
     let sale_price = Some(1200_0000000i128);
     let result = client.try_transfer_ticket(&payment_id, &new_owner, &sale_price);
@@ -3108,7 +3179,8 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
 fn test_transfer_ticket_no_sale_price_with_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3133,6 +3205,11 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
         store_payment(&env, payment);
     });
 
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
+
     // No sale price (gift/free transfer) should always succeed
     client.transfer_ticket(&payment_id, &new_owner, &None);
 
@@ -3145,7 +3222,8 @@ fn test_transfer_ticket_sale_price_no_cap() {
     let env = Env::default();
     env.mock_all_auths();
     // Use the default mock registry which has resale_cap_bps: None
-    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3169,6 +3247,11 @@ fn test_transfer_ticket_sale_price_no_cap() {
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
     });
+
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     // Any sale price should be allowed when no cap is set
     let sale_price = Some(5000_0000000i128); // 5x the original price
@@ -3195,6 +3278,7 @@ impl MockRegistryZeroCap {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_zero_cap"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -3234,6 +3318,7 @@ impl MockRegistryZeroCap {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -3419,6 +3504,19 @@ fn test_set_pause_and_resume() {
     assert!(client.get_is_paused());
     client.set_pause(&false);
     assert!(!client.get_is_paused());
+}
+
+#[test]
+fn test_is_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    assert!(!client.is_paused());
+    client.set_pause(&true);
+    assert!(client.is_paused());
+    client.set_pause(&false);
+    assert!(!client.is_paused());
 }
 
 #[test]
@@ -3795,6 +3893,7 @@ impl MockEventRegistryUsdPriced {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -3834,6 +3933,7 @@ impl MockEventRegistryUsdPriced {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -4419,6 +4519,46 @@ fn test_close_auction_rejects_when_no_bids_exist() {
 }
 
 #[test]
+fn test_close_auction_rejects_double_closure() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_auction_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let bidder = Address::generate(&env);
+    let funded_amount = 20_000_000_000i128;
+    usdc_token.mint(&bidder, &funded_amount);
+    token::Client::new(&env, &usdc_id).approve(&bidder, &client.address, &funded_amount, &99999);
+
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let first_payment_id = String::from_str(&env, "payment_1");
+    let second_payment_id = String::from_str(&env, "payment_2");
+
+    client.place_bid(&event_id, &tier_id, &bidder, &usdc_id, &1100_0000000i128);
+
+    env.ledger().set_timestamp(1001);
+
+    let first_close = client.try_close_auction(&first_payment_id, &event_id, &tier_id);
+    assert_eq!(first_close, Ok(Ok(())));
+
+    let second_close = client.try_close_auction(&second_payment_id, &event_id, &tier_id);
+    assert_eq!(second_close, Err(Ok(TicketPaymentError::AuctionEnded)));
+
+    let auction_closed = env.as_contract(&client.address, || {
+        is_auction_closed(&env, event_id.clone(), tier_id.clone())
+    });
+    assert!(auction_closed);
+
+    let payment = client.get_payment_status(&first_payment_id).unwrap();
+    assert_eq!(payment.payment_id, first_payment_id);
+    assert_eq!(payment.buyer_address, bidder);
+    assert_eq!(payment.status, PaymentStatus::Confirmed);
+    assert_eq!(client.get_payment_status(&second_payment_id), None);
+}
+
+#[test]
 fn test_governance_rejects_slippage_above_fifty_percent() {
     let env = Env::default();
     env.mock_all_auths();
@@ -4447,6 +4587,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4486,6 +4627,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4573,6 +4715,7 @@ impl MockEventRegistryWithLoyalty {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4612,6 +4755,7 @@ impl MockEventRegistryWithLoyalty {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4653,6 +4797,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4692,6 +4837,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4868,6 +5014,7 @@ impl MockEventRegistryCustomFee {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4904,6 +5051,7 @@ impl MockEventRegistryCustomFee {
             goal_met: false,
             custom_fee_bps: Some(100),
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -4992,6 +5140,7 @@ impl MockEventRegistryHighPrice {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -5031,6 +5180,7 @@ impl MockEventRegistryHighPrice {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -5098,6 +5248,7 @@ impl MockEventRegistryRefundDeadline {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -5137,6 +5288,7 @@ impl MockEventRegistryRefundDeadline {
             target_deadline: 0,
             goal_met: false,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -5672,6 +5824,7 @@ impl MockEventRegistryForDust {
             .unwrap_or_else(|| Address::generate(&env));
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address: payment_addr,
             platform_fee_percent: 500,
@@ -5691,6 +5844,7 @@ impl MockEventRegistryForDust {
             target_deadline: 0,
             goal_met: true,
             banner_cid: None,
+            tags: None,
         })
     }
 
@@ -5849,4 +6003,733 @@ fn test_remove_governor_succeeds_when_multiple_governors_exist() {
     // gov2 should no longer be a governor
     let failed = client.try_vote_on_proposal(&gov2, &p2);
     assert_eq!(failed, Err(Ok(TicketPaymentError::NotGovernor)));
+}
+
+// ── Referral Reward Cap Validation Tests ─────────────────────────────────────
+
+/// Mock registry with 5% platform fee and no loyalty discount — baseline for referral tests.
+#[soroban_sdk::contract]
+pub struct MockEventRegistryForReferral;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryForReferral {
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            name: String::from_str(&env, "Test Event"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500, // 5%
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000_0000000i128,
+                        early_bird_price: 1000_0000000i128,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            banner_cid: None,
+            tags: None,
+        })
+    }
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 {
+        0
+    }
+    pub fn update_loyalty_score(
+        _env: Env,
+        _caller: Address,
+        _guest: Address,
+        _tickets: u32,
+        _amount: i128,
+    ) {
+    }
+    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> {
+        None
+    }
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+        }
+    }
+}
+
+/// Mock registry with 5% platform fee AND a 100% loyalty discount (fee reduced to 0),
+/// combined with a referrer — the referral reward must be capped at 0, not go negative.
+#[soroban_sdk::contract]
+pub struct MockEventRegistryFullLoyaltyDiscount;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryFullLoyaltyDiscount {
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        Some(event_registry::EventInfo {
+            event_id,
+            name: String::from_str(&env, "Test Event"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500, // 5%
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers: {
+                let mut tiers = soroban_sdk::Map::new(&env);
+                tiers.set(
+                    String::from_str(&env, "tier_1"),
+                    event_registry::TicketTier {
+                        name: String::from_str(&env, "General"),
+                        price: 1000_0000000i128,
+                        early_bird_price: 1000_0000000i128,
+                        early_bird_deadline: 0,
+                        usd_price: 0,
+                        tier_limit: 100,
+                        current_sold: 0,
+                        is_refundable: true,
+                        auction_config: soroban_sdk::vec![&env],
+                    },
+                );
+                tiers
+            },
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            banner_cid: None,
+            tags: None,
+        })
+    }
+    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+    /// 100% loyalty discount — wipes the entire platform fee before referral runs.
+    pub fn get_loyalty_discount_bps(_env: Env, _guest: Address) -> u32 {
+        10_000
+    }
+    pub fn update_loyalty_score(
+        _env: Env,
+        _caller: Address,
+        _guest: Address,
+        _tickets: u32,
+        _amount: i128,
+    ) {
+    }
+    pub fn get_guest_profile(_env: Env, _guest: Address) -> Option<event_registry::GuestProfile> {
+        None
+    }
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+        }
+    }
+}
+
+/// Normal referral: reward = 20% of platform fee, remainder stays in escrow.
+/// price=1000, fee_bps=500 → platform_fee=50, reward=10, escrow_fee=40, organizer=950.
+#[test]
+fn test_referral_reward_is_20_percent_of_platform_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryForReferral, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let referrer = Address::generate(&env);
+    let price = 1000_0000000i128; // 1000 USDC
+
+    let usdc = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_ref_1");
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // platform_fee = 1000 * 5% = 50 USDC
+    // referral_reward = 50 * 20% = 10 USDC  → sent to referrer
+    // escrow platform_fee = 50 - 10 = 40 USDC
+    // organizer_amount = 1000 - 50 = 950 USDC
+    let expected_platform_fee = 50_0000000i128;
+    let expected_reward = 10_0000000i128;
+    let expected_escrow_fee = expected_platform_fee - expected_reward; // 40
+
+    let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
+    assert_eq!(escrow.platform_fee, expected_escrow_fee);
+    assert_eq!(escrow.organizer_amount, 950_0000000i128);
+
+    // Referrer received the reward
+    let referrer_balance = token::Client::new(&env, &usdc_id).balance(&referrer);
+    assert_eq!(referrer_balance, expected_reward);
+
+    // Buyer paid the full price (no loyalty discount)
+    let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert_eq!(buyer_balance, 0);
+}
+
+/// Referral reward must not exceed the platform fee.
+/// With a 100% loyalty discount the platform fee is 0; reward must also be 0.
+#[test]
+fn test_referral_reward_capped_when_platform_fee_is_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryFullLoyaltyDiscount, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let referrer = Address::generate(&env);
+    // price=1000, fee=5%=50, loyalty_discount=100% of fee=50 → platform_fee=0
+    // buyer pays 1000 - 50 = 950
+    let price = 1000_0000000i128;
+
+    let usdc = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_ref_cap");
+    // Must succeed — reward is capped at 0, no underflow
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
+    // platform_fee in escrow must be 0 (fully discounted, nothing left for referral either)
+    assert_eq!(escrow.platform_fee, 0);
+    // organizer gets everything the buyer actually paid (950)
+    assert_eq!(escrow.organizer_amount, 950_0000000i128);
+
+    // Referrer receives nothing — reward was capped at 0
+    let referrer_balance = token::Client::new(&env, &usdc_id).balance(&referrer);
+    assert_eq!(referrer_balance, 0);
+}
+
+/// Referral reward + remaining escrow fee must always sum to exactly the original platform fee.
+/// Verifies the invariant: reward <= platform_fee and no tokens are created or lost.
+#[test]
+fn test_referral_reward_does_not_exceed_platform_fee_invariant() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryForReferral, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let referrer = Address::generate(&env);
+    let price = 1000_0000000i128;
+
+    let usdc = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_ref_inv");
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &Some(referrer.clone()),
+    );
+
+    // platform_fee = 1000 * 5% = 50
+    let original_platform_fee = 50_0000000i128;
+    let referrer_balance = token::Client::new(&env, &usdc_id).balance(&referrer);
+    let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
+
+    // Core invariant: reward + escrow_fee == original_platform_fee (no tokens created/lost)
+    assert_eq!(
+        referrer_balance + escrow.platform_fee,
+        original_platform_fee
+    );
+    // Reward must not exceed the original platform fee
+    assert!(referrer_balance <= original_platform_fee);
+}
+
+// ── Withdrawal Cap Period / Daily Reset Tests ────────────────────────────────
+
+/// Helper: set up a contract with a funded escrow and settled fees ready to withdraw.
+/// Returns (client, admin, usdc_id, platform_wallet, settled_fee_amount).
+fn setup_withdrawal_cap_test(
+    env: &Env,
+) -> (
+    TicketPaymentContractClient<'static>,
+    Address,
+    Address,
+    Address,
+    i128,
+) {
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(env, &contract_id);
+
+    let admin = Address::generate(env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(env))
+        .address();
+    let platform_wallet = Address::generate(env);
+    let registry_id = env.register(MockEventRegistryForReferral, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    // Fund a buyer and process a payment so fees accumulate
+    let buyer = Address::generate(env);
+    let price = 1000_0000000i128;
+    token::StellarAssetClient::new(env, &usdc_id).mint(&buyer, &(price * 10));
+    token::Client::new(env, &usdc_id).approve(&buyer, &client.address, &(price * 10), &99999);
+
+    // Process several payments to build up fees
+    for i in 0u32..5 {
+        let pid = match i {
+            0 => String::from_str(env, "p0"),
+            1 => String::from_str(env, "p1"),
+            2 => String::from_str(env, "p2"),
+            3 => String::from_str(env, "p3"),
+            _ => String::from_str(env, "p4"),
+        };
+        client.process_payment(
+            &pid,
+            &String::from_str(env, "event_1"),
+            &String::from_str(env, "tier_1"),
+            &buyer,
+            &usdc_id,
+            &price,
+            &1,
+            &None,
+            &None,
+        );
+    }
+
+    // Settle all fees into the withdrawable pool
+    let settled = client.settle_platform_fees(&String::from_str(env, "event_1"), &usdc_id);
+
+    (client, admin, usdc_id, platform_wallet, settled)
+}
+
+/// Day calculation: timestamp / 86400 produces the correct day bucket.
+/// Two timestamps in the same UTC day must share the same bucket; timestamps
+/// 86400 seconds apart must land in different buckets.
+#[test]
+fn test_day_calculation_same_day_shares_bucket() {
+    // Day 1: timestamps 0 and 86399 both map to day 0
+    let start_of_day = 0u64;
+    let end_of_day = 86_399u64;
+    assert_eq!(start_of_day / 86_400, end_of_day / 86_400);
+    assert_eq!(end_of_day / 86_400, 0);
+
+    // Day 2: timestamp 86400 maps to day 1
+    assert_eq!(86_400u64 / 86_400, 1);
+    assert_eq!(172_799u64 / 86_400, 1);
+
+    // Arbitrary real-world timestamp (2024-01-01 00:00:00 UTC = 1704067200)
+    let day_a_timestamp = 1_704_067_200u64;
+    let day_b_timestamp = day_a_timestamp + 86_399;
+    let day_c_timestamp = day_a_timestamp + 86_400;
+    let day_a = day_a_timestamp / 86_400;
+    let day_b = day_b_timestamp / 86_400;
+    let day_c = day_c_timestamp / 86_400;
+    assert_eq!(day_a, day_b); // same day
+    assert_ne!(day_a, day_c); // next day
+}
+
+/// Withdrawal cap is enforced within a single day: a second withdrawal that
+/// would push the total over the cap must be rejected.
+#[test]
+fn test_withdrawal_cap_enforced_within_same_day() {
+    let env = Env::default();
+    env.mock_all_auths();
+    // Start at a known timestamp (day 0)
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
+
+    // Set cap to half the settled amount
+    let cap = settled / 2;
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // First withdrawal up to the cap — must succeed
+    client.withdraw_platform_fees(&cap, &usdc_id);
+
+    // Second withdrawal of even 1 stroop more — must fail
+    let result = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    let _ = admin; // suppress unused warning
+}
+
+/// The daily cap resets when the ledger advances to the next day.
+/// A withdrawal that was blocked on day N must succeed on day N+1.
+#[test]
+fn test_withdrawal_cap_resets_on_new_day() {
+    let env = Env::default();
+    env.mock_all_auths();
+    // Start at beginning of day 0
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
+
+    // Cap = half the settled fees
+    let cap = settled / 2;
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // Day 0: withdraw up to the cap
+    client.withdraw_platform_fees(&cap, &usdc_id);
+
+    // Still day 0: any further withdrawal is blocked
+    let blocked = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(blocked, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Advance to day 1 (exactly 86400 seconds later)
+    env.ledger().set_timestamp(86400);
+
+    // Day 1: cap has reset — withdraw up to the cap again
+    let result = client.try_withdraw_platform_fees(&cap, &usdc_id);
+    assert!(
+        result.is_ok(),
+        "withdrawal should succeed after daily cap reset"
+    );
+
+    let _ = admin;
+}
+
+/// Withdrawals across three consecutive days each get a fresh cap.
+#[test]
+fn test_withdrawal_cap_resets_across_multiple_days() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
+
+    // Cap = one-third of settled fees so we can withdraw once per day for 3 days
+    let cap = settled / 3;
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // Day 0
+    client.withdraw_platform_fees(&cap, &usdc_id);
+    let blocked = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(blocked, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Day 1
+    env.ledger().set_timestamp(86400);
+    client.withdraw_platform_fees(&cap, &usdc_id);
+    let blocked = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(blocked, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Day 2
+    env.ledger().set_timestamp(172800);
+    client.withdraw_platform_fees(&cap, &usdc_id);
+
+    // All fees should now be drained (3 × cap ≈ settled)
+    let remaining = client.get_total_fees_collected(&usdc_id);
+    assert!(
+        remaining <= cap,
+        "remaining fees should be at most one cap's worth"
+    );
+
+    let _ = admin;
+}
+
+/// When no cap is set (cap == 0) withdrawals are unlimited regardless of day.
+#[test]
+fn test_no_cap_allows_unlimited_withdrawal() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
+
+    // No cap set — withdraw the full settled amount in one call
+    let result = client.try_withdraw_platform_fees(&settled, &usdc_id);
+    assert!(
+        result.is_ok(),
+        "unlimited withdrawal should succeed with no cap"
+    );
+
+    let _ = admin;
+}
+
+/// Partial withdrawals within a day accumulate correctly against the cap.
+/// Cap is set to 3 chunks so the first three succeed and the fourth is blocked.
+#[test]
+fn test_partial_withdrawals_accumulate_within_day() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
+
+    // Use a chunk that divides evenly; cap = 3 chunks so the 4th is blocked by cap
+    let chunk = settled / 5; // settled = 5 payments × fee, so chunk is 1/5 of that
+    let cap = chunk * 3; // cap covers exactly 3 chunks per day
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // Three partial withdrawals — each should succeed
+    client.withdraw_platform_fees(&chunk, &usdc_id);
+    client.withdraw_platform_fees(&chunk, &usdc_id);
+    client.withdraw_platform_fees(&chunk, &usdc_id);
+
+    // Accumulated = 3 × chunk = cap; one more stroop must be rejected by cap
+    let result = client.try_withdraw_platform_fees(&1, &usdc_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::WithdrawalCapExceeded)));
+
+    // Advance to next day — cap resets, remaining fees can be withdrawn
+    env.ledger().set_timestamp(86400);
+    client.withdraw_platform_fees(&chunk, &usdc_id); // day-1 first withdrawal succeeds
+
+    let _ = admin;
+}
+
+/// get_daily_withdrawn_amount returns 0 for a day with no withdrawals.
+#[test]
+fn test_get_daily_withdrawn_amount_returns_zero_for_new_day() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(0);
+
+    let (client, admin, usdc_id, _platform_wallet, settled) = setup_withdrawal_cap_test(&env);
+
+    let cap = settled;
+    client.set_withdrawal_cap(&usdc_id, &cap);
+
+    // Day 0: withdraw something
+    client.withdraw_platform_fees(&(settled / 2), &usdc_id);
+    assert_eq!(client.get_daily_withdrawn_amount(&usdc_id), settled / 2);
+
+    // Advance to day 1 — counter must read 0
+    env.ledger().set_timestamp(86400);
+    assert_eq!(client.get_daily_withdrawn_amount(&usdc_id), 0);
+
+    let _ = admin;
+}
+
+/// Without a referrer, no reward is paid and the full platform fee stays in escrow.
+#[test]
+fn test_no_referral_reward_without_referrer() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryForReferral, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let price = 1000_0000000i128;
+
+    let usdc = token::StellarAssetClient::new(&env, &usdc_id);
+    usdc.mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let payment_id = String::from_str(&env, "pay_no_ref");
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &None,
+        &None, // no referrer
+    );
+
+    // Full platform fee stays in escrow
+    let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
+    assert_eq!(escrow.platform_fee, 50_0000000i128);
+    assert_eq!(escrow.organizer_amount, 950_0000000i128);
+}
+
+// ── Ticket Transfer Recipient Validation Tests ────────────────────────────────
+
+/// Helper: insert a confirmed payment directly into contract storage.
+fn insert_confirmed_payment(
+    env: &Env,
+    client_address: &Address,
+    payment_id: &String,
+    buyer: &Address,
+    event_id: &str,
+) -> Payment {
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(env, event_id),
+        buyer_address: buyer.clone(),
+        ticket_tier_id: String::from_str(env, "tier_1"),
+        amount: 1000_0000000,
+        platform_fee: 50_0000000,
+        organizer_amount: 950_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(env, "tx_hash"),
+        created_at: 100,
+        confirmed_at: Some(101),
+        refunded_amount: 0,
+    };
+    env.as_contract(client_address, || {
+        store_payment(env, payment.clone());
+    });
+    payment
+}
+
+/// Self-transfer must be rejected with InvalidAddress.
+#[test]
+fn test_transfer_ticket_self_transfer_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_self");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1"); // This returns Payment, but we don't use it.
+
+    // Attempt to transfer to self
+    let result = client.try_transfer_ticket(&payment_id, &buyer, &None);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+
+/// Transfer to the Stellar zero/burn address must be rejected with InvalidAddress.
+#[test]
+fn test_transfer_ticket_zero_address_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_zero");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1"); // This returns Payment, but we don't use it.
+
+    // Construct the Stellar zero address from its well-known strkey
+    let zero_addr = Address::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+    );
+
+    let result = client.try_transfer_ticket(&payment_id, &zero_addr, &None);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+
+/// Transfer to the contract's own address must be rejected with InvalidAddress.
+#[test]
+fn test_transfer_ticket_contract_address_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_contract");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1"); // This returns Payment, but we don't use it.
+
+    // The contract's own address is an invalid recipient
+    let result = client.try_transfer_ticket(&payment_id, &client.address, &None);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+
+/// A valid transfer to a distinct, non-zero recipient must succeed.
+#[test]
+fn test_transfer_ticket_valid_recipient_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_valid"); // This returns Payment, but we don't use it.
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
+
+    client.transfer_ticket(&payment_id, &recipient, &None);
+
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(updated.buyer_address, recipient);
 }

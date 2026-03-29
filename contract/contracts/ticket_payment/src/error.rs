@@ -1,6 +1,3 @@
-use soroban_sdk::contracterror;
-
-#[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum TicketPaymentError {
@@ -22,7 +19,7 @@ pub enum TicketPaymentError {
     PriceMismatch = 16,
     InvalidPrice = 17,
     InvalidDiscountCode = 18,
-    DiscountCodeAlreadyUsed = 19,
+    DiscountCodeUsed = 19,
     Unauthorized = 20,
     EventNotCompleted = 21,
     NoFundsAvailable = 22,
@@ -53,141 +50,77 @@ pub enum TicketPaymentError {
     InsufficientVotes = 54,
     ProposalExpired = 55,
     OraclePriceStale = 56,
-    /// Cannot remove the last remaining governor
     CannotRemoveLastGovernor = 57,
+    InvalidFeePercent = 58,
 }
 
-impl core::fmt::Display for TicketPaymentError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            TicketPaymentError::AlreadyInitialized => {
-                write!(f, "Contract already initialized")
-            }
-            TicketPaymentError::InvalidAddress => write!(f, "Invalid Stellar address"),
-            TicketPaymentError::NotInitialized => write!(f, "Contract not initialized"),
-            TicketPaymentError::EventNotFound => write!(f, "Event not found in registry"),
-            TicketPaymentError::EventInactive => write!(f, "Event is inactive"),
-            TicketPaymentError::TokenNotWhitelisted => write!(f, "Token not whitelisted"),
-            TicketPaymentError::MaxSupplyExceeded => write!(f, "Ticket supply exceeded"),
-            TicketPaymentError::PaymentNotFound => write!(f, "Payment not found"),
-            TicketPaymentError::InvalidPaymentStatus => {
-                write!(f, "Invalid payment status for refund")
-            }
-            TicketPaymentError::TicketNotRefundable => write!(f, "Ticket is not refundable"),
-            TicketPaymentError::TierNotFound => write!(f, "Ticket tier not found"),
-            TicketPaymentError::InsufficientAllowance => {
-                write!(f, "Insufficient token allowance")
-            }
-            TicketPaymentError::TransferVerificationFailed => {
-                write!(f, "Transfer verification failed")
-            }
-            TicketPaymentError::ArithmeticError => {
-                write!(f, "Arithmetic error during calculation")
-            }
-            TicketPaymentError::SelfReferralNotAllowed => {
-                write!(f, "Self-referral is not allowed")
-            }
-            TicketPaymentError::PriceMismatch => {
-                write!(f, "Price mismatch")
-            }
-            TicketPaymentError::InvalidPrice => {
-                write!(
-                    f,
-                    "Paid amount does not match the active price for this tier"
-                )
-            }
-            TicketPaymentError::InvalidDiscountCode => {
-                write!(f, "Discount code is invalid or not registered")
-            }
-            TicketPaymentError::DiscountCodeAlreadyUsed => {
-                write!(f, "Discount code has already been used")
-            }
-            TicketPaymentError::Unauthorized => write!(f, "Unauthorized caller"),
-            TicketPaymentError::EventNotCompleted => write!(f, "Event is not completed"),
-            TicketPaymentError::NoFundsAvailable => write!(f, "No funds available to claim"),
-            TicketPaymentError::RefundDeadlinePassed => write!(f, "Refund deadline has passed"),
-            TicketPaymentError::WithdrawalCapExceeded => write!(f, "Daily withdrawal cap exceeded"),
-            TicketPaymentError::InsufficientFees => {
-                write!(f, "Insufficient platform fees accumulated")
-            }
-            TicketPaymentError::ResalePriceExceedsCap => {
-                write!(f, "Resale price exceeds the event's resale cap")
-            }
-            TicketPaymentError::ContractPaused => {
-                write!(f, "Contract is paused")
-            }
-            TicketPaymentError::EventCancelled => {
-                write!(f, "The event has been cancelled")
-            }
-            TicketPaymentError::EventDisputed => {
-                write!(f, "The event is currently under dispute")
-            }
-            TicketPaymentError::UnauthorizedScanner => {
-                write!(f, "Caller is not an authorized scanner for this event")
-            }
-            TicketPaymentError::TicketAlreadyUsed => {
-                write!(f, "Ticket has already been checked in/used")
-            }
-            TicketPaymentError::GoalNotMet => {
-                write!(f, "Minimum sales target not reached by the deadline")
-            }
-            TicketPaymentError::OracleNotConfigured => {
-                write!(f, "Oracle contract address not configured")
-            }
-            TicketPaymentError::OraclePriceUnavailable => {
-                write!(f, "Oracle returned no price for the asset")
-            }
-            TicketPaymentError::OraclePriceStale => {
-                write!(f, "Oracle price is stale")
-            }
-            TicketPaymentError::PriceOutsideSlippage => {
-                write!(f, "Payment amount outside acceptable slippage range")
-            }
-            TicketPaymentError::InvalidSlippageBps => {
-                write!(f, "Slippage basis points out of range (max 5000)")
-            }
-            TicketPaymentError::AuctionNotActive => {
-                write!(f, "Auction is not currently active")
-            }
-            TicketPaymentError::BidTooLow => {
-                write!(f, "Bid amount is too low")
-            }
-            TicketPaymentError::AuctionEnded => {
-                write!(f, "Auction has already ended")
-            }
-            TicketPaymentError::AuctionNotEnded => {
-                write!(f, "Auction has not ended yet")
-            }
-            TicketPaymentError::NotAuctionTier => {
-                write!(f, "This tier is not configured for auctions")
-            }
-            TicketPaymentError::NotGovernor => {
-                write!(f, "Caller is not an authorized governor")
-            }
-            TicketPaymentError::InvalidProposal => {
-                write!(f, "Proposal does not exist")
-            }
-            TicketPaymentError::ProposalNotActive => {
-                write!(f, "Proposal is not active")
-            }
-            TicketPaymentError::AlreadyVoted => {
-                write!(f, "Governor has already voted on this proposal")
-            }
-            TicketPaymentError::VotingPeriodNotMet => {
-                write!(f, "Voting period has not ended yet")
-            }
-            TicketPaymentError::InsufficientVotes => {
-                write!(f, "Proposal does not have enough votes to execute")
-            }
-            TicketPaymentError::ProposalExpired => {
-                write!(f, "Proposal has expired")
-            }
-            TicketPaymentError::CannotRemoveLastGovernor => {
-                write!(
-                    f,
-                    "Cannot remove the last governor; at least one governor must remain"
-                )
-            }
+impl From<TicketPaymentError> for soroban_sdk::Error {
+    fn from(err: TicketPaymentError) -> soroban_sdk::Error {
+        soroban_sdk::Error::from_contract_error(err as u32)
+    }
+}
+
+impl From<&TicketPaymentError> for soroban_sdk::Error {
+    fn from(err: &TicketPaymentError) -> soroban_sdk::Error {
+        soroban_sdk::Error::from_contract_error(*err as u32)
+    }
+}
+
+impl From<soroban_sdk::Error> for TicketPaymentError {
+    fn from(err: soroban_sdk::Error) -> TicketPaymentError {
+        match err.get_code() {
+            1 => TicketPaymentError::AlreadyInitialized,
+            2 => TicketPaymentError::InvalidAddress,
+            3 => TicketPaymentError::NotInitialized,
+            4 => TicketPaymentError::EventNotFound,
+            5 => TicketPaymentError::EventInactive,
+            6 => TicketPaymentError::TokenNotWhitelisted,
+            7 => TicketPaymentError::MaxSupplyExceeded,
+            8 => TicketPaymentError::PaymentNotFound,
+            9 => TicketPaymentError::InvalidPaymentStatus,
+            10 => TicketPaymentError::TicketNotRefundable,
+            11 => TicketPaymentError::TierNotFound,
+            12 => TicketPaymentError::InsufficientAllowance,
+            13 => TicketPaymentError::TransferVerificationFailed,
+            14 => TicketPaymentError::ArithmeticError,
+            15 => TicketPaymentError::SelfReferralNotAllowed,
+            16 => TicketPaymentError::PriceMismatch,
+            17 => TicketPaymentError::InvalidPrice,
+            18 => TicketPaymentError::InvalidDiscountCode,
+            19 => TicketPaymentError::DiscountCodeUsed,
+            20 => TicketPaymentError::Unauthorized,
+            21 => TicketPaymentError::EventNotCompleted,
+            22 => TicketPaymentError::NoFundsAvailable,
+            23 => TicketPaymentError::RefundDeadlinePassed,
+            24 => TicketPaymentError::WithdrawalCapExceeded,
+            25 => TicketPaymentError::InsufficientFees,
+            26 => TicketPaymentError::ResalePriceExceedsCap,
+            27 => TicketPaymentError::ContractPaused,
+            35 => TicketPaymentError::EventCancelled,
+            36 => TicketPaymentError::EventDisputed,
+            37 => TicketPaymentError::UnauthorizedScanner,
+            38 => TicketPaymentError::TicketAlreadyUsed,
+            39 => TicketPaymentError::GoalNotMet,
+            40 => TicketPaymentError::OracleNotConfigured,
+            41 => TicketPaymentError::OraclePriceUnavailable,
+            42 => TicketPaymentError::PriceOutsideSlippage,
+            43 => TicketPaymentError::InvalidSlippageBps,
+            44 => TicketPaymentError::AuctionNotActive,
+            45 => TicketPaymentError::BidTooLow,
+            46 => TicketPaymentError::AuctionEnded,
+            47 => TicketPaymentError::AuctionNotEnded,
+            48 => TicketPaymentError::NotAuctionTier,
+            49 => TicketPaymentError::NotGovernor,
+            50 => TicketPaymentError::InvalidProposal,
+            51 => TicketPaymentError::ProposalNotActive,
+            52 => TicketPaymentError::AlreadyVoted,
+            53 => TicketPaymentError::VotingPeriodNotMet,
+            54 => TicketPaymentError::InsufficientVotes,
+            55 => TicketPaymentError::ProposalExpired,
+            56 => TicketPaymentError::OraclePriceStale,
+            57 => TicketPaymentError::CannotRemoveLastGovernor,
+            58 => TicketPaymentError::InvalidFeePercent,
+            _ => TicketPaymentError::ArithmeticError,
         }
     }
 }

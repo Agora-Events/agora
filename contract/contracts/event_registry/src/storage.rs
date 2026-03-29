@@ -82,6 +82,21 @@ pub fn increment_series_pass_usage(env: &Env, pass_id: String) -> Option<SeriesP
 
 const SHARD_SIZE: u32 = 50;
 
+fn sync_active_event_count(env: &Env, existing: Option<&EventInfo>, updated: &EventInfo) {
+    match existing {
+        Some(previous) if previous.is_active && !updated.is_active => {
+            decrement_global_active_event_count(env);
+        }
+        Some(previous) if !previous.is_active && updated.is_active => {
+            increment_global_active_event_count(env);
+        }
+        None if updated.is_active => {
+            increment_global_active_event_count(env);
+        }
+        _ => {}
+    }
+}
+
 /// Sets the administrator address of the contract (legacy function).
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&DataKey::Admin, admin);
@@ -288,6 +303,9 @@ pub fn remove_from_active_proposals(env: &Env, proposal_id: u64) {
 pub fn store_event(env: &Env, event_info: EventInfo) {
     let event_id = event_info.event_id.clone();
     let organizer = event_info.organizer_address.clone();
+    let existing = get_event(env, event_id.clone());
+
+    sync_active_event_count(env, existing.as_ref(), &event_info);
 
     // Store the event info using persistent storage
     env.storage()
@@ -319,6 +337,9 @@ pub fn store_event(env: &Env, event_info: EventInfo) {
         env.storage()
             .persistent()
             .set(&DataKey::OrganizerEvent(organizer, event_id), &true);
+
+        // Increment global event counter
+        increment_global_event_count(env);
     }
 }
 
@@ -326,6 +347,10 @@ pub fn store_event(env: &Env, event_info: EventInfo) {
 /// Use this for mutations on already-registered events.
 pub fn update_event(env: &Env, event_info: EventInfo) {
     let event_id = event_info.event_id.clone();
+    let existing = get_event(env, event_id.clone());
+
+    sync_active_event_count(env, existing.as_ref(), &event_info);
+
     env.storage()
         .persistent()
         .set(&DataKey::Event(event_id), &event_info);
@@ -340,6 +365,10 @@ pub fn get_event(env: &Env, event_id: String) -> Option<EventInfo> {
 pub fn remove_event(env: &Env, event_id: String) {
     if let Some(event_info) = get_event(env, event_id.clone()) {
         let organizer = event_info.organizer_address;
+
+        if event_info.is_active {
+            decrement_global_active_event_count(env);
+        }
 
         // Remove from main mapping
         env.storage()
@@ -405,9 +434,38 @@ fn remove_from_organizer_index(env: &Env, organizer: &Address, event_id: String)
 
 /// Stores an event receipt
 pub fn store_event_receipt(env: &Env, receipt: crate::types::EventReceipt) {
+    let organizer = receipt.organizer_address.clone();
+    let event_id = receipt.event_id.clone();
+
     env.storage()
         .persistent()
-        .set(&DataKey::EventReceipt(receipt.event_id.clone()), &receipt);
+        .set(&DataKey::EventReceipt(event_id.clone()), &receipt);
+
+    if !has_organizer_receipt(env, &organizer, event_id.clone()) {
+        let count = get_organizer_receipt_count(env, &organizer);
+        let shard_id = count / SHARD_SIZE;
+
+        let mut shard: Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OrganizerReceiptShard(organizer.clone(), shard_id))
+            .unwrap_or_else(|| vec![env]);
+
+        shard.push_back(event_id.clone());
+        env.storage().persistent().set(
+            &DataKey::OrganizerReceiptShard(organizer.clone(), shard_id),
+            &shard,
+        );
+
+        env.storage().persistent().set(
+            &DataKey::OrganizerReceiptCount(organizer.clone()),
+            &(count + 1),
+        );
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::OrganizerReceipt(organizer, event_id), &true);
+    }
 }
 
 /// Retrieves an event receipt by its event_id
@@ -415,6 +473,33 @@ pub fn get_event_receipt(env: &Env, event_id: String) -> Option<crate::types::Ev
     env.storage()
         .persistent()
         .get(&DataKey::EventReceipt(event_id))
+}
+
+/// Retrieves all archived receipts associated with an organizer.
+pub fn get_organizer_receipts(env: &Env, organizer: &Address) -> Vec<crate::types::EventReceipt> {
+    let count = get_organizer_receipt_count(env, organizer);
+    let mut receipts = vec![env];
+
+    if count == 0 {
+        return receipts;
+    }
+
+    let num_shards = count.div_ceil(SHARD_SIZE);
+    for i in 0..num_shards {
+        let shard: Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OrganizerReceiptShard(organizer.clone(), i))
+            .unwrap_or_else(|| vec![env]);
+
+        for event_id in shard.iter() {
+            if let Some(receipt) = get_event_receipt(env, event_id) {
+                receipts.push_back(receipt);
+            }
+        }
+    }
+
+    receipts
 }
 
 /// Checks if an event with the given event_id exists.
@@ -435,6 +520,21 @@ pub fn has_organizer_event(env: &Env, organizer: &Address, event_id: String) -> 
     env.storage()
         .persistent()
         .has(&DataKey::OrganizerEvent(organizer.clone(), event_id))
+}
+
+/// Retrieves the total number of archived event receipts for an organizer.
+pub fn get_organizer_receipt_count(env: &Env, organizer: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OrganizerReceiptCount(organizer.clone()))
+        .unwrap_or(0)
+}
+
+/// Checks if an organizer has a specific archived receipt in their index.
+pub fn has_organizer_receipt(env: &Env, organizer: &Address, event_id: String) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::OrganizerReceipt(organizer.clone(), event_id))
 }
 
 /// Retrieves all event_ids associated with an organizer by iterating through shards.
@@ -721,4 +821,72 @@ pub fn is_token_whitelisted(env: &Env, token: &Address) -> bool {
         .persistent()
         .get(&DataKey::TokenWhitelist(token.clone()))
         .unwrap_or(false)
+}
+
+// ── Global Counters ──────────────────────────────────────────────────────────
+
+/// Returns the total number of events ever registered on the platform.
+pub fn get_global_event_count(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::GlobalEventCount)
+        .unwrap_or(0)
+}
+
+/// Increments the global event counter by one.
+pub fn increment_global_event_count(env: &Env) {
+    let current = get_global_event_count(env);
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalEventCount, &(current + 1));
+}
+
+/// Returns the total number of currently active events on the platform.
+pub fn get_global_active_event_count(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::GlobalActiveEventCount)
+        .unwrap_or(0)
+}
+
+/// Increments the global active event counter by one.
+pub fn increment_global_active_event_count(env: &Env) {
+    let current = get_global_active_event_count(env);
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalActiveEventCount, &(current + 1));
+}
+
+/// Decrements the global active event counter by one.
+pub fn decrement_global_active_event_count(env: &Env) {
+    let current = get_global_active_event_count(env);
+    env.storage()
+        .persistent()
+        .set(&DataKey::GlobalActiveEventCount, &current.saturating_sub(1));
+}
+
+/// Returns the total number of tickets sold across all events.
+pub fn get_global_tickets_sold(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::GlobalTicketsSold)
+        .unwrap_or(0)
+}
+
+/// Adds `quantity` to the global tickets sold counter.
+pub fn add_to_global_tickets_sold(env: &Env, quantity: i128) {
+    let current = get_global_tickets_sold(env);
+    env.storage().persistent().set(
+        &DataKey::GlobalTicketsSold,
+        &(current.saturating_add(quantity)),
+    );
+}
+
+/// Subtracts `quantity` from the global tickets sold counter.
+pub fn subtract_from_global_tickets_sold(env: &Env, quantity: i128) {
+    let current = get_global_tickets_sold(env);
+    env.storage().persistent().set(
+        &DataKey::GlobalTicketsSold,
+        &(current.saturating_sub(quantity)),
+    );
 }
