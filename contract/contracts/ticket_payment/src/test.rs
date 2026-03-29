@@ -4476,12 +4476,7 @@ fn test_close_auction_rejects_double_closure() {
     let bidder = Address::generate(&env);
     let funded_amount = 20_000_000_000i128;
     usdc_token.mint(&bidder, &funded_amount);
-    token::Client::new(&env, &usdc_id).approve(
-        &bidder,
-        &client.address,
-        &funded_amount,
-        &99999,
-    );
+    token::Client::new(&env, &usdc_id).approve(&bidder, &client.address, &funded_amount, &99999);
 
     let event_id = String::from_str(&env, "event_1");
     let tier_id = String::from_str(&env, "tier_1");
