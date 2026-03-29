@@ -111,6 +111,7 @@ use crate::error::EventRegistryError;
 
 const MIN_METADATA_CID_LEN: u32 = 46;
 const MAX_METADATA_CID_LEN: u32 = 100;
+const VERSION: u32 = 1;
 
 #[contract]
 pub struct EventRegistry;
@@ -118,6 +119,11 @@ pub struct EventRegistry;
 #[contractimpl]
 #[allow(deprecated)]
 impl EventRegistry {
+    /// Returns the current version of the contract for off-chain services.
+    pub fn get_version(_env: Env) -> u32 {
+        VERSION
+    }
+
     /// Register a new series grouping multiple events
     pub fn register_series(
         env: Env,

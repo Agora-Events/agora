@@ -15,6 +15,14 @@ fn test_payment_address(env: &Env) -> Address {
 }
 
 #[test]
+fn test_get_version() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    assert_eq!(client.get_version(), 1);
+}
+
+#[test]
 fn test_register_and_get_series() {
     let env = Env::default();
     env.mock_all_auths();
