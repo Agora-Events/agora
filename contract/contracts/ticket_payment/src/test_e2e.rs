@@ -1,6 +1,6 @@
 use super::contract::{event_registry, TicketPaymentContract, TicketPaymentContractClient};
 use super::storage::*;
-use super::types::PaymentStatus;
+use super::types::{PaymentStatus, TRANSFER_FEE_BPS, MAX_BPS};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
     testutils::Address as _, testutils::Ledger, token, Address, Env, String, Symbol,
@@ -891,6 +891,10 @@ fn test_e2e_ticket_transfer_lifecycle() {
     let payment = client.get_payment_status(&pay_id).unwrap();
     assert_eq!(payment.status, PaymentStatus::Confirmed);
     assert_eq!(payment.buyer_address, buyer);
+
+    // Account for default transfer fee
+    let expected_fee = (amount * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    fund_buyer(&env, &usdc_id, &buyer, &client.address, expected_fee);
 
     // Transfer to new owner (no sale price, no transfer fee)
     client.transfer_ticket(&pay_id, &new_owner, &None);
