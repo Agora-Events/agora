@@ -35,6 +35,7 @@ fn make_event_args(
         max_supply,
         milestone_plan: None,
         tiers,
+        tier_ids: soroban_sdk::vec![&env],
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,

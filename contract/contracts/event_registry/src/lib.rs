@@ -220,6 +220,32 @@ impl EventRegistry {
             return Err(EventRegistryError::EventAlreadyExists);
         }
 
+        // Validate that all tier IDs are unique.
+        // Soroban's Map silently overwrites duplicate keys, so a caller that
+        // sets the same key twice ends up with fewer entries than intended.
+        // We detect this by comparing adjacent keys in the sorted key list —
+        // since Map is ordered, any duplicate will appear consecutively.
+        {
+            let keys = args.tiers.keys();
+            let len = keys.len();
+            if len > 1 {
+                for i in 0..len - 1 {
+                    if keys.get(i) == keys.get(i + 1) {
+                        return Err(EventRegistryError::DuplicateTierId);
+                    }
+                }
+            }
+        }
+
+        // Validate that all tier IDs are unique.
+        // Soroban's Map silently overwrites duplicate keys on construction, so
+        // a caller that sets the same tier ID twice ends up with fewer map
+        // entries than declared. Comparing the declared tier_ids list length
+        // against the deduplicated map length reveals any collision.
+        if args.tier_ids.len() != args.tiers.len() {
+            return Err(EventRegistryError::DuplicateTierId);
+        }
+
         // Validate tier limits don't exceed max_supply
         if args.max_supply > 0 {
             let mut total_tier_limit: i128 = 0;

@@ -167,7 +167,13 @@ pub struct EventRegistrationArgs {
     pub metadata_cid: String,
     pub max_supply: i128,
     pub milestone_plan: Option<Vec<Milestone>>,
+    /// Map of tier_id to TicketTier for multi-tiered pricing.
     pub tiers: Map<String, TicketTier>,
+    /// Explicit list of all tier IDs being registered. Must have the same
+    /// length as `tiers` — if a duplicate ID was set in `tiers`, the map
+    /// silently collapses it and the lengths will differ, triggering
+    /// `DuplicateTierId`.
+    pub tier_ids: Vec<String>,
     pub refund_deadline: u64,
     pub restocking_fee: i128,
     /// Optional resale price cap in basis points above face value.

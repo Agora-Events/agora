@@ -71,6 +71,8 @@ pub enum EventRegistryError {
     InvalidTargetDeadline = 44,
     /// Admin has already approved this proposal
     AlreadyApproved = 45,
+    /// Two or more ticket tiers share the same ID
+    DuplicateTierId = 46,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -211,6 +213,9 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::AlreadyApproved => {
                 write!(f, "Admin has already approved this proposal")
+            }
+            EventRegistryError::DuplicateTierId => {
+                write!(f, "Duplicate tier ID: all tier IDs must be unique")
             }
         }
     }
