@@ -6,12 +6,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { UpcomingEventsEmptyState } from "@/components/empty-state/upcoming-events-empty-state";
 import CalendarIcon from "@/public/icons/calendar.svg";
 import HostingIcon from "@/public/icons/ticket-star.svg";
 import PastIcon from "@/public/icons/camera-smile-01.svg";
 import BubbleChatIcon from "@/public/icons/bubble-chat.svg";
-import ZeroIcon from "@/public/icons/zero.svg";
-import EmptyStateBg from "@/public/icons/empty-state-bg.svg";
 
 type MyEventsTab = "upcoming" | "hosting" | "past";
 type ForYouTab = "discover" | "following";
@@ -57,43 +56,7 @@ interface GridEvent {
 }
 
 // Mock data for My Events (Timeline)
-const upcomingEvents: TimelineEvent[] = [
-  {
-    id: 1,
-    date: "6 Mar, Friday",
-    day: "Friday",
-    time: "18:00 - 20:00 UTC",
-    title: "Stellar Developers Meetup",
-    location: "Discord",
-    imageUrl: "/images/event1.png",
-    isFree: true,
-    attendees: 24,
-    status: "going",
-  },
-  {
-    id: 2,
-    date: "8 Mar, Sunday",
-    day: "Sunday",
-    time: "10:00 - 12:00 UTC",
-    title: "Web3 Design Workshop",
-    location: "Lagos, Nigeria",
-    imageUrl: "/images/event2.png",
-    isFree: false,
-    price: "$25.00",
-    attendees: 156,
-  },
-  {
-    id: 3,
-    date: "12 Mar, Thursday",
-    day: "Thursday",
-    time: "14:00 - 16:00 UTC",
-    title: "Blockchain Fundamentals",
-    location: "Virtual",
-    imageUrl: "/images/event3.png",
-    isFree: true,
-    attendees: 89,
-  },
-];
+const upcomingEvents: TimelineEvent[] = [];
 
 const hostingEvents: TimelineEvent[] = [
   {
@@ -537,6 +500,7 @@ function GridEventCard({ event }: { event: GridEvent }) {
 // My Events Section Content
 function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
   let events: TimelineEvent[] = [];
+  const isUpcomingTab = activeTab === "upcoming";
 
   switch (activeTab) {
     case "upcoming":
@@ -551,35 +515,22 @@ function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
   }
 
   if (events.length === 0) {
-    return (
-      <div className="w-full max-w-121.5 bg-[#FFEFD3] h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10 text-[#1315175C]">
-        <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
-          <Image
-            src={EmptyStateBg}
-            alt="Empty State Background"
-            width={224}
-            height={224}
-            className="object-cover w-full h-full rounded-4xl"
-          />
+    if (isUpcomingTab) {
+      return <UpcomingEventsEmptyState />;
+    }
 
-          <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-[#63636312] -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
-            <Image
-              src={ZeroIcon}
-              alt="Nothing Here, Yet"
-              width={16}
-              height={16}
-              className="object-center w-full h-full"
-            />
-          </div>
-        </div>
-        <p className="text-xl font-medium leading-5.5">Nothing Here, Yet</p>
+    return (
+      <div className="flex min-h-[15rem] items-center justify-center rounded-[2rem] border border-dashed border-black/20 bg-white/60 px-6 text-center">
+        <p className="text-base font-medium text-black/55">
+          No events found in this section.
+        </p>
       </div>
     );
   }
 
   return (
     <div className="pt-4 space-y-13.25">
-      {events.map((event, index) => (
+      {events.map((event) => (
         <TimelineEventCard key={event.id} event={event} />
       ))}
     </div>
@@ -655,3 +606,4 @@ export default function HomePage() {
     </div>
   );
 }
+
