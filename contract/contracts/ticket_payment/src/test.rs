@@ -2,7 +2,7 @@ use super::contract::{
     event_registry, price_oracle, TicketPaymentContract, TicketPaymentContractClient,
 };
 use super::storage::*;
-use super::types::{DataKey, ParameterChange, Payment, PaymentStatus};
+use super::types::{DataKey, ParameterChange, Payment, PaymentStatus, MAX_BPS, TRANSFER_FEE_BPS};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, Events, Ledger},
@@ -696,6 +696,26 @@ fn test_initialize_invalid_address() {
     let event_registry_id = env.register(MockEventRegistry, ());
 
     let result = client.try_initialize(&admin, &invalid, &platform_wallet, &event_registry_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+
+#[test]
+fn test_initialize_zero_platform_wallet_rejected() {
+    let env = Env::default();
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+    );
+    let event_registry_id = env.register(MockEventRegistry, ());
+
+    let result = client.try_initialize(&admin, &usdc_id, &platform_wallet, &event_registry_id);
     assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
 }
 
@@ -1477,7 +1497,8 @@ fn test_withdraw_with_milestones() {
 fn test_transfer_ticket_success() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
@@ -1501,6 +1522,11 @@ fn test_transfer_ticket_success() {
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
     });
+
+    // Account for default transfer fee (1%)
+    let expected_fee = (1000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     client.transfer_ticket(&payment_id, &new_owner, &None);
 
@@ -1528,16 +1554,25 @@ fn test_transfer_ticket_with_fee() {
     let new_owner = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
     let event_id = String::from_str(&env, "event_1");
-    let transfer_fee = 100i128;
+
+    // Use the central constant for testing
+    let transfer_fee_bps = TRANSFER_FEE_BPS;
+    let ticket_amount = 1000i128;
+    let expected_absolute_fee = (ticket_amount * transfer_fee_bps as i128) / MAX_BPS as i128;
 
     // Set transfer fee
     env.as_contract(&client.address, || {
-        set_transfer_fee(&env, event_id.clone(), transfer_fee);
+        set_transfer_fee(&env, event_id.clone(), transfer_fee_bps);
     });
 
     // Mint USDC to buyer for fee
-    usdc_token.mint(&buyer, &transfer_fee);
-    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &transfer_fee, &9999);
+    usdc_token.mint(&buyer, &expected_absolute_fee);
+    token::Client::new(&env, &usdc_id).approve(
+        &buyer,
+        &client.address,
+        &expected_absolute_fee,
+        &9999,
+    );
 
     // Initial escrow balance
     let initial_escrow = client.get_event_escrow_balance(&event_id);
@@ -1548,7 +1583,7 @@ fn test_transfer_ticket_with_fee() {
         event_id: event_id.clone(),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
-        amount: 1000,
+        amount: ticket_amount,
         platform_fee: 50,
         organizer_amount: 950,
         status: PaymentStatus::Confirmed,
@@ -1568,7 +1603,7 @@ fn test_transfer_ticket_with_fee() {
     let new_escrow = client.get_event_escrow_balance(&event_id);
     assert_eq!(
         new_escrow.organizer_amount,
-        initial_escrow.organizer_amount + transfer_fee
+        initial_escrow.organizer_amount + expected_absolute_fee
     );
 
     let updated = client.get_payment_status(&payment_id).unwrap();
@@ -2355,7 +2390,7 @@ fn test_discount_code_one_time_use() {
         &Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
         &None,
     );
-    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeAlreadyUsed)));
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeUsed)));
 }
 
 #[test]
@@ -3056,7 +3091,8 @@ fn setup_test_with_resale_cap(
 fn test_transfer_ticket_resale_price_within_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3081,6 +3117,11 @@ fn test_transfer_ticket_resale_price_within_cap() {
         store_payment(&env, payment);
     });
 
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
+
     // Sale price at exactly the cap: 1000 * (10000 + 1000) / 10000 = 1100 USDC
     let sale_price = Some(1100_0000000i128);
     client.transfer_ticket(&payment_id, &new_owner, &sale_price);
@@ -3093,7 +3134,8 @@ fn test_transfer_ticket_resale_price_within_cap() {
 fn test_transfer_ticket_resale_price_exceeds_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3118,6 +3160,11 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
         store_payment(&env, payment);
     });
 
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
+
     // Sale price above the cap: 1200 USDC > 1100 USDC max
     let sale_price = Some(1200_0000000i128);
     let result = client.try_transfer_ticket(&payment_id, &new_owner, &sale_price);
@@ -3132,7 +3179,8 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
 fn test_transfer_ticket_no_sale_price_with_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3157,6 +3205,11 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
         store_payment(&env, payment);
     });
 
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
+
     // No sale price (gift/free transfer) should always succeed
     client.transfer_ticket(&payment_id, &new_owner, &None);
 
@@ -3169,7 +3222,8 @@ fn test_transfer_ticket_sale_price_no_cap() {
     let env = Env::default();
     env.mock_all_auths();
     // Use the default mock registry which has resale_cap_bps: None
-    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3193,6 +3247,11 @@ fn test_transfer_ticket_sale_price_no_cap() {
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
     });
+
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     // Any sale price should be allowed when no cap is set
     let sale_price = Some(5000_0000000i128); // 5x the original price
@@ -4457,6 +4516,46 @@ fn test_close_auction_rejects_when_no_bids_exist() {
         is_auction_closed(&env, event_id.clone(), tier_id.clone())
     });
     assert!(!auction_closed);
+}
+
+#[test]
+fn test_close_auction_rejects_double_closure() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_auction_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let bidder = Address::generate(&env);
+    let funded_amount = 20_000_000_000i128;
+    usdc_token.mint(&bidder, &funded_amount);
+    token::Client::new(&env, &usdc_id).approve(&bidder, &client.address, &funded_amount, &99999);
+
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let first_payment_id = String::from_str(&env, "payment_1");
+    let second_payment_id = String::from_str(&env, "payment_2");
+
+    client.place_bid(&event_id, &tier_id, &bidder, &usdc_id, &1100_0000000i128);
+
+    env.ledger().set_timestamp(1001);
+
+    let first_close = client.try_close_auction(&first_payment_id, &event_id, &tier_id);
+    assert_eq!(first_close, Ok(Ok(())));
+
+    let second_close = client.try_close_auction(&second_payment_id, &event_id, &tier_id);
+    assert_eq!(second_close, Err(Ok(TicketPaymentError::AuctionEnded)));
+
+    let auction_closed = env.as_contract(&client.address, || {
+        is_auction_closed(&env, event_id.clone(), tier_id.clone())
+    });
+    assert!(auction_closed);
+
+    let payment = client.get_payment_status(&first_payment_id).unwrap();
+    assert_eq!(payment.payment_id, first_payment_id);
+    assert_eq!(payment.buyer_address, bidder);
+    assert_eq!(payment.status, PaymentStatus::Confirmed);
+    assert_eq!(client.get_payment_status(&second_payment_id), None);
 }
 
 #[test]
@@ -6295,17 +6394,22 @@ fn setup_withdrawal_cap_test(
 #[test]
 fn test_day_calculation_same_day_shares_bucket() {
     // Day 1: timestamps 0 and 86399 both map to day 0
-    assert_eq!(0u64 / 86400, 0);
-    assert_eq!(86399u64 / 86400, 0);
+    let start_of_day = 0u64;
+    let end_of_day = 86_399u64;
+    assert_eq!(start_of_day / 86_400, end_of_day / 86_400);
+    assert_eq!(end_of_day / 86_400, 0);
 
     // Day 2: timestamp 86400 maps to day 1
-    assert_eq!(86400u64 / 86400, 1);
-    assert_eq!(172799u64 / 86400, 1);
+    assert_eq!(86_400u64 / 86_400, 1);
+    assert_eq!(172_799u64 / 86_400, 1);
 
     // Arbitrary real-world timestamp (2024-01-01 00:00:00 UTC = 1704067200)
-    let day_a = 1_704_067_200u64 / 86400;
-    let day_b = (1_704_067_200u64 + 86399) / 86400;
-    let day_c = (1_704_067_200u64 + 86400) / 86400;
+    let day_a_timestamp = 1_704_067_200u64;
+    let day_b_timestamp = day_a_timestamp + 86_399;
+    let day_c_timestamp = day_a_timestamp + 86_400;
+    let day_a = day_a_timestamp / 86_400;
+    let day_b = day_b_timestamp / 86_400;
+    let day_c = day_c_timestamp / 86_400;
     assert_eq!(day_a, day_b); // same day
     assert_ne!(day_a, day_c); // next day
 }
@@ -6532,7 +6636,7 @@ fn insert_confirmed_payment(
     payment_id: &String,
     buyer: &Address,
     event_id: &str,
-) {
+) -> Payment {
     let payment = Payment {
         payment_id: payment_id.clone(),
         event_id: String::from_str(env, event_id),
@@ -6548,8 +6652,9 @@ fn insert_confirmed_payment(
         refunded_amount: 0,
     };
     env.as_contract(client_address, || {
-        store_payment(env, payment);
+        store_payment(env, payment.clone());
     });
+    payment
 }
 
 /// Self-transfer must be rejected with InvalidAddress.
@@ -6561,7 +6666,7 @@ fn test_transfer_ticket_self_transfer_rejected() {
 
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_self");
-    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1"); // This returns Payment, but we don't use it.
 
     // Attempt to transfer to self
     let result = client.try_transfer_ticket(&payment_id, &buyer, &None);
@@ -6577,7 +6682,7 @@ fn test_transfer_ticket_zero_address_rejected() {
 
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_zero");
-    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1"); // This returns Payment, but we don't use it.
 
     // Construct the Stellar zero address from its well-known strkey
     let zero_addr = Address::from_str(
@@ -6598,7 +6703,7 @@ fn test_transfer_ticket_contract_address_rejected() {
 
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_contract");
-    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1"); // This returns Payment, but we don't use it.
 
     // The contract's own address is an invalid recipient
     let result = client.try_transfer_ticket(&payment_id, &client.address, &None);
@@ -6610,12 +6715,18 @@ fn test_transfer_ticket_contract_address_rejected() {
 fn test_transfer_ticket_valid_recipient_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let payment_id = String::from_str(&env, "pay_valid");
+    let payment_id = String::from_str(&env, "pay_valid"); // This returns Payment, but we don't use it.
     insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     client.transfer_ticket(&payment_id, &recipient, &None);
 

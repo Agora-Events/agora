@@ -3,6 +3,13 @@ use crate::error::EventRegistryError;
 use crate::types::{EventRegistrationArgs, EventStatus, TicketTier};
 use soroban_sdk::{testutils::Address as _, Address, Env, Map, String};
 
+fn test_payment_address(env: &Env) -> Address {
+    Address::from_string(&String::from_str(
+        env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+    ))
+}
+
 /// Helper: initialize the contract and return (client, admin, platform_wallet).
 fn setup(env: &Env) -> (EventRegistryClient<'static>, Address, Address) {
     let contract_id = env.register(EventRegistry, ());
@@ -27,7 +34,7 @@ fn make_event_args(
         event_id: String::from_str(env, event_id),
         name: String::from_str(env, "Test Event"),
         organizer_address: organizer.clone(),
-        payment_address: organizer.clone(),
+        payment_address: test_payment_address(env),
         metadata_cid: String::from_str(
             env,
             "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
