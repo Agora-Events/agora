@@ -97,7 +97,13 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
 mod tests {
     use super::*;
     use crate::utils::error::AppError;
-    use axum::http::StatusCode;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        routing::get,
+        Router,
+    };
+    use tower::ServiceExt;
 
     #[tokio::test]
     async fn test_health_response_ok_status() {
@@ -116,5 +122,38 @@ mod tests {
         let err = AppError::ExternalServiceError("database is unreachable".to_string());
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn test_health_endpoint_returns_200_with_expected_json() {
+        let router = Router::new().route(
+            "/health",
+            get(|| async {
+                let payload = HealthResponse {
+                    status: "ok",
+                    timestamp: Utc::now().to_rfc3339(),
+                };
+                success(payload, "API is healthy").into_response()
+            }),
+        );
+
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["success"], true);
+        assert_eq!(json["message"], "API is healthy");
+        assert_eq!(json["data"]["status"], "ok");
+        assert!(json["data"]["timestamp"].is_string());
     }
 }

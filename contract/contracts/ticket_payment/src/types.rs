@@ -1,5 +1,8 @@
 use soroban_sdk::{contracttype, Address, BytesN, String};
 
+pub const TRANSFER_FEE_BPS: u32 = 100;
+pub const MAX_BPS: u32 = 10000;
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuctionConfig {
@@ -15,9 +18,9 @@ pub enum ParameterChange {
     RemoveGovernor(Address),
     AddTokenToWhitelist(Address),
     RemoveTokenFromWhitelist(Address),
-    UpdateWithdrawalCap(Address, i128),
+    UpdateWithdrawalCap(Address, i128), // This is still i128 amount
     UpdateSlippage(u32),
-    UpdateTransferFee(String, i128),
+    UpdateTransferFee(String, u32), // Changed from i128 to u32 basis points
 }
 
 #[contracttype]
@@ -105,7 +108,7 @@ pub enum DataKey {
     Initialized,                         // Initialization flag
     TokenWhitelist(Address),             // token_address -> bool
     Balances(String),                    // event_id -> EventBalance (escrow tracking)
-    TransferFee(String),                 // event_id -> transfer_fee amount
+    TransferFee(String),                 // event_id -> transfer_fee_bps (u32)
     BulkRefundIndex(String),             // event_id -> last processed payment index
     PriceSwitched(String, String),       // (event_id, tier_id) -> bool
     TotalVolumeProcessed,                // protocol-wide gross volume from all ticket sales

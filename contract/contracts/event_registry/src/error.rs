@@ -9,6 +9,7 @@ pub enum EventRegistryError {
     Unauthorized = 3,
     InvalidAddress = 4,
     InvalidFeePercent = 5,
+    InvalidFeeCalculation = 46,
     EventInactive = 6,
     NotInitialized = 7,
     AlreadyInitialized = 8,
@@ -82,6 +83,9 @@ impl core::fmt::Display for EventRegistryError {
             EventRegistryError::InvalidAddress => write!(f, "Invalid Stellar address"),
             EventRegistryError::InvalidFeePercent => {
                 write!(f, "Fee percent must be between 0 and 10000")
+            }
+            EventRegistryError::InvalidFeeCalculation => {
+                write!(f, "Fee calculation failed due to invalid arithmetic inputs")
             }
             EventRegistryError::EventInactive => {
                 write!(f, "Trying to interact with inactive event")
