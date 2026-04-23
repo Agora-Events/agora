@@ -89,10 +89,10 @@ use crate::events::{
     AdminUpdatedEvent, AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent,
     CustomFeeSetEvent, EventArchivedEvent, EventCancelledEvent, EventPostponedEvent,
     EventRegisteredEvent, EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent,
-    GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent, InventoryIncrementedEvent,
-    LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent, OrganizerBlacklistedEvent,
-    OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent, ScannerAuthorizedEvent,
-    StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
+    FeedbackCidSetEvent, GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent,
+    InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent,
+    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
+    ScannerAuthorizedEvent, StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
@@ -399,6 +399,8 @@ impl EventRegistry {
             custom_fee_bps: None,
             banner_cid: args.banner_cid,
             tags: args.tags,
+            end_time: args.end_time,
+            feedback_cid: None,
         };
 
         storage::store_event(&env, event_info);
@@ -589,6 +591,57 @@ impl EventRegistry {
             }
             None => Err(EventRegistryError::EventNotFound),
         }
+    }
+
+    /// Sets the post-event feedback CID for an event.
+    ///
+    /// Can only be called by the event organizer after the event's `end_time` has passed.
+    /// If `end_time` is 0 (not set), the call is rejected.
+    ///
+    /// # Arguments
+    /// * `event_id` - The event to attach feedback to.
+    /// * `feedback_cid` - IPFS CID pointing to the post-event feedback content.
+    ///
+    /// # Errors
+    /// * `EventNotFound` - If no event with the given ID exists.
+    /// * `EventCancelled` - If the event has been cancelled.
+    /// * `EventNotEnded` - If `end_time` is 0 or the current ledger time is before `end_time`.
+    /// * `InvalidMetadataCid` - If the provided CID fails format validation.
+    pub fn set_feedback_cid(
+        env: Env,
+        event_id: String,
+        feedback_cid: String,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        event_info.organizer_address.require_auth();
+
+        if matches!(event_info.status, EventStatus::Cancelled) {
+            return Err(EventRegistryError::EventCancelled);
+        }
+
+        let now = env.ledger().timestamp();
+        if event_info.end_time == 0 || now < event_info.end_time {
+            return Err(EventRegistryError::EventNotEnded);
+        }
+
+        validate_metadata_cid(&env, &feedback_cid)?;
+
+        event_info.feedback_cid = Some(feedback_cid.clone());
+        storage::update_event(&env, event_info.clone());
+
+        env.events().publish(
+            (AgoraEvent::FeedbackCidSet,),
+            FeedbackCidSetEvent {
+                event_id,
+                feedback_cid,
+                updated_by: event_info.organizer_address,
+                timestamp: now,
+            },
+        );
+
+        Ok(())
     }
 
     /// Stores or updates an event (legacy function for backward compatibility).

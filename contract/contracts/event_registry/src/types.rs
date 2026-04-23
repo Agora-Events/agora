@@ -139,6 +139,10 @@ pub struct EventInfo {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Unix timestamp when the event ends (0 = not set)
+    pub end_time: u64,
+    /// Optional IPFS CID for post-event feedback (only settable after end_time)
+    pub feedback_cid: Option<String>,
 }
 
 /// Payment information for an event
@@ -180,6 +184,8 @@ pub struct EventRegistrationArgs {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Unix timestamp when the event ends (0 = not set)
+    pub end_time: u64,
 }
 
 /// Audit log entry for blacklist actions

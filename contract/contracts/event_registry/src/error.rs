@@ -72,6 +72,8 @@ pub enum EventRegistryError {
     InvalidTargetDeadline = 44,
     /// Admin has already approved this proposal
     AlreadyApproved = 45,
+    /// Event has not ended yet; feedback CID can only be set after end_time
+    EventNotEnded = 47,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -215,6 +217,12 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::AlreadyApproved => {
                 write!(f, "Admin has already approved this proposal")
+            }
+            EventRegistryError::EventNotEnded => {
+                write!(
+                    f,
+                    "Event has not ended yet; feedback CID can only be set after end_time"
+                )
             }
         }
     }
