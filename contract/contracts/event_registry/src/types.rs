@@ -139,6 +139,10 @@ pub struct EventInfo {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Whether the event is private and should be excluded from global public counters.
+    /// Private events do not appear in managed event counts, active event counts,
+    /// or global tickets sold totals.
+    pub is_private: bool,
 }
 
 /// Payment information for an event
@@ -180,6 +184,8 @@ pub struct EventRegistrationArgs {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Whether the event is private and should be excluded from global public counters.
+    pub is_private: bool,
 }
 
 /// Audit log entry for blacklist actions
