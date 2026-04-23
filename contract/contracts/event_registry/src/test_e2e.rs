@@ -49,6 +49,7 @@ fn make_event_args(
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     }
 }
 

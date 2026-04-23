@@ -58,6 +58,7 @@ fn test_register_and_get_series() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
@@ -75,6 +76,7 @@ fn test_register_and_get_series() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     // Register a series
@@ -127,6 +129,7 @@ fn test_issue_and_use_series_pass() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
@@ -303,6 +306,8 @@ fn test_storage_operations() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
+        feedback_cid: None,
     };
 
     client.store_event(&event_info);
@@ -393,6 +398,8 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
+        feedback_cid: None,
     });
 
     assert_eq!(client.get_total_tickets_sold(&event_id), 9);
@@ -438,6 +445,7 @@ fn test_get_active_events_count_tracks_status_changes() {
             target_deadline: None,
             banner_cid: None,
             tags: None,
+            end_time: 0,
         });
     }
 
@@ -496,6 +504,8 @@ fn test_organizer_events_list() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
+        feedback_cid: None,
     };
 
     let event_2 = EventInfo {
@@ -526,6 +536,8 @@ fn test_organizer_events_list() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
+        feedback_cid: None,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -583,6 +595,8 @@ fn test_get_organizer_receipts_returns_archived_receipts() {
             custom_fee_bps: None,
             banner_cid: None,
             tags: None,
+            end_time: 0,
+            feedback_cid: None,
         };
 
     let event_id_1 = String::from_str(&env, "archived_1");
@@ -682,6 +696,7 @@ fn test_register_event_success() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -735,6 +750,7 @@ fn test_register_event_name_trimming() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let stored = client.get_event(&event_id).unwrap();
@@ -800,6 +816,7 @@ fn test_register_event_invalid_target_deadline() {
         target_deadline: Some(now - 1),
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -820,6 +837,7 @@ fn test_register_event_invalid_target_deadline() {
         target_deadline: Some(now),
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -840,6 +858,7 @@ fn test_register_event_invalid_target_deadline() {
         target_deadline: Some(now + 100),
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let stored = client.get_event(&event_id).unwrap();
@@ -876,6 +895,7 @@ fn test_register_event_rejects_contract_as_organizer() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -916,6 +936,7 @@ fn test_register_event_rejects_zero_organizer_address() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -958,6 +979,7 @@ fn test_register_event_unlimited_supply() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1002,6 +1024,7 @@ fn test_register_duplicate_event_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -1020,6 +1043,7 @@ fn test_register_duplicate_event_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -1057,6 +1081,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(
         short_result,
@@ -1083,6 +1108,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(
         wrong_prefix_result,
@@ -1109,6 +1135,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(
         oversized_result,
@@ -1153,6 +1180,7 @@ fn test_get_event_payment_info() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -1197,6 +1225,7 @@ fn test_update_event_status() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1240,6 +1269,7 @@ fn test_event_inactive_error() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1284,6 +1314,7 @@ fn test_complete_event_lifecycle() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -1340,6 +1371,7 @@ fn test_update_metadata_success() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let new_metadata_cid = String::from_str(
@@ -1389,6 +1421,7 @@ fn test_update_metadata_invalid_cid() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let wrong_char_cid = String::from_str(
@@ -1485,6 +1518,7 @@ fn test_set_custom_event_fee() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     // Default fee
@@ -1541,6 +1575,7 @@ fn test_set_custom_event_fee_exceeds_max() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     // Try to set custom fee exceeding 10000 bps (100%)
@@ -1612,6 +1647,7 @@ fn test_increment_inventory_success() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1685,6 +1721,7 @@ fn test_increment_inventory_max_supply_exceeded() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1753,6 +1790,7 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     // Fill one slot, then attempt a bulk call that overshoots max_supply in one shot
@@ -1821,6 +1859,7 @@ fn test_increment_inventory_unlimited_supply() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     for _ in 0..10 {
@@ -1907,6 +1946,7 @@ fn test_increment_inventory_inactive_event() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     client.update_event_status(&event_id, &false);
@@ -1968,6 +2008,7 @@ fn test_increment_inventory_persists_across_reads() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     for _ in 0..5 {
@@ -2047,6 +2088,7 @@ fn test_tier_limit_exceeds_max_supply() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(
         result,
@@ -2108,6 +2150,7 @@ fn test_tier_not_found() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -2170,6 +2213,7 @@ fn test_tier_supply_exceeded() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -2249,6 +2293,7 @@ fn test_multiple_tiers_inventory() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -2328,6 +2373,8 @@ fn test_increment_inventory_supply_overflow() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
+        feedback_cid: None,
     });
 
     let result = client.try_increment_inventory(&event_id, &tier_id, &1);
@@ -2396,6 +2443,8 @@ fn test_increment_inventory_tier_sold_overflow() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
+        feedback_cid: None,
     });
 
     let result = client.try_increment_inventory(&event_id, &tier_id, &1);
@@ -2441,6 +2490,7 @@ fn test_update_event_status_noop_skips_event() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let _ = env.events().all();
@@ -2518,6 +2568,7 @@ fn test_blacklist_prevents_event_registration() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -2563,6 +2614,7 @@ fn test_update_metadata_noop_skips_event() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let _ = env.events().all();
@@ -2647,6 +2699,7 @@ fn test_blacklist_suspends_active_events() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2774,6 +2827,7 @@ fn test_register_event_with_resale_cap() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2818,6 +2872,7 @@ fn test_register_event_resale_cap_zero() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2862,6 +2917,7 @@ fn test_register_event_resale_cap_none() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2906,6 +2962,7 @@ fn test_postpone_event_sets_grace_period() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     // Set ledger time and grace period end in the future
@@ -2957,6 +3014,7 @@ fn test_register_event_resale_cap_invalid() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -2997,6 +3055,7 @@ fn test_cancel_event_success() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     client.cancel_event(&event_id);
@@ -3040,6 +3099,7 @@ fn test_archive_event_rejects_active_event() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     let result = client.try_archive_event(&event_id);
@@ -3081,6 +3141,7 @@ fn test_cancel_already_cancelled_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     client.cancel_event(&event_id);
@@ -3123,6 +3184,7 @@ fn test_update_status_on_cancelled_event_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     client.cancel_event(&event_id);
@@ -3767,6 +3829,7 @@ fn test_register_event_with_banner_cid() {
         target_deadline: None,
         banner_cid: banner_cid.clone(),
         tags: None,
+        end_time: 0,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -3817,6 +3880,7 @@ fn test_goal_met_event_fires_only_once() {
         target_deadline: None,
         banner_cid: banner_cid.clone(),
         tags: None,
+        end_time: 0,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -3875,6 +3939,7 @@ fn test_register_event_without_banner_cid() {
         target_deadline: Some(1000),
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     // Drain setup events
@@ -3942,6 +4007,7 @@ fn test_series_pass_issued_at_timestamp() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     // Register a series
@@ -4019,6 +4085,7 @@ fn base_args(
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     }
 }
 
@@ -4356,6 +4423,7 @@ fn test_cancelled_status_guard() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     // Cancel event
@@ -4490,6 +4558,7 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     assert_eq!(
@@ -4546,6 +4615,7 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     assert!(result.is_ok());
@@ -4598,6 +4668,7 @@ fn test_register_event_restocking_fee_zero_always_valid() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     assert!(result.is_ok());
@@ -4650,6 +4721,7 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
 
     assert_eq!(
@@ -4734,6 +4806,7 @@ fn test_register_event_tier_limit_overflow() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -4789,6 +4862,7 @@ fn test_register_event_invalid_tier_limit_negative() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
 }
@@ -4842,6 +4916,7 @@ fn test_register_event_milestone_overflow() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -4880,6 +4955,7 @@ fn tags_base_args(env: &Env, event_id: &str, organizer: &Address) -> EventRegist
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        end_time: 0,
     }
 }
 
@@ -5157,6 +5233,151 @@ fn test_loyalty_multiplier_accumulates_across_purchases() {
 /// TicketTier with loyalty_multiplier = 2 stores and retrieves the field correctly.
 #[test]
 fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
+// ── set_feedback_cid tests ────────────────────────────────────────────────────
+
+fn setup_event_with_end_time(
+    env: &Env,
+    client: &EventRegistryClient,
+    event_id: &str,
+    end_time: u64,
+) -> (Address, Address) {
+    let admin = Address::generate(env);
+    let organizer = Address::generate(env);
+    let platform_wallet = Address::generate(env);
+    let usdc_token = Address::generate(env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let metadata_cid = String::from_str(
+        env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(env, event_id),
+        name: String::from_str(env, "Test Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        end_time,
+    });
+    (admin, organizer)
+}
+
+/// Organizer can set feedback CID after end_time has passed.
+#[test]
+fn test_set_feedback_cid_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    // Set ledger time to 1000 so we can have a past end_time
+    env.ledger().set_timestamp(1000);
+    let past_end_time = 500u64;
+    setup_event_with_end_time(&env, &client, "evt_feedback", past_end_time);
+
+    let feedback_cid = String::from_str(
+        &env,
+        "bafkreifeedback222222222222222222222222222222222222222222222",
+    );
+    client.set_feedback_cid(&String::from_str(&env, "evt_feedback"), &feedback_cid);
+
+    let event = client
+        .get_event(&String::from_str(&env, "evt_feedback"))
+        .unwrap();
+    assert_eq!(event.feedback_cid, Some(feedback_cid));
+}
+
+/// set_feedback_cid fails when end_time is 0 (not set).
+#[test]
+fn test_set_feedback_cid_no_end_time_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    setup_event_with_end_time(&env, &client, "evt_no_end", 0);
+
+    let feedback_cid = String::from_str(
+        &env,
+        "bafkreifeedback222222222222222222222222222222222222222222222",
+    );
+    let result = client.try_set_feedback_cid(&String::from_str(&env, "evt_no_end"), &feedback_cid);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotEnded)));
+}
+
+/// set_feedback_cid fails when end_time is in the future.
+#[test]
+fn test_set_feedback_cid_before_end_time_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let future_end_time = env.ledger().timestamp() + 10_000;
+    setup_event_with_end_time(&env, &client, "evt_future", future_end_time);
+
+    let feedback_cid = String::from_str(
+        &env,
+        "bafkreifeedback222222222222222222222222222222222222222222222",
+    );
+    let result = client.try_set_feedback_cid(&String::from_str(&env, "evt_future"), &feedback_cid);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotEnded)));
+}
+
+/// set_feedback_cid fails for a non-existent event.
+#[test]
+fn test_set_feedback_cid_event_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let result = client.try_set_feedback_cid(
+        &String::from_str(&env, "nonexistent"),
+        &String::from_str(
+            &env,
+            "bafkreifeedback222222222222222222222222222222222222222222222",
+        ),
+    );
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotFound)));
+}
+
+/// set_feedback_cid fails with an invalid CID format.
+#[test]
+fn test_set_feedback_cid_invalid_cid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    env.ledger().set_timestamp(1000);
+    setup_event_with_end_time(&env, &client, "evt_bad_cid", 500);
+
+    let result = client.try_set_feedback_cid(
+        &String::from_str(&env, "evt_bad_cid"),
+        &String::from_str(&env, "short"),
+    );
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidMetadataCid)));
+}
+
+/// set_feedback_cid fails on a cancelled event.
+#[test]
+fn test_set_feedback_cid_cancelled_event_fails() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(EventRegistry, ());
@@ -5224,4 +5445,18 @@ fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
 
     assert_eq!(vip_tier.loyalty_multiplier, 2);
     assert_eq!(general_tier.loyalty_multiplier, 1);
+    env.ledger().set_timestamp(1000);
+    setup_event_with_end_time(&env, &client, "evt_cancelled", 500);
+
+    let event_id = String::from_str(&env, "evt_cancelled");
+    client.cancel_event(&event_id);
+
+    let result = client.try_set_feedback_cid(
+        &event_id,
+        &String::from_str(
+            &env,
+            "bafkreifeedback222222222222222222222222222222222222222222222",
+        ),
+    );
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 }
