@@ -295,6 +295,10 @@ pub enum ParameterChange {
     SetThreshold(u32),
     /// Update the platform wallet address
     UpdatePlatformWallet(Address),
+    /// Update the global platform fee in basis points (0–10000)
+    SetPlatformFee(u32),
+    /// Update the minimum stake amount required for Verified organizer status
+    SetMinStakeAmount(i128),
 }
 
 /// Storage keys for the Event Registry contract.

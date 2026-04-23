@@ -4388,6 +4388,158 @@ fn test_active_proposals_list() {
 }
 
 #[test]
+fn test_propose_and_execute_set_platform_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    assert_eq!(client.get_platform_fee(), 500);
+
+    // Propose and execute a fee change via governance
+    let proposal_id = client.propose_set_platform_fee(&admin, &300, &0);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(proposal.proposal_id, proposal_id);
+    assert!(!proposal.executed);
+
+    client.execute_proposal(&admin, &proposal_id);
+
+    assert_eq!(client.get_platform_fee(), 300);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert!(proposal.executed);
+}
+
+#[test]
+fn test_propose_set_platform_fee_invalid() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Fee > 10000 bps should be rejected
+    let result = client.try_propose_set_platform_fee(&admin, &10001, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
+}
+
+#[test]
+fn test_propose_and_execute_set_min_stake_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    let staking_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    // Configure staking so there is an initial min stake amount
+    client.set_staking_config(&staking_token, &1_000_000);
+
+    // Propose and execute a min stake change via governance
+    let proposal_id = client.propose_set_min_stake_amount(&admin, &2_000_000_i128, &0);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(proposal.proposal_id, proposal_id);
+    assert!(!proposal.executed);
+
+    client.execute_proposal(&admin, &proposal_id);
+
+    assert_eq!(client.get_min_stake_amount(), 2_000_000_i128);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert!(proposal.executed);
+}
+
+#[test]
+fn test_propose_set_min_stake_amount_invalid() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Zero or negative amount should be rejected
+    let result = client.try_propose_set_min_stake_amount(&admin, &0_i128, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidStakeAmount)));
+
+    let result = client.try_propose_set_min_stake_amount(&admin, &-1_i128, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidStakeAmount)));
+}
+
+#[test]
+fn test_propose_set_platform_fee_unauthorized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let result = client.try_propose_set_platform_fee(&non_admin, &300, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized)));
+}
+
+#[test]
+fn test_set_platform_fee_with_multisig() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // Add admin2 and set threshold to 2
+    let pid = client.propose_add_admin(&admin1, &admin2, &0);
+    client.execute_proposal(&admin1, &pid);
+    let pid = client.propose_set_threshold(&admin1, &2, &0);
+    client.execute_proposal(&admin1, &pid);
+
+    // Propose fee change — should need 2 approvals
+    let proposal_id = client.propose_set_platform_fee(&admin1, &200, &0);
+
+    // Single approval should not be enough
+    let result = client.try_execute_proposal(&admin1, &proposal_id);
+    assert!(result.is_err());
+
+    // Second admin approves and execution succeeds
+    client.approve_proposal(&admin2, &proposal_id);
+    client.execute_proposal(&admin1, &proposal_id);
+    assert_eq!(client.get_platform_fee(), 200);
+}
+
+#[test]
 fn test_cancelled_status_guard() {
     let env = Env::default();
     env.mock_all_auths();
@@ -5233,6 +5385,56 @@ fn test_loyalty_multiplier_accumulates_across_purchases() {
 /// TicketTier with loyalty_multiplier = 2 stores and retrieves the field correctly.
 #[test]
 fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup_loyalty_env(&env);
+
+    let organizer = Address::generate(&env);
+    let payment_address = Address::generate(&env);
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "vip"),
+        TicketTier {
+            name: String::from_str(&env, "VIP"),
+            price: 2_000,
+            tier_limit: 50,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 2,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_multiplier"),
+        name: String::from_str(&env, "Multiplier Event"),
+        organizer_address: organizer.clone(),
+        payment_address,
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 50,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        end_time: 0,
+    });
+
+    let info = client
+        .get_event(&String::from_str(&env, "evt_multiplier"))
+        .unwrap();
+    let vip_tier = info.tiers.get(String::from_str(&env, "vip")).unwrap();
+    assert_eq!(vip_tier.loyalty_multiplier, 2);
+}
+
 // ── set_feedback_cid tests ────────────────────────────────────────────────────
 
 fn setup_event_with_end_time(
@@ -5383,68 +5585,6 @@ fn test_set_feedback_cid_cancelled_event_fails() {
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
 
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        String::from_str(&env, "vip"),
-        crate::types::TicketTier {
-            name: String::from_str(&env, "VIP"),
-            price: 5000,
-            tier_limit: 50,
-            current_sold: 0,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-            loyalty_multiplier: 2,
-        },
-    );
-    tiers.set(
-        String::from_str(&env, "general"),
-        crate::types::TicketTier {
-            name: String::from_str(&env, "General"),
-            price: 1000,
-            tier_limit: 200,
-            current_sold: 0,
-            is_refundable: false,
-            auction_config: soroban_sdk::vec![&env],
-            loyalty_multiplier: 1,
-        },
-    );
-
-    let metadata_cid = String::from_str(
-        &env,
-        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-    );
-    client.register_event(&EventRegistrationArgs {
-        event_id: String::from_str(&env, "evt_multiplier"),
-        name: String::from_str(&env, "Multiplier Event"),
-        organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
-        metadata_cid,
-        max_supply: 250,
-        milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    let event = client
-        .get_event(&String::from_str(&env, "evt_multiplier"))
-        .unwrap();
-    let vip_tier = event.tiers.get(String::from_str(&env, "vip")).unwrap();
-    let general_tier = event.tiers.get(String::from_str(&env, "general")).unwrap();
-
-    assert_eq!(vip_tier.loyalty_multiplier, 2);
-    assert_eq!(general_tier.loyalty_multiplier, 1);
     env.ledger().set_timestamp(1000);
     setup_event_with_end_time(&env, &client, "evt_cancelled", 500);
 
