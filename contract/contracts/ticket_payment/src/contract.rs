@@ -1259,7 +1259,7 @@ impl TicketPaymentContract {
             .and_then(|r| r.ok())
             .flatten()
             .ok_or(TicketPaymentError::EventNotFound)?;
-        
+
         let current_time = env.ledger().timestamp();
         if event_info.end_time > 0 && current_time > event_info.end_time {
             return Err(TicketPaymentError::EventEnded);
