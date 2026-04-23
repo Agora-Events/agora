@@ -63,6 +63,8 @@ impl MockCancelledRegistry {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
@@ -132,6 +134,8 @@ impl MockEventRegistry {
                 goal_met: false,
                 banner_cid: None,
                 tags: None,
+                start_time: 0,
+                end_time: 0,
             });
         }
         None
@@ -206,6 +210,8 @@ impl MockEventRegistry2 {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -279,6 +285,8 @@ impl MockAuctionEventRegistry {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1034,6 +1042,8 @@ impl MockEventRegistryMaxSupply {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1147,6 +1157,8 @@ impl MockEventRegistryWithInventory {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1372,6 +1384,8 @@ impl MockEventRegistryWithMilestones {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1711,6 +1725,8 @@ impl MockEventRegistryEarlyBird {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -2203,6 +2219,8 @@ impl MockEventRegistryWithOrganizer {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -2515,6 +2533,8 @@ impl MockPlatformRegistryE2E {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         };
 
         env.storage()
@@ -2990,6 +3010,8 @@ impl MockEventRegistryRefund {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -3064,6 +3086,8 @@ impl MockEventRegistryWithResaleCap {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -3334,6 +3358,8 @@ impl MockRegistryZeroCap {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -3951,6 +3977,8 @@ impl MockEventRegistryUsdPriced {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -4646,6 +4674,8 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4775,6 +4805,8 @@ impl MockEventRegistryWithLoyalty {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4858,6 +4890,8 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -5073,6 +5107,8 @@ impl MockEventRegistryCustomFee {
             custom_fee_bps: Some(100),
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -5203,6 +5239,8 @@ impl MockEventRegistryHighPrice {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -5312,6 +5350,8 @@ impl MockEventRegistryRefundDeadline {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -5868,6 +5908,8 @@ impl MockEventRegistryForDust {
             goal_met: true,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -6078,6 +6120,8 @@ impl MockEventRegistryForReferral {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -6159,6 +6203,8 @@ impl MockEventRegistryFullLoyaltyDiscount {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}

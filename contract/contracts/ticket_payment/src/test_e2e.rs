@@ -47,6 +47,9 @@ impl MockRegistryE2E {
         let scanner_key = Symbol::new(&env, "scanner");
         let _scanner: Option<Address> = env.storage().instance().get(&scanner_key);
 
+        let end_time_key = Symbol::new(&env, "end_time");
+        let stored_end_time: u64 = env.storage().instance().get(&end_time_key).unwrap_or(0);
+
         Some(event_registry::EventInfo {
             event_id,
             name: String::from_str(&env, "Test Event"),
@@ -91,6 +94,8 @@ impl MockRegistryE2E {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: stored_end_time,
         })
     }
 
@@ -136,6 +141,11 @@ impl MockRegistryE2E {
     pub fn set_scanner(env: Env, scanner: Address) {
         let key = Symbol::new(&env, "scanner");
         env.storage().instance().set(&key, &scanner);
+    }
+
+    pub fn set_end_time(env: Env, end_time: u64) {
+        let key = Symbol::new(&env, "end_time");
+        env.storage().instance().set(&key, &end_time);
     }
 }
 
@@ -205,6 +215,8 @@ impl MockRegistryCancelledE2E {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -303,6 +315,8 @@ impl MockRegistryWithGoal {
             goal_met,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1084,6 +1098,8 @@ impl MockRegistryAuction {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1172,4 +1188,95 @@ fn test_e2e_auction_flow() {
     let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
     assert_eq!(escrow.platform_fee, expected_fee);
     assert_eq!(escrow.organizer_amount, 1300_0000000i128 - expected_fee);
+}
+
+// =============================================================================
+// Test: Ticket check-in validation after event end_time
+// =============================================================================
+
+#[test]
+fn test_check_in_blocked_after_event_end_time() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _pw, registry_id) = setup_e2e(&env);
+    let buyer = Address::generate(&env);
+    let scanner = Address::generate(&env);
+    let amount = 1000_0000000i128;
+
+    // Configure scanner in mock registry
+    env.as_contract(&registry_id, || {
+        MockRegistryE2E::set_scanner(env.clone(), scanner.clone());
+        // Set event end_time to timestamp 1000
+        MockRegistryE2E::set_end_time(env.clone(), 1000);
+    });
+
+    fund_buyer(&env, &usdc_id, &buyer, &client.address, amount * 2);
+
+    // Process payment and confirm
+    let pay_id = buy_ticket(&client, &env, "pay_1", "event_1", &buyer, &usdc_id, amount);
+    let tx_hash = String::from_str(&env, "tx_abc");
+    client.confirm_payment(&pay_id, &tx_hash);
+
+    // Set current time to before end_time - check-in should succeed
+    env.ledger().with_mut(|li| {
+        li.timestamp = 999;
+    });
+
+    let series_id: Option<String> = None;
+    let pass_holder: Option<Address> = None;
+    client.check_in(&pay_id, &scanner, &series_id, &pass_holder);
+    let payment = client.get_payment_status(&pay_id).unwrap();
+    assert_eq!(payment.status, PaymentStatus::CheckedIn);
+
+    // Create another ticket for testing expired event
+    let pay_id_2 = buy_ticket(&client, &env, "pay_2", "event_1", &buyer, &usdc_id, amount);
+    let tx_hash_2 = String::from_str(&env, "tx_def");
+    client.confirm_payment(&pay_id_2, &tx_hash_2);
+
+    // Set current time to after end_time - check-in should fail
+    env.ledger().with_mut(|li| {
+        li.timestamp = 1001;
+    });
+
+    let result = client.try_check_in(&pay_id_2, &scanner, &series_id, &pass_holder);
+    assert_eq!(result, Err(Ok(TicketPaymentError::EventEnded)));
+
+    // Verify payment status is still Confirmed (not checked in)
+    let payment = client.get_payment_status(&pay_id_2).unwrap();
+    assert_eq!(payment.status, PaymentStatus::Confirmed);
+}
+
+#[test]
+fn test_check_in_allowed_when_no_end_time_set() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _pw, registry_id) = setup_e2e(&env);
+    let buyer = Address::generate(&env);
+    let scanner = Address::generate(&env);
+    let amount = 1000_0000000i128;
+
+    // Configure scanner in mock registry (but don't set end_time - defaults to 0)
+    env.as_contract(&registry_id, || {
+        MockRegistryE2E::set_scanner(env.clone(), scanner.clone());
+    });
+
+    fund_buyer(&env, &usdc_id, &buyer, &client.address, amount);
+
+    // Process payment and confirm
+    let pay_id = buy_ticket(&client, &env, "pay_1", "event_1", &buyer, &usdc_id, amount);
+    let tx_hash = String::from_str(&env, "tx_abc");
+    client.confirm_payment(&pay_id, &tx_hash);
+
+    // Set current time to any value - check-in should succeed since no end_time is set
+    env.ledger().with_mut(|li| {
+        li.timestamp = 999999;
+    });
+
+    let series_id: Option<String> = None;
+    let pass_holder: Option<Address> = None;
+    client.check_in(&pay_id, &scanner, &series_id, &pass_holder);
+    let payment = client.get_payment_status(&pay_id).unwrap();
+    assert_eq!(payment.status, PaymentStatus::CheckedIn);
 }

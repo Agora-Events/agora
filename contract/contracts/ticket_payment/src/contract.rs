@@ -170,6 +170,8 @@ pub mod event_registry {
         pub custom_fee_bps: Option<u32>,
         pub banner_cid: Option<String>,
         pub tags: Option<soroban_sdk::Vec<String>>,
+        pub start_time: u64,
+        pub end_time: u64,
     }
 }
 
@@ -1248,6 +1250,19 @@ impl TicketPaymentContract {
         let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
         if !registry_client.is_scanner_authorized(&payment.event_id, &scanner) {
             return Err(TicketPaymentError::UnauthorizedScanner);
+        }
+
+        // Check if the event has ended (prevent check-ins after end_time)
+        let event_info = registry_client
+            .try_get_event(&payment.event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+            .ok_or(TicketPaymentError::EventNotFound)?;
+        
+        let current_time = env.ledger().timestamp();
+        if event_info.end_time > 0 && current_time > event_info.end_time {
+            return Err(TicketPaymentError::EventEnded);
         }
 
         payment.status = PaymentStatus::CheckedIn;
