@@ -358,6 +358,7 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
             current_sold: 3,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     tiers.set(
@@ -369,6 +370,7 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
             current_sold: 4,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -683,6 +685,7 @@ fn test_register_event_success() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -797,6 +800,7 @@ fn test_register_event_invalid_target_deadline() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -1522,6 +1526,7 @@ fn test_set_custom_event_fee() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -1652,6 +1657,7 @@ fn test_increment_inventory_success() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -1726,6 +1732,7 @@ fn test_increment_inventory_max_supply_exceeded() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -1795,6 +1802,7 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -1864,6 +1872,7 @@ fn test_increment_inventory_unlimited_supply() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -1952,6 +1961,7 @@ fn test_increment_inventory_inactive_event() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -2014,6 +2024,7 @@ fn test_increment_inventory_persists_across_reads() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -2081,6 +2092,7 @@ fn test_tier_limit_exceeds_max_supply() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     tiers.set(
@@ -2092,6 +2104,7 @@ fn test_tier_limit_exceeds_max_supply() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -2154,6 +2167,7 @@ fn test_tier_not_found() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -2217,6 +2231,7 @@ fn test_tier_supply_exceeded() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -2285,6 +2300,7 @@ fn test_multiple_tiers_inventory() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     tiers.set(
@@ -2296,6 +2312,7 @@ fn test_multiple_tiers_inventory() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -2363,6 +2380,7 @@ fn test_increment_inventory_supply_overflow() {
             current_sold: i128::MAX - 1,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -2434,6 +2452,7 @@ fn test_increment_inventory_tier_sold_overflow() {
             current_sold: i128::MAX, // tier current_sold at max
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -2834,6 +2853,7 @@ fn test_register_event_with_resale_cap() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -3261,7 +3281,7 @@ fn test_update_loyalty_score_creates_profile() {
     let (client, admin, _) = setup_loyalty_env(&env);
 
     let guest = Address::generate(&env);
-    client.update_loyalty_score(&admin, &guest, &2, &2000_0000000i128);
+    client.update_loyalty_score(&admin, &guest, &2, &2000_0000000i128, &1u32);
 
     let profile = client.get_guest_profile(&guest).unwrap();
     assert_eq!(profile.guest_address, guest);
@@ -3279,9 +3299,9 @@ fn test_update_loyalty_score_accumulates() {
     let guest = Address::generate(&env);
 
     // First purchase: 5 tickets
-    client.update_loyalty_score(&admin, &guest, &5, &5000_0000000i128);
+    client.update_loyalty_score(&admin, &guest, &5, &5000_0000000i128, &1u32);
     // Second purchase: 3 tickets
-    client.update_loyalty_score(&admin, &guest, &3, &3000_0000000i128);
+    client.update_loyalty_score(&admin, &guest, &3, &3000_0000000i128, &1u32);
 
     let profile = client.get_guest_profile(&guest).unwrap();
     assert_eq!(profile.loyalty_score, 80); // (5+3) × 10
@@ -3298,7 +3318,7 @@ fn test_update_loyalty_score_unauthorized_fails() {
     let guest = Address::generate(&env);
     let random_caller = Address::generate(&env);
 
-    let result = client.try_update_loyalty_score(&random_caller, &guest, &1, &1000i128);
+    let result = client.try_update_loyalty_score(&random_caller, &guest, &1, &1000i128, &1u32);
     assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized)));
 }
 
@@ -3309,7 +3329,7 @@ fn test_update_loyalty_score_zero_tickets_fails() {
     let (client, admin, _) = setup_loyalty_env(&env);
 
     let guest = Address::generate(&env);
-    let result = client.try_update_loyalty_score(&admin, &guest, &0, &0i128);
+    let result = client.try_update_loyalty_score(&admin, &guest, &0, &0i128, &1u32);
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
 }
 
@@ -3334,21 +3354,21 @@ fn test_loyalty_discount_bps_tiers() {
     let guest = Address::generate(&env);
 
     // Score < 100 → 0 bps
-    client.update_loyalty_score(&admin, &guest, &5, &100i128); // 50 pts
+    client.update_loyalty_score(&admin, &guest, &5, &100i128, &1u32); // 50 pts
     assert_eq!(client.get_loyalty_discount_bps(&guest), 0);
 
     // Score 100–499 → 250 bps
-    client.update_loyalty_score(&admin, &guest, &5, &100i128); // +50 = 100 pts
+    client.update_loyalty_score(&admin, &guest, &5, &100i128, &1u32); // +50 = 100 pts
     assert_eq!(client.get_loyalty_discount_bps(&guest), 250);
 
     // Score 500–999 → 500 bps
     // Need to get to 500 pts: currently 100, need 400 more = 40 tickets
-    client.update_loyalty_score(&admin, &guest, &40, &1000i128); // +400 = 500 pts
+    client.update_loyalty_score(&admin, &guest, &40, &1000i128, &1u32); // +400 = 500 pts
     assert_eq!(client.get_loyalty_discount_bps(&guest), 500);
 
     // Score ≥ 1000 → 1000 bps
     // Need 500 more pts = 50 tickets
-    client.update_loyalty_score(&admin, &guest, &50, &1000i128); // +500 = 1000 pts
+    client.update_loyalty_score(&admin, &guest, &50, &1000i128, &1u32); // +500 = 1000 pts
     assert_eq!(client.get_loyalty_discount_bps(&guest), 1000);
 }
 
@@ -3956,6 +3976,7 @@ fn test_register_event_without_banner_cid() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -4574,6 +4595,7 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -4631,6 +4653,7 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -4685,6 +4708,7 @@ fn test_register_event_restocking_fee_zero_always_valid() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -4738,6 +4762,7 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -4814,6 +4839,7 @@ fn test_register_event_tier_limit_overflow() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     tiers.set(
@@ -4825,6 +4851,7 @@ fn test_register_event_tier_limit_overflow() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -4881,6 +4908,7 @@ fn test_register_event_invalid_tier_limit_negative() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
 
@@ -5410,6 +5438,89 @@ fn test_private_event_status_change_does_not_affect_active_count() {
     assert_eq!(client.get_active_events_count(), 1);
 }
 
+// ── Tier-Specific Loyalty Multipliers ────────────────────────────────────────
+
+/// A multiplier of 1 (standard) awards 10 points per ticket — baseline behaviour.
+#[test]
+fn test_loyalty_multiplier_1x_awards_base_points() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // 3 tickets × 10 pts × 1x = 30 pts
+    client.update_loyalty_score(&admin, &guest, &3, &3000i128, &1u32);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 30);
+}
+
+/// A multiplier of 2 (e.g., VIP tier) awards 20 points per ticket.
+#[test]
+fn test_loyalty_multiplier_2x_doubles_points() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // 3 tickets × 10 pts × 2x = 60 pts
+    client.update_loyalty_score(&admin, &guest, &3, &6000i128, &2u32);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 60);
+}
+
+/// A multiplier of 3 (e.g., Platinum tier) awards 30 points per ticket.
+#[test]
+fn test_loyalty_multiplier_3x_triples_points() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // 2 tickets × 10 pts × 3x = 60 pts
+    client.update_loyalty_score(&admin, &guest, &2, &9000i128, &3u32);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 60);
+}
+
+/// A multiplier of 0 is treated as 1x (no zeroing of points).
+#[test]
+fn test_loyalty_multiplier_0_treated_as_1x() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // 4 tickets × 10 pts × 1x (0 treated as 1) = 40 pts
+    client.update_loyalty_score(&admin, &guest, &4, &4000i128, &0u32);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 40);
+}
+
+/// Points from multiple purchases with different multipliers accumulate correctly.
+#[test]
+fn test_loyalty_multiplier_accumulates_across_purchases() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // Purchase 1: 2 tickets × 10 × 1x = 20 pts
+    client.update_loyalty_score(&admin, &guest, &2, &2000i128, &1u32);
+    // Purchase 2: 1 ticket × 10 × 2x = 20 pts
+    client.update_loyalty_score(&admin, &guest, &1, &5000i128, &2u32);
+    // Total: 40 pts
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 40);
+}
+
+/// TicketTier with loyalty_multiplier = 2 stores and retrieves the field correctly.
+#[test]
+fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
 // ── set_feedback_cid tests ────────────────────────────────────────────────────
 
 fn setup_event_with_end_time(
@@ -5561,6 +5672,68 @@ fn test_set_feedback_cid_cancelled_event_fails() {
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
 
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "vip"),
+        crate::types::TicketTier {
+            name: String::from_str(&env, "VIP"),
+            price: 5000,
+            tier_limit: 50,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 2,
+        },
+    );
+    tiers.set(
+        String::from_str(&env, "general"),
+        crate::types::TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 1000,
+            tier_limit: 200,
+            current_sold: 0,
+            is_refundable: false,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+        },
+    );
+
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_multiplier"),
+        name: String::from_str(&env, "Multiplier Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 250,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+    });
+
+    let event = client
+        .get_event(&String::from_str(&env, "evt_multiplier"))
+        .unwrap();
+    let vip_tier = event.tiers.get(String::from_str(&env, "vip")).unwrap();
+    let general_tier = event.tiers.get(String::from_str(&env, "general")).unwrap();
+
+    assert_eq!(vip_tier.loyalty_multiplier, 2);
+    assert_eq!(general_tier.loyalty_multiplier, 1);
     env.ledger().set_timestamp(1000);
     setup_event_with_end_time(&env, &client, "evt_cancelled", 500);
 

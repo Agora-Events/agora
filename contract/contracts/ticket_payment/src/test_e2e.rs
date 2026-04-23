@@ -78,6 +78,7 @@ impl MockRegistryE2E {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -191,6 +192,7 @@ impl MockRegistryCancelledE2E {
                         current_sold: 0,
                         is_refundable: false,
                         auction_config: soroban_sdk::vec![&env], // not normally refundable, but cancelled overrides
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -288,6 +290,7 @@ impl MockRegistryWithGoal {
                         current_sold: current_supply,
                         is_refundable: false,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -1068,6 +1071,7 @@ impl MockRegistryAuction {
                                 min_increment: 100_0000000i128,
                             }
                         ],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers

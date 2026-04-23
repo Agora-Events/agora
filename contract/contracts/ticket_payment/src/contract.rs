@@ -115,6 +115,7 @@ pub mod event_registry {
             guest: Address,
             tickets_purchased: u32,
             amount_spent: i128,
+            loyalty_multiplier: u32,
         );
         fn get_loyalty_discount_bps(env: Env, guest: Address) -> u32;
         fn get_guest_profile(env: Env, guest: Address) -> Option<GuestProfile>;
@@ -134,6 +135,7 @@ pub mod event_registry {
         pub current_sold: i128,
         pub is_refundable: bool,
         pub auction_config: soroban_sdk::Vec<AuctionConfig>,
+        pub loyalty_multiplier: u32,
     }
 
     #[soroban_sdk::contracttype]
@@ -847,6 +849,7 @@ impl TicketPaymentContract {
             &buyer_address,
             &quantity,
             &effective_total,
+            &tier.loyalty_multiplier,
         ) {
             Ok(_) | Err(_) => {}
         }

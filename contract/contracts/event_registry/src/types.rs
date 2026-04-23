@@ -64,6 +64,9 @@ pub struct TicketTier {
     pub is_refundable: bool,
     /// Optional configuration for an auction
     pub auction_config: soroban_sdk::Vec<AuctionConfig>,
+    /// Loyalty points multiplier for this tier (e.g., 1 = 1x, 2 = 2x).
+    /// A value of 0 is treated as 1x. VIP tiers can award more points.
+    pub loyalty_multiplier: u32,
 }
 
 /// Represents an early revenue release milestone.

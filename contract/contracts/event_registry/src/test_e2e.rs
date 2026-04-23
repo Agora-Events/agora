@@ -66,6 +66,7 @@ fn single_tier(env: &Env, tier_limit: i128) -> Map<String, TicketTier> {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     tiers
@@ -141,6 +142,7 @@ fn test_e2e_zero_max_supply_means_unlimited() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     let args = make_event_args(&env, "evt_unlim", &organizer, 0, tiers);

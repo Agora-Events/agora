@@ -53,6 +53,7 @@ fn free_tier(env: &Env, limit: i128) -> Map<String, TicketTier> {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![env],
+            loyalty_multiplier: 1,
         },
     );
     tiers

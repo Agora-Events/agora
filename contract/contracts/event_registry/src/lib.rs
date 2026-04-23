@@ -1484,12 +1484,14 @@ impl EventRegistry {
     /// * `guest` - Guest wallet address
     /// * `tickets_purchased` - Number of tickets purchased in this transaction
     /// * `amount_spent` - Amount spent in this transaction (in token stroops)
+    /// * `loyalty_multiplier` - Points multiplier from the purchased tier (0 or 1 = 1x, 2 = 2x, etc.)
     pub fn update_loyalty_score(
         env: Env,
         caller: Address,
         guest: Address,
         tickets_purchased: u32,
         amount_spent: i128,
+        loyalty_multiplier: u32,
     ) -> Result<(), EventRegistryError> {
         caller.require_auth();
 
@@ -1519,8 +1521,16 @@ impl EventRegistry {
             last_updated: 0,
         });
 
-        // Award 10 points per ticket purchased
-        let points_earned = (tickets_purchased as u64).saturating_mul(10);
+        // Award 10 points per ticket, scaled by the tier's loyalty_multiplier.
+        // A multiplier of 0 is treated as 1x to avoid zeroing out points.
+        let effective_multiplier = if loyalty_multiplier == 0 {
+            1u64
+        } else {
+            loyalty_multiplier as u64
+        };
+        let points_earned = (tickets_purchased as u64)
+            .saturating_mul(10)
+            .saturating_mul(effective_multiplier);
         profile.loyalty_score = profile.loyalty_score.saturating_add(points_earned);
         profile.total_tickets_purchased = profile
             .total_tickets_purchased
