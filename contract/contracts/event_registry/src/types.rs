@@ -143,6 +143,10 @@ pub struct EventInfo {
     /// Private events do not appear in managed event counts, active event counts,
     /// or global tickets sold totals.
     pub is_private: bool,
+    /// Unix timestamp when the event ends (0 = not set)
+    pub end_time: u64,
+    /// Optional IPFS CID for post-event feedback (only settable after end_time)
+    pub feedback_cid: Option<String>,
 }
 
 /// Payment information for an event
@@ -186,6 +190,8 @@ pub struct EventRegistrationArgs {
     pub tags: Option<Vec<String>>,
     /// Whether the event is private and should be excluded from global public counters.
     pub is_private: bool,
+    /// Unix timestamp when the event ends (0 = not set)
+    pub end_time: u64,
 }
 
 /// Audit log entry for blacklist actions

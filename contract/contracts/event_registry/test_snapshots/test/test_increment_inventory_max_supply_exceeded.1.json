@@ -45,6 +45,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "end_time"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
@@ -389,11 +397,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "end_time"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
                         "string": "limited_event"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "feedback_cid"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {

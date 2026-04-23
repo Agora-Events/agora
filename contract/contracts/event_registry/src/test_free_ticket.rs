@@ -85,6 +85,7 @@ fn register_free_event(
         banner_cid: None,
         tags: None,
         is_private: false,
+        end_time: 0,
     });
     id
 }

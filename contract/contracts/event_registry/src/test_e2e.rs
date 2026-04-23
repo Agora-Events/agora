@@ -50,6 +50,7 @@ fn make_event_args(
         banner_cid: None,
         tags: None,
         is_private: false,
+        end_time: 0,
     }
 }
 

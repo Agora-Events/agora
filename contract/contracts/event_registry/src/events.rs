@@ -55,6 +55,8 @@ pub enum AgoraEvent {
     /// A custom fee override has been set for a specific event by an admin.
     CustomFeeSet,
     AdminUpdated,
+    /// Post-event feedback CID has been set by the organizer after event end_time.
+    FeedbackCidSet,
 }
 
 /// Emitted when an event is permanently cancelled.
@@ -502,5 +504,21 @@ pub struct CustomFeeSetEvent {
 pub struct AdminUpdatedEvent {
     pub old_admin: Address,
     pub new_admin: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a post-event feedback CID is set by the organizer after end_time.
+///
+/// Published with topic `(AgoraEvent::FeedbackCidSet,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeedbackCidSetEvent {
+    /// The unique identifier of the event.
+    pub event_id: String,
+    /// The IPFS CID pointing to the post-event feedback content.
+    pub feedback_cid: String,
+    /// The organizer address that set the feedback CID.
+    pub updated_by: Address,
+    /// The ledger timestamp when the feedback CID was set.
     pub timestamp: u64,
 }
