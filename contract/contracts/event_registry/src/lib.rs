@@ -399,6 +399,7 @@ impl EventRegistry {
             custom_fee_bps: None,
             banner_cid: args.banner_cid,
             tags: args.tags,
+            start_time: args.start_time,
             end_time: args.end_time,
             feedback_cid: None,
         };

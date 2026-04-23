@@ -142,6 +142,8 @@ pub struct EventInfo {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Unix timestamp when the event starts (0 = not set)
+    pub start_time: u64,
     /// Unix timestamp when the event ends (0 = not set)
     pub end_time: u64,
     /// Optional IPFS CID for post-event feedback (only settable after end_time)
@@ -187,6 +189,8 @@ pub struct EventRegistrationArgs {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Unix timestamp when the event starts (0 = not set)
+    pub start_time: u64,
     /// Unix timestamp when the event ends (0 = not set)
     pub end_time: u64,
 }
