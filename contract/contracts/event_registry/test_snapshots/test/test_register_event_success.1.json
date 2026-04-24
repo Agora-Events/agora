@@ -124,6 +124,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "start_time"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "tags"
                       },
                       "val": "void"
@@ -478,6 +486,14 @@
                       },
                       "val": {
                         "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "start_time"
+                      },
+                      "val": {
+                        "u64": "0"
                       }
                     },
                     {

@@ -5476,6 +5476,7 @@ fn register_event_with_privacy(
             current_sold: 0,
             is_refundable: false,
             auction_config: soroban_sdk::vec![env],
+            loyalty_multiplier: 1,
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -5494,6 +5495,7 @@ fn register_event_with_privacy(
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
         is_private,
         end_time: 0,
     });
@@ -5804,6 +5806,7 @@ fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
         banner_cid: None,
         tags: None,
         start_time: 0,
+        is_private: false,
         end_time: 0,
     });
 
@@ -5886,6 +5889,7 @@ fn setup_event_with_end_time_no_init(
         banner_cid: None,
         tags: None,
         start_time: 0,
+        is_private: false,
         end_time,
     });
 }
@@ -6069,6 +6073,7 @@ fn test_set_feedback_cid_cancelled_event_fails() {
         banner_cid: None,
         tags: None,
         start_time: 0,
+        is_private: false,
         end_time: 0,
     });
 
