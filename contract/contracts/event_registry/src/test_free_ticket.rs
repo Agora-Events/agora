@@ -88,6 +88,7 @@ fn register_free_event(
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     id
 }

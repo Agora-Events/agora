@@ -402,6 +402,7 @@ impl EventRegistry {
             start_time: args.start_time,
             is_private: args.is_private,
             end_time: args.end_time,
+            transfer_lock_duration: args.transfer_lock_duration,
             feedback_cid: None,
         };
 

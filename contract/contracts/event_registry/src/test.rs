@@ -61,6 +61,7 @@ fn test_register_and_get_series() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
@@ -81,6 +82,7 @@ fn test_register_and_get_series() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     // Register a series
@@ -136,6 +138,7 @@ fn test_issue_and_use_series_pass() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
@@ -315,6 +318,7 @@ fn test_storage_operations() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
         feedback_cid: None,
     };
 
@@ -409,6 +413,7 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
         feedback_cid: None,
     });
 
@@ -458,6 +463,7 @@ fn test_get_active_events_count_tracks_status_changes() {
             start_time: 0,
             is_private: false,
             end_time: 0,
+            transfer_lock_duration: 0,
         });
     }
 
@@ -519,6 +525,7 @@ fn test_organizer_events_list() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
         feedback_cid: None,
     };
 
@@ -553,6 +560,7 @@ fn test_organizer_events_list() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
         feedback_cid: None,
     };
 
@@ -614,6 +622,7 @@ fn test_get_organizer_receipts_returns_archived_receipts() {
             start_time: 0,
             is_private: false,
             end_time: 0,
+            transfer_lock_duration: 0,
             feedback_cid: None,
         };
 
@@ -717,6 +726,7 @@ fn test_register_event_success() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -773,6 +783,7 @@ fn test_register_event_name_trimming() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let stored = client.get_event(&event_id).unwrap();
@@ -841,6 +852,7 @@ fn test_register_event_invalid_target_deadline() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -864,6 +876,7 @@ fn test_register_event_invalid_target_deadline() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -887,6 +900,7 @@ fn test_register_event_invalid_target_deadline() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let stored = client.get_event(&event_id).unwrap();
@@ -926,6 +940,7 @@ fn test_register_event_rejects_contract_as_organizer() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -969,6 +984,7 @@ fn test_register_event_rejects_zero_organizer_address() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -1014,6 +1030,7 @@ fn test_register_event_unlimited_supply() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1061,6 +1078,7 @@ fn test_register_duplicate_event_fails() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -1082,6 +1100,7 @@ fn test_register_duplicate_event_fails() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -1122,6 +1141,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(
         short_result,
@@ -1151,6 +1171,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(
         wrong_prefix_result,
@@ -1180,6 +1201,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(
         oversized_result,
@@ -1227,6 +1249,7 @@ fn test_get_event_payment_info() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -1274,6 +1297,7 @@ fn test_update_event_status() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1320,6 +1344,7 @@ fn test_event_inactive_error() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1367,6 +1392,7 @@ fn test_complete_event_lifecycle() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -1426,6 +1452,7 @@ fn test_update_metadata_success() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let new_metadata_cid = String::from_str(
@@ -1478,6 +1505,7 @@ fn test_update_metadata_invalid_cid() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let wrong_char_cid = String::from_str(
@@ -1577,6 +1605,7 @@ fn test_set_custom_event_fee() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     // Default fee
@@ -1636,6 +1665,7 @@ fn test_set_custom_event_fee_exceeds_max() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     // Try to set custom fee exceeding 10000 bps (100%)
@@ -1710,6 +1740,7 @@ fn test_increment_inventory_success() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1786,6 +1817,7 @@ fn test_increment_inventory_max_supply_exceeded() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1857,6 +1889,7 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     // Fill one slot, then attempt a bulk call that overshoots max_supply in one shot
@@ -1928,6 +1961,7 @@ fn test_increment_inventory_unlimited_supply() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     for _ in 0..10 {
@@ -2017,6 +2051,7 @@ fn test_increment_inventory_inactive_event() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     client.update_event_status(&event_id, &false);
@@ -2081,6 +2116,7 @@ fn test_increment_inventory_persists_across_reads() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     for _ in 0..5 {
@@ -2163,6 +2199,7 @@ fn test_tier_limit_exceeds_max_supply() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(
         result,
@@ -2227,6 +2264,7 @@ fn test_tier_not_found() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -2292,6 +2330,7 @@ fn test_tier_supply_exceeded() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -2374,6 +2413,7 @@ fn test_multiple_tiers_inventory() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -2456,6 +2496,7 @@ fn test_increment_inventory_supply_overflow() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
         feedback_cid: None,
     });
 
@@ -2528,6 +2569,7 @@ fn test_increment_inventory_tier_sold_overflow() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
         feedback_cid: None,
     });
 
@@ -2577,6 +2619,7 @@ fn test_update_event_status_noop_skips_event() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let _ = env.events().all();
@@ -2657,6 +2700,7 @@ fn test_blacklist_prevents_event_registration() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -2705,6 +2749,7 @@ fn test_update_metadata_noop_skips_event() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let _ = env.events().all();
@@ -2792,6 +2837,7 @@ fn test_blacklist_suspends_active_events() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2922,6 +2968,7 @@ fn test_register_event_with_resale_cap() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2969,6 +3016,7 @@ fn test_register_event_resale_cap_zero() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -3016,6 +3064,7 @@ fn test_register_event_resale_cap_none() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -3063,6 +3112,7 @@ fn test_postpone_event_sets_grace_period() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     // Set ledger time and grace period end in the future
@@ -3117,6 +3167,7 @@ fn test_register_event_resale_cap_invalid() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -3160,6 +3211,7 @@ fn test_cancel_event_success() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     client.cancel_event(&event_id);
@@ -3206,6 +3258,7 @@ fn test_archive_event_rejects_active_event() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let result = client.try_archive_event(&event_id);
@@ -3250,6 +3303,7 @@ fn test_cancel_already_cancelled_fails() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     client.cancel_event(&event_id);
@@ -3295,6 +3349,7 @@ fn test_update_status_on_cancelled_event_fails() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     client.cancel_event(&event_id);
@@ -3942,6 +3997,7 @@ fn test_register_event_with_banner_cid() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -3995,6 +4051,7 @@ fn test_goal_met_event_fires_only_once() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -4056,6 +4113,7 @@ fn test_register_event_without_banner_cid() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     // Drain setup events
@@ -4126,6 +4184,7 @@ fn test_series_pass_issued_at_timestamp() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     // Register a series
@@ -4206,6 +4265,7 @@ fn base_args(
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     }
 }
 
@@ -4698,6 +4758,7 @@ fn test_cancelled_status_guard() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     // Cancel event
@@ -4835,6 +4896,7 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     assert_eq!(
@@ -4894,6 +4956,7 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     assert!(result.is_ok());
@@ -4949,6 +5012,7 @@ fn test_register_event_restocking_fee_zero_always_valid() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     assert!(result.is_ok());
@@ -5004,6 +5068,7 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     assert_eq!(
@@ -5091,6 +5156,7 @@ fn test_register_event_tier_limit_overflow() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -5149,6 +5215,7 @@ fn test_register_event_invalid_tier_limit_negative() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
 }
@@ -5205,6 +5272,7 @@ fn test_register_event_milestone_overflow() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -5246,6 +5314,7 @@ fn tags_base_args(env: &Env, event_id: &str, organizer: &Address) -> EventRegist
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     }
 }
 
@@ -5498,6 +5567,7 @@ fn register_event_with_privacy(
         start_time: 0,
         is_private,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 }
 
@@ -5808,6 +5878,7 @@ fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let event = client
@@ -5857,6 +5928,7 @@ fn setup_event_with_end_time(
         start_time: 0,
         is_private: false,
         end_time,
+        transfer_lock_duration: 0,
     });
     (admin, organizer)
 }
@@ -5891,6 +5963,7 @@ fn setup_event_with_end_time_no_init(
         start_time: 0,
         is_private: false,
         end_time,
+        transfer_lock_duration: 0,
     });
 }
 
@@ -6075,6 +6148,7 @@ fn test_set_feedback_cid_cancelled_event_fails() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
     });
 
     let event = client
@@ -6099,4 +6173,64 @@ fn test_set_feedback_cid_cancelled_event_fails() {
         ),
     );
     assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
+}
+
+#[test]
+fn test_transfer_lock_duration_stored() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+    
+    // Create event with 24-hour transfer lock
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 1000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+        },
+    );
+    
+    let event_id = String::from_str(&env, "test_event");
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 86400, // 24 hours in seconds
+    });
+    
+    // Verify the transfer lock duration is stored correctly
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.transfer_lock_duration, 86400);
 }

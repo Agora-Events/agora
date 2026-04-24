@@ -150,6 +150,8 @@ pub struct EventInfo {
     pub is_private: bool,
     /// Unix timestamp when the event ends (0 = not set)
     pub end_time: u64,
+    /// Duration in seconds after purchase during which tickets cannot be transferred (0 = no lock)
+    pub transfer_lock_duration: u64,
     /// Optional IPFS CID for post-event feedback (only settable after end_time)
     pub feedback_cid: Option<String>,
 }
@@ -199,6 +201,8 @@ pub struct EventRegistrationArgs {
     pub is_private: bool,
     /// Unix timestamp when the event ends (0 = not set)
     pub end_time: u64,
+    /// Duration in seconds after purchase during which tickets cannot be transferred (0 = no lock)
+    pub transfer_lock_duration: u64,
 }
 
 /// Audit log entry for blacklist actions
