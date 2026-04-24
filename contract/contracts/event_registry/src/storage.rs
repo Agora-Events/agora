@@ -986,3 +986,30 @@ pub fn subtract_from_global_tickets_sold(env: &Env, quantity: i128) {
         &(current.saturating_sub(quantity)),
     );
 }
+
+/// Returns the number of tickets a user has purchased for a specific event tier.
+pub fn get_user_ticket_count(env: &Env, event_id: &String, tier_id: &String, user: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::UserTicketCount(event_id.clone(), tier_id.clone(), user.clone()))
+        .unwrap_or(0)
+}
+
+/// Sets the number of tickets a user has purchased for a specific event tier.
+pub fn set_user_ticket_count(env: &Env, event_id: &String, tier_id: &String, user: &Address, count: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::UserTicketCount(event_id.clone(), tier_id.clone(), user.clone()), &count);
+}
+
+/// Adds `quantity` to the user's ticket count for a specific event tier.
+pub fn add_to_user_ticket_count(env: &Env, event_id: &String, tier_id: &String, user: &Address, quantity: u32) {
+    let current = get_user_ticket_count(env, event_id, tier_id, user);
+    set_user_ticket_count(env, event_id, tier_id, user, current.saturating_add(quantity));
+}
+
+/// Subtracts `quantity` from the user's ticket count for a specific event tier.
+pub fn subtract_from_user_ticket_count(env: &Env, event_id: &String, tier_id: &String, user: &Address, quantity: u32) {
+    let current = get_user_ticket_count(env, event_id, tier_id, user);
+    set_user_ticket_count(env, event_id, tier_id, user, current.saturating_sub(quantity));
+}

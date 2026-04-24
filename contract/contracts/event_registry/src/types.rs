@@ -67,6 +67,9 @@ pub struct TicketTier {
     /// Loyalty points multiplier for this tier (e.g., 1 = 1x, 2 = 2x).
     /// A value of 0 is treated as 1x. VIP tiers can award more points.
     pub loyalty_multiplier: u32,
+    /// Maximum number of tickets a single user can purchase for this tier
+    /// A value of 0 means unlimited (no per-user limit)
+    pub max_per_user: u32,
 }
 
 /// Represents an early revenue release milestone.
@@ -389,4 +392,6 @@ pub enum DataKey {
     GlobalActiveEventCount,
     /// Global counter of all tickets sold across all events
     GlobalTicketsSold,
+    /// Mapping of (event_id, tier_id, user_address) to ticket count for per-user limits (Persistent)
+    UserTicketCount(String, String, Address),
 }

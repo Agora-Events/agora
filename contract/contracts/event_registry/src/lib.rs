@@ -838,10 +838,12 @@ impl EventRegistry {
     /// * `TierSupplyExceeded` - If the tier's limit has been reached.
     /// * `MaxSupplyExceeded` - If the event's max supply has been reached (when max_supply > 0).
     /// * `SupplyOverflow` - If incrementing would cause an i128 overflow.
+    /// * `PerUserLimitExceeded` - If the user has exceeded the per-user limit for this tier.
     pub fn increment_inventory(
         env: Env,
         event_id: String,
         tier_id: String,
+        user: Address,
         quantity: u32,
     ) -> Result<(), EventRegistryError> {
         let ticket_payment_addr =
@@ -887,8 +889,17 @@ impl EventRegistry {
             return Err(EventRegistryError::TierSupplyExceeded);
         }
 
+        // Check per-user limit
+        if tier.max_per_user > 0 {
+            let current_user_count = storage::get_user_ticket_count(&env, &event_id, &tier_id, &user);
+            let new_user_count = current_user_count.saturating_add(quantity);
+            if new_user_count > tier.max_per_user {
+                return Err(EventRegistryError::PerUserLimitExceeded);
+            }
+        }
+
         tier.current_sold = new_tier_sold;
-        event_info.tiers.set(tier_id, tier);
+        event_info.tiers.set(tier_id.clone(), tier);
 
         event_info.current_supply = event_info
             .current_supply
@@ -915,6 +926,10 @@ impl EventRegistry {
         }
 
         storage::update_event(&env, event_info.clone());
+        
+        // Update user ticket count for per-user limits
+        storage::add_to_user_ticket_count(&env, &event_id, &tier_id, &user, quantity);
+        
         // Private events are excluded from the global tickets sold counter.
         if !event_info.is_private {
             storage::add_to_global_tickets_sold(&env, quantity_i128);
@@ -948,6 +963,7 @@ impl EventRegistry {
         env: Env,
         event_id: String,
         tier_id: String,
+        user: Address,
     ) -> Result<(), EventRegistryError> {
         let ticket_payment_addr =
             storage::get_ticket_payment_contract(&env).ok_or(EventRegistryError::NotInitialized)?;
@@ -971,7 +987,7 @@ impl EventRegistry {
             .checked_sub(1)
             .ok_or(EventRegistryError::SupplyUnderflow)?;
 
-        event_info.tiers.set(tier_id, tier);
+        event_info.tiers.set(tier_id.clone(), tier);
 
         if event_info.current_supply <= 0 {
             return Err(EventRegistryError::SupplyUnderflow);
@@ -984,6 +1000,10 @@ impl EventRegistry {
 
         let new_supply = event_info.current_supply;
         storage::update_event(&env, event_info.clone());
+        
+        // Update user ticket count for per-user limits
+        storage::subtract_from_user_ticket_count(&env, &event_id, &tier_id, &user, 1);
+        
         // Private events are excluded from the global tickets sold counter.
         if !event_info.is_private {
             storage::subtract_from_global_tickets_sold(&env, 1);

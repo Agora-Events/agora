@@ -74,6 +74,8 @@ pub enum EventRegistryError {
     AlreadyApproved = 45,
     /// Event has not ended yet; feedback CID can only be set after end_time
     EventNotEnded = 47,
+    /// User has exceeded the maximum number of tickets allowed for this tier
+    PerUserLimitExceeded = 48,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -222,6 +224,12 @@ impl core::fmt::Display for EventRegistryError {
                 write!(
                     f,
                     "Event has not ended yet; feedback CID can only be set after end_time"
+                )
+            }
+            EventRegistryError::PerUserLimitExceeded => {
+                write!(
+                    f,
+                    "User has exceeded the maximum number of tickets allowed for this tier"
                 )
             }
         }

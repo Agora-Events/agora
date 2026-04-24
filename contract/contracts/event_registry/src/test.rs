@@ -363,6 +363,7 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -375,6 +376,7 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -695,6 +697,7 @@ fn test_register_event_success() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -812,6 +815,7 @@ fn test_register_event_invalid_target_deadline() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1555,6 +1559,7 @@ fn test_set_custom_event_fee() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1688,6 +1693,7 @@ fn test_increment_inventory_success() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1712,7 +1718,7 @@ fn test_increment_inventory_success() {
         end_time: 0,
     });
 
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.current_supply, 1);
@@ -1720,7 +1726,7 @@ fn test_increment_inventory_success() {
     let tier = event_info.tiers.get(tier_id.clone()).unwrap();
     assert_eq!(tier.current_sold, 1);
 
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.current_supply, 2);
@@ -1764,6 +1770,7 @@ fn test_increment_inventory_max_supply_exceeded() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1788,14 +1795,14 @@ fn test_increment_inventory_max_supply_exceeded() {
         end_time: 0,
     });
 
-    client.increment_inventory(&event_id, &tier_id, &1);
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.current_supply, 2);
     assert_eq!(event_info.max_supply, 2);
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::MaxSupplyExceeded)));
 }
 
@@ -1835,6 +1842,7 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1860,9 +1868,9 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
     });
 
     // Fill one slot, then attempt a bulk call that overshoots max_supply in one shot
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &5);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     assert_eq!(result, Err(Ok(EventRegistryError::MaxSupplyExceeded)));
 
     // Supply must remain unchanged after the failed call
@@ -1906,6 +1914,7 @@ fn test_increment_inventory_unlimited_supply() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1931,7 +1940,7 @@ fn test_increment_inventory_unlimited_supply() {
     });
 
     for _ in 0..10 {
-        client.increment_inventory(&event_id, &tier_id, &1);
+        client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     }
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1957,7 +1966,7 @@ fn test_increment_inventory_event_not_found() {
 
     let fake_event_id = String::from_str(&env, "nonexistent");
     let tier_id = String::from_str(&env, "general");
-    let result = client.try_increment_inventory(&fake_event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&fake_event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::EventNotFound)));
 }
 
@@ -1996,6 +2005,7 @@ fn test_increment_inventory_inactive_event() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -2021,7 +2031,7 @@ fn test_increment_inventory_inactive_event() {
 
     client.update_event_status(&event_id, &false);
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::EventInactive)));
 }
 
@@ -2060,6 +2070,7 @@ fn test_increment_inventory_persists_across_reads() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -2084,7 +2095,7 @@ fn test_increment_inventory_persists_across_reads() {
     });
 
     for _ in 0..5 {
-        client.increment_inventory(&event_id, &tier_id, &1);
+        client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     }
 
     let event_info_1 = client.get_event(&event_id).unwrap();
@@ -2129,6 +2140,7 @@ fn test_tier_limit_exceeds_max_supply() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -2141,6 +2153,7 @@ fn test_tier_limit_exceeds_max_supply() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2205,6 +2218,7 @@ fn test_tier_not_found() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2230,7 +2244,7 @@ fn test_tier_not_found() {
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
-    let result = client.try_increment_inventory(&event_id, &wrong_tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &wrong_tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::TierNotFound)));
 }
 
@@ -2270,6 +2284,7 @@ fn test_tier_supply_exceeded() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2294,11 +2309,11 @@ fn test_tier_supply_exceeded() {
         end_time: 0,
     });
 
-    client.increment_inventory(&event_id, &tier_id, &1);
-    client.increment_inventory(&event_id, &tier_id, &1);
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::TierSupplyExceeded)));
 }
 
@@ -2340,6 +2355,7 @@ fn test_multiple_tiers_inventory() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -2352,6 +2368,7 @@ fn test_multiple_tiers_inventory() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2376,9 +2393,9 @@ fn test_multiple_tiers_inventory() {
         end_time: 0,
     });
 
-    client.increment_inventory(&event_id, &general_id, &1);
-    client.increment_inventory(&event_id, &general_id, &1);
-    client.increment_inventory(&event_id, &vip_id, &1);
+    client.increment_inventory(&event_id, &general_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &general_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &vip_id, &Address::generate(&env), &1);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.current_supply, 3);
@@ -2421,6 +2438,7 @@ fn test_increment_inventory_supply_overflow() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2459,7 +2477,7 @@ fn test_increment_inventory_supply_overflow() {
         feedback_cid: None,
     });
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
 
@@ -2494,6 +2512,7 @@ fn test_increment_inventory_tier_sold_overflow() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2531,7 +2550,7 @@ fn test_increment_inventory_tier_sold_overflow() {
         feedback_cid: None,
     });
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
 
@@ -2900,6 +2919,7 @@ fn test_register_event_with_resale_cap() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4034,6 +4054,7 @@ fn test_register_event_without_banner_cid() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4062,13 +4083,13 @@ fn test_register_event_without_banner_cid() {
     let _ = env.events().all();
 
     // Below threshold: only InventoryIncremented, no GoalMet
-    client.increment_inventory(&event_id, &tier_id, &5);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     let events = env.events().all();
     assert_eq!(events.len(), 1, "expected only InventoryIncremented event");
     assert!(!client.get_event(&event_id).unwrap().goal_met);
 
     // Cross the threshold (5 + 5 = 10 >= 10): GoalMet + InventoryIncremented
-    client.increment_inventory(&event_id, &tier_id, &5);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     let events = env.events().all();
     assert_eq!(
         events.len(),
@@ -4078,7 +4099,7 @@ fn test_register_event_without_banner_cid() {
     assert!(client.get_event(&event_id).unwrap().goal_met);
 
     // Past threshold: only InventoryIncremented, no second GoalMet
-    client.increment_inventory(&event_id, &tier_id, &5);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     let events = env.events().all();
     assert_eq!(
         events.len(),
@@ -4809,6 +4830,7 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4868,6 +4890,7 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4924,6 +4947,7 @@ fn test_register_event_restocking_fee_zero_always_valid() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4979,6 +5003,7 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -5057,6 +5082,7 @@ fn test_register_event_tier_limit_overflow() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -5069,6 +5095,7 @@ fn test_register_event_tier_limit_overflow() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -5127,6 +5154,7 @@ fn test_register_event_invalid_tier_limit_negative() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -5477,6 +5505,7 @@ fn register_event_with_privacy(
             is_refundable: false,
             auction_config: soroban_sdk::vec![env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -5579,6 +5608,7 @@ fn test_public_event_tickets_counted_globally() {
     client.increment_inventory(
         &String::from_str(&env, "pub_evt"),
         &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
         &2u32,
     );
     assert_eq!(client.get_global_tickets_sold(), 2);
@@ -5587,6 +5617,7 @@ fn test_public_event_tickets_counted_globally() {
     client.decrement_inventory(
         &String::from_str(&env, "pub_evt"),
         &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
     );
     assert_eq!(client.get_global_tickets_sold(), 1);
     let _ = ticket_payment; // suppress unused warning
@@ -5605,6 +5636,7 @@ fn test_private_event_tickets_excluded_from_global_counter() {
     client.increment_inventory(
         &String::from_str(&env, "priv_evt"),
         &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
         &5u32,
     );
     // Global counter must remain 0 for private events
@@ -5614,12 +5646,80 @@ fn test_private_event_tickets_excluded_from_global_counter() {
     client.decrement_inventory(
         &String::from_str(&env, "priv_evt"),
         &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
     );
     assert_eq!(client.get_global_tickets_sold(), 0);
     let _ = ticket_payment;
 }
 
 /// is_private flag is stored and retrievable via get_event.
+#[test]
+fn test_max_per_user_limit_enforced() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+    
+    // Create event with per-user limit of 2
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "vip"),
+        TicketTier {
+            name: String::from_str(&env, "VIP"),
+            price: 1000,
+            tier_limit: 10,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 2, // Limit of 2 per user
+        },
+    );
+    
+    let event_id = String::from_str(&env, "test_event");
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"),
+        max_supply: 10,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+    });
+    
+    let vip_tier = String::from_str(&env, "vip");
+    let user1 = Address::generate(&env);
+    
+    // First 2 purchases should succeed
+    client.increment_inventory(&event_id, &vip_tier, &user1, &1);
+    client.increment_inventory(&event_id, &vip_tier, &user1, &1);
+    
+    // 3rd purchase should fail
+    let result = client.try_increment_inventory(&event_id, &vip_tier, &user1, &1);
+    assert_eq!(result, Err(Ok(EventRegistryError::PerUserLimitExceeded)));
+}
+
 #[test]
 fn test_is_private_flag_stored_on_event() {
     let env = Env::default();
@@ -5774,6 +5874,7 @@ fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
             is_refundable: false,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 2,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -5786,6 +5887,7 @@ fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
             is_refundable: false,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -6031,12 +6133,13 @@ fn test_set_feedback_cid_cancelled_event_fails() {
         String::from_str(&env, "vip"),
         crate::types::TicketTier {
             name: String::from_str(&env, "VIP"),
-            price: 5000,
+            price: 1000_0000000i128,
             tier_limit: 50,
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 2,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -6049,6 +6152,7 @@ fn test_set_feedback_cid_cancelled_event_fails() {
             is_refundable: false,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
