@@ -891,7 +891,8 @@ impl EventRegistry {
 
         // Check per-user limit
         if tier.max_per_user > 0 {
-            let current_user_count = storage::get_user_ticket_count(&env, &event_id, &tier_id, &user);
+            let current_user_count =
+                storage::get_user_ticket_count(&env, &event_id, &tier_id, &user);
             let new_user_count = current_user_count.saturating_add(quantity);
             if new_user_count > tier.max_per_user {
                 return Err(EventRegistryError::PerUserLimitExceeded);
@@ -926,10 +927,10 @@ impl EventRegistry {
         }
 
         storage::update_event(&env, event_info.clone());
-        
+
         // Update user ticket count for per-user limits
         storage::add_to_user_ticket_count(&env, &event_id, &tier_id, &user, quantity);
-        
+
         // Private events are excluded from the global tickets sold counter.
         if !event_info.is_private {
             storage::add_to_global_tickets_sold(&env, quantity_i128);
@@ -1000,10 +1001,10 @@ impl EventRegistry {
 
         let new_supply = event_info.current_supply;
         storage::update_event(&env, event_info.clone());
-        
+
         // Update user ticket count for per-user limits
         storage::subtract_from_user_ticket_count(&env, &event_id, &tier_id, &user, 1);
-        
+
         // Private events are excluded from the global tickets sold counter.
         if !event_info.is_private {
             storage::subtract_from_global_tickets_sold(&env, 1);

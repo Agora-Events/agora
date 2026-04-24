@@ -1966,7 +1966,8 @@ fn test_increment_inventory_event_not_found() {
 
     let fake_event_id = String::from_str(&env, "nonexistent");
     let tier_id = String::from_str(&env, "general");
-    let result = client.try_increment_inventory(&fake_event_id, &tier_id, &Address::generate(&env), &1);
+    let result =
+        client.try_increment_inventory(&fake_event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::EventNotFound)));
 }
 
@@ -2244,7 +2245,8 @@ fn test_tier_not_found() {
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
-    let result = client.try_increment_inventory(&event_id, &wrong_tier_id, &Address::generate(&env), &1);
+    let result =
+        client.try_increment_inventory(&event_id, &wrong_tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::TierNotFound)));
 }
 
@@ -5657,19 +5659,19 @@ fn test_private_event_tickets_excluded_from_global_counter() {
 fn test_max_per_user_limit_enforced() {
     let env = Env::default();
     env.mock_all_auths();
-    
+
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let usdc_token = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
-    
+
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
     client.set_ticket_payment_contract(&ticket_payment);
-    
+
     // Create event with per-user limit of 2
     let mut tiers = Map::new(&env);
     tiers.set(
@@ -5685,14 +5687,17 @@ fn test_max_per_user_limit_enforced() {
             max_per_user: 2, // Limit of 2 per user
         },
     );
-    
+
     let event_id = String::from_str(&env, "test_event");
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
         name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: Address::generate(&env),
-        metadata_cid: String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
         max_supply: 10,
         milestone_plan: None,
         tiers,
@@ -5707,14 +5712,14 @@ fn test_max_per_user_limit_enforced() {
         is_private: false,
         end_time: 0,
     });
-    
+
     let vip_tier = String::from_str(&env, "vip");
     let user1 = Address::generate(&env);
-    
+
     // First 2 purchases should succeed
     client.increment_inventory(&event_id, &vip_tier, &user1, &1);
     client.increment_inventory(&event_id, &vip_tier, &user1, &1);
-    
+
     // 3rd purchase should fail
     let result = client.try_increment_inventory(&event_id, &vip_tier, &user1, &1);
     assert_eq!(result, Err(Ok(EventRegistryError::PerUserLimitExceeded)));
