@@ -5760,8 +5760,8 @@ fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
     );
     let (client, _admin, _) = setup_loyalty_env(&env);
 
-    let organizer = Address::generate(&env);
-    let payment_address = Address::generate(&env);
+    let _organizer = Address::generate(&env);
+    let _payment_address = Address::generate(&env);
 
     let mut tiers = Map::new(&env);
     tiers.set(
