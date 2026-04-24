@@ -5894,7 +5894,7 @@ fn test_max_per_user_limit_enforced() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
-            max_per_user: 0, // No per-user limit
+            max_per_user: 2, // Per-user limit of 2
         },
     );
 
