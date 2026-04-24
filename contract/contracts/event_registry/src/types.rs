@@ -155,6 +155,10 @@ pub struct EventInfo {
     pub end_time: u64,
     /// Duration in seconds after purchase during which tickets cannot be transferred (0 = no lock)
     pub transfer_lock_duration: u64,
+    /// List of whitelisted payment tokens for this event (empty = use global whitelist)
+    pub accepted_tokens: Vec<Address>,
+    /// Whether to use the global token whitelist instead of event-specific one
+    pub use_global_whitelist: bool,
     /// Optional IPFS CID for post-event feedback (only settable after end_time)
     pub feedback_cid: Option<String>,
 }
@@ -206,6 +210,10 @@ pub struct EventRegistrationArgs {
     pub end_time: u64,
     /// Duration in seconds after purchase during which tickets cannot be transferred (0 = no lock)
     pub transfer_lock_duration: u64,
+    /// List of whitelisted payment tokens for this event (empty = use global whitelist)
+    pub accepted_tokens: Vec<Address>,
+    /// Whether to use the global token whitelist instead of event-specific one
+    pub use_global_whitelist: bool,
 }
 
 /// Audit log entry for blacklist actions
@@ -390,6 +398,8 @@ pub enum DataKey {
     StakersList,
     /// Mapping of token address to whitelist status (Persistent)
     TokenWhitelist(Address),
+    /// Mapping of (event_id, token_address) to whitelist status for event-specific tokens (Persistent)
+    EventTokenWhitelist(String, Address),
     /// Global counter of all events ever registered on the platform
     GlobalEventCount,
     /// Global counter of currently active events

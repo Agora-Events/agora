@@ -919,6 +919,52 @@ pub fn is_token_whitelisted(env: &Env, token: &Address) -> bool {
         .unwrap_or(false)
 }
 
+// ── Event-Specific Token Whitelist ─────────────────────────────────────────────
+
+/// Adds a token address to the event-specific payment token whitelist.
+pub fn add_event_token_whitelist(env: &Env, event_id: String, token: &Address) {
+    env.storage().persistent().set(
+        &DataKey::EventTokenWhitelist(event_id, token.clone()),
+        &true,
+    );
+}
+
+/// Removes a token address from the event-specific payment token whitelist.
+pub fn remove_event_token_whitelist(env: &Env, event_id: String, token: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventTokenWhitelist(event_id, token.clone()));
+}
+
+/// Returns true if the given token address is whitelisted for payments to a specific event.
+pub fn is_event_token_whitelisted(env: &Env, event_id: String, token: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventTokenWhitelist(event_id, token.clone()))
+        .unwrap_or(false)
+}
+
+/// Returns true if the given token address is accepted for payments to the event,
+/// checking either event-specific whitelist or global whitelist based on event configuration.
+pub fn is_token_accepted_for_event(
+    env: &Env,
+    _event_id: String,
+    token: &Address,
+    use_global_whitelist: bool,
+    accepted_tokens: &Vec<Address>,
+) -> bool {
+    if use_global_whitelist {
+        // Use global whitelist
+        is_token_whitelisted(env, token)
+    } else if accepted_tokens.is_empty() {
+        // No specific tokens configured, fall back to global whitelist
+        is_token_whitelisted(env, token)
+    } else {
+        // Check if token is in event-specific whitelist
+        accepted_tokens.contains(token)
+    }
+}
+
 // ── Global Counters ──────────────────────────────────────────────────────────
 
 /// Returns the total number of events ever registered on the platform.

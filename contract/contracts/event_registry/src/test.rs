@@ -62,6 +62,8 @@ fn test_register_and_get_series() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
@@ -83,6 +85,8 @@ fn test_register_and_get_series() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Register a series
@@ -139,6 +143,8 @@ fn test_issue_and_use_series_pass() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
@@ -319,6 +325,8 @@ fn test_storage_operations() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
         feedback_cid: None,
     };
 
@@ -416,6 +424,8 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
         feedback_cid: None,
     });
 
@@ -466,6 +476,8 @@ fn test_get_active_events_count_tracks_status_changes() {
             is_private: false,
             end_time: 0,
             transfer_lock_duration: 0,
+            accepted_tokens: soroban_sdk::Vec::new(&env),
+            use_global_whitelist: true,
         });
     }
 
@@ -528,6 +540,8 @@ fn test_organizer_events_list() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
         feedback_cid: None,
     };
 
@@ -563,6 +577,8 @@ fn test_organizer_events_list() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
         feedback_cid: None,
     };
 
@@ -625,6 +641,8 @@ fn test_get_organizer_receipts_returns_archived_receipts() {
             is_private: false,
             end_time: 0,
             transfer_lock_duration: 0,
+            accepted_tokens: soroban_sdk::Vec::new(&env),
+            use_global_whitelist: true,
             feedback_cid: None,
         };
 
@@ -730,6 +748,8 @@ fn test_register_event_success() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -787,6 +807,8 @@ fn test_register_event_name_trimming() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let stored = client.get_event(&event_id).unwrap();
@@ -857,6 +879,8 @@ fn test_register_event_invalid_target_deadline() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -881,6 +905,8 @@ fn test_register_event_invalid_target_deadline() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -905,6 +931,8 @@ fn test_register_event_invalid_target_deadline() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let stored = client.get_event(&event_id).unwrap();
@@ -945,6 +973,8 @@ fn test_register_event_rejects_contract_as_organizer() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -989,6 +1019,8 @@ fn test_register_event_rejects_zero_organizer_address() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -1035,6 +1067,8 @@ fn test_register_event_unlimited_supply() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1083,6 +1117,8 @@ fn test_register_duplicate_event_fails() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -1105,6 +1141,8 @@ fn test_register_duplicate_event_fails() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -1146,6 +1184,8 @@ fn test_register_event_invalid_metadata_cid_formats() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(
         short_result,
@@ -1176,6 +1216,8 @@ fn test_register_event_invalid_metadata_cid_formats() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(
         wrong_prefix_result,
@@ -1206,6 +1248,8 @@ fn test_register_event_invalid_metadata_cid_formats() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(
         oversized_result,
@@ -1254,6 +1298,8 @@ fn test_get_event_payment_info() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -1302,6 +1348,8 @@ fn test_update_event_status() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1349,6 +1397,8 @@ fn test_event_inactive_error() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1397,6 +1447,8 @@ fn test_complete_event_lifecycle() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -1457,6 +1509,8 @@ fn test_update_metadata_success() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let new_metadata_cid = String::from_str(
@@ -1510,6 +1564,8 @@ fn test_update_metadata_invalid_cid() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let wrong_char_cid = String::from_str(
@@ -1611,6 +1667,8 @@ fn test_set_custom_event_fee() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Default fee
@@ -1671,6 +1729,8 @@ fn test_set_custom_event_fee_exceeds_max() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Try to set custom fee exceeding 10000 bps (100%)
@@ -1747,6 +1807,8 @@ fn test_increment_inventory_success() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
@@ -1825,6 +1887,8 @@ fn test_increment_inventory_max_supply_exceeded() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
@@ -1898,6 +1962,8 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Fill one slot, then attempt a bulk call that overshoots max_supply in one shot
@@ -1971,6 +2037,8 @@ fn test_increment_inventory_unlimited_supply() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     for _ in 0..10 {
@@ -2063,6 +2131,8 @@ fn test_increment_inventory_inactive_event() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     client.update_event_status(&event_id, &false);
@@ -2129,6 +2199,8 @@ fn test_increment_inventory_persists_across_reads() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     for _ in 0..5 {
@@ -2214,6 +2286,8 @@ fn test_tier_limit_exceeds_max_supply() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(
         result,
@@ -2280,6 +2354,8 @@ fn test_tier_not_found() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -2348,6 +2424,8 @@ fn test_tier_supply_exceeded() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
@@ -2433,6 +2511,8 @@ fn test_multiple_tiers_inventory() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     client.increment_inventory(&event_id, &general_id, &Address::generate(&env), &1);
@@ -2517,6 +2597,8 @@ fn test_increment_inventory_supply_overflow() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
         feedback_cid: None,
     });
 
@@ -2591,6 +2673,8 @@ fn test_increment_inventory_tier_sold_overflow() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
         feedback_cid: None,
     });
 
@@ -2641,6 +2725,8 @@ fn test_update_event_status_noop_skips_event() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let _ = env.events().all();
@@ -2722,6 +2808,8 @@ fn test_blacklist_prevents_event_registration() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -2771,6 +2859,8 @@ fn test_update_metadata_noop_skips_event() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let _ = env.events().all();
@@ -2859,6 +2949,8 @@ fn test_blacklist_suspends_active_events() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2991,6 +3083,8 @@ fn test_register_event_with_resale_cap() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -3039,6 +3133,8 @@ fn test_register_event_resale_cap_zero() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -3087,6 +3183,8 @@ fn test_register_event_resale_cap_none() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -3135,6 +3233,8 @@ fn test_postpone_event_sets_grace_period() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Set ledger time and grace period end in the future
@@ -3190,6 +3290,8 @@ fn test_register_event_resale_cap_invalid() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -3234,6 +3336,8 @@ fn test_cancel_event_success() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     client.cancel_event(&event_id);
@@ -3281,6 +3385,8 @@ fn test_archive_event_rejects_active_event() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let result = client.try_archive_event(&event_id);
@@ -3326,6 +3432,8 @@ fn test_cancel_already_cancelled_fails() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     client.cancel_event(&event_id);
@@ -3372,6 +3480,8 @@ fn test_update_status_on_cancelled_event_fails() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     client.cancel_event(&event_id);
@@ -4020,6 +4130,8 @@ fn test_register_event_with_banner_cid() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -4074,6 +4186,8 @@ fn test_goal_met_event_fires_only_once() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -4137,6 +4251,8 @@ fn test_register_event_without_banner_cid() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Drain setup events
@@ -4208,6 +4324,8 @@ fn test_series_pass_issued_at_timestamp() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Register a series
@@ -4289,6 +4407,8 @@ fn base_args(
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
     }
 }
 
@@ -4782,6 +4902,8 @@ fn test_cancelled_status_guard() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Cancel event
@@ -4921,6 +5043,8 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(
@@ -4982,6 +5106,8 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert!(result.is_ok());
@@ -5039,6 +5165,8 @@ fn test_register_event_restocking_fee_zero_always_valid() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert!(result.is_ok());
@@ -5096,6 +5224,8 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(
@@ -5186,6 +5316,8 @@ fn test_register_event_tier_limit_overflow() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -5246,6 +5378,8 @@ fn test_register_event_invalid_tier_limit_negative() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
 }
@@ -5303,6 +5437,8 @@ fn test_register_event_milestone_overflow() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -5345,6 +5481,8 @@ fn tags_base_args(env: &Env, event_id: &str, organizer: &Address) -> EventRegist
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
     }
 }
 
@@ -5599,6 +5737,8 @@ fn register_event_with_privacy(
         is_private,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
     });
 }
 
@@ -5754,7 +5894,7 @@ fn test_max_per_user_limit_enforced() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
-            max_per_user: 2, // Limit of 2 per user
+            max_per_user: 0, // No per-user limit
         },
     );
 
@@ -5781,6 +5921,9 @@ fn test_max_per_user_limit_enforced() {
         start_time: 0,
         is_private: false,
         end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let vip_tier = String::from_str(&env, "vip");
@@ -5986,6 +6129,8 @@ fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event = client
@@ -6036,6 +6181,8 @@ fn setup_event_with_end_time(
         is_private: false,
         end_time,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
     });
     (admin, organizer)
 }
@@ -6071,6 +6218,8 @@ fn setup_event_with_end_time_no_init(
         is_private: false,
         end_time,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
     });
 }
 
@@ -6258,6 +6407,8 @@ fn test_set_feedback_cid_cancelled_event_fails() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event = client
@@ -6313,6 +6464,7 @@ fn test_transfer_lock_duration_stored() {
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
             loyalty_multiplier: 1,
+            max_per_user: 0, // No per-user limit
         },
     );
 
@@ -6340,6 +6492,8 @@ fn test_transfer_lock_duration_stored() {
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 86400, // 24 hours in seconds
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Verify the transfer lock duration is stored correctly

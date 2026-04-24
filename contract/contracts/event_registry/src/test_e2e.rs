@@ -53,6 +53,8 @@ fn make_event_args(
         is_private: false,
         end_time: 0,
         transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
     }
 }
 

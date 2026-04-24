@@ -93,6 +93,7 @@ use crate::events::{
     InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent,
     OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
     ScannerAuthorizedEvent, StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
+    TokenWhitelistUpdatedEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
@@ -122,6 +123,11 @@ impl EventRegistry {
     /// Returns the current version of the contract for off-chain services.
     pub fn get_version(_env: Env) -> u32 {
         VERSION
+    }
+
+    /// Returns all active proposals.
+    pub fn get_active_proposals(env: Env) -> Vec<u64> {
+        storage::get_active_proposals(&env)
     }
 
     /// Register a new series grouping multiple events
@@ -403,6 +409,8 @@ impl EventRegistry {
             is_private: args.is_private,
             end_time: args.end_time,
             transfer_lock_duration: args.transfer_lock_duration,
+            accepted_tokens: args.accepted_tokens,
+            use_global_whitelist: args.use_global_whitelist,
             feedback_cid: None,
         };
 
@@ -2002,12 +2010,89 @@ impl EventRegistry {
         storage::get_proposal(&env, proposal_id)
     }
 
-    /// Gets all active proposal IDs
-    pub fn get_active_proposals(env: Env) -> Vec<u64> {
-        storage::get_active_proposals(&env)
+    /// Adds a token to the event-specific whitelist. Only callable by the event organizer.
+    pub fn add_event_token_whitelist(
+        env: Env,
+        event_id: String,
+        token: Address,
+    ) -> Result<(), EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Verify caller is the event organizer
+        event_info.organizer_address.require_auth();
+
+        // Validate token address
+        validate_address(&env, &token)?;
+
+        storage::add_event_token_whitelist(&env, event_id.clone(), &token);
+
+        // Emit token added to whitelist event
+        env.events().publish(
+            (AgoraEvent::TokenWhitelistUpdated,),
+            TokenWhitelistUpdatedEvent {
+                event_id,
+                token,
+                added: true,
+                organizer_address: event_info.organizer_address,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
-    /// Returns the contract version.
+    /// Removes a token from the event-specific whitelist. Only callable by the event organizer.
+    pub fn remove_event_token_whitelist(
+        env: Env,
+        event_id: String,
+        token: Address,
+    ) -> Result<(), EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Verify caller is the event organizer
+        event_info.organizer_address.require_auth();
+
+        storage::remove_event_token_whitelist(&env, event_id.clone(), &token);
+
+        // Emit token removed from whitelist event
+        env.events().publish(
+            (AgoraEvent::TokenWhitelistUpdated,),
+            TokenWhitelistUpdatedEvent {
+                event_id,
+                token,
+                added: false,
+                organizer_address: event_info.organizer_address,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Checks if a token is accepted for payments to a specific event.
+    /// Returns true if the token is accepted based on the event's whitelist configuration.
+    pub fn is_token_accepted_for_event(
+        env: Env,
+        event_id: String,
+        token: Address,
+    ) -> Result<bool, EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        let is_accepted = storage::is_token_accepted_for_event(
+            &env,
+            event_id,
+            &token,
+            event_info.use_global_whitelist,
+            &event_info.accepted_tokens,
+        );
+
+        Ok(is_accepted)
+    }
+
+    /// Returns the current contract version.
     pub fn version(_env: Env) -> u32 {
         VERSION
     }

@@ -57,6 +57,8 @@ pub enum AgoraEvent {
     AdminUpdated,
     /// Post-event feedback CID has been set by the organizer after event end_time.
     FeedbackCidSet,
+    /// An event's token whitelist has been updated (token added or removed).
+    TokenWhitelistUpdated,
 }
 
 /// Emitted when an event is permanently cancelled.
@@ -520,5 +522,23 @@ pub struct FeedbackCidSetEvent {
     /// The organizer address that set the feedback CID.
     pub updated_by: Address,
     /// The ledger timestamp when the feedback CID was set.
+    pub timestamp: u64,
+}
+
+/// Emitted when an event's token whitelist is updated (token added or removed).
+///
+/// Published with topic `(AgoraEvent::TokenWhitelistUpdated,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenWhitelistUpdatedEvent {
+    /// The unique identifier of the event.
+    pub event_id: String,
+    /// The token address that was added or removed.
+    pub token: Address,
+    /// Whether the token was added (true) or removed (false).
+    pub added: bool,
+    /// The organizer address that performed the update.
+    pub organizer_address: Address,
+    /// The ledger timestamp when the whitelist was updated.
     pub timestamp: u64,
 }
