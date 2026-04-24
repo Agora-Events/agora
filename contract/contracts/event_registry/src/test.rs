@@ -6179,19 +6179,19 @@ fn test_set_feedback_cid_cancelled_event_fails() {
 fn test_transfer_lock_duration_stored() {
     let env = Env::default();
     env.mock_all_auths();
-    
+
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let usdc_token = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
-    
+
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
     client.set_ticket_payment_contract(&ticket_payment);
-    
+
     // Create event with 24-hour transfer lock
     let mut tiers = Map::new(&env);
     tiers.set(
@@ -6206,14 +6206,17 @@ fn test_transfer_lock_duration_stored() {
             loyalty_multiplier: 1,
         },
     );
-    
+
     let event_id = String::from_str(&env, "test_event");
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
         name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: Address::generate(&env),
-        metadata_cid: String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
         max_supply: 100,
         milestone_plan: None,
         tiers,
@@ -6229,7 +6232,7 @@ fn test_transfer_lock_duration_stored() {
         end_time: 0,
         transfer_lock_duration: 86400, // 24 hours in seconds
     });
-    
+
     // Verify the transfer lock duration is stored correctly
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.transfer_lock_duration, 86400);
