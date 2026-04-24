@@ -61,6 +61,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_private"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "max_supply"
                       },
                       "val": {
@@ -179,6 +187,14 @@
                                   },
                                   "val": {
                                     "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "loyalty_multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 1
                                   }
                                 },
                                 {
@@ -414,6 +430,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_private"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "max_supply"
                       },
                       "val": {
@@ -556,6 +580,14 @@
                                   },
                                   "val": {
                                     "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "loyalty_multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 1
                                   }
                                 },
                                 {

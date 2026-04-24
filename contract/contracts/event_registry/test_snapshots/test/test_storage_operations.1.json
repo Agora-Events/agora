@@ -102,6 +102,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_private"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "max_supply"
                       },
                       "val": {
@@ -395,6 +403,14 @@
                     {
                       "key": {
                         "symbol": "is_postponed"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "is_private"
                       },
                       "val": {
                         "bool": false

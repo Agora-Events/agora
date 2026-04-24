@@ -400,6 +400,7 @@ impl EventRegistry {
             banner_cid: args.banner_cid,
             tags: args.tags,
             start_time: args.start_time,
+            is_private: args.is_private,
             end_time: args.end_time,
             feedback_cid: None,
         };
@@ -722,6 +723,11 @@ impl EventRegistry {
         storage::get_platform_fee(&env)
     }
 
+    /// Returns the current minimum stake amount required for Verified organizer status.
+    pub fn get_min_stake_amount(env: Env) -> i128 {
+        storage::get_min_stake_amount(&env)
+    }
+
     /// Sets a custom fee for a specific event. Only callable by the administrator.
     pub fn set_custom_event_fee(
         env: Env,
@@ -908,8 +914,11 @@ impl EventRegistry {
             );
         }
 
-        storage::update_event(&env, event_info);
-        storage::add_to_global_tickets_sold(&env, quantity_i128);
+        storage::update_event(&env, event_info.clone());
+        // Private events are excluded from the global tickets sold counter.
+        if !event_info.is_private {
+            storage::add_to_global_tickets_sold(&env, quantity_i128);
+        }
 
         env.events().publish(
             (AgoraEvent::InventoryIncremented,),
@@ -974,8 +983,11 @@ impl EventRegistry {
             .ok_or(EventRegistryError::SupplyUnderflow)?;
 
         let new_supply = event_info.current_supply;
-        storage::update_event(&env, event_info);
-        storage::subtract_from_global_tickets_sold(&env, 1);
+        storage::update_event(&env, event_info.clone());
+        // Private events are excluded from the global tickets sold counter.
+        if !event_info.is_private {
+            storage::subtract_from_global_tickets_sold(&env, 1);
+        }
 
         env.events().publish(
             (crate::events::AgoraEvent::InventoryDecremented,),
@@ -1698,6 +1710,16 @@ impl EventRegistry {
             types::ParameterChange::UpdatePlatformWallet(addr) => {
                 validate_address(&env, addr)?;
             }
+            types::ParameterChange::SetPlatformFee(fee) => {
+                if *fee > 10000 {
+                    return Err(EventRegistryError::InvalidFeePercent);
+                }
+            }
+            types::ParameterChange::SetMinStakeAmount(amount) => {
+                if *amount <= 0 {
+                    return Err(EventRegistryError::InvalidStakeAmount);
+                }
+            }
         }
 
         // Create proposal
@@ -1786,6 +1808,36 @@ impl EventRegistry {
             env,
             proposer,
             types::ParameterChange::UpdatePlatformWallet(new_wallet),
+            expiry_ledgers,
+        )
+    }
+
+    /// Convenience function to propose updating the platform fee
+    pub fn propose_set_platform_fee(
+        env: Env,
+        proposer: Address,
+        new_fee_percent: u32,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::SetPlatformFee(new_fee_percent),
+            expiry_ledgers,
+        )
+    }
+
+    /// Convenience function to propose updating the minimum stake amount
+    pub fn propose_set_min_stake_amount(
+        env: Env,
+        proposer: Address,
+        new_min_amount: i128,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::SetMinStakeAmount(new_min_amount),
             expiry_ledgers,
         )
     }
@@ -1900,6 +1952,18 @@ impl EventRegistry {
             }
             types::ParameterChange::UpdatePlatformWallet(new_wallet) => {
                 storage::set_platform_wallet(&env, new_wallet);
+            }
+            types::ParameterChange::SetPlatformFee(new_fee) => {
+                storage::set_platform_fee(&env, *new_fee);
+                env.events().publish(
+                    (AgoraEvent::FeeUpdated,),
+                    FeeUpdatedEvent {
+                        new_fee_percent: *new_fee,
+                    },
+                );
+            }
+            types::ParameterChange::SetMinStakeAmount(new_amount) => {
+                storage::set_min_stake_amount(&env, *new_amount);
             }
         }
 

@@ -61,6 +61,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_private"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "max_supply"
                       },
                       "val": {
@@ -183,6 +191,14 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "loyalty_multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 1
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "name"
                                   },
                                   "val": {
@@ -236,6 +252,14 @@
                                   },
                                   "val": {
                                     "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "loyalty_multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 1
                                   }
                                 },
                                 {
@@ -524,6 +548,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_private"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "max_supply"
                       },
                       "val": {
@@ -670,6 +702,14 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "loyalty_multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 1
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "name"
                                   },
                                   "val": {
@@ -723,6 +763,14 @@
                                   },
                                   "val": {
                                     "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "loyalty_multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 1
                                   }
                                 },
                                 {

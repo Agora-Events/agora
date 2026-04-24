@@ -144,6 +144,10 @@ pub struct EventInfo {
     pub tags: Option<Vec<String>>,
     /// Unix timestamp when the event starts (0 = not set)
     pub start_time: u64,
+    /// Whether the event is private and should be excluded from global public counters.
+    /// Private events do not appear in managed event counts, active event counts,
+    /// or global tickets sold totals.
+    pub is_private: bool,
     /// Unix timestamp when the event ends (0 = not set)
     pub end_time: u64,
     /// Optional IPFS CID for post-event feedback (only settable after end_time)
@@ -191,6 +195,8 @@ pub struct EventRegistrationArgs {
     pub tags: Option<Vec<String>>,
     /// Unix timestamp when the event starts (0 = not set)
     pub start_time: u64,
+    /// Whether the event is private and should be excluded from global public counters.
+    pub is_private: bool,
     /// Unix timestamp when the event ends (0 = not set)
     pub end_time: u64,
 }
@@ -299,6 +305,10 @@ pub enum ParameterChange {
     SetThreshold(u32),
     /// Update the platform wallet address
     UpdatePlatformWallet(Address),
+    /// Update the global platform fee in basis points (0–10000)
+    SetPlatformFee(u32),
+    /// Update the minimum stake amount required for Verified organizer status
+    SetMinStakeAmount(i128),
 }
 
 /// Storage keys for the Event Registry contract.

@@ -162,11 +162,26 @@ pub fn increment_series_pass_usage(env: &Env, pass_id: String) -> Option<SeriesP
 const SHARD_SIZE: u32 = 50;
 
 fn sync_active_event_count(env: &Env, existing: Option<&EventInfo>, updated: &EventInfo) {
+    // Private events are excluded from the global active event counter.
+    if updated.is_private {
+        // If the event was previously public and is now private, undo any active count.
+        if let Some(prev) = existing {
+            if !prev.is_private && prev.is_active {
+                decrement_global_active_event_count(env);
+            }
+        }
+        return;
+    }
+
     match existing {
         Some(previous) if previous.is_active && !updated.is_active => {
             decrement_global_active_event_count(env);
         }
         Some(previous) if !previous.is_active && updated.is_active => {
+            increment_global_active_event_count(env);
+        }
+        // Transitioning from private to public: treat as a fresh active event if active.
+        Some(previous) if previous.is_private && updated.is_active => {
             increment_global_active_event_count(env);
         }
         None if updated.is_active => {
@@ -417,8 +432,10 @@ pub fn store_event(env: &Env, event_info: EventInfo) {
             .persistent()
             .set(&DataKey::OrganizerEvent(organizer, event_id), &true);
 
-        // Increment global event counter
-        increment_global_event_count(env);
+        // Increment global event counter only for public events.
+        if !event_info.is_private {
+            increment_global_event_count(env);
+        }
     }
 }
 
@@ -445,7 +462,7 @@ pub fn remove_event(env: &Env, event_id: String) {
     if let Some(event_info) = get_event(env, event_id.clone()) {
         let organizer = event_info.organizer_address;
 
-        if event_info.is_active {
+        if event_info.is_active && !event_info.is_private {
             decrement_global_active_event_count(env);
         }
 
