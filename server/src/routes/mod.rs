@@ -19,7 +19,7 @@
 //! 3. Security headers
 //! 4. Database connection state
 
-use axum::{ routing::get, Router };
+use axum::{ middleware, routing::get, Router };
 use sqlx::PgPool;
 
 use crate::config::{
@@ -33,7 +33,9 @@ use crate::handlers::{
     example_not_found,
     example_validation_error,
     health::{ health_check, health_check_db, health_check_ready },
+    ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
+use crate::middleware::audit::audit_layer;
 
 /// Creates the main application router with all routes and middleware
 ///
@@ -43,6 +45,20 @@ use crate::handlers::{
 /// # Returns
 /// A configured Axum Router with all routes and middleware applied
 pub fn create_routes(pool: PgPool) -> Router {
+    let broadcaster = PurchaseBroadcaster::new();
+
+    // Admin sub-router — every request is recorded in audit_logs.
+    let admin_routes = Router::new()
+        // Placeholder: real admin handlers are mounted here as features land.
+        .route("/health", get(health_check))
+        .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(pool.clone());
+
+    // WebSocket sub-router for real-time purchase updates.
+    let ws_routes = Router::new()
+        .route("/purchases", get(ws_purchases_handler))
+        .with_state(broadcaster);
+
     let api_routes = Router::new()
         .route("/health", get(health_check))
         .route("/health/db", get(health_check_db))
@@ -50,6 +66,8 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
+        .nest("/admin", admin_routes)
+        .nest("/ws", ws_routes)
         .with_state(pool);
 
     Router::new()

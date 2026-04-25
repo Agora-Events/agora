@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Web framework
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 
 # Async runtime
 tokio = { version = "1.37", features = ["full"] }
@@ -32,6 +32,13 @@ rust_decimal = { version = "1.33", features = ["db-postgres"] }
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async trait support for notification providers
+async-trait = "0.1"
+
+# HTTP body buffering for audit middleware
+bytes = "1.0"
+http-body-util = "0.1"
 
 # Testing
 [dev-dependencies]

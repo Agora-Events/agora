@@ -1,4 +1,5 @@
 pub mod health;
+pub mod ws;
 
 use axum::{extract::Path, response::IntoResponse, response::Response};
 
