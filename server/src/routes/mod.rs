@@ -32,7 +32,7 @@ use crate::handlers::{
     example_empty_success,
     example_not_found,
     example_validation_error,
-    health::{ health_check, health_check_db, health_check_ready },
+    health::{ health_check, health_check_blockchain, health_check_db, health_check_ready },
 };
 
 /// Creates the main application router with all routes and middleware
@@ -45,6 +45,7 @@ use crate::handlers::{
 pub fn create_routes(pool: PgPool) -> Router {
     let api_routes = Router::new()
         .route("/health", get(health_check))
+        .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
         .route("/examples/validation-error", get(example_validation_error))
@@ -70,6 +71,10 @@ mod tests {
         Router::new()
             .route(
                 "/api/v1/health",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/health/blockchain",
                 get(|| async { "ok" })
             )
             .route(
@@ -112,6 +117,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_health_blockchain_route_exists_under_api_v1() {
+        let router = test_router();
+        assert_ne!(
+            get_status(router, "/api/v1/health/blockchain").await,
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
     async fn test_health_ready_route_exists_under_api_v1() {
         let router = test_router();
         assert_ne!(get_status(router, "/api/v1/health/ready").await, StatusCode::NOT_FOUND);
@@ -148,6 +162,7 @@ mod tests {
     async fn test_old_routes_without_prefix_return_404() {
         let router = test_router();
         assert_eq!(get_status(router.clone(), "/health").await, StatusCode::NOT_FOUND);
+        assert_eq!(get_status(router.clone(), "/health/blockchain").await, StatusCode::NOT_FOUND);
         assert_eq!(get_status(router.clone(), "/health/db").await, StatusCode::NOT_FOUND);
         assert_eq!(get_status(router, "/health/ready").await, StatusCode::NOT_FOUND);
     }

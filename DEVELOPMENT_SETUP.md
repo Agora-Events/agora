@@ -198,6 +198,7 @@ Once the backend is running, confirm the system is healthy with these endpoints:
 
 ```bash
 curl http://localhost:3001/api/v1/health
+curl http://localhost:3001/api/v1/health/blockchain
 curl http://localhost:3001/api/v1/health/db
 curl http://localhost:3001/api/v1/health/ready
 ```
@@ -205,6 +206,7 @@ curl http://localhost:3001/api/v1/health/ready
 What to expect:
 
 - `/api/v1/health`: API process is up
+- `/api/v1/health/blockchain`: Soroban RPC endpoint is reachable
 - `/api/v1/health/db`: database connection is working
 - `/api/v1/health/ready`: service is ready to serve requests
 
