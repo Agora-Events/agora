@@ -19,7 +19,7 @@
 //! 3. Security headers
 //! 4. Database connection state
 
-use axum::{ middleware, routing::get, Router };
+use axum::{ middleware, routing::{get, post}, Router };
 use sqlx::PgPool;
 
 use crate::config::{
@@ -29,10 +29,13 @@ use crate::config::{
     set_request_id_layer,
 };
 use crate::handlers::{
+    categories::{get_category, list_categories},
+    events::{get_event, list_events},
     example_empty_success,
     example_not_found,
     example_validation_error,
-    health::{ health_check, health_check_db, health_check_ready },
+    health::{ health_check, health_check_blockchain, health_check_db, health_check_ready },
+    qr_payload::{generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
 use crate::middleware::audit::audit_layer;
@@ -59,6 +62,26 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/purchases", get(ws_purchases_handler))
         .with_state(broadcaster);
 
+    // QR payload routes for cryptographically signed QR codes
+    let qr_routes = Router::new()
+        .route("/generate", post(generate_qr_payload))
+        .route("/verify", post(verify_qr_payload))
+        .route("/mark-used/:id", post(mark_qr_used))
+        .route("/list", get(list_qr_payloads))
+        .with_state(pool.clone());
+
+    // Event routes
+    let event_routes = Router::new()
+        .route("/", get(list_events))
+        .route("/:id", get(get_event))
+        .with_state(pool.clone());
+
+    // Category routes
+    let category_routes = Router::new()
+        .route("/", get(list_categories))
+        .route("/:id", get(get_category))
+        .with_state(pool.clone());
+
     let api_routes = Router::new()
         .route("/health", get(health_check))
         .route("/health/blockchain", get(health_check_blockchain))
@@ -69,6 +92,9 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/examples/not-found/:id", get(example_not_found))
         .nest("/admin", admin_routes)
         .nest("/ws", ws_routes)
+        .nest("/qr", qr_routes)
+        .nest("/events", event_routes)
+        .nest("/categories", category_routes)
         .with_state(pool);
 
     Router::new()
