@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 function validateEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -12,8 +13,9 @@ export default function AuthPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
     if (!email) {
@@ -29,9 +31,24 @@ export default function AuthPage() {
     setError("");
     setIsLoading(true);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/auth/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Authentication failed');
+      }
+
+      router.push('/home');
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong');
+    } finally {
       setIsLoading(false);
-    }, 1200);
+    }
   };
 
   return (
@@ -142,6 +159,7 @@ export default function AuthPage() {
           {/* Google Button */}
           <button
             type="button"
+            onClick={() => window.location.href = '/api/auth/google'}
             className="
               w-full
               bg-black
@@ -168,6 +186,7 @@ export default function AuthPage() {
           {/* Apple Button */}
           <button
             type="button"
+            onClick={() => window.location.href = '/api/auth/apple'}
             className="
               w-full
               bg-black

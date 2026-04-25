@@ -40,6 +40,7 @@ These variables are read from `.env` at startup:
 | `RUST_ENV` | No | `development` | Enables production-specific behavior such as HSTS when set to `production` |
 | `RUST_LOG` | No | `info` | Log level for `tracing` output |
 | `CORS_ALLOWED_ORIGINS` | No | `http://localhost:3000,http://localhost:5173` | Comma-separated allowlist for browser clients |
+| `SOROBAN_RPC_URL` | No | `https://soroban-testnet.stellar.org` | Soroban RPC endpoint used by blockchain connectivity health checks |
 
 Example values are already provided in [`server/.env.example`](/c:/Users/User/Desktop/agora/server/.env.example).
 
@@ -101,6 +102,12 @@ Try the health endpoint:
 
 ```bash
 curl http://localhost:3001/api/v1/health
+```
+
+Try the blockchain health endpoint:
+
+```bash
+curl http://localhost:3001/api/v1/health/blockchain
 ```
 
 ## Architecture Overview
@@ -172,6 +179,7 @@ bash ./test_health_endpoints.sh
 If you are using Git Bash on Windows, run the same command there. The script checks:
 
 - `GET /api/v1/health`
+- `GET /api/v1/health/blockchain`
 - `GET /api/v1/health/db`
 - `GET /api/v1/health/ready`
 

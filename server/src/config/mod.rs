@@ -18,6 +18,7 @@
 //! - `RUST_ENV` (optional, default: development) - Environment mode
 //! - `CORS_ALLOWED_ORIGINS` (optional, default: localhost URLs) - CORS origins
 //! - `RUST_LOG` (optional, default: info) - Logging level
+//! - `SOROBAN_RPC_URL` (optional, default: Stellar testnet RPC) - Blockchain health probe URL
 
 use std::env;
 
@@ -48,6 +49,9 @@ pub struct Config {
 
     /// Logging configuration (RUST_LOG).
     pub rust_log: String,
+
+    /// Soroban RPC URL for blockchain connectivity checks.
+    pub soroban_rpc_url: String,
 }
 
 impl Config {
@@ -77,6 +81,8 @@ impl Config {
             .unwrap_or_else(|_| "http://localhost:3000,http://localhost:5173".to_string());
 
         let rust_log = env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
+        let soroban_rpc_url =
+            env::var("SOROBAN_RPC_URL").unwrap_or_else(|_| "https://soroban-testnet.stellar.org".to_string());
 
         Ok(Self {
             database_url,
@@ -84,6 +90,7 @@ impl Config {
             rust_env,
             cors_allowed_origins,
             rust_log,
+            soroban_rpc_url,
         })
     }
 

@@ -136,6 +136,35 @@ Database connectivity check.
 }
 ```
 
+#### GET /health/blockchain
+
+Soroban RPC connectivity check.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "status": "ok",
+    "blockchain": "soroban",
+    "soroban_rpc": "https://soroban-testnet.stellar.org",
+    "timestamp": "2024-01-15T10:30:00Z"
+  },
+  "message": "Soroban RPC is reachable"
+}
+```
+
+**Error Response (503):**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "EXTERNAL_SERVICE_ERROR",
+    "message": "Soroban RPC health check failed"
+  }
+}
+```
+
 #### GET /health/ready
 
 Readiness check for both API and Database.
