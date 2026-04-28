@@ -96,9 +96,8 @@ use crate::events::{
     StakerRewardsDistributedEvent, TokenWhitelistUpdatedEvent,
 };
 use crate::types::{
-    AuctionConfig, BlacklistAuditEntry, DataKey, EventInfo, EventReceipt, EventRegistrationArgs,
-    EventStatus, GuestProfile, Milestone, MultiSigConfig, OrganizerStake, ParameterChange,
-    PaymentInfo, Proposal, SeriesPass, SeriesRegistry, TicketTier,
+    BlacklistAuditEntry, DataKey, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus,
+    GuestProfile, MultiSigConfig, OrganizerStake, PaymentInfo, SeriesPass, SeriesRegistry,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
@@ -2108,7 +2107,7 @@ impl EventRegistry {
                 let mut new_config = config.clone();
                 new_config.admins.push_back(new_admin.clone());
                 storage::set_multisig_config(&env, &new_config);
-                storage::set_admin(&env, &new_admin); // Update legacy admin storage
+                storage::set_admin(&env, new_admin); // Update legacy admin storage
             }
             types::ParameterChange::RemoveAdmin(admin_to_remove) => {
                 let mut new_config = config.clone();
