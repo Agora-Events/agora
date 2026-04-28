@@ -1,16 +1,7 @@
 use soroban_sdk::{contracttype, Address, BytesN, String};
 
-/// A ticket listed on the secondary marketplace.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SecondaryListing {
-    /// The payment_id of the ticket being sold.
-    pub payment_id: String,
-    /// The seller (current ticket owner).
-    pub seller: Address,
-    /// Asking price in stroops (must be ≤ original purchase price).
-    pub price: i128,
-}
+pub const TRANSFER_FEE_BPS: u32 = 100;
+pub const MAX_BPS: u32 = 10000;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,9 +18,9 @@ pub enum ParameterChange {
     RemoveGovernor(Address),
     AddTokenToWhitelist(Address),
     RemoveTokenFromWhitelist(Address),
-    UpdateWithdrawalCap(Address, i128),
+    UpdateWithdrawalCap(Address, i128), // This is still i128 amount
     UpdateSlippage(u32),
-    UpdateTransferFee(String, i128),
+    UpdateTransferFee(String, u32), // Changed from i128 to u32 basis points
 }
 
 #[contracttype]
@@ -78,6 +69,8 @@ pub struct Payment {
     pub created_at: u64,
     pub confirmed_at: Option<u64>,
     pub refunded_amount: i128,
+    pub is_soulbound: bool,
+    pub last_checked_in_at: u64,
 }
 
 #[contracttype]
@@ -117,7 +110,7 @@ pub enum DataKey {
     Initialized,                         // Initialization flag
     TokenWhitelist(Address),             // token_address -> bool
     Balances(String),                    // event_id -> EventBalance (escrow tracking)
-    TransferFee(String),                 // event_id -> transfer_fee amount
+    TransferFee(String),                 // event_id -> transfer_fee_bps (u32)
     BulkRefundIndex(String),             // event_id -> last processed payment index
     PriceSwitched(String, String),       // (event_id, tier_id) -> bool
     TotalVolumeProcessed,                // protocol-wide gross volume from all ticket sales
@@ -130,6 +123,7 @@ pub enum DataKey {
     DailyWithdrawalAmount(Address, u64), // (token_address, day_timestamp) -> amount withdrawn
     IsPaused,                            // bool – global circuit breaker flag
     DisputeStatus(String),               // event_id -> bool
+    EventCancelledForRefund(String),     // event_id -> bool
     PartialRefundIndex(String),          // event_id -> last processed payment index
     PartialRefundPercentage(String),     // event_id -> active refund percentage in bps
     OracleAddress,                       // Address of oracle contract
@@ -146,8 +140,4 @@ pub enum DataKey {
     EventPaymentStatusEntry(String, PaymentStatus, String),
     /// SHA-256 hash of the ticket secret: payment_id -> BytesN<32>
     ValidationHash(String),
-    /// Marks an event as cancelled for refund purposes: event_id -> bool
-    EventCancelledForRefund(String),
-    /// Secondary marketplace listing: payment_id -> SecondaryListing
-    SecondaryListing(String),
 }

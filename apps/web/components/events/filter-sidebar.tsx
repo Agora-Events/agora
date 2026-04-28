@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 
 // ─── Category options ────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -28,18 +28,35 @@ const LOCATIONS = [
 const DATES = ["Today", "Tomorrow", "This Week", "This Month", "Any time"];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+/**
+ * Filter state interface for event filtering
+ * @interface FilterState
+ */
 export type FilterState = {
+  /** Selected date filter option */
   date: string;
+  /** Array of selected category names */
   categories: string[];
+  /** Array of selected location names */
   locations: string[];
+  /** Minimum price filter value */
   minPrice: string;
+  /** Maximum price filter value */
   maxPrice: string;
 };
 
+/**
+ * Props for FilterSidebar component
+ * @interface FilterSidebarProps
+ */
 interface FilterSidebarProps {
+  /** Whether the sidebar is open or closed */
   isOpen: boolean;
+  /** Callback function to close the sidebar */
   onClose: () => void;
+  /** Current filter state */
   filters: FilterState;
+  /** Callback function when filters change */
   onFiltersChange: (filters: FilterState) => void;
 }
 
@@ -65,11 +82,30 @@ const backdropVariants = {
 };
 
 // ─── Helper: toggle item in array ────────────────────────────────────────────
+/**
+ * Helper function to toggle an item in an array
+ *
+ * @param arr - Array of strings to modify
+ * @param item - Item to toggle (add if not present, remove if present)
+ * @returns New array with the item toggled
+ */
 function toggleItem(arr: string[], item: string): string[] {
   return arr.includes(item) ? arr.filter((v) => v !== item) : [...arr, item];
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
+/**
+ * Filter sidebar component for event filtering
+ *
+ * Features:
+ * - Animated slide-in/out with Framer Motion
+ * - Multiple filter categories (date, category, location, price)
+ * - Backdrop overlay for mobile experience
+ * - Responsive design with touch support
+ *
+ * @param props - FilterSidebarProps containing component configuration
+ * @returns React component that renders the filter sidebar
+ */
 export function FilterSidebar({
   isOpen,
   onClose,

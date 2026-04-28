@@ -27,8 +27,6 @@ pub enum AgoraEvent {
     ContractVerificationFailed,
     EventCancelled,
     CancellationRefundClaimed,
-    TicketListed,
-    TicketSold,
 }
 
 #[contracttype]
@@ -163,6 +161,7 @@ pub struct PartialRefundProcessedEvent {
 pub struct TicketCheckedInEvent {
     pub payment_id: String,
     pub event_id: String,
+    pub attendee: Address,
     pub scanner: Address,
     pub timestamp: u64,
 }
@@ -234,24 +233,5 @@ pub struct CancellationRefundClaimedEvent {
     pub event_id: String,
     pub buyer: Address,
     pub amount: i128,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TicketListedEvent {
-    pub payment_id: String,
-    pub seller: Address,
-    pub price: i128,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TicketSoldEvent {
-    pub payment_id: String,
-    pub seller: Address,
-    pub buyer: Address,
-    pub price: i128,
     pub timestamp: u64,
 }

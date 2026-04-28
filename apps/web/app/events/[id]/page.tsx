@@ -146,7 +146,7 @@ export default function EventDetailPage({
             </div>
 
             {/* Registration Box */}
-            <RegistrationBox isFree={isFree} price={event.price} host={host} />
+            <RegistrationBox event={event} host={host} />
 
             {/* About Section */}
             <div className="flex flex-col gap-6 pt-4">
