@@ -825,3 +825,20 @@ pub fn verify_secret(env: &Env, payment_id: &String, raw_secret: &Bytes) -> bool
         None => false,
     }
 }
+
+// ── Cancellation flag ─────────────────────────────────────────────────────────
+
+/// Returns `true` if the organizer has locally cancelled this event for refunds.
+pub fn is_event_cancelled_for_refund(env: &Env, event_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventCancelledForRefund(event_id.clone()))
+        .unwrap_or(false)
+}
+
+/// Marks an event as cancelled for refund purposes.
+pub fn set_event_cancelled_for_refund(env: &Env, event_id: &String) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventCancelledForRefund(event_id.clone()), &true);
+}

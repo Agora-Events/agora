@@ -134,4 +134,6 @@ pub enum DataKey {
     EventPaymentStatusEntry(String, PaymentStatus, String),
     /// SHA-256 hash of the ticket secret: payment_id -> BytesN<32>
     ValidationHash(String),
+    /// Marks an event as cancelled for refund purposes: event_id -> bool
+    EventCancelledForRefund(String),
 }
