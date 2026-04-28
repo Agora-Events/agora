@@ -84,6 +84,25 @@ impl Config {
         let soroban_rpc_url =
             env::var("SOROBAN_RPC_URL").unwrap_or_else(|_| "https://soroban-testnet.stellar.org".to_string());
 
+        let s3_bucket = env::var("S3_BUCKET").map_err(|_| {
+            AppError::ValidationError("S3_BUCKET environment variable is required".to_string())
+        })?;
+        let s3_region = env::var("S3_REGION").unwrap_or_else(|_| "auto".to_string());
+        let s3_access_key_id = env::var("S3_ACCESS_KEY_ID").map_err(|_| {
+            AppError::ValidationError(
+                "S3_ACCESS_KEY_ID environment variable is required".to_string(),
+            )
+        })?;
+        let s3_secret_access_key = env::var("S3_SECRET_ACCESS_KEY").map_err(|_| {
+            AppError::ValidationError(
+                "S3_SECRET_ACCESS_KEY environment variable is required".to_string(),
+            )
+        })?;
+        let s3_endpoint_url = env::var("S3_ENDPOINT_URL").ok();
+        let s3_public_url = env::var("S3_PUBLIC_URL").map_err(|_| {
+            AppError::ValidationError("S3_PUBLIC_URL environment variable is required".to_string())
+        })?;
+
         Ok(Self {
             database_url,
             port,
