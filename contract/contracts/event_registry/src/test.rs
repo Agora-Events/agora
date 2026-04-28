@@ -3637,7 +3637,7 @@ fn setup_loyalty_env(env: &Env) -> (crate::EventRegistryClient<'static>, Address
     let platform_wallet = Address::generate(env);
     let usdc_token = Address::generate(env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-    (client, admin, platform_wallet)
+    (client, admin.clone(), admin)
 }
 
 // ── Guest Loyalty Profile ────────────────────────────────────────
@@ -4511,7 +4511,7 @@ fn setup_client(env: &Env) -> (EventRegistryClient<'_>, Address) {
     let platform_wallet = Address::generate(env);
     let usdc_token = Address::generate(env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-    let organizer = Address::generate(env);
+    let organizer = admin.clone();
     (client, organizer)
 }
 
@@ -5589,7 +5589,7 @@ fn setup_tags_test(env: &Env) -> (EventRegistryClient<'static>, Address, Address
     let platform_wallet = Address::generate(env);
     let usdc_token = Address::generate(env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-    let organizer = Address::generate(env);
+    let organizer = admin.clone();
     (client, admin, organizer)
 }
 

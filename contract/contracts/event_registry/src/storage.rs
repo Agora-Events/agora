@@ -802,6 +802,37 @@ pub fn set_organizer_stake(env: &Env, stake: &OrganizerStake) {
         .set(&DataKey::OrganizerStake(stake.organizer.clone()), stake);
 }
 
+/// Sets the contract administrator address for organizer whitelisting.
+pub fn set_contract_admin(env: &Env, admin: &Address) {
+    env.storage().instance().set(&DataKey::ContractAdmin, admin);
+}
+
+/// Retrieves the contract administrator address for organizer whitelisting.
+pub fn get_contract_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::ContractAdmin)
+}
+
+/// Approves or removes an organizer from the whitelist.
+pub fn set_approved_organizer(env: &Env, organizer: &Address, approved: bool) {
+    if approved {
+        env.storage()
+            .instance()
+            .set(&DataKey::ApprovedOrganizer(organizer.clone()), &true);
+    } else {
+        env.storage()
+            .instance()
+            .remove(&DataKey::ApprovedOrganizer(organizer.clone()));
+    }
+}
+
+/// Checks if an organizer is approved.
+pub fn is_approved_organizer(env: &Env, addr: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::ApprovedOrganizer(addr.clone()))
+        .unwrap_or(false)
+}
+
 /// Removes an organizer's stake record (used on unstake).
 pub fn remove_organizer_stake(env: &Env, organizer: &Address) {
     env.storage()

@@ -96,8 +96,9 @@ use crate::events::{
     StakerRewardsDistributedEvent, TokenWhitelistUpdatedEvent,
 };
 use crate::types::{
-    BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
-    MultiSigConfig, OrganizerStake, PaymentInfo,
+    AuctionConfig, BlacklistAuditEntry, DataKey, EventInfo, EventReceipt, EventRegistrationArgs,
+    EventStatus, GuestProfile, Milestone, MultiSigConfig, OrganizerStake, ParameterChange,
+    PaymentInfo, Proposal, SeriesPass, SeriesRegistry, TicketTier,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
@@ -105,8 +106,6 @@ pub mod error;
 pub mod events;
 pub mod storage;
 pub mod types;
-
-use crate::types::{SeriesPass, SeriesRegistry};
 
 use crate::error::EventRegistryError;
 
@@ -143,12 +142,12 @@ impl EventRegistry {
         // Validate all event_ids exist and belong to organizer
         for event_id in event_ids.iter() {
             let event = storage::get_event(&env, event_id.clone())
-                .ok_or(EventRegistryError::EventNotFound)?;
+                .ok_or(EventRegistryError::NotFound)?;
             if event.organizer_address != organizer_address {
-                return Err(EventRegistryError::UnauthorizedCaller);
+                return Err(EventRegistryError::Unauthorized);
             }
             if matches!(event.status, EventStatus::Cancelled) {
-                return Err(EventRegistryError::EventCancelled);
+                return Err(EventRegistryError::AlreadyCancelled);
             }
         }
         let series = SeriesRegistry {
@@ -178,7 +177,7 @@ impl EventRegistry {
     ) -> Result<(), EventRegistryError> {
         // Only organizer of the series can issue passes
         let series = storage::get_series(&env, series_id.clone())
-            .ok_or(EventRegistryError::EventNotFound)?;
+            .ok_or(EventRegistryError::NotFound)?;
         series.organizer_address.require_auth();
         let pass = SeriesPass {
             pass_id: pass_id.clone(),
@@ -223,7 +222,7 @@ impl EventRegistry {
         usdc_token: Address,
     ) -> Result<(), EventRegistryError> {
         if storage::is_initialized(&env) {
-            return Err(EventRegistryError::AlreadyInitialized);
+            return Err(EventRegistryError::AlreadyExists);
         }
 
         validate_address(&env, &admin)?;
@@ -237,7 +236,7 @@ impl EventRegistry {
         };
 
         if initial_fee > 10000 {
-            return Err(EventRegistryError::InvalidFeePercent);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         // Initialize multi-sig with single admin and threshold of 1
@@ -249,6 +248,13 @@ impl EventRegistry {
         };
 
         storage::set_admin(&env, &admin); // Legacy support
+        storage::set_contract_admin(&env, &admin); // Organizer whitelist support
+        
+        // Explicitly whitelist admin as an approved organizer
+        env.storage().instance().set(
+            &DataKey::ApprovedOrganizer(admin.clone()),
+            &true
+        );
         storage::set_multisig_config(&env, &multisig_config);
         storage::set_platform_wallet(&env, &platform_wallet);
         storage::set_platform_fee(&env, initial_fee);
@@ -288,6 +294,27 @@ impl EventRegistry {
         storage::is_token_whitelisted(&env, &token)
     }
 
+    /// Adds an organizer to the whitelist. Only callable by ContractAdmin.
+    pub fn add_organizer(env: Env, addr: Address) -> Result<(), EventRegistryError> {
+        let admin = storage::get_contract_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+        storage::set_approved_organizer(&env, &addr, true);
+        Ok(())
+    }
+
+    /// Removes an organizer from the whitelist. Only callable by ContractAdmin.
+    pub fn remove_organizer(env: Env, addr: Address) -> Result<(), EventRegistryError> {
+        let admin = storage::get_contract_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
+        admin.require_auth();
+        storage::set_approved_organizer(&env, &addr, false);
+        Ok(())
+    }
+
+    /// Returns true if the organizer is on the approved whitelist.
+    pub fn is_approved_organizer(env: Env, addr: Address) -> bool {
+        storage::is_approved_organizer(&env, &addr)
+    }
+
     /// Register a new event with organizer authentication and tiered pricing
     ///
     /// # Arguments
@@ -301,44 +328,50 @@ impl EventRegistry {
         if !storage::is_initialized(&env) {
             return Err(EventRegistryError::NotInitialized);
         }
+
         validate_address(&env, &args.organizer_address)?;
+
+        // Enforce organizer whitelisting
+        if !storage::is_approved_organizer(&env, &args.organizer_address) {
+            return Err(EventRegistryError::Unauthorized);
+        }
         args.organizer_address.require_auth();
 
         // Check if organizer is blacklisted
         if storage::is_blacklisted(&env, &args.organizer_address) {
-            return Err(EventRegistryError::OrganizerBlacklisted);
+            return Err(EventRegistryError::Unauthorized);
         }
 
         validate_metadata_cid(&env, &args.metadata_cid)?;
 
         if storage::event_exists(&env, args.event_id.clone()) {
-            return Err(EventRegistryError::EventAlreadyExists);
+            return Err(EventRegistryError::AlreadyExists);
         }
 
         // Validate tier limits and supply consistency
         let mut total_tier_limit: i128 = 0;
         for tier in args.tiers.values() {
             if tier.tier_limit < 0 {
-                return Err(EventRegistryError::InvalidQuantity);
+                return Err(EventRegistryError::InvalidInput);
             }
             total_tier_limit = total_tier_limit
                 .checked_add(tier.tier_limit)
-                .ok_or(EventRegistryError::SupplyOverflow)?;
+                .ok_or(EventRegistryError::SupplyExceeded)?;
 
             // Combined validation: Ensure restocking fee does not exceed any tier price
             if args.restocking_fee > 0 && args.restocking_fee > tier.price {
-                return Err(EventRegistryError::RestockingFeeExceedsTicketPrice);
+                return Err(EventRegistryError::InvalidInput);
             }
         }
 
         if args.max_supply > 0 && total_tier_limit > args.max_supply {
-            return Err(EventRegistryError::TierLimitExceedsMaxSupply);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         // Validate resale cap if provided
         if let Some(cap) = args.resale_cap_bps {
             if cap > 10000 {
-                return Err(EventRegistryError::InvalidResaleCapBps);
+                return Err(EventRegistryError::InvalidInput);
             }
         }
 
@@ -350,39 +383,39 @@ impl EventRegistry {
             for m in milestones.iter() {
                 total_release = total_release
                     .checked_add(m.release_percent)
-                    .ok_or(EventRegistryError::SupplyOverflow)?;
+                    .ok_or(EventRegistryError::SupplyExceeded)?;
             }
             if total_release > 10000 {
-                return Err(EventRegistryError::InvalidMilestonePlan);
+                return Err(EventRegistryError::InvalidInput);
             }
         }
 
         // Validate tags: max 10 tags, each at most 32 characters
         if let Some(ref tags) = args.tags {
             if tags.len() > 10 {
-                return Err(EventRegistryError::InvalidTags);
+                return Err(EventRegistryError::InvalidInput);
             }
             for tag in tags.iter() {
                 if tag.len() > 32 {
-                    return Err(EventRegistryError::InvalidTags);
+                    return Err(EventRegistryError::InvalidInput);
                 }
             }
         }
 
         if let Some(deadline) = args.target_deadline {
             if deadline <= env.ledger().timestamp() {
-                return Err(EventRegistryError::InvalidTargetDeadline);
+                return Err(EventRegistryError::InvalidDeadline);
             }
         }
 
         // Validate timestamp consistency: deadlines must be before end_time when end_time is set
         if args.end_time > 0 {
             if args.refund_deadline > 0 && args.refund_deadline >= args.end_time {
-                return Err(EventRegistryError::DeadlineAfterEndTime);
+                return Err(EventRegistryError::InvalidDeadline);
             }
             if let Some(td) = args.target_deadline {
                 if td >= args.end_time {
-                    return Err(EventRegistryError::DeadlineAfterEndTime);
+                    return Err(EventRegistryError::InvalidDeadline);
                 }
             }
         }
@@ -450,7 +483,7 @@ impl EventRegistry {
         match storage::get_event(&env, event_id) {
             Some(event_info) => {
                 if !event_info.is_active {
-                    return Err(EventRegistryError::EventInactive);
+                    return Err(EventRegistryError::StateError);
                 }
                 Ok(PaymentInfo {
                     payment_address: event_info.payment_address,
@@ -459,7 +492,7 @@ impl EventRegistry {
                     tiers: event_info.tiers,
                 })
             }
-            None => Err(EventRegistryError::EventNotFound),
+            None => Err(EventRegistryError::NotFound),
         }
     }
 
@@ -475,7 +508,7 @@ impl EventRegistry {
                 event_info.organizer_address.require_auth();
 
                 if matches!(event_info.status, EventStatus::Cancelled) {
-                    return Err(EventRegistryError::EventCancelled);
+                    return Err(EventRegistryError::AlreadyCancelled);
                 }
 
                 // Skip storage/event writes when status is unchanged.
@@ -500,7 +533,7 @@ impl EventRegistry {
 
                 Ok(())
             }
-            None => Err(EventRegistryError::EventNotFound),
+            None => Err(EventRegistryError::NotFound),
         }
     }
 
@@ -516,7 +549,7 @@ impl EventRegistry {
                 event_info.organizer_address.require_auth();
 
                 if matches!(event_info.status, EventStatus::Cancelled) {
-                    return Err(EventRegistryError::EventAlreadyCancelled);
+                    return Err(EventRegistryError::AlreadyCancelled);
                 }
 
                 // Update status to Cancelled and deactivate
@@ -538,7 +571,7 @@ impl EventRegistry {
 
                 Ok(())
             }
-            None => Err(EventRegistryError::EventNotFound),
+            None => Err(EventRegistryError::NotFound),
         }
     }
 
@@ -551,7 +584,7 @@ impl EventRegistry {
                 event_info.organizer_address.require_auth();
 
                 if event_info.is_active {
-                    return Err(EventRegistryError::EventIsActive);
+                    return Err(EventRegistryError::StateError);
                 }
 
                 storage::remove_event(&env, event_id.clone());
@@ -575,7 +608,7 @@ impl EventRegistry {
 
                 Ok(())
             }
-            None => Err(EventRegistryError::EventNotFound),
+            None => Err(EventRegistryError::NotFound),
         }
     }
 
@@ -591,7 +624,7 @@ impl EventRegistry {
                 event_info.organizer_address.require_auth();
 
                 if matches!(event_info.status, EventStatus::Cancelled) {
-                    return Err(EventRegistryError::EventCancelled);
+                    return Err(EventRegistryError::AlreadyCancelled);
                 }
 
                 // Validate new metadata CID
@@ -619,7 +652,7 @@ impl EventRegistry {
 
                 Ok(())
             }
-            None => Err(EventRegistryError::EventNotFound),
+            None => Err(EventRegistryError::NotFound),
         }
     }
 
@@ -643,17 +676,17 @@ impl EventRegistry {
         feedback_cid: String,
     ) -> Result<(), EventRegistryError> {
         let mut event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         event_info.organizer_address.require_auth();
 
         if matches!(event_info.status, EventStatus::Cancelled) {
-            return Err(EventRegistryError::EventCancelled);
+            return Err(EventRegistryError::AlreadyCancelled);
         }
 
         let now = env.ledger().timestamp();
         if event_info.end_time == 0 || now < event_info.end_time {
-            return Err(EventRegistryError::EventNotEnded);
+            return Err(EventRegistryError::StateError);
         }
 
         validate_metadata_cid(&env, &feedback_cid)?;
@@ -693,7 +726,7 @@ impl EventRegistry {
 
     /// Returns the total number of tickets sold for an event across all tiers.
     pub fn get_total_tickets_sold(env: Env, event_id: String) -> Result<i128, EventRegistryError> {
-        let event = storage::get_event(&env, event_id).ok_or(EventRegistryError::EventNotFound)?;
+        let event = storage::get_event(&env, event_id).ok_or(EventRegistryError::NotFound)?;
         Ok(event.current_supply)
     }
 
@@ -732,7 +765,7 @@ impl EventRegistry {
         require_admin(&env)?;
 
         if new_fee_percent > 10000 {
-            return Err(EventRegistryError::InvalidFeePercent);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         storage::set_platform_fee(&env, new_fee_percent);
@@ -766,15 +799,15 @@ impl EventRegistry {
 
         if let Some(fee) = custom_fee_bps {
             if fee > 10000 {
-                return Err(EventRegistryError::InvalidFeePercent);
+                return Err(EventRegistryError::InvalidInput);
             }
         }
 
         let mut event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         if matches!(event_info.status, EventStatus::Cancelled) {
-            return Err(EventRegistryError::EventCancelled);
+            return Err(EventRegistryError::AlreadyCancelled);
         }
 
         event_info.custom_fee_bps = custom_fee_bps;
@@ -879,14 +912,14 @@ impl EventRegistry {
         ticket_payment_addr.require_auth();
 
         if quantity == 0 {
-            return Err(EventRegistryError::InvalidQuantity);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         let mut event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         if !event_info.is_active || matches!(event_info.status, EventStatus::Cancelled) {
-            return Err(EventRegistryError::EventInactive);
+            return Err(EventRegistryError::StateError);
         }
 
         let quantity_i128 = quantity as i128;
@@ -896,9 +929,9 @@ impl EventRegistry {
             let new_total_supply = event_info
                 .current_supply
                 .checked_add(quantity_i128)
-                .ok_or(EventRegistryError::SupplyOverflow)?;
+                .ok_or(EventRegistryError::SupplyExceeded)?;
             if new_total_supply > event_info.max_supply {
-                return Err(EventRegistryError::MaxSupplyExceeded);
+                return Err(EventRegistryError::SupplyExceeded);
             }
         }
 
@@ -906,15 +939,15 @@ impl EventRegistry {
         let mut tier = event_info
             .tiers
             .get(tier_id.clone())
-            .ok_or(EventRegistryError::TierNotFound)?;
+            .ok_or(EventRegistryError::NotFound)?;
 
         let new_tier_sold = tier
             .current_sold
             .checked_add(quantity_i128)
-            .ok_or(EventRegistryError::SupplyOverflow)?;
+            .ok_or(EventRegistryError::SupplyExceeded)?;
 
         if new_tier_sold > tier.tier_limit {
-            return Err(EventRegistryError::TierSupplyExceeded);
+            return Err(EventRegistryError::SupplyExceeded);
         }
 
         // Check per-user limit
@@ -923,7 +956,7 @@ impl EventRegistry {
                 storage::get_user_ticket_count(&env, &event_id, &tier_id, &user);
             let new_user_count = current_user_count.saturating_add(quantity);
             if new_user_count > tier.max_per_user {
-                return Err(EventRegistryError::PerUserLimitExceeded);
+                return Err(EventRegistryError::SupplyExceeded);
             }
         }
 
@@ -933,7 +966,7 @@ impl EventRegistry {
         event_info.current_supply = event_info
             .current_supply
             .checked_add(quantity_i128)
-            .ok_or(EventRegistryError::SupplyOverflow)?;
+            .ok_or(EventRegistryError::SupplyExceeded)?;
 
         let new_supply = event_info.current_supply;
 
@@ -999,33 +1032,33 @@ impl EventRegistry {
         ticket_payment_addr.require_auth();
 
         let mut event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         // Get and update tier
         let mut tier = event_info
             .tiers
             .get(tier_id.clone())
-            .ok_or(EventRegistryError::TierNotFound)?;
+            .ok_or(EventRegistryError::NotFound)?;
 
         if tier.current_sold <= 0 {
-            return Err(EventRegistryError::SupplyUnderflow);
+            return Err(EventRegistryError::SupplyExceeded);
         }
 
         tier.current_sold = tier
             .current_sold
             .checked_sub(1)
-            .ok_or(EventRegistryError::SupplyUnderflow)?;
+            .ok_or(EventRegistryError::SupplyExceeded)?;
 
         event_info.tiers.set(tier_id.clone(), tier);
 
         if event_info.current_supply <= 0 {
-            return Err(EventRegistryError::SupplyUnderflow);
+            return Err(EventRegistryError::SupplyExceeded);
         }
 
         event_info.current_supply = event_info
             .current_supply
             .checked_sub(1)
-            .ok_or(EventRegistryError::SupplyUnderflow)?;
+            .ok_or(EventRegistryError::SupplyExceeded)?;
 
         let new_supply = event_info.current_supply;
         storage::update_event(&env, event_info.clone());
@@ -1085,7 +1118,7 @@ impl EventRegistry {
 
         // Check if already blacklisted
         if storage::is_blacklisted(&env, &organizer_address) {
-            return Err(EventRegistryError::OrganizerBlacklisted);
+            return Err(EventRegistryError::Unauthorized);
         }
 
         // Add to blacklist
@@ -1131,7 +1164,7 @@ impl EventRegistry {
 
         // Check if currently blacklisted
         if !storage::is_blacklisted(&env, &organizer_address) {
-            return Err(EventRegistryError::OrganizerNotBlacklisted);
+            return Err(EventRegistryError::NotFound);
         }
 
         // Remove from blacklist
@@ -1185,7 +1218,7 @@ impl EventRegistry {
         let admin = require_admin(&env)?;
 
         if global_promo_bps > 10000 {
-            return Err(EventRegistryError::InvalidPromoBps);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         storage::set_global_promo_bps(&env, global_promo_bps);
@@ -1223,18 +1256,18 @@ impl EventRegistry {
         grace_period_end: u64,
     ) -> Result<(), EventRegistryError> {
         let mut event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         // Only the organizer may postpone their event.
         event_info.organizer_address.require_auth();
 
         if matches!(event_info.status, EventStatus::Cancelled) {
-            return Err(EventRegistryError::EventCancelled);
+            return Err(EventRegistryError::AlreadyCancelled);
         }
 
         let now = env.ledger().timestamp();
         if grace_period_end <= now {
-            return Err(EventRegistryError::InvalidGracePeriodEnd);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         event_info.is_postponed = true;
@@ -1261,7 +1294,7 @@ impl EventRegistry {
         scanner: Address,
     ) -> Result<(), EventRegistryError> {
         let organizer = Self::get_organizer_address(env.clone(), event_id.clone())
-            .ok_or(EventRegistryError::EventNotFound)?;
+            .ok_or(EventRegistryError::NotFound)?;
         organizer.require_auth();
 
         storage::authorize_scanner(&env, event_id.clone(), &scanner);
@@ -1301,14 +1334,14 @@ impl EventRegistry {
     /// * `NoStateChange` - If the event is already paused
     pub fn pause_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
         let event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         // Verify organizer authorization
         event_info.organizer_address.require_auth();
 
         // Check if already paused
         if storage::is_event_paused(&env, &event_id) {
-            return Err(EventRegistryError::NoStateChange);
+            return Err(EventRegistryError::StateError);
         }
 
         // Set the pause flag
@@ -1341,14 +1374,14 @@ impl EventRegistry {
     /// * `NoStateChange` - If the event is not currently paused
     pub fn resume_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
         let event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         // Verify organizer authorization
         event_info.organizer_address.require_auth();
 
         // Check if not paused
         if !storage::is_event_paused(&env, &event_id) {
-            return Err(EventRegistryError::NoStateChange);
+            return Err(EventRegistryError::StateError);
         }
 
         // Clear the pause flag
@@ -1396,7 +1429,7 @@ impl EventRegistry {
         require_admin(&env)?;
 
         if min_amount <= 0 {
-            return Err(EventRegistryError::InvalidStakeAmount);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         storage::set_staking_token(&env, &token);
@@ -1419,15 +1452,15 @@ impl EventRegistry {
         organizer.require_auth();
 
         if amount <= 0 {
-            return Err(EventRegistryError::InvalidStakeAmount);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         if storage::get_organizer_stake(&env, &organizer).is_some() {
-            return Err(EventRegistryError::AlreadyStaked);
+            return Err(EventRegistryError::AlreadyExists);
         }
 
         let token =
-            storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
+            storage::get_staking_token(&env).ok_or(EventRegistryError::StateError)?;
         let min_amount = storage::get_min_stake_amount(&env);
 
         // Transfer tokens from organizer to this contract
@@ -1478,7 +1511,7 @@ impl EventRegistry {
         organizer.require_auth();
 
         let stake =
-            storage::get_organizer_stake(&env, &organizer).ok_or(EventRegistryError::NotStaked)?;
+            storage::get_organizer_stake(&env, &organizer).ok_or(EventRegistryError::StateError)?;
 
         // Transfer tokens back to organizer
         let token_client = token::Client::new(&env, &stake.token);
@@ -1526,15 +1559,15 @@ impl EventRegistry {
         }
 
         if total_reward <= 0 {
-            return Err(EventRegistryError::InvalidRewardAmount);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         let token =
-            storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
+            storage::get_staking_token(&env).ok_or(EventRegistryError::StateError)?;
 
         let total_staked = storage::get_total_staked(&env);
         if total_staked == 0 {
-            return Err(EventRegistryError::NotStaked);
+            return Err(EventRegistryError::StateError);
         }
 
         // Transfer reward tokens from caller to this contract
@@ -1584,10 +1617,10 @@ impl EventRegistry {
         organizer.require_auth();
 
         let mut stake =
-            storage::get_organizer_stake(&env, &organizer).ok_or(EventRegistryError::NotStaked)?;
+            storage::get_organizer_stake(&env, &organizer).ok_or(EventRegistryError::StateError)?;
 
         if stake.reward_balance == 0 {
-            return Err(EventRegistryError::NoRewardsAvailable);
+            return Err(EventRegistryError::NotFound);
         }
 
         let reward_to_claim = stake.reward_balance;
@@ -1662,7 +1695,7 @@ impl EventRegistry {
         }
 
         if tickets_purchased == 0 {
-            return Err(EventRegistryError::InvalidQuantity);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         let mut profile = storage::get_guest_profile(&env, &guest).unwrap_or(GuestProfile {
@@ -1784,7 +1817,7 @@ impl EventRegistry {
         }
 
         if new_admins.is_empty() {
-            return Err(EventRegistryError::CannotRemoveLastAdmin);
+            return Err(EventRegistryError::StateError);
         }
 
         for addr in new_admins.iter() {
@@ -1792,7 +1825,7 @@ impl EventRegistry {
         }
 
         if new_threshold == 0 || new_threshold > new_admins.len() {
-            return Err(EventRegistryError::InvalidThreshold);
+            return Err(EventRegistryError::InvalidInput);
         }
 
         let multisig_config = MultiSigConfig {
@@ -1833,24 +1866,21 @@ impl EventRegistry {
             types::ParameterChange::AddAdmin(addr) => {
                 validate_address(&env, addr)?;
                 if config.admins.contains(addr) {
-                    return Err(EventRegistryError::AdminAlreadyExists);
+                    return Err(EventRegistryError::AlreadyExists);
                 }
             }
             types::ParameterChange::RemoveAdmin(addr) => {
                 if !config.admins.contains(addr) {
-                    return Err(EventRegistryError::AdminNotFound);
+                    return Err(EventRegistryError::NotFound);
                 }
                 // Ensure we don't remove the last admin
                 if config.admins.len() <= 1 {
-                    return Err(EventRegistryError::CannotRemoveLastAdmin);
+                    return Err(EventRegistryError::StateError);
                 }
             }
             types::ParameterChange::SetThreshold(threshold) => {
-                if *threshold == 0 {
-                    return Err(EventRegistryError::InvalidThreshold);
-                }
-                if *threshold > config.admins.len() {
-                    return Err(EventRegistryError::InvalidThreshold);
+                if *threshold == 0 || *threshold > config.admins.len() {
+                    return Err(EventRegistryError::InvalidInput);
                 }
             }
             types::ParameterChange::UpdatePlatformWallet(addr) => {
@@ -1858,12 +1888,12 @@ impl EventRegistry {
             }
             types::ParameterChange::SetPlatformFee(fee) => {
                 if *fee > 10000 {
-                    return Err(EventRegistryError::InvalidFeePercent);
+                    return Err(EventRegistryError::InvalidInput);
                 }
             }
             types::ParameterChange::SetMinStakeAmount(amount) => {
                 if *amount <= 0 {
-                    return Err(EventRegistryError::InvalidStakeAmount);
+                    return Err(EventRegistryError::InvalidInput);
                 }
             }
         }
@@ -2007,26 +2037,26 @@ impl EventRegistry {
 
         // Get proposal
         let mut proposal =
-            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::ProposalNotFound)?;
+            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::NotFound)?;
 
         // Check if already executed
         if proposal.executed {
-            return Err(EventRegistryError::ProposalAlreadyExecuted);
+            return Err(EventRegistryError::AlreadyExecuted);
         }
 
         // Check if expired
         if env.ledger().timestamp() > proposal.expires_at {
-            return Err(EventRegistryError::ProposalExpired);
+            return Err(EventRegistryError::InvalidDeadline);
         }
 
         // Check if cancelled
         if proposal.cancelled {
-            return Err(EventRegistryError::ProposalAlreadyCancelled);
+            return Err(EventRegistryError::AlreadyCancelled);
         }
 
         // Check if already approved by this admin
         if proposal.approvals.contains(&approver) {
-            return Err(EventRegistryError::AlreadyApproved);
+            return Err(EventRegistryError::AlreadyExists);
         }
 
         // Add approval
@@ -2055,26 +2085,26 @@ impl EventRegistry {
 
         // Get proposal
         let mut proposal =
-            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::ProposalNotFound)?;
+            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::NotFound)?;
 
         // Check if already executed
         if proposal.executed {
-            return Err(EventRegistryError::ProposalAlreadyExecuted);
+            return Err(EventRegistryError::AlreadyExecuted);
         }
 
         // Check if expired
         if env.ledger().timestamp() > proposal.expires_at {
-            return Err(EventRegistryError::ProposalExpired);
+            return Err(EventRegistryError::InvalidDeadline);
         }
 
         // Check if cancelled
         if proposal.cancelled {
-            return Err(EventRegistryError::ProposalAlreadyCancelled);
+            return Err(EventRegistryError::AlreadyCancelled);
         }
 
         // Check if threshold is met
         if proposal.approvals.len() < config.threshold {
-            return Err(EventRegistryError::InsufficientApprovals);
+            return Err(EventRegistryError::MultisigError);
         }
 
         // Execute the proposal
@@ -2083,7 +2113,7 @@ impl EventRegistry {
                 let mut new_config = config.clone();
                 new_config.admins.push_back(new_admin.clone());
                 storage::set_multisig_config(&env, &new_config);
-                storage::set_admin(&env, new_admin); // Update legacy admin storage
+                storage::set_admin(&env, &new_admin); // Update legacy admin storage
             }
             types::ParameterChange::RemoveAdmin(admin_to_remove) => {
                 let mut new_config = config.clone();
@@ -2141,18 +2171,18 @@ impl EventRegistry {
         proposer.require_auth();
 
         let mut proposal =
-            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::ProposalNotFound)?;
+            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::NotFound)?;
 
         if proposal.proposer != proposer {
             return Err(EventRegistryError::Unauthorized);
         }
 
         if proposal.executed {
-            return Err(EventRegistryError::ProposalAlreadyExecuted);
+            return Err(EventRegistryError::AlreadyExecuted);
         }
 
         if proposal.cancelled {
-            return Err(EventRegistryError::ProposalAlreadyCancelled);
+            return Err(EventRegistryError::AlreadyCancelled);
         }
 
         proposal.cancelled = true;
@@ -2183,7 +2213,7 @@ impl EventRegistry {
         token: Address,
     ) -> Result<(), EventRegistryError> {
         let event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         // Verify caller is the event organizer
         event_info.organizer_address.require_auth();
@@ -2215,7 +2245,7 @@ impl EventRegistry {
         token: Address,
     ) -> Result<(), EventRegistryError> {
         let event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         // Verify caller is the event organizer
         event_info.organizer_address.require_auth();
@@ -2245,7 +2275,7 @@ impl EventRegistry {
         token: Address,
     ) -> Result<bool, EventRegistryError> {
         let event_info =
-            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::NotFound)?;
 
         let is_accepted = storage::is_token_accepted_for_event(
             &env,
@@ -2265,14 +2295,14 @@ impl EventRegistry {
 }
 
 fn require_admin(env: &Env) -> Result<Address, EventRegistryError> {
-    let admin = storage::get_admin(env).ok_or(EventRegistryError::NotInitialized)?;
+    let admin = storage::get_contract_admin(env).ok_or(EventRegistryError::NotInitialized)?;
     admin.require_auth();
     Ok(admin)
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
     if address == &env.current_contract_address() || is_zero_address(env, address) {
-        return Err(EventRegistryError::InvalidAddress);
+        return Err(EventRegistryError::InvalidInput);
     }
     Ok(())
 }
@@ -2331,7 +2361,7 @@ fn trim_string(env: &Env, s: &String) -> String {
 fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryError> {
     let cid_len = cid.len();
     if !(MIN_METADATA_CID_LEN..=MAX_METADATA_CID_LEN).contains(&cid_len) {
-        return Err(EventRegistryError::InvalidMetadataCid);
+        return Err(EventRegistryError::InvalidInput);
     }
 
     // We expect CIDv1 base32, which starts with 'b'
@@ -2340,7 +2370,7 @@ fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryErr
     bytes.append(&cid.clone().into());
 
     if !bytes.is_empty() && bytes.get(0) != Some(b'b') {
-        return Err(EventRegistryError::InvalidMetadataCid);
+        return Err(EventRegistryError::InvalidInput);
     }
 
     Ok(())
@@ -2348,7 +2378,7 @@ fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryErr
 
 fn validate_restocking_fee(args: &EventRegistrationArgs) -> Result<(), EventRegistryError> {
     if args.restocking_fee < 0 {
-        return Err(EventRegistryError::InvalidFeeCalculation);
+        return Err(EventRegistryError::InvalidInput);
     }
 
     if args.restocking_fee == 0 {
@@ -2359,10 +2389,10 @@ fn validate_restocking_fee(args: &EventRegistrationArgs) -> Result<(), EventRegi
         let remaining_refund = tier
             .price
             .checked_sub(args.restocking_fee)
-            .ok_or(EventRegistryError::InvalidFeeCalculation)?;
+            .ok_or(EventRegistryError::InvalidInput)?;
 
         if remaining_refund < 0 {
-            return Err(EventRegistryError::RestockingFeeExceedsTicketPrice);
+            return Err(EventRegistryError::InvalidInput);
         }
     }
 
