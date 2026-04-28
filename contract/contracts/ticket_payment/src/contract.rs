@@ -6,13 +6,13 @@ use crate::storage::{
     get_event_payments, get_event_registry, get_highest_bid, get_oracle_address,
     get_partial_refund_index, get_partial_refund_percentage, get_payment, get_platform_wallet,
     get_proposal, get_slippage_bps, get_total_fees_collected_by_token, get_total_governors,
-    get_transfer_fee, get_usdc_token, get_withdrawal_cap, has_price_switched,
-    increment_proposal_count, is_auction_closed, is_discount_hash_used, is_discount_hash_valid,
-    is_event_disputed, is_governor, is_initialized, is_paused, is_token_whitelisted,
-    mark_discount_hash_used, remove_payment_from_buyer_index, remove_token_from_whitelist,
-    set_admin, set_auction_closed, set_bulk_refund_index, set_event_dispute_status,
-    set_event_registry, set_governor, set_highest_bid, set_initialized, set_is_paused,
-    set_oracle_address, set_partial_refund_index, set_partial_refund_percentage,
+    get_ticket_payment_id, get_transfer_fee, get_usdc_token, get_withdrawal_cap,
+    has_price_switched, increment_proposal_count, is_auction_closed, is_discount_hash_used,
+    is_discount_hash_valid, is_event_disputed, is_governor, is_initialized, is_paused,
+    is_token_whitelisted, mark_discount_hash_used, remove_payment_from_buyer_index,
+    remove_token_from_whitelist, set_admin, set_auction_closed, set_bulk_refund_index,
+    set_event_dispute_status, set_event_registry, set_governor, set_highest_bid, set_initialized,
+    set_is_paused, set_oracle_address, set_partial_refund_index, set_partial_refund_percentage,
     set_platform_wallet, set_price_switched, set_proposal, set_slippage_bps, set_total_governors,
     set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment,
     subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
@@ -932,6 +932,53 @@ impl TicketPaymentContract {
         }
         if is_paused(&env) {
             return Err(TicketPaymentError::ContractPaused);
+        }
+
+        Self::internal_refund(env, payment_id)
+    }
+
+    /// Requests a refund for a ticket identified by a numeric ticket_id.
+    ///
+    /// Fails with `RefundDeadlinePassed` if the current timestamp exceeds the event's
+    /// `refund_deadline`. Also fails if the ticket has already been used (checked-in)
+    /// or refunded. On success, transfers `amount - restocking_fee` back to the buyer
+    /// and marks the ticket as `Refunded`.
+    pub fn request_refund(env: Env, ticket_id: u64) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        let payment_id = get_ticket_payment_id(&env, ticket_id)
+            .ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        let payment =
+            get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        // Reject if ticket is already used (checked-in) or already refunded
+        if payment.status == PaymentStatus::CheckedIn {
+            return Err(TicketPaymentError::TicketAlreadyUsed);
+        }
+        if payment.status == PaymentStatus::Refunded {
+            return Err(TicketPaymentError::InvalidPaymentStatus);
+        }
+
+        // Verify refund deadline
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+        let event_info = match registry_client.try_get_event(&payment.event_id) {
+            Ok(Ok(Some(info))) => info,
+            _ => return Err(TicketPaymentError::EventNotFound),
+        };
+
+        let is_cancelled = matches!(event_info.status, event_registry::EventStatus::Cancelled);
+        if !is_cancelled
+            && event_info.refund_deadline > 0
+            && env.ledger().timestamp() > event_info.refund_deadline
+        {
+            return Err(TicketPaymentError::RefundDeadlinePassed);
         }
 
         Self::internal_refund(env, payment_id)

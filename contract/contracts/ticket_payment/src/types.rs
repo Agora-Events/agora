@@ -135,4 +135,6 @@ pub enum DataKey {
     EventPaymentStatus(String, PaymentStatus),
     /// Individual entry for status index: (event_id, status, payment_id) -> bool
     EventPaymentStatusEntry(String, PaymentStatus, String),
+    /// Numeric ticket_id -> payment_id (String) mapping
+    TicketId(u64),
 }

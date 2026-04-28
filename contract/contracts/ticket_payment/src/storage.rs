@@ -799,3 +799,17 @@ pub fn get_payments_by_status(env: &Env, event_id: String, status: PaymentStatus
         .get(&DataKey::EventPaymentStatus(event_id, status))
         .unwrap_or_else(|| vec![env])
 }
+
+/// Stores a mapping from a numeric ticket_id to a payment_id String.
+pub fn set_ticket_payment_id(env: &Env, ticket_id: u64, payment_id: soroban_sdk::String) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::TicketId(ticket_id), &payment_id);
+}
+
+/// Retrieves the payment_id String for a given numeric ticket_id.
+pub fn get_ticket_payment_id(env: &Env, ticket_id: u64) -> Option<soroban_sdk::String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TicketId(ticket_id))
+}
