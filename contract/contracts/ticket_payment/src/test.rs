@@ -6760,3 +6760,123 @@ fn test_transfer_ticket_valid_recipient_succeeds() {
     let updated = client.get_payment_status(&payment_id).unwrap();
     assert_eq!(updated.buyer_address, recipient);
 }
+
+// ── Secondary marketplace tests ───────────────────────────────────────────────
+
+/// list_ticket succeeds when price == original price.
+#[test]
+fn test_list_ticket_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_list_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    // List at original price (1000_0000000)
+    client.list_ticket(&payment_id, &1000_0000000i128);
+
+    // Ownership should now be the contract
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.buyer_address, client.address);
+}
+
+/// list_ticket succeeds when price < original price.
+#[test]
+fn test_list_ticket_below_original_price_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_list_2");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_ticket(&payment_id, &500_0000000i128);
+
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.buyer_address, client.address);
+}
+
+/// list_ticket fails with PriceLimitExceeded when price > original price.
+#[test]
+fn test_list_ticket_price_limit_exceeded() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_list_3");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    // Attempt to list above original price
+    let result = client.try_list_ticket(&payment_id, &2000_0000000i128);
+    assert_eq!(result, Err(Ok(TicketPaymentError::PriceLimitExceeded)));
+}
+
+/// buy_secondary_ticket transfers tokens to seller and ticket to buyer.
+#[test]
+fn test_buy_secondary_ticket_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let price = 800_0000000i128;
+
+    // Mint USDC to buyer
+    usdc_token.mint(&buyer, &price);
+
+    let payment_id = String::from_str(&env, "pay_buy_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    // List the ticket
+    client.list_ticket(&payment_id, &price);
+
+    let seller_balance_before = token::Client::new(&env, &usdc_id).balance(&seller);
+
+    // Buy the ticket
+    client.buy_secondary_ticket(&payment_id, &buyer);
+
+    // Ticket ownership transferred to buyer
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.buyer_address, buyer);
+
+    // Seller received the payment
+    let seller_balance_after = token::Client::new(&env, &usdc_id).balance(&seller);
+    assert_eq!(seller_balance_after - seller_balance_before, price);
+}
+
+/// buy_secondary_ticket fails when the listing does not exist.
+#[test]
+fn test_buy_secondary_ticket_not_listed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_not_listed");
+
+    let result = client.try_buy_secondary_ticket(&payment_id, &buyer);
+    assert_eq!(result, Err(Ok(TicketPaymentError::PaymentNotFound)));
+}
+
+/// Seller cannot buy their own listing.
+#[test]
+fn test_buy_secondary_ticket_self_purchase_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_self_buy");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_ticket(&payment_id, &500_0000000i128);
+
+    let result = client.try_buy_secondary_ticket(&payment_id, &seller);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}

@@ -842,3 +842,30 @@ pub fn set_event_cancelled_for_refund(env: &Env, event_id: &String) {
         .persistent()
         .set(&DataKey::EventCancelledForRefund(event_id.clone()), &true);
 }
+
+// ── Secondary marketplace ─────────────────────────────────────────────────────
+
+pub fn set_secondary_listing(
+    env: &Env,
+    listing: &crate::types::SecondaryListing,
+) {
+    env.storage().persistent().set(
+        &DataKey::SecondaryListing(listing.payment_id.clone()),
+        listing,
+    );
+}
+
+pub fn get_secondary_listing(
+    env: &Env,
+    payment_id: &String,
+) -> Option<crate::types::SecondaryListing> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SecondaryListing(payment_id.clone()))
+}
+
+pub fn remove_secondary_listing(env: &Env, payment_id: &String) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::SecondaryListing(payment_id.clone()));
+}

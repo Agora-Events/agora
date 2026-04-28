@@ -17,9 +17,10 @@ use crate::storage::{
     set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment, store_validation_hash,
     subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
     subtract_from_total_fees_collected_by_token, update_event_balance, verify_secret,
+    get_secondary_listing, set_secondary_listing, remove_secondary_listing,
 };
 use crate::types::{
-    DataKey, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus, ProposalStatus,
+    DataKey, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus, ProposalStatus, SecondaryListing,
 };
 use crate::{
     error::TicketPaymentError,
@@ -30,7 +31,7 @@ use crate::{
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
         PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
         PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent, RevenueClaimedEvent,
-        TicketTransferredEvent,
+        TicketListedEvent, TicketSoldEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{
@@ -2391,6 +2392,134 @@ impl TicketPaymentContract {
                 event_id: payment.event_id,
                 buyer: payment.buyer_address,
                 amount: refund_amount,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Lists a confirmed ticket for sale on the secondary marketplace.
+    ///
+    /// - `price` must be ≤ the original purchase price (`payment.amount`).
+    /// - Ownership is transferred to the contract (escrow) until sold or delisted.
+    /// - Emits `TicketListed`.
+    pub fn list_ticket(
+        env: Env,
+        payment_id: String,
+        price: i128,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        let mut payment =
+            get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        if payment.status != PaymentStatus::Confirmed {
+            return Err(TicketPaymentError::InvalidPaymentStatus);
+        }
+
+        let seller = payment.buyer_address.clone();
+        seller.require_auth();
+
+        // Enforce no price gouging: listing price must not exceed original price
+        if price > payment.amount {
+            return Err(TicketPaymentError::PriceLimitExceeded);
+        }
+
+        // Transfer ownership to contract escrow
+        let contract_address = env.current_contract_address();
+        payment.buyer_address = contract_address.clone();
+        let key = DataKey::Payment(payment_id.clone());
+        env.storage().persistent().set(&key, &payment);
+
+        // Update buyer index
+        remove_payment_from_buyer_index(&env, seller.clone(), payment_id.clone());
+        add_payment_to_buyer_index(&env, contract_address, payment_id.clone());
+
+        // Store listing
+        set_secondary_listing(
+            &env,
+            &SecondaryListing {
+                payment_id: payment_id.clone(),
+                seller: seller.clone(),
+                price,
+            },
+        );
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::TicketListed,),
+            TicketListedEvent {
+                payment_id,
+                seller,
+                price,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Purchases a ticket that has been listed on the secondary marketplace.
+    ///
+    /// - Transfers `listing.price` tokens from `buyer` to `seller`.
+    /// - Transfers ticket ownership from contract escrow to `buyer`.
+    /// - Emits `TicketSold`.
+    pub fn buy_secondary_ticket(
+        env: Env,
+        payment_id: String,
+        buyer: Address,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        buyer.require_auth();
+
+        let listing = get_secondary_listing(&env, &payment_id)
+            .ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        // Buyer cannot be the seller
+        if buyer == listing.seller {
+            return Err(TicketPaymentError::InvalidAddress);
+        }
+
+        let token_address = get_usdc_token(&env);
+        let token_client = token::Client::new(&env, &token_address);
+
+        // Transfer payment from buyer to seller
+        token_client.transfer(&buyer, &listing.seller, &listing.price);
+
+        // Transfer ticket ownership from contract escrow to buyer
+        let mut payment =
+            get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        let contract_address = env.current_contract_address();
+        remove_payment_from_buyer_index(&env, contract_address, payment_id.clone());
+        payment.buyer_address = buyer.clone();
+        let key = DataKey::Payment(payment_id.clone());
+        env.storage().persistent().set(&key, &payment);
+        add_payment_to_buyer_index(&env, buyer.clone(), payment_id.clone());
+
+        // Remove listing
+        remove_secondary_listing(&env, &payment_id);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::TicketSold,),
+            TicketSoldEvent {
+                payment_id,
+                seller: listing.seller,
+                buyer,
+                price: listing.price,
                 timestamp: env.ledger().timestamp(),
             },
         );

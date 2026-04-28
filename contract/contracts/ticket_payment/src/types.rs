@@ -1,5 +1,17 @@
 use soroban_sdk::{contracttype, Address, BytesN, String};
 
+/// A ticket listed on the secondary marketplace.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SecondaryListing {
+    /// The payment_id of the ticket being sold.
+    pub payment_id: String,
+    /// The seller (current ticket owner).
+    pub seller: Address,
+    /// Asking price in stroops (must be ≤ original purchase price).
+    pub price: i128,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuctionConfig {
@@ -136,4 +148,6 @@ pub enum DataKey {
     ValidationHash(String),
     /// Marks an event as cancelled for refund purposes: event_id -> bool
     EventCancelledForRefund(String),
+    /// Secondary marketplace listing: payment_id -> SecondaryListing
+    SecondaryListing(String),
 }

@@ -57,6 +57,8 @@ pub enum TicketPaymentError {
     CannotRemoveLastGovernor = 57,
     /// Provided raw secret does not match the stored validation hash
     InvalidSecret = 58,
+    /// Secondary listing price exceeds the original purchase price
+    PriceLimitExceeded = 59,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -192,6 +194,9 @@ impl core::fmt::Display for TicketPaymentError {
             }
             TicketPaymentError::InvalidSecret => {
                 write!(f, "Provided secret does not match the ticket validation hash")
+            }
+            TicketPaymentError::PriceLimitExceeded => {
+                write!(f, "Listing price exceeds the original purchase price")
             }
         }
     }
