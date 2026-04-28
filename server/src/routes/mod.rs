@@ -28,17 +28,22 @@ use crate::config::{
     create_security_headers_layer,
     propagate_request_id_layer,
     set_request_id_layer,
+    Config,
 };
+use crate::cache::RedisCache;
 use crate::handlers::{
     categories::{get_category, list_categories},
-    events::{get_event, list_events, submit_event_rating},
+    events::{get_event, list_events, submit_event_rating, EventState},
     example_empty_success,
     example_not_found,
     example_validation_error,
     health::{ health_check, health_check_blockchain, health_check_db, health_check_ready },
+    monitoring::{monitoring_dashboard, MonitoringState},
     qr_payload::{generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
+use crate::middleware::audit::audit_layer;
+use crate::middleware::rate_limit::GovernorRateLimitLayer;
 use crate::utils::rate_limit::RateLimitLayer;
 
 /// Sensitive routes that hit the database or expose internal state.
@@ -54,11 +59,23 @@ const GENERAL_WINDOW: Duration = Duration::from_secs(60);
 ///
 /// # Arguments
 /// * `pool` - PostgreSQL connection pool for database operations
+/// * `config` - Application configuration
+/// * `redis` - Redis cache client
 ///
 /// # Returns
 /// A configured Axum Router with all routes and middleware applied
-pub fn create_routes(pool: PgPool) -> Router {
+pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
+    
+    let event_state = EventState {
+        pool: pool.clone(),
+        redis: redis.clone(),
+    };
+    
+    let monitoring_state = MonitoringState {
+        pool: pool.clone(),
+        redis: redis.clone(),
+    };
 
     // Admin sub-router — every request is recorded in audit_logs.
     let admin_routes = Router::new()
@@ -80,12 +97,12 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/list", get(list_qr_payloads))
         .with_state(pool.clone());
 
-    // Event routes
+    // Event routes with Redis caching
     let event_routes = Router::new()
         .route("/", get(list_events))
         .route("/:id", get(get_event))
         .route("/:id/rate", post(submit_event_rating))
-        .with_state(pool.clone());
+        .with_state(event_state);
 
     // Category routes
     let category_routes = Router::new()
@@ -93,12 +110,13 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/:id", get(get_category))
         .with_state(pool.clone());
 
-    let api_routes = Router::new()
+    let sensitive_routes = Router::new()
         .route("/health", get(health_check))
         .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
-        .with_state(pool.clone())
+        .route("/monitoring/dashboard", get(monitoring_dashboard))
+        .with_state(monitoring_state)
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
 
     // General endpoints — relaxed rate limit
@@ -110,16 +128,49 @@ pub fn create_routes(pool: PgPool) -> Router {
         .with_state(pool)
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
+    // Public API routes with tower-governor rate limiting
+    let public_api_routes = Router::new()
+        .nest("/events", event_routes)
+        .nest("/categories", category_routes)
+        .layer(GovernorRateLimitLayer::new(100, Duration::from_secs(60)));
+
     let api_routes = Router::new()
         .merge(sensitive_routes)
-        .merge(general_routes);
+        .merge(general_routes)
+        .merge(public_api_routes);
+
+    // Deep linking routes
+    let deep_link_routes = Router::new()
+        .route("/.well-known/apple-app-site-association", get(serve_apple_app_site_association))
+        .route("/.well-known/assetlinks.json", get(serve_assetlinks));
 
     Router::new()
         .nest("/api/v1", api_routes)
+        .merge(deep_link_routes)
         .layer(create_security_headers_layer())
         .layer(create_cors_layer())
         .layer(propagate_request_id_layer())
         .layer(set_request_id_layer())
+}
+
+/// Serve Apple App Site Association file for iOS deep linking
+async fn serve_apple_app_site_association() -> Response {
+    let content = include_str!("../../.well-known/apple-app-site-association");
+    (
+        axum::http::StatusCode::OK,
+        [("Content-Type", "application/json")],
+        content
+    ).into_response()
+}
+
+/// Serve Android Asset Links file for Android deep linking
+async fn serve_assetlinks() -> Response {
+    let content = include_str!("../../.well-known/assetlinks.json");
+    (
+        axum::http::StatusCode::OK,
+        [("Content-Type", "application/json")],
+        content
+    ).into_response()
 }
 
 #[cfg(test)]
