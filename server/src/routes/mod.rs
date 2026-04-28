@@ -31,7 +31,7 @@ use crate::config::{
 };
 use crate::handlers::{
     categories::{get_category, list_categories},
-    events::{get_event, list_events},
+    events::{get_event, list_events, submit_event_rating},
     example_empty_success,
     example_not_found,
     example_validation_error,
@@ -58,8 +58,44 @@ const GENERAL_WINDOW: Duration = Duration::from_secs(60);
 /// # Returns
 /// A configured Axum Router with all routes and middleware applied
 pub fn create_routes(pool: PgPool) -> Router {
-    // Sensitive endpoints — stricter rate limit
-    let sensitive_routes = Router::new()
+    let broadcaster = PurchaseBroadcaster::new();
+
+    // Admin sub-router — every request is recorded in audit_logs.
+    let admin_routes = Router::new()
+        // Placeholder: real admin handlers are mounted here as features land.
+        .route("/health", get(health_check))
+        .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(pool.clone());
+
+    // WebSocket sub-router for real-time purchase updates.
+    let ws_routes = Router::new()
+        .route("/purchases", get(ws_purchases_handler))
+        .with_state(broadcaster);
+
+    // QR payload routes for cryptographically signed QR codes
+    let qr_routes = Router::new()
+        .route("/generate", post(generate_qr_payload))
+        .route("/verify", post(verify_qr_payload))
+        .route("/mark-used/:id", post(mark_qr_used))
+        .route("/list", get(list_qr_payloads))
+        .with_state(pool.clone());
+
+    // Event routes
+    let event_routes = Router::new()
+        .route("/", get(list_events))
+        .route("/:id", get(get_event))
+        .route("/:id/rate", post(submit_event_rating))
+        .with_state(pool.clone());
+
+    // Category routes
+    let category_routes = Router::new()
+        .route("/", get(list_categories))
+        .route("/:id", get(get_category))
+        .with_state(pool.clone());
+
+    let api_routes = Router::new()
+        .route("/health", get(health_check))
+        .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
         .with_state(pool.clone())

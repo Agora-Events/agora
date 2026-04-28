@@ -412,4 +412,6 @@ pub enum DataKey {
     GlobalTicketsSold,
     /// Mapping of (event_id, tier_id, user_address) to ticket count for per-user limits (Persistent)
     UserTicketCount(String, String, Address),
+    /// Mapping of event_id to pause status (bool) – whether the event is paused (Persistent)
+    EventPaused(String),
 }

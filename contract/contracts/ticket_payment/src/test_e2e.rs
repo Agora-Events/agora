@@ -3,7 +3,7 @@ use super::storage::*;
 use super::types::{PaymentStatus, MAX_BPS, TRANSFER_FEE_BPS};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
-    testutils::Address as _, testutils::Ledger, token, Address, Env, String, Symbol,
+    testutils::Address as _, testutils::Ledger, token, Address, Bytes, BytesN, Env, String, Symbol,
 };
 
 // =============================================================================
@@ -400,6 +400,13 @@ fn fund_buyer(env: &Env, usdc_id: &Address, buyer: &Address, contract: &Address,
     token::Client::new(env, usdc_id).approve(buyer, contract, &amount, &99999);
 }
 
+/// Returns a fixed test secret and its SHA-256 hash for use in tests.
+fn test_secret(env: &Env) -> (Bytes, BytesN<32>) {
+    let secret = Bytes::from_slice(env, b"test_secret_value");
+    let hash: BytesN<32> = env.crypto().sha256(&secret).into();
+    (secret, hash)
+}
+
 /// Process a single payment and return the payment id.
 fn buy_ticket(
     client: &TicketPaymentContractClient,
@@ -410,6 +417,7 @@ fn buy_ticket(
     usdc_id: &Address,
     amount: i128,
 ) -> String {
+    let (_secret, hash) = test_secret(env);
     client.process_payment(
         &String::from_str(env, payment_id),
         &String::from_str(env, event_id),
@@ -420,6 +428,7 @@ fn buy_ticket(
         &1,
         &None,
         &None,
+        &hash,
     )
 }
 
@@ -461,7 +470,8 @@ fn test_e2e_full_purchase_confirm_checkin_lifecycle() {
     // 3. Check in
     let series_id: Option<String> = None;
     let pass_holder: Option<Address> = None;
-    client.check_in(&pay_id, &scanner, &series_id, &pass_holder);
+    let (raw_secret, _hash) = test_secret(&env);
+    client.check_in(&pay_id, &scanner, &series_id, &pass_holder, &raw_secret);
     let payment = client.get_payment_status(&pay_id).unwrap();
     assert_eq!(payment.status, PaymentStatus::CheckedIn);
 
@@ -628,6 +638,7 @@ fn test_e2e_duplicate_payment_id_rejected() {
     // the existing record (since payment_id is unique key). The contract doesn't
     // explicitly reject duplicates at the process_payment level, but the buyer
     // index won't double-add. Verify the payment record reflects the second write.
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_dup"),
         &String::from_str(&env, "event_1"),
@@ -638,6 +649,7 @@ fn test_e2e_duplicate_payment_id_rejected() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // The second call should succeed (no explicit duplicate rejection in the contract),
@@ -678,6 +690,7 @@ fn test_e2e_state_consistent_after_failed_payment() {
     let balance_before = token::Client::new(&env, &usdc_id).balance(&buyer);
 
     // Attempt payment with non-whitelisted token — should fail
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_fail"),
         &String::from_str(&env, "event_1"),
@@ -688,6 +701,7 @@ fn test_e2e_state_consistent_after_failed_payment() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::TokenNotWhitelisted)));
 
@@ -725,6 +739,7 @@ fn test_e2e_batch_purchase_then_partial_refund() {
     fund_buyer(&env, &usdc_id, &buyer, &client.address, total);
 
     // Batch buy 3 tickets
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "batch_1"),
         &String::from_str(&env, "event_1"),
@@ -735,6 +750,7 @@ fn test_e2e_batch_purchase_then_partial_refund() {
         &quantity,
         &None,
         &None,
+        &hash,
     );
 
     // Verify 3 sub-payments exist (p-0, p-1, p-2)
@@ -853,6 +869,7 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
     assert!(client.get_is_paused());
 
     // Payment should fail while paused
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_p2"),
         &String::from_str(&env, "event_1"),
@@ -863,6 +880,7 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::ContractPaused)));
 
@@ -881,6 +899,7 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert!(result.is_ok());
 }

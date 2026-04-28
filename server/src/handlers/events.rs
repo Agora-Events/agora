@@ -3,9 +3,9 @@
 //! This module provides HTTP handlers for event-related operations including
 //! listing, creating, updating, and deleting events.
 
-use axum::{extract::{Query, State}, response::IntoResponse, response::Response};
+use axum::{extract::{Path, Query, State}, response::IntoResponse, response::Response, Json};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -31,6 +31,20 @@ pub struct EventFilters {
     
     /// Search in title and description
     pub search: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SubmitEventRatingRequest {
+    pub ticket_id: Uuid,
+    pub rating: i16,
+    pub review: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SubmitEventRatingResponse {
+    pub sum_of_ratings: i64,
+    pub count_of_ratings: i32,
+    pub average_rating: f32,
 }
 
 /// List all events with pagination and optional filters
@@ -191,6 +205,126 @@ pub async fn get_event(
     };
     
     success(event, "Event retrieved successfully").into_response()
+}
+
+/// Record a star rating for an event.
+///
+/// # Endpoint
+/// POST `/api/v1/events/:id/rate`
+pub async fn submit_event_rating(
+    State(pool): State<PgPool>,
+    Path(event_id): Path<Uuid>,
+    Json(payload): Json<SubmitEventRatingRequest>,
+) -> Response {
+    if payload.rating < 1 || payload.rating > 5 {
+        return AppError::ValidationError("Rating must be between 1 and 5".to_string())
+            .into_response();
+    }
+
+    let ticket = match sqlx::query!(
+        r#"SELECT t.status AS status, tt.event_id AS event_id
+           FROM tickets t
+           JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+           WHERE t.id = $1"#,
+        payload.ticket_id
+    )
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(ticket) => match ticket {
+            Some(ticket) => ticket,
+            None => {
+                return AppError::NotFound(format!("Ticket with id '{}' not found", payload.ticket_id))
+                    .into_response();
+            }
+        },
+        Err(e) => {
+            tracing::error!("Failed to fetch ticket for rating: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if ticket.event_id != event_id {
+        return AppError::Forbidden("Ticket does not belong to this event".to_string()).into_response();
+    }
+
+    if ticket.status != "used" {
+        return AppError::ValidationError(
+            "Only attendees with a used ticket may leave a rating".to_string(),
+        )
+        .into_response();
+    }
+
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            tracing::error!("Failed to begin transaction: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let already_rated = match sqlx::query_scalar::<_, i64>(
+        "SELECT 1::bigint FROM event_ratings WHERE ticket_id = $1",
+    )
+    .bind(payload.ticket_id)
+    .fetch_optional(&mut tx)
+    .await
+    {
+        Ok(exists) => exists.is_some(),
+        Err(e) => {
+            tracing::error!("Failed to verify existing rating: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if already_rated {
+        return AppError::ValidationError(
+            "Each attendee may only submit one rating per event".to_string(),
+        )
+        .into_response();
+    }
+
+    if let Err(e) = sqlx::query(
+        "INSERT INTO event_ratings (event_id, ticket_id, rating, review) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(event_id)
+    .bind(payload.ticket_id)
+    .bind(payload.rating)
+    .bind(payload.review)
+    .execute(&mut tx)
+    .await
+    {
+        tracing::error!("Failed to insert event rating: {:?}", e);
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    let updated_event = match sqlx::query_as::<_, Event>(
+        "UPDATE events SET sum_of_ratings = sum_of_ratings + $2, count_of_ratings = count_of_ratings + 1 WHERE id = $1 RETURNING *"
+    )
+    .bind(event_id)
+    .bind(payload.rating)
+    .fetch_one(&mut tx)
+    .await
+    {
+        Ok(event) => event,
+        Err(e) => {
+            tracing::error!("Failed to update event rating aggregates: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if let Err(e) = tx.commit().await {
+        tracing::error!("Failed to commit rating transaction: {:?}", e);
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    let response = SubmitEventRatingResponse {
+        sum_of_ratings: updated_event.sum_of_ratings,
+        count_of_ratings: updated_event.count_of_ratings,
+        average_rating: updated_event.average_rating().unwrap_or(0.0),
+    };
+
+    success(response, "Rating recorded successfully").into_response()
 }
 
 #[cfg(test)]
