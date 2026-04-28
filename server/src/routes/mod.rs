@@ -29,6 +29,7 @@ use crate::config::{
     propagate_request_id_layer,
     set_request_id_layer,
 };
+use crate::middleware::request_id_tracing::trace_request_id;
 use crate::handlers::{
     categories::{get_category, list_categories},
     events::{get_event, list_events, submit_event_rating},
@@ -36,6 +37,7 @@ use crate::handlers::{
     example_not_found,
     example_validation_error,
     health::{ health_check, health_check_blockchain, health_check_db, health_check_ready },
+    leaderboard::get_leaderboard,
     qr_payload::{generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
@@ -107,6 +109,7 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
+        .route("/leaderboard", get(get_leaderboard))
         .with_state(pool)
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
@@ -118,6 +121,7 @@ pub fn create_routes(pool: PgPool) -> Router {
         .nest("/api/v1", api_routes)
         .layer(create_security_headers_layer())
         .layer(create_cors_layer())
+        .layer(middleware::from_fn(trace_request_id))
         .layer(propagate_request_id_layer())
         .layer(set_request_id_layer())
 }
