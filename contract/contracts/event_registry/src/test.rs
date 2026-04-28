@@ -2753,12 +2753,8 @@ fn test_three_tiers_inventory_is_isolated_and_sold_out_tier_errors() {
     client.increment_inventory(&event_id, &vip_id, &Address::generate(&env), &1);
     client.increment_inventory(&event_id, &early_bird_id, &Address::generate(&env), &1);
 
-    let sold_out_attempt = client.try_increment_inventory(
-        &event_id,
-        &early_bird_id,
-        &Address::generate(&env),
-        &1,
-    );
+    let sold_out_attempt =
+        client.try_increment_inventory(&event_id, &early_bird_id, &Address::generate(&env), &1);
     assert_eq!(sold_out_attempt, Err(Ok(EventRegistryError::TierSoldOut)));
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -5303,7 +5299,7 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
 
     assert_eq!(
         result,
-        Err(Ok(EventRegistryError::RestockingFeeExceedsTicketPrice))
+        Err(Ok(EventRegistryError::RestockingFeeExceedsPrice))
     );
 }
 
@@ -5484,13 +5480,13 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
 
     assert_eq!(
         result,
-        Err(Ok(EventRegistryError::RestockingFeeExceedsTicketPrice))
+        Err(Ok(EventRegistryError::RestockingFeeExceedsPrice))
     );
 }
 
 #[test]
 fn test_restocking_fee_exceeds_ticket_price_error_message() {
-    let buf = fmt_to_str(EventRegistryError::RestockingFeeExceedsTicketPrice);
+    let buf = fmt_to_str(EventRegistryError::RestockingFeeExceedsPrice);
     assert!(
         buf_starts_with(
             &buf,
