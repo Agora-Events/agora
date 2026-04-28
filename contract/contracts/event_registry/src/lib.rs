@@ -249,12 +249,11 @@ impl EventRegistry {
 
         storage::set_admin(&env, &admin); // Legacy support
         storage::set_contract_admin(&env, &admin); // Organizer whitelist support
-        
+
         // Explicitly whitelist admin as an approved organizer
-        env.storage().instance().set(
-            &DataKey::ApprovedOrganizer(admin.clone()),
-            &true
-        );
+        env.storage()
+            .instance()
+            .set(&DataKey::ApprovedOrganizer(admin.clone()), &true);
         storage::set_multisig_config(&env, &multisig_config);
         storage::set_platform_wallet(&env, &platform_wallet);
         storage::set_platform_fee(&env, initial_fee);
@@ -1455,7 +1454,8 @@ impl EventRegistry {
             return Err(EventRegistryError::AlreadyStaked);
         }
 
-        let token = storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
+        let token =
+            storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
         let min_amount = storage::get_min_stake_amount(&env);
 
         // Transfer tokens from organizer to this contract
@@ -1557,7 +1557,8 @@ impl EventRegistry {
             return Err(EventRegistryError::InvalidRewardAmount);
         }
 
-        let token = storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
+        let token =
+            storage::get_staking_token(&env).ok_or(EventRegistryError::StakingNotConfigured)?;
 
         let total_staked = storage::get_total_staked(&env);
         if total_staked == 0 {

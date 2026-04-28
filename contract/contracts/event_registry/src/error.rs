@@ -44,9 +44,9 @@ pub enum EventRegistryError {
     PerUserLimitExceeded = 60,
     EventNotEnded = 39,
     // Generic variants used internally in lib.rs
-    StateError = 43,      // bad contract state (e.g. staking not set up)
+    StateError = 43, // bad contract state (e.g. staking not set up)
     ProposalAlreadyApproved = 45,
-    MultisigError = 47,   // multisig auth failure
+    MultisigError = 47, // multisig auth failure
     ProposalAlreadyCancelled = 49,
     // Governance / proposals
     InvalidTargetDeadline = 54,
@@ -92,7 +92,10 @@ impl core::fmt::Display for EventRegistryError {
                 write!(f, "Sum of tier limits exceeds event max supply")
             }
             EventRegistryError::TierNotFound => {
-                write!(f, "The specified ticket tier ID does not exist for this event")
+                write!(
+                    f,
+                    "The specified ticket tier ID does not exist for this event"
+                )
             }
             EventRegistryError::TierSoldOut => write!(
                 f,
@@ -146,7 +149,10 @@ impl core::fmt::Display for EventRegistryError {
                 write!(f, "Milestone release percentages must not exceed 100%")
             }
             EventRegistryError::RestockingFeeExceedsPrice => {
-                write!(f, "Restocking fee must not exceed the original ticket price")
+                write!(
+                    f,
+                    "Restocking fee must not exceed the original ticket price"
+                )
             }
             EventRegistryError::InvalidTags => write!(
                 f,
@@ -175,7 +181,10 @@ impl core::fmt::Display for EventRegistryError {
                 write!(f, "Admin already exists in the multisig configuration")
             }
             EventRegistryError::CannotRemoveLastAdmin => {
-                write!(f, "Cannot remove the last admin from the multisig configuration")
+                write!(
+                    f,
+                    "Cannot remove the last admin from the multisig configuration"
+                )
             }
             EventRegistryError::InvalidThreshold => {
                 write!(f, "Threshold must be between 1 and the number of admins")
