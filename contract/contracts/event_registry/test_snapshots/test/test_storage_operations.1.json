@@ -20,7 +20,21 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "accepted_tokens"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "banner_cid"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "cancellation_reason"
                       },
                       "val": "void"
                     },
@@ -194,6 +208,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "start_time"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -224,6 +246,22 @@
                       },
                       "val": {
                         "map": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_lock_duration"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "use_global_whitelist"
+                      },
+                      "val": {
+                        "bool": true
                       }
                     }
                   ]
@@ -328,7 +366,21 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "accepted_tokens"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "banner_cid"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "cancellation_reason"
                       },
                       "val": "void"
                     },
@@ -502,6 +554,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "start_time"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -532,6 +592,22 @@
                       },
                       "val": {
                         "map": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_lock_duration"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "use_global_whitelist"
+                      },
+                      "val": {
+                        "bool": true
                       }
                     }
                   ]

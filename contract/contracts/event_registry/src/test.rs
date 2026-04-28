@@ -5185,7 +5185,7 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
 
     assert_eq!(
         result,
-        Err(Ok(EventRegistryError::RestockingFeeExceedsTicketPrice))
+        Err(Ok(EventRegistryError::InvalidFeeCalculation))
     );
 }
 
@@ -5366,17 +5366,17 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
 
     assert_eq!(
         result,
-        Err(Ok(EventRegistryError::RestockingFeeExceedsTicketPrice))
+        Err(Ok(EventRegistryError::InvalidFeeCalculation))
     );
 }
 
 #[test]
 fn test_restocking_fee_exceeds_ticket_price_error_message() {
-    let buf = fmt_to_str(EventRegistryError::RestockingFeeExceedsTicketPrice);
+    let buf = fmt_to_str(EventRegistryError::InvalidFeeCalculation);
     assert!(
         buf_starts_with(
             &buf,
-            "Restocking fee must not exceed the original ticket price"
+            "Fee calculation failed due to invalid arithmetic inputs"
         ),
         "unexpected message"
     );

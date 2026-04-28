@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 6,
+    "address": 7,
     "nonce": 0,
     "mux_id": 0
   },
@@ -37,6 +37,14 @@
               "args": [
                 {
                   "map": [
+                    {
+                      "key": {
+                        "symbol": "accepted_tokens"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
                     {
                       "key": {
                         "symbol": "banner_cid"
@@ -143,6 +151,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "start_time"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "tags"
                       },
                       "val": "void"
@@ -199,6 +215,14 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "max_per_user"
+                                  },
+                                  "val": {
+                                    "u32": 0
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "name"
                                   },
                                   "val": {
@@ -225,6 +249,22 @@
                             }
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_lock_duration"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "use_global_whitelist"
+                      },
+                      "val": {
+                        "bool": true
                       }
                     }
                   ]
@@ -326,7 +366,21 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "accepted_tokens"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "banner_cid"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "cancellation_reason"
                       },
                       "val": "void"
                     },
@@ -500,6 +554,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "start_time"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -570,6 +632,14 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "max_per_user"
+                                  },
+                                  "val": {
+                                    "u32": 0
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "name"
                                   },
                                   "val": {
@@ -596,6 +666,22 @@
                             }
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_lock_duration"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "use_global_whitelist"
+                      },
+                      "val": {
+                        "bool": true
                       }
                     }
                   ]

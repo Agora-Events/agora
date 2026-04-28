@@ -47,8 +47,6 @@ pub enum EventRegistryError {
     InvalidRewardAmount = 32,
     /// Milestone release percentages sum exceeds 100%
     InvalidMilestonePlan = 41,
-    /// Restocking fee exceeds the ticket price
-    RestockingFeeExceedsTicketPrice = 42,
     /// Tags list is invalid (too many tags or a tag string is too long)
     InvalidTags = 43,
     // ── Governance / Multi-Sig errors ──────────────────────────────────
@@ -80,6 +78,8 @@ pub enum EventRegistryError {
     ProposalAlreadyCancelled = 49,
     /// refund_deadline or target_deadline must be before end_time when end_time is set
     DeadlineAfterEndTime = 50,
+    /// User is already on the waitlist for this event
+    AlreadyOnWaitlist = 51,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -182,12 +182,6 @@ impl core::fmt::Display for EventRegistryError {
             EventRegistryError::InvalidMilestonePlan => {
                 write!(f, "Milestone release percentages must not exceed 100%")
             }
-            EventRegistryError::RestockingFeeExceedsTicketPrice => {
-                write!(
-                    f,
-                    "Restocking fee must not exceed the original ticket price"
-                )
-            }
             EventRegistryError::InvalidTags => {
                 write!(
                     f,
@@ -244,6 +238,9 @@ impl core::fmt::Display for EventRegistryError {
                     f,
                     "refund_deadline and target_deadline must be before end_time"
                 )
+            }
+            EventRegistryError::AlreadyOnWaitlist => {
+                write!(f, "User is already on the waitlist for this event")
             }
         }
     }

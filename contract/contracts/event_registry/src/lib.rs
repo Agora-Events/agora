@@ -93,7 +93,7 @@ use crate::events::{
     InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent,
     OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, ProposalCancelledEvent,
     RegistryUpgradedEvent, ScannerAuthorizedEvent, StakerRewardsClaimedEvent,
-    StakerRewardsDistributedEvent, TokenWhitelistUpdatedEvent,
+    StakerRewardsDistributedEvent, TokenWhitelistUpdatedEvent, WaitlistJoinedEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
@@ -327,7 +327,7 @@ impl EventRegistry {
 
             // Combined validation: Ensure restocking fee does not exceed any tier price
             if args.restocking_fee > 0 && args.restocking_fee > tier.price {
-                return Err(EventRegistryError::RestockingFeeExceedsTicketPrice);
+                return Err(EventRegistryError::InvalidFeeCalculation);
             }
         }
 
@@ -2165,6 +2165,50 @@ impl EventRegistry {
     pub fn version(_env: Env) -> u32 {
         VERSION
     }
+
+    /// Allows a user to join the waitlist for an event.
+    ///
+    /// # Arguments
+    /// * `event_id` - The unique identifier of the event
+    /// * `user` - The address of the user joining the waitlist (must sign)
+    ///
+    /// # Returns
+    /// * `Ok(())` - User successfully joined the waitlist
+    ///
+    /// # Errors
+    /// * `EventNotFound` - If no event with the given ID exists
+    /// * `AlreadyOnWaitlist` - If the user is already on the waitlist for this event
+    ///
+    /// # Authentication
+    /// Requires `user.require_auth()`
+    pub fn join_waitlist(
+        env: Env,
+        event_id: String,
+        user: Address,
+    ) -> Result<(), EventRegistryError> {
+        user.require_auth();
+
+        if !storage::event_exists(&env, event_id.clone()) {
+            return Err(EventRegistryError::EventNotFound);
+        }
+
+        if storage::is_on_waitlist(&env, &event_id, &user) {
+            return Err(EventRegistryError::AlreadyOnWaitlist);
+        }
+
+        storage::add_to_waitlist(&env, &event_id, &user);
+
+        env.events().publish(
+            (AgoraEvent::WaitlistJoined,),
+            WaitlistJoinedEvent {
+                event_id,
+                user,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
 }
 
 fn require_admin(env: &Env) -> Result<Address, EventRegistryError> {
@@ -2265,7 +2309,7 @@ fn validate_restocking_fee(args: &EventRegistrationArgs) -> Result<(), EventRegi
             .ok_or(EventRegistryError::InvalidFeeCalculation)?;
 
         if remaining_refund < 0 {
-            return Err(EventRegistryError::RestockingFeeExceedsTicketPrice);
+            return Err(EventRegistryError::InvalidFeeCalculation);
         }
     }
 
@@ -2323,3 +2367,6 @@ mod test_free_ticket;
 
 #[cfg(test)]
 mod test_proposal_cancellation;
+
+#[cfg(test)]
+mod test_waitlist;
