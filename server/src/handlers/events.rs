@@ -8,11 +8,23 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
+use std::time::Duration;
 
+use crate::cache::RedisCache;
 use crate::models::event::Event;
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
+
+/// Cache TTL for event details (5 minutes)
+const EVENT_CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// Application state for event handlers
+#[derive(Clone)]
+pub struct EventState {
+    pub pool: PgPool,
+    pub redis: RedisCache,
+}
 
 /// Query parameters for filtering events
 #[derive(Debug, Deserialize)]
@@ -64,7 +76,7 @@ pub struct SubmitEventRatingResponse {
 /// # Response
 /// Returns a paginated list of events with metadata
 pub async fn list_events(
-    State(pool): State<PgPool>,
+    State(state): State<EventState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<EventFilters>,
 ) -> Response {
@@ -128,7 +140,7 @@ pub async fn list_events(
         count_query_builder = count_query_builder.bind(format!("%{}%", search));
     }
     
-    let total = match count_query_builder.fetch_one(&pool).await {
+    let total = match count_query_builder.fetch_one(&state.pool).await {
         Ok(count) => count,
         Err(e) => {
             tracing::error!("Failed to count events: {:?}", e);
@@ -166,7 +178,7 @@ pub async fn list_events(
         .bind(validated_pagination.limit())
         .bind(validated_pagination.offset());
     
-    let items = match items_query_builder.fetch_all(&pool).await {
+    let items = match items_query_builder.fetch_all(&state.pool).await {
         Ok(events) => events,
         Err(e) => {
             tracing::error!("Failed to fetch events: {:?}", e);
@@ -182,15 +194,35 @@ pub async fn list_events(
 ///
 /// # Endpoint
 /// GET `/api/v1/events/:id`
+///
+/// # Caching
+/// Event details are cached in Redis with a 5-minute TTL to reduce database load.
 pub async fn get_event(
-    State(pool): State<PgPool>,
+    State(mut state): State<EventState>,
     axum::extract::Path(event_id): axum::extract::Path<Uuid>,
 ) -> Response {
+    let cache_key = format!("event:detail:{}", event_id);
+    
+    // Try to get from cache first
+    match state.redis.get::<Event>(&cache_key).await {
+        Ok(Some(event)) => {
+            tracing::debug!("Cache hit for event {}", event_id);
+            return success(event, "Event retrieved successfully (cached)").into_response();
+        }
+        Ok(None) => {
+            tracing::debug!("Cache miss for event {}", event_id);
+        }
+        Err(e) => {
+            tracing::warn!("Redis error, falling back to database: {:?}", e);
+        }
+    }
+    
+    // Cache miss or error, fetch from database
     let event = match sqlx::query_as::<_, Event>(
         "SELECT * FROM events WHERE id = $1"
     )
     .bind(event_id)
-    .fetch_optional(&pool)
+    .fetch_optional(&state.pool)
     .await
     {
         Ok(Some(event)) => event,
@@ -204,6 +236,11 @@ pub async fn get_event(
         }
     };
     
+    // Store in cache for future requests
+    if let Err(e) = state.redis.set(&cache_key, &event, EVENT_CACHE_TTL).await {
+        tracing::warn!("Failed to cache event {}: {:?}", event_id, e);
+    }
+    
     success(event, "Event retrieved successfully").into_response()
 }
 
@@ -212,7 +249,7 @@ pub async fn get_event(
 /// # Endpoint
 /// POST `/api/v1/events/:id/rate`
 pub async fn submit_event_rating(
-    State(pool): State<PgPool>,
+    State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
     Json(payload): Json<SubmitEventRatingRequest>,
 ) -> Response {
@@ -228,7 +265,7 @@ pub async fn submit_event_rating(
            WHERE t.id = $1"#,
         payload.ticket_id
     )
-    .fetch_optional(&pool)
+    .fetch_optional(&state.pool)
     .await
     {
         Ok(ticket) => match ticket {
@@ -255,7 +292,7 @@ pub async fn submit_event_rating(
         .into_response();
     }
 
-    let mut tx = match pool.begin().await {
+    let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(e) => {
             tracing::error!("Failed to begin transaction: {:?}", e);
