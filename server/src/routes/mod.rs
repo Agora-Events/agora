@@ -1,23 +1,100 @@
-use axum::{routing::get, Router};
+//! # Routes Module
+//!
+//! This module defines the application's HTTP routing structure.
+//! It organizes all API endpoints under versioned paths and applies
+//! middleware layers for security, CORS, and request tracking.
+//!
+//! ## Route Structure
+//!
+//! All routes are nested under `/api/v1/` prefix:
+//! - Health check endpoints for monitoring
+//! - Example endpoints for testing error responses
+//! - Future: Event management endpoints
+//!
+//! ## Middleware Layers
+//!
+//! Routes are wrapped with middleware in this order:
+//! 1. Request ID generation and propagation
+//! 2. CORS handling
+//! 3. Security headers
+//! 4. Database connection state
+
+use axum::{ middleware, routing::{get, post}, Router };
 use sqlx::PgPool;
 
 use crate::config::{
-    create_cors_layer, create_security_headers_layer, propagate_request_id_layer,
+    create_cors_layer,
+    create_security_headers_layer,
+    propagate_request_id_layer,
     set_request_id_layer,
 };
 use crate::handlers::{
-    example_empty_success, example_not_found, example_validation_error,
-    health::{health_check, health_check_db, health_check_ready},
+    categories::{get_category, list_categories},
+    events::{get_event, list_events},
+    example_empty_success,
+    example_not_found,
+    example_validation_error,
+    health::{ health_check, health_check_blockchain, health_check_db, health_check_ready },
+    qr_payload::{generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
+    ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
+use crate::middleware::audit::audit_layer;
 
+/// Creates the main application router with all routes and middleware
+///
+/// # Arguments
+/// * `pool` - PostgreSQL connection pool for database operations
+///
+/// # Returns
+/// A configured Axum Router with all routes and middleware applied
 pub fn create_routes(pool: PgPool) -> Router {
+    let broadcaster = PurchaseBroadcaster::new();
+
+    // Admin sub-router — every request is recorded in audit_logs.
+    let admin_routes = Router::new()
+        // Placeholder: real admin handlers are mounted here as features land.
+        .route("/health", get(health_check))
+        .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(pool.clone());
+
+    // WebSocket sub-router for real-time purchase updates.
+    let ws_routes = Router::new()
+        .route("/purchases", get(ws_purchases_handler))
+        .with_state(broadcaster);
+
+    // QR payload routes for cryptographically signed QR codes
+    let qr_routes = Router::new()
+        .route("/generate", post(generate_qr_payload))
+        .route("/verify", post(verify_qr_payload))
+        .route("/mark-used/:id", post(mark_qr_used))
+        .route("/list", get(list_qr_payloads))
+        .with_state(pool.clone());
+
+    // Event routes
+    let event_routes = Router::new()
+        .route("/", get(list_events))
+        .route("/:id", get(get_event))
+        .with_state(pool.clone());
+
+    // Category routes
+    let category_routes = Router::new()
+        .route("/", get(list_categories))
+        .route("/:id", get(get_category))
+        .with_state(pool.clone());
+
     let api_routes = Router::new()
         .route("/health", get(health_check))
+        .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
+        .nest("/admin", admin_routes)
+        .nest("/ws", ws_routes)
+        .nest("/qr", qr_routes)
+        .nest("/events", event_routes)
+        .nest("/categories", category_routes)
         .with_state(pool);
 
     Router::new()
@@ -31,20 +108,39 @@ pub fn create_routes(pool: PgPool) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-    };
+    use axum::{ body::Body, http::{ Request, StatusCode } };
     use tower::ServiceExt;
 
     fn test_router() -> Router {
         Router::new()
-            .route("/api/v1/health", get(|| async { "ok" }))
-            .route("/api/v1/health/db", get(|| async { "ok" }))
-            .route("/api/v1/health/ready", get(|| async { "ok" }))
-            .route("/api/v1/examples/validation-error", get(|| async { "ok" }))
-            .route("/api/v1/examples/empty-success", get(|| async { "ok" }))
-            .route("/api/v1/examples/not-found/:id", get(|| async { "ok" }))
+            .route(
+                "/api/v1/health",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/health/blockchain",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/health/db",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/health/ready",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/examples/validation-error",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/examples/empty-success",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/examples/not-found/:id",
+                get(|| async { "ok" })
+            )
     }
 
     async fn get_status(router: Router, path: &str) -> StatusCode {
@@ -55,17 +151,20 @@ mod tests {
     #[tokio::test]
     async fn test_health_route_exists_under_api_v1() {
         let router = test_router();
-        assert_ne!(
-            get_status(router, "/api/v1/health").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_ne!(get_status(router, "/api/v1/health").await, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn test_health_db_route_exists_under_api_v1() {
         let router = test_router();
+        assert_ne!(get_status(router, "/api/v1/health/db").await, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_health_blockchain_route_exists_under_api_v1() {
+        let router = test_router();
         assert_ne!(
-            get_status(router, "/api/v1/health/db").await,
+            get_status(router, "/api/v1/health/blockchain").await,
             StatusCode::NOT_FOUND
         );
     }
@@ -73,10 +172,7 @@ mod tests {
     #[tokio::test]
     async fn test_health_ready_route_exists_under_api_v1() {
         let router = test_router();
-        assert_ne!(
-            get_status(router, "/api/v1/health/ready").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_ne!(get_status(router, "/api/v1/health/ready").await, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
@@ -109,26 +205,15 @@ mod tests {
     #[tokio::test]
     async fn test_old_routes_without_prefix_return_404() {
         let router = test_router();
-        assert_eq!(
-            get_status(router.clone(), "/health").await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            get_status(router.clone(), "/health/db").await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            get_status(router, "/health/ready").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_eq!(get_status(router.clone(), "/health").await, StatusCode::NOT_FOUND);
+        assert_eq!(get_status(router.clone(), "/health/blockchain").await, StatusCode::NOT_FOUND);
+        assert_eq!(get_status(router.clone(), "/health/db").await, StatusCode::NOT_FOUND);
+        assert_eq!(get_status(router, "/health/ready").await, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn test_api_without_version_returns_404() {
         let router = test_router();
-        assert_eq!(
-            get_status(router, "/api/health").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_eq!(get_status(router, "/api/health").await, StatusCode::NOT_FOUND);
     }
 }

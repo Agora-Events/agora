@@ -72,6 +72,14 @@ pub enum EventRegistryError {
     InvalidTargetDeadline = 44,
     /// Admin has already approved this proposal
     AlreadyApproved = 45,
+    /// Event has not ended yet; feedback CID can only be set after end_time
+    EventNotEnded = 47,
+    /// User has exceeded the maximum number of tickets allowed for this tier
+    PerUserLimitExceeded = 48,
+    /// Proposal has already been cancelled
+    ProposalAlreadyCancelled = 49,
+    /// refund_deadline or target_deadline must be before end_time when end_time is set
+    DeadlineAfterEndTime = 50,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -215,6 +223,27 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::AlreadyApproved => {
                 write!(f, "Admin has already approved this proposal")
+            }
+            EventRegistryError::EventNotEnded => {
+                write!(
+                    f,
+                    "Event has not ended yet; feedback CID can only be set after end_time"
+                )
+            }
+            EventRegistryError::PerUserLimitExceeded => {
+                write!(
+                    f,
+                    "User has exceeded the maximum number of tickets allowed for this tier"
+                )
+            }
+            EventRegistryError::ProposalAlreadyCancelled => {
+                write!(f, "Proposal has already been cancelled")
+            }
+            EventRegistryError::DeadlineAfterEndTime => {
+                write!(
+                    f,
+                    "refund_deadline and target_deadline must be before end_time"
+                )
             }
         }
     }

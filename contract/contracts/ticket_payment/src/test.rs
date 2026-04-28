@@ -50,6 +50,7 @@ impl MockCancelledRegistry {
                         current_sold: 0,
                         is_refundable: false,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -62,6 +63,8 @@ impl MockCancelledRegistry {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
@@ -118,6 +121,7 @@ impl MockEventRegistry {
                             current_sold: 0,
                             is_refundable: true,
                             auction_config: soroban_sdk::vec![&env],
+                            loyalty_multiplier: 1,
                         },
                     );
                     tiers
@@ -130,6 +134,8 @@ impl MockEventRegistry {
                 goal_met: false,
                 banner_cid: None,
                 tags: None,
+                start_time: 0,
+                end_time: 0,
             });
         }
         None
@@ -191,6 +197,7 @@ impl MockEventRegistry2 {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -203,6 +210,8 @@ impl MockEventRegistry2 {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -249,6 +258,7 @@ impl MockAuctionEventRegistry {
                         min_increment: 100_0000000i128,
                     }
                 ],
+                loyalty_multiplier: 1,
             },
         );
 
@@ -275,6 +285,8 @@ impl MockAuctionEventRegistry {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1018,6 +1030,7 @@ impl MockEventRegistryMaxSupply {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -1030,6 +1043,8 @@ impl MockEventRegistryMaxSupply {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1130,6 +1145,7 @@ impl MockEventRegistryWithInventory {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -1142,6 +1158,8 @@ impl MockEventRegistryWithInventory {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1354,6 +1372,7 @@ impl MockEventRegistryWithMilestones {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -1366,6 +1385,8 @@ impl MockEventRegistryWithMilestones {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -1695,6 +1716,7 @@ impl MockEventRegistryEarlyBird {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -1707,6 +1729,8 @@ impl MockEventRegistryEarlyBird {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -2188,6 +2212,7 @@ impl MockEventRegistryWithOrganizer {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -2200,6 +2225,8 @@ impl MockEventRegistryWithOrganizer {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -2512,6 +2539,8 @@ impl MockPlatformRegistryE2E {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         };
 
         env.storage()
@@ -2649,6 +2678,7 @@ fn test_integration_full_platform_day() {
                 current_sold: 0,
                 is_refundable: true,
                 auction_config: soroban_sdk::vec![&env],
+                loyalty_multiplier: 1,
             },
         );
     }
@@ -2782,6 +2812,7 @@ fn test_integration_edge_cases() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     registry.create_event(
@@ -2886,6 +2917,7 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     registry.create_event(&event_id, &organizer, &event_payment_addr, &10, &tiers);
@@ -2971,6 +3003,7 @@ impl MockEventRegistryRefund {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -2983,6 +3016,8 @@ impl MockEventRegistryRefund {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -3044,6 +3079,7 @@ impl MockEventRegistryWithResaleCap {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -3056,6 +3092,8 @@ impl MockEventRegistryWithResaleCap {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -3317,6 +3355,7 @@ impl MockRegistryZeroCap {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -3329,6 +3368,8 @@ impl MockRegistryZeroCap {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -3601,6 +3642,7 @@ fn test_claim_revenue_rejects_event_not_marked_inactive() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     registry.create_event(&event_id, &organizer, &event_payment_addr, &10, &tiers);
@@ -3933,6 +3975,7 @@ impl MockEventRegistryUsdPriced {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -3945,6 +3988,8 @@ impl MockEventRegistryUsdPriced {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -4627,6 +4672,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -4639,6 +4685,8 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4755,6 +4803,7 @@ impl MockEventRegistryWithLoyalty {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -4767,6 +4816,8 @@ impl MockEventRegistryWithLoyalty {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -4837,6 +4888,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -4849,6 +4901,8 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -5050,6 +5104,7 @@ impl MockEventRegistryCustomFee {
                         current_sold: 0,
                         is_refundable: false,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -5063,6 +5118,8 @@ impl MockEventRegistryCustomFee {
             custom_fee_bps: Some(100),
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -5180,6 +5237,7 @@ impl MockEventRegistryHighPrice {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -5192,6 +5250,8 @@ impl MockEventRegistryHighPrice {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -5288,6 +5348,7 @@ impl MockEventRegistryRefundDeadline {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -5300,6 +5361,8 @@ impl MockEventRegistryRefundDeadline {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -5856,6 +5919,8 @@ impl MockEventRegistryForDust {
             goal_met: true,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -6053,6 +6118,7 @@ impl MockEventRegistryForReferral {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -6065,6 +6131,8 @@ impl MockEventRegistryForReferral {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
@@ -6133,6 +6201,7 @@ impl MockEventRegistryFullLoyaltyDiscount {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -6145,6 +6214,8 @@ impl MockEventRegistryFullLoyaltyDiscount {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
     pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}

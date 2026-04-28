@@ -1,20 +1,35 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
+import { useState } from "react";
 
+/**
+ * Form data structure for creating a new event
+ * @interface EventFormData
+ */
 export type EventFormData = {
+  /** Title of the event */
   title: string;
+  /** Start date in YYYY-MM-DD format */
   startDate: string;
+  /** Start time in HH:MM format */
   startTime: string;
+  /** End date in YYYY-MM-DD format */
   endDate: string;
+  /** End time in HH:MM format */
   endTime: string;
+  /** Timezone identifier (e.g., "GMT+00:00 UTC") */
   timezone: string;
+  /** Physical or virtual location */
   location: string;
+  /** Detailed description of the event */
   description: string;
+  /** Event visibility setting */
   visibility: "Public" | "Private";
+  /** Maximum number of attendees */
   capacity: string;
+  /** Ticket price (empty string for free events) */
   price: string;
 };
 
@@ -32,12 +47,19 @@ const initialFormState: EventFormData = {
   price: "",
 };
 
+/**
+ * CreateEventForm component for creating new events
+ *
+ * @returns React component that renders a form for creating events
+ */
 export default function CreateEventForm() {
   const [formData, setFormData] = useState<EventFormData>(initialFormState);
-  const [locationMode, setLocationMode] = useState<"Virtual" | "Physical">("Physical");
+  const [locationMode, setLocationMode] = useState<"Virtual" | "Physical">(
+    "Physical",
+  );
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
 
@@ -71,7 +93,8 @@ export default function CreateEventForm() {
   const isSubmitDisabled = !formData.title.trim() || !formData.startDate.trim();
 
   // Common Neubrutalist class for form controls
-  const neubrutalistInputClass = "w-full bg-white border border-gray-100 rounded-xl focus-within:border-black focus-within:border-2 focus-within:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all";
+  const neubrutalistInputClass =
+    "w-full bg-white border border-gray-100 rounded-xl focus-within:border-black focus-within:border-2 focus-within:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all";
 
   return (
     <div className="flex flex-col gap-6 w-full">
@@ -90,7 +113,9 @@ export default function CreateEventForm() {
 
       {/* Date & Time Section */}
       <div className="flex flex-col sm:flex-row gap-4">
-        <div className={`p-4 flex-1 flex flex-col gap-3 shadow-sm ${neubrutalistInputClass}`}>
+        <div
+          className={`p-4 flex-1 flex flex-col gap-3 shadow-sm ${neubrutalistInputClass}`}
+        >
           <div className="flex items-center gap-4">
             <span className="text-sm font-semibold w-12 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-black block"></span>
@@ -114,7 +139,7 @@ export default function CreateEventForm() {
             />
           </div>
           <div className="flex items-center gap-4 relative">
-             <div className="absolute left-1 top-[-10px] w-px h-6 bg-dashed border-l border-dashed border-gray-300"></div>
+            <div className="absolute left-1 top-[-10px] w-px h-6 bg-dashed border-l border-dashed border-gray-300"></div>
             <span className="text-sm font-semibold w-12 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full border-2 border-gray-300 block"></span>
               End
@@ -137,7 +162,7 @@ export default function CreateEventForm() {
             />
           </div>
         </div>
-        
+
         <div className="bg-[#FFFBEA] rounded-xl p-4 shadow-sm w-full sm:w-auto min-w-[140px] flex items-center justify-between gap-4 border border-black shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]">
           <div className="flex flex-col">
             <span className="text-sm font-semibold">GMT+00:00</span>
@@ -151,38 +176,68 @@ export default function CreateEventForm() {
 
       {/* Location Section */}
       <div className={`p-4 shadow-sm ${neubrutalistInputClass}`}>
-        <label className="block text-sm font-semibold mb-3">Add Event Location</label>
+        <label className="block text-sm font-semibold mb-3">
+          Add Event Location
+        </label>
         <div className="flex items-center gap-4">
           <input
             type="text"
             name="location"
             value={formData.location}
             onChange={handleChange}
-            placeholder={locationMode === "Virtual" ? "Virtual meeting link" : "Offline location or map pin"}
+            placeholder={
+              locationMode === "Virtual"
+                ? "Virtual meeting link"
+                : "Offline location or map pin"
+            }
             className="flex-1 text-base font-medium bg-transparent outline-none placeholder:text-gray-300"
           />
           <div className="flex gap-2">
-            <button 
+            <button
               type="button"
               onClick={() => setLocationMode("Virtual")}
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${locationMode === "Virtual" ? "bg-black" : "bg-[#FAF9F6] hover:bg-gray-100"}`}
             >
-              <Image src="/icons/video.svg" width={20} height={20} alt="Video" className={locationMode === "Virtual" ? "invert brightness-0" : "opacity-60"} />
+              <Image
+                src="/icons/video.svg"
+                width={20}
+                height={20}
+                alt="Video"
+                className={
+                  locationMode === "Virtual"
+                    ? "invert brightness-0"
+                    : "opacity-60"
+                }
+              />
             </button>
-            <button 
+            <button
               type="button"
               onClick={() => setLocationMode("Physical")}
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${locationMode === "Physical" ? "bg-black" : "bg-[#FAF9F6] hover:bg-gray-100"}`}
             >
-              <Image src="/icons/location.svg" width={20} height={20} alt="Map" className={locationMode === "Physical" ? "invert brightness-0" : "opacity-60"} />
+              <Image
+                src="/icons/location.svg"
+                width={20}
+                height={20}
+                alt="Map"
+                className={
+                  locationMode === "Physical"
+                    ? "invert brightness-0"
+                    : "opacity-60"
+                }
+              />
             </button>
           </div>
         </div>
       </div>
 
       {/* Description Section */}
-      <div className={`p-4 shadow-sm min-h-[140px] flex flex-col ${neubrutalistInputClass}`}>
-        <label className="block text-sm font-semibold mb-3">Add Description</label>
+      <div
+        className={`p-4 shadow-sm min-h-[140px] flex flex-col ${neubrutalistInputClass}`}
+      >
+        <label className="block text-sm font-semibold mb-3">
+          Add Description
+        </label>
         <div className="flex items-start gap-4 flex-1">
           <textarea
             name="description"
@@ -197,7 +252,13 @@ export default function CreateEventForm() {
             className="flex-1 text-base font-medium bg-transparent outline-none placeholder:text-gray-300 resize-none overflow-hidden min-h-[80px]"
           />
           <div className="w-10 h-10 rounded-full bg-[#FAF9F6] flex items-center justify-center shrink-0 mt-1">
-            <Image src="/icons/edit.svg" width={20} height={20} alt="Edit" className="opacity-60" />
+            <Image
+              src="/icons/edit.svg"
+              width={20}
+              height={20}
+              alt="Edit"
+              className="opacity-60"
+            />
           </div>
         </div>
       </div>
@@ -205,11 +266,13 @@ export default function CreateEventForm() {
       {/* Event Options Section */}
       <div className="mt-4">
         <h3 className="text-lg font-bold mb-4">Event Options</h3>
-        
+
         <div className="flex flex-col md:flex-row gap-4 mb-4">
           {/* Visibility */}
           <div className="bg-white rounded-xl p-4 shadow-sm flex-1 border border-gray-100">
-            <label className="block text-sm font-semibold mb-3">Event Visibility</label>
+            <label className="block text-sm font-semibold mb-3">
+              Event Visibility
+            </label>
             <div className="flex bg-[#FAF9F6] p-1 rounded-xl w-full">
               <button
                 type="button"
@@ -221,8 +284,18 @@ export default function CreateEventForm() {
                 }`}
               >
                 Public
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${formData.visibility === "Public" ? "bg-white border border-gray-100 shadow-sm" : "bg-white border border-gray-100 shadow-sm"} `}>
-                  <Image src="/icons/megaphone.svg" width={14} height={14} alt="Megaphone" className={formData.visibility === "Public" ? "" : "opacity-40"} />
+                <div
+                  className={`w-6 h-6 rounded-full flex items-center justify-center ${formData.visibility === "Public" ? "bg-white border border-gray-100 shadow-sm" : "bg-white border border-gray-100 shadow-sm"} `}
+                >
+                  <Image
+                    src="/icons/megaphone.svg"
+                    width={14}
+                    height={14}
+                    alt="Megaphone"
+                    className={
+                      formData.visibility === "Public" ? "" : "opacity-40"
+                    }
+                  />
                 </div>
               </button>
               <button
@@ -235,8 +308,18 @@ export default function CreateEventForm() {
                 }`}
               >
                 Private
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${formData.visibility === "Private" ? "bg-white border border-gray-100 shadow-sm" : "bg-white border border-gray-100 shadow-sm"} `}>
-                  <Image src="/icons/lock.svg" width={12} height={12} alt="Lock" className={formData.visibility === "Private" ? "" : "opacity-40"} />
+                <div
+                  className={`w-6 h-6 rounded-full flex items-center justify-center ${formData.visibility === "Private" ? "bg-white border border-gray-100 shadow-sm" : "bg-white border border-gray-100 shadow-sm"} `}
+                >
+                  <Image
+                    src="/icons/lock.svg"
+                    width={12}
+                    height={12}
+                    alt="Lock"
+                    className={
+                      formData.visibility === "Private" ? "" : "opacity-40"
+                    }
+                  />
                 </div>
               </button>
             </div>
@@ -244,7 +327,9 @@ export default function CreateEventForm() {
 
           {/* Capacity */}
           <div className={`p-4 shadow-sm flex-1 ${neubrutalistInputClass}`}>
-            <label className="block text-sm font-semibold mb-3">Set Capacity</label>
+            <label className="block text-sm font-semibold mb-3">
+              Set Capacity
+            </label>
             <div className="flex items-center justify-between">
               <input
                 type="text"
@@ -255,15 +340,24 @@ export default function CreateEventForm() {
                 className="w-full text-base font-medium bg-transparent outline-none placeholder:text-gray-300"
               />
               <div className="w-10 h-10 bg-[#FFFBEA] border border-black rounded-lg shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0">
-                <Image src="/icons/edit.svg" width={20} height={20} alt="Edit" />
+                <Image
+                  src="/icons/edit.svg"
+                  width={20}
+                  height={20}
+                  alt="Edit"
+                />
               </div>
             </div>
           </div>
         </div>
 
         {/* Ticket Price */}
-        <div className={`p-4 shadow-sm w-full md:w-[calc(50%-8px)] ${neubrutalistInputClass}`}>
-          <label className="block text-sm font-semibold mb-3">Ticket Price</label>
+        <div
+          className={`p-4 shadow-sm w-full md:w-[calc(50%-8px)] ${neubrutalistInputClass}`}
+        >
+          <label className="block text-sm font-semibold mb-3">
+            Ticket Price
+          </label>
           <div className="flex items-center justify-between">
             <input
               type="text"
@@ -274,7 +368,12 @@ export default function CreateEventForm() {
               className="w-full text-base font-medium bg-transparent outline-none placeholder:text-gray-300"
             />
             <div className="w-10 h-10 bg-[#FFFBEA] border border-black rounded-lg shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0">
-              <Image src="/icons/ticket.svg" width={20} height={20} alt="Ticket" />
+              <Image
+                src="/icons/ticket.svg"
+                width={20}
+                height={20}
+                alt="Ticket"
+              />
             </div>
           </div>
         </div>
@@ -297,7 +396,9 @@ export default function CreateEventForm() {
           backgroundColor="bg-[#FFD233]"
           textColor="text-black"
           className={`w-full sm:w-auto ${
-            isSubmitDisabled ? "opacity-50 cursor-not-allowed hover:translate-x-0 hover:translate-y-0 active:translate-x-0 active:translate-y-0" : ""
+            isSubmitDisabled
+              ? "opacity-50 cursor-not-allowed hover:translate-x-0 hover:translate-y-0 active:translate-x-0 active:translate-y-0"
+              : ""
           }`}
         >
           Create Event <span className="ml-1 text-lg">↗</span>

@@ -45,10 +45,26 @@
                     },
                     {
                       "key": {
+                        "symbol": "end_time"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
                         "string": "tier_limit_event"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "is_private"
+                      },
+                      "val": {
+                        "bool": false
                       }
                     },
                     {
@@ -171,6 +187,14 @@
                                   },
                                   "val": {
                                     "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "loyalty_multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 1
                                   }
                                 },
                                 {
@@ -405,11 +429,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "end_time"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "event_id"
                       },
                       "val": {
                         "string": "tier_limit_event"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "feedback_cid"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -438,6 +476,14 @@
                     {
                       "key": {
                         "symbol": "is_postponed"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "is_private"
                       },
                       "val": {
                         "bool": false
@@ -587,6 +633,14 @@
                                   },
                                   "val": {
                                     "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "loyalty_multiplier"
+                                  },
+                                  "val": {
+                                    "u32": 1
                                   }
                                 },
                                 {
