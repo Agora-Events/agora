@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, Transition } from "framer-motion";
 import Image from "next/image";
 import { EventCard } from "./event-card";
 import { Button } from "../ui/button";
-import { dataEvents } from "./mockups";
 import { FilterSidebar, FilterState } from "./filter-sidebar";
+import { fetchPopularEvents, type DiscoverEvent } from "@/utils/api";
 
 const container = {
   hidden: { opacity: 0 },
@@ -44,14 +44,47 @@ const DEFAULT_FILTERS: FilterState = {
   maxPrice: "",
 };
 
-export function PopularEventsSection() {
+type PopularEventsSectionProps = {
+  onError: (message: string) => void;
+};
+
+export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [events, setEvents] = useState<DiscoverEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadEvents = async () => {
+      try {
+        const data = await fetchPopularEvents();
+        if (active) {
+          setEvents(data);
+        }
+      } catch {
+        if (active) {
+          setEvents([]);
+          onError("Could not load popular events");
+        }
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadEvents();
+    return () => {
+      active = false;
+    };
+  }, [onError]);
 
   const filteredEvents = useMemo(() => {
-    let result = dataEvents;
+    let result = events;
 
     // 1. Search Query
     const query = search.toLowerCase().trim();
@@ -99,7 +132,7 @@ export function PopularEventsSection() {
     }
 
     return result;
-  }, [search, filters]);
+  }, [search, filters, events]);
 
   const widthVariants = {
     focused: { width: "12rem" },
@@ -199,7 +232,15 @@ export function PopularEventsSection() {
           initial="hidden"
           animate="show"
         >
-          {filteredEvents.map((event) => (
+          {isLoading &&
+            Array.from({ length: 4 }).map((_, index) => (
+              <div
+                key={`event-skeleton-${index}`}
+                className="h-56 w-full animate-pulse rounded-xl border border-black/20 bg-black/10"
+              />
+            ))}
+          {!isLoading &&
+            filteredEvents.map((event) => (
             <motion.div
               key={event.id}
               variants={item}
@@ -216,9 +257,9 @@ export function PopularEventsSection() {
                 imageUrl={event.imageUrl}
               />
             </motion.div>
-          ))}
+            ))}
 
-          {filteredEvents.length === 0 && (
+          {!isLoading && filteredEvents.length === 0 && (
             <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
               <div className="w-16 h-16 mb-4 rounded-full bg-black/5 flex items-center justify-center">
                 <Image
@@ -230,11 +271,10 @@ export function PopularEventsSection() {
                 />
               </div>
               <h4 className="text-[20px] font-semibold text-black mb-2">
-                No matching events
+                No data available
               </h4>
               <p className="text-[15px] text-black/60 max-w-sm">
-                We couldn&apos;t find any events that match your current filter
-                selections. Try adjusting your search or clearing some filters.
+                We couldn&apos;t load events for this section. Please try again later.
               </p>
             </div>
           )}

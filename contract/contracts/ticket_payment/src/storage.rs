@@ -247,17 +247,16 @@ pub fn set_event_balance(env: &Env, event_id: String, balance: EventBalance) {
         .set(&DataKey::Balances(event_id), &balance);
 }
 
-pub fn set_transfer_fee(env: &Env, event_id: String, fee: i128) {
+pub fn set_transfer_fee(env: &Env, event_id: String, fee: u32) {
     env.storage()
         .persistent()
         .set(&DataKey::TransferFee(event_id), &fee);
 }
 
-pub fn get_transfer_fee(env: &Env, event_id: String) -> i128 {
+pub fn get_transfer_fee(env: &Env, event_id: String) -> Option<u32> {
     env.storage()
         .persistent()
         .get(&DataKey::TransferFee(event_id))
-        .unwrap_or(0)
 }
 
 pub fn add_payment_to_event_index(env: &Env, event_id: String, payment_id: String) {

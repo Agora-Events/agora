@@ -2,9 +2,22 @@
 
 import { Navbar } from "@/components/layout/navbar";
 import { Button } from "@/components/ui/button";
-import Image from "next/image";
 import { motion } from "framer-motion";
+import Image from "next/image";
+import Link from "next/link";
 
+/**
+ * Hero section component for the landing page
+ *
+ * Features:
+ * - Full-screen hero background
+ * - Navigation bar integration
+ * - Animated content with Framer Motion
+ * - Responsive design for mobile and desktop
+ * - "Powered by Stellar" branding
+ *
+ * @returns React component that renders the main hero section
+ */
 export function HeroSection() {
   return (
     <div
@@ -38,29 +51,33 @@ export function HeroSection() {
 
         {/* Buttons */}
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-16 md:mb-20 w-full sm:w-auto px-4 sm:px-0">
-          <Button
-            className="w-full sm:w-[215px] h-[56px]"
-            backgroundColor="bg-white"
-            textColor="text-black"
-            shadowColor="rgba(0,0,0,1)"
-          >
-            <span>Create Your Event</span>
-            <Image
-              src="/icons/arrow-up-right-01.svg"
-              alt="Arrow"
-              width={20}
-              height={20}
-            />
-          </Button>
+          <Link href="/create-event" className="w-full sm:w-auto">
+            <Button
+              className="w-full sm:w-[215px] h-[56px]"
+              backgroundColor="bg-white"
+              textColor="text-black"
+              shadowColor="rgba(0,0,0,1)"
+            >
+              <span>Create Your Event</span>
+              <Image
+                src="/icons/arrow-up-right-01.svg"
+                alt="Arrow"
+                width={20}
+                height={20}
+              />
+            </Button>
+          </Link>
 
-          <Button
-            className="w-full sm:w-[135px] h-[56px]"
-            backgroundColor="bg-[#FDDA23]"
-            textColor="text-white"
-            shadowColor="rgba(0,0,0,1)"
-          >
-            <span>Learn More</span>
-          </Button>
+          <Link href="#pricing" className="w-full sm:w-auto">
+            <Button
+              className="w-full sm:w-[135px] h-[56px]"
+              backgroundColor="bg-[#FDDA23]"
+              textColor="text-white"
+              shadowColor="rgba(0,0,0,1)"
+            >
+              <span>Learn More</span>
+            </Button>
+          </Link>
         </div>
 
         <div className="relative w-full max-w-[1000px] flex justify-center mt-auto">

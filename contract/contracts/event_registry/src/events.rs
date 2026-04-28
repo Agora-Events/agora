@@ -54,6 +54,13 @@ pub enum AgoraEvent {
     LoyaltyScoreUpdated,
     /// A custom fee override has been set for a specific event by an admin.
     CustomFeeSet,
+    AdminUpdated,
+    /// Post-event feedback CID has been set by the organizer after event end_time.
+    FeedbackCidSet,
+    /// An event's token whitelist has been updated (token added or removed).
+    TokenWhitelistUpdated,
+    /// A governance proposal has been cancelled by the proposer.
+    ProposalCancelled,
 }
 
 /// Emitted when an event is permanently cancelled.
@@ -68,6 +75,8 @@ pub struct EventCancelledEvent {
     pub cancelled_by: Address,
     /// The ledger timestamp when the cancellation occurred.
     pub timestamp: u64,
+    /// Optional human-readable reason for the cancellation.
+    pub reason: Option<String>,
 }
 
 /// Emitted when an event is archived and its full storage is reclaimed.
@@ -324,6 +333,20 @@ pub struct ProposalExecutedEvent {
     pub timestamp: u64,
 }
 
+/// Emitted when a governance proposal is cancelled by the proposer.
+///
+/// Published with topic `(AgoraEvent::ProposalCancelled,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProposalCancelledEvent {
+    /// The unique identifier of the cancelled proposal.
+    pub proposal_id: u64,
+    /// The admin address that cancelled the proposal.
+    pub cancelled_by: Address,
+    /// The ledger timestamp when the cancellation occurred.
+    pub timestamp: u64,
+}
+
 /// Emitted when a new admin is added to the multi-sig configuration.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -493,5 +516,47 @@ pub struct CustomFeeSetEvent {
     /// The admin address that set the custom fee.
     pub admin_address: Address,
     /// The ledger timestamp when the custom fee was set.
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminUpdatedEvent {
+    pub old_admin: Address,
+    pub new_admin: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a post-event feedback CID is set by the organizer after end_time.
+///
+/// Published with topic `(AgoraEvent::FeedbackCidSet,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeedbackCidSetEvent {
+    /// The unique identifier of the event.
+    pub event_id: String,
+    /// The IPFS CID pointing to the post-event feedback content.
+    pub feedback_cid: String,
+    /// The organizer address that set the feedback CID.
+    pub updated_by: Address,
+    /// The ledger timestamp when the feedback CID was set.
+    pub timestamp: u64,
+}
+
+/// Emitted when an event's token whitelist is updated (token added or removed).
+///
+/// Published with topic `(AgoraEvent::TokenWhitelistUpdated,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenWhitelistUpdatedEvent {
+    /// The unique identifier of the event.
+    pub event_id: String,
+    /// The token address that was added or removed.
+    pub token: Address,
+    /// Whether the token was added (true) or removed (false).
+    pub added: bool,
+    /// The organizer address that performed the update.
+    pub organizer_address: Address,
+    /// The ledger timestamp when the whitelist was updated.
     pub timestamp: u64,
 }

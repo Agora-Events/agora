@@ -2,8 +2,10 @@
 
 import { motion, type Transition } from "framer-motion";
 import Image from "next/image";
+import { useEffect, useState } from "react";
+import { fetchCategories, type DiscoverCategory } from "@/utils/api";
 
-const categories = [
+const defaultCategories = [
   { name: "Tech", icon: "/icons/Tech.svg", color: "#DBF4B9" },
   { name: "Party", icon: "/icons/party.svg", color: "#FFA4D5" },
   { name: "global", icon: "/icons/global.svg", color: "#B9C7FE" },
@@ -39,7 +41,43 @@ const item = {
   },
 };
 
-export function CategorySection() {
+type CategorySectionProps = {
+  onError: (message: string) => void;
+};
+
+export function CategorySection({ onError }: CategorySectionProps) {
+  const [categories, setCategories] = useState<DiscoverCategory[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadCategories = async () => {
+      try {
+        const data = await fetchCategories();
+        if (active) {
+          setCategories(data);
+        }
+      } catch {
+        if (active) {
+          setCategories([]);
+          onError("Could not load categories");
+        }
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadCategories();
+    return () => {
+      active = false;
+    };
+  }, [onError]);
+
+  const categoriesToRender = categories.length > 0 ? categories : defaultCategories;
+
   return (
     <section className="px-4 bg-[#FFFBE9] pt-12 pb-6">
       <div className="mx-auto max-w-[1221px]">
@@ -67,7 +105,15 @@ export function CategorySection() {
           </motion.h3>
 
           <motion.div variants={container} className="flex flex-wrap gap-4">
-            {categories.map((category) => (
+            {isLoading &&
+              Array.from({ length: 6 }).map((_, index) => (
+                <div
+                  key={`skeleton-${index}`}
+                  className="h-12 w-36 animate-pulse rounded-full border-2 border-black/30 bg-black/10"
+                />
+              ))}
+            {!isLoading &&
+              categoriesToRender.map((category) => (
               <motion.div key={category.name} variants={item}>
                 <button
                   style={{ backgroundColor: category.color }}
@@ -89,7 +135,10 @@ export function CategorySection() {
                   <span className="text-black capitalize">{category.name}</span>
                 </button>
               </motion.div>
-            ))}
+              ))}
+            {!isLoading && categories.length === 0 && (
+              <p className="text-sm text-black/60">No data available</p>
+            )}
           </motion.div>
         </motion.div>
       </div>

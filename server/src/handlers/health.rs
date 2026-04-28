@@ -1,7 +1,9 @@
 use axum::{extract::State, response::IntoResponse, response::Response};
 use chrono::Utc;
 use serde::Serialize;
+use serde_json::json;
 use sqlx::PgPool;
+use std::time::Duration;
 
 use crate::utils::error::AppError;
 use crate::utils::response::success;
@@ -24,6 +26,14 @@ struct HealthReadyResponse {
     status: &'static str,
     api: &'static str,
     database: &'static str,
+}
+
+#[derive(Serialize)]
+struct HealthBlockchainResponse {
+    status: &'static str,
+    blockchain: &'static str,
+    soroban_rpc: String,
+    timestamp: String,
 }
 
 /// GET /health – Combined check for API and Database.
@@ -90,6 +100,56 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
     } else {
         AppError::ExternalServiceError("Service is not ready: database is unreachable".to_string())
             .into_response()
+    }
+}
+
+/// GET /health/blockchain – Soroban RPC connectivity check.
+///
+/// Returns 200 when the configured Soroban RPC endpoint is reachable.
+/// On failure the response uses [`AppError`] for a consistent error schema.
+pub async fn health_check_blockchain() -> Response {
+    let soroban_rpc_url =
+        std::env::var("SOROBAN_RPC_URL").unwrap_or_else(|_| "https://soroban-testnet.stellar.org".to_string());
+
+    let client = match reqwest::Client::builder().timeout(Duration::from_secs(5)).build() {
+        Ok(client) => client,
+        Err(error) => {
+            return AppError::ExternalServiceError(format!(
+                "Failed to initialize Soroban RPC probe client: {error}"
+            ))
+            .into_response();
+        }
+    };
+
+    let response = client
+        .post(&soroban_rpc_url)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": "health-check",
+            "method": "getHealth",
+        }))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let payload = HealthBlockchainResponse {
+                status: "ok",
+                blockchain: "soroban",
+                soroban_rpc: soroban_rpc_url,
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "Soroban RPC is reachable").into_response()
+        }
+        Ok(resp) => AppError::ExternalServiceError(format!(
+            "Soroban RPC health check failed with HTTP status {}",
+            resp.status()
+        ))
+        .into_response(),
+        Err(error) => AppError::ExternalServiceError(format!(
+            "Soroban RPC health check failed: {error}"
+        ))
+        .into_response(),
     }
 }
 
