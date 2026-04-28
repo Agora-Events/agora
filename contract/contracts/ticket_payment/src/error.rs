@@ -53,6 +53,7 @@ pub enum TicketPaymentError {
     CannotRemoveLastGovernor = 57,
     InvalidFeePercent = 58,
     EventEnded = 59,
+    NonTransferable = 60,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -122,6 +123,7 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             57 => TicketPaymentError::CannotRemoveLastGovernor,
             58 => TicketPaymentError::InvalidFeePercent,
             59 => TicketPaymentError::EventEnded,
+            60 => TicketPaymentError::NonTransferable,
             _ => TicketPaymentError::ArithmeticError,
         }
     }

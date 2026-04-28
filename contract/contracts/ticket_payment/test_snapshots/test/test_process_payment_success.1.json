@@ -1014,6 +1014,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_soulbound"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "organizer_amount"
                       },
                       "val": {

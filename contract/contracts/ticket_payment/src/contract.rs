@@ -844,6 +844,7 @@ impl TicketPaymentContract {
                 created_at,
                 confirmed_at: None,
                 refunded_amount: 0,
+                is_soulbound: false,
                 last_checked_in_at: 0,
             };
 
@@ -1722,6 +1723,10 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::InvalidPaymentStatus);
         }
 
+        if payment.is_soulbound {
+            return Err(TicketPaymentError::NonTransferable);
+        }
+
         let from = payment.buyer_address.clone();
         from.require_auth();
 
@@ -2287,6 +2292,7 @@ impl TicketPaymentContract {
             created_at: env.ledger().timestamp(),
             confirmed_at: Some(env.ledger().timestamp()),
             refunded_amount: 0,
+            is_soulbound: false,
             last_checked_in_at: 0,
         };
         store_payment(&env, payment);

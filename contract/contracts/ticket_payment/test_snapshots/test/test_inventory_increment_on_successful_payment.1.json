@@ -1226,6 +1226,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_soulbound"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "organizer_amount"
                       },
                       "val": {
@@ -1366,6 +1374,14 @@
                       },
                       "val": {
                         "string": "event_1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "is_soulbound"
+                      },
+                      "val": {
+                        "bool": false
                       }
                     },
                     {
