@@ -444,8 +444,11 @@ fn buy_ticket(
         usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     )
 }
@@ -665,8 +668,11 @@ fn test_e2e_duplicate_payment_id_rejected() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -717,8 +723,11 @@ fn test_e2e_state_consistent_after_failed_payment() {
         &non_whitelisted_token,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::TokenNotWhitelisted)));
@@ -766,8 +775,11 @@ fn test_e2e_batch_purchase_then_partial_refund() {
         &usdc_id,
         &amount_per_ticket,
         &quantity,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -896,8 +908,11 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::ContractPaused)));
@@ -915,8 +930,11 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(result.is_ok());

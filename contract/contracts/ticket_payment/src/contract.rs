@@ -2,25 +2,25 @@ use crate::storage::{
     add_discount_hash, add_payment_to_buyer_index, add_to_active_escrow_by_token,
     add_to_active_escrow_total, add_to_daily_withdrawn_amount,
     add_to_total_fees_collected_by_token, add_to_total_volume_processed, add_token_to_whitelist,
-    get_admin, get_bulk_refund_index, get_daily_withdrawn_amount, get_event_balance,
-    get_event_payments, get_event_registry, get_highest_bid, get_oracle_address,
+    get_admin, get_bulk_refund_index, get_daily_withdrawn_amount, get_discount_code,
+    get_event_balance, get_event_payments, get_event_registry, get_highest_bid, get_oracle_address,
     get_partial_refund_index, get_partial_refund_percentage, get_payment, get_platform_wallet,
     get_proposal, get_slippage_bps, get_total_fees_collected_by_token, get_total_governors,
     get_transfer_fee, get_withdrawal_cap, has_price_switched, increment_proposal_count,
     is_auction_closed, is_discount_hash_used, is_discount_hash_valid, is_event_disputed,
     is_governor, is_initialized, is_paused, is_token_whitelisted, mark_discount_hash_used,
     remove_payment_from_buyer_index, remove_token_from_whitelist, set_admin, set_auction_closed,
-    set_bulk_refund_index, set_event_dispute_status, set_event_registry, set_governor,
-    set_highest_bid, set_initialized, set_is_paused, set_oracle_address, set_partial_refund_index,
-    set_partial_refund_percentage, set_platform_wallet, set_price_switched, set_proposal,
-    set_slippage_bps, set_total_governors, set_transfer_fee, set_usdc_token, set_withdrawal_cap,
-    store_payment, store_validation_hash, subtract_from_active_escrow_by_token,
-    subtract_from_active_escrow_total, subtract_from_total_fees_collected_by_token,
-    update_event_balance, verify_secret,
+    set_bulk_refund_index, set_discount_code, set_event_dispute_status, set_event_registry,
+    set_governor, set_highest_bid, set_initialized, set_is_paused, set_oracle_address,
+    set_partial_refund_index, set_partial_refund_percentage, set_platform_wallet,
+    set_price_switched, set_proposal, set_slippage_bps, set_total_governors, set_transfer_fee,
+    set_usdc_token, set_withdrawal_cap, store_payment, store_validation_hash,
+    subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
+    subtract_from_total_fees_collected_by_token, update_event_balance, verify_secret,
 };
 use crate::types::{
-    DataKey, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus,
-    ProposalStatus, MAX_BPS, TRANSFER_FEE_BPS,
+    DataKey, DiscountData, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus,
+    ProposalStatus, PurchaseOptions, MAX_BPS, TRANSFER_FEE_BPS,
 };
 use crate::{
     error::TicketPaymentError,
@@ -305,6 +305,38 @@ impl TicketPaymentContract {
         is_event_disputed(&env, event_id)
     }
 
+    /// Creates a limited-time discount code for an event. Only callable by the contract admin.
+    pub fn create_discount_code(
+        env: Env,
+        event_id: String,
+        code: String,
+        percentage: u32,
+        expires_at: u64,
+        max_uses: u32,
+    ) -> Result<(), TicketPaymentError> {
+        require_admin(&env)?;
+        if percentage == 0 || percentage > 100 {
+            return Err(TicketPaymentError::InvalidFeePercent);
+        }
+        set_discount_code(
+            &env,
+            event_id,
+            code,
+            &DiscountData {
+                percentage,
+                expires_at,
+                max_uses,
+                current_uses: 0,
+            },
+        );
+        Ok(())
+    }
+
+    /// Returns the discount data for a given event and code, if it exists.
+    pub fn get_discount_code(env: Env, event_id: String, code: String) -> Option<DiscountData> {
+        get_discount_code(&env, &event_id, &code)
+    }
+
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         require_admin(&env).expect("Admin not set");
 
@@ -549,8 +581,7 @@ impl TicketPaymentContract {
         token_address: Address,
         amount: i128, // price for ONE ticket
         quantity: u32,
-        code_preimage: Option<Bytes>,
-        referrer: Option<Address>,
+        options: PurchaseOptions,
         validation_hash: BytesN<32>,
     ) -> Result<String, TicketPaymentError> {
         if !is_initialized(&env) {
@@ -561,7 +592,7 @@ impl TicketPaymentContract {
         }
         buyer_address.require_auth();
 
-        if let Some(ref ref_addr) = referrer {
+        if let Some(ref ref_addr) = options.referrer {
             if ref_addr == &buyer_address {
                 return Err(TicketPaymentError::SelfReferralNotAllowed);
             }
@@ -602,7 +633,7 @@ impl TicketPaymentContract {
         };
 
         // Optionally apply a discount code (10% off) on top of the promo price
-        let (effective_total, discount_code_hash) = if let Some(preimage) = code_preimage {
+        let (effective_total, discount_code_hash) = if let Some(preimage) = options.code_preimage {
             let hash: soroban_sdk::BytesN<32> = env.crypto().sha256(&preimage).into();
             if !is_discount_hash_valid(&env, &hash) {
                 return Err(TicketPaymentError::InvalidDiscountCode);
@@ -619,7 +650,29 @@ impl TicketPaymentContract {
         } else {
             (after_promo, None)
         };
-        // 1. Query Event Registry for event info and check inventory
+
+        // Optionally apply a per-event limited-time discount code on top of the promo price
+        let (effective_total, applied_discount_code) = if let Some(ref code) = options.discount_code
+        {
+            let mut data = get_discount_code(&env, &event_id, code)
+                .ok_or(TicketPaymentError::InvalidDiscountCode)?;
+            if env.ledger().timestamp() > data.expires_at {
+                return Err(TicketPaymentError::DiscountExpired);
+            }
+            if data.current_uses >= data.max_uses {
+                return Err(TicketPaymentError::DiscountMaxUsesReached);
+            }
+            let discounted = effective_total
+                .checked_mul((100 - data.percentage) as i128)
+                .and_then(|v| v.checked_div(100))
+                .ok_or(TicketPaymentError::ArithmeticError)?;
+            data.current_uses += 1;
+            set_discount_code(&env, event_id.clone(), code.clone(), &data);
+            (discounted, Some(code.clone()))
+        } else {
+            (effective_total, None)
+        };
+
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
 
@@ -748,7 +801,7 @@ impl TicketPaymentContract {
             .checked_sub(total_platform_fee)
             .ok_or(TicketPaymentError::ArithmeticError)?;
 
-        let referral_reward = if referrer.is_some() {
+        let referral_reward = if options.referrer.is_some() {
             let reward = total_platform_fee
                 .checked_mul(20)
                 .and_then(|v| v.checked_div(100))
@@ -795,7 +848,7 @@ impl TicketPaymentContract {
         }
 
         // Transfer referral reward if applicable
-        if let Some(ref ref_addr) = referrer {
+        if let Some(ref ref_addr) = options.referrer {
             if referral_reward > 0 {
                 token_client.transfer(&contract_address, ref_addr, &referral_reward);
             }
@@ -908,6 +961,9 @@ impl TicketPaymentContract {
                 },
             );
         }
+
+        // 9a. Note: applied_discount_code (per-event discount) is already persisted atomically above.
+        let _ = applied_discount_code;
 
         // 10. Emit global promo applied event if promo was active
         if promo_applied_bps > 0 {

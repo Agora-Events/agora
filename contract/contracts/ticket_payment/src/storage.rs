@@ -1,6 +1,8 @@
 use crate::{
     error::TicketPaymentError,
-    types::{DataKey, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus},
+    types::{
+        DataKey, DiscountData, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus,
+    },
 };
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
@@ -836,4 +838,18 @@ pub fn verify_secret(env: &Env, payment_id: &String, raw_secret: &Bytes) -> bool
         }
         None => false,
     }
+}
+
+// ── Per-event discount codes ──────────────────────────────────────────────────
+
+pub fn set_discount_code(env: &Env, event_id: String, code: String, data: &DiscountData) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DiscountCode(event_id, code), data);
+}
+
+pub fn get_discount_code(env: &Env, event_id: &String, code: &String) -> Option<DiscountData> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DiscountCode(event_id.clone(), code.clone()))
 }

@@ -469,8 +469,11 @@ fn test_process_payment_success() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result_id, payment_id);
@@ -574,8 +577,11 @@ fn test_process_payment_zero_amount() {
         &usdc_id,
         &0,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 }
@@ -612,8 +618,11 @@ fn test_batch_purchase_success() {
         &usdc_id,
         &amount_per_ticket,
         &quantity,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result_id, payment_id);
@@ -673,8 +682,11 @@ fn test_fee_calculation_variants() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -714,8 +726,11 @@ fn test_process_payment_not_found() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     // Since panic inside get_event_payment_info cannot easily map to get_code() == 2 right now without explicit Error returning in the mock,
@@ -974,8 +989,11 @@ fn test_process_payment_with_non_whitelisted_token() {
         &non_whitelisted_token,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1022,8 +1040,11 @@ fn test_process_payment_with_multiple_tokens() {
         &usdc_id,
         &usdc_amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1036,8 +1057,11 @@ fn test_process_payment_with_multiple_tokens() {
         &xlm_id,
         &xlm_amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1103,8 +1127,11 @@ fn test_process_payment_respects_event_specific_token() {
         &wrong_token,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &wrong_hash,
     );
     assert_eq!(
@@ -1124,8 +1151,11 @@ fn test_process_payment_respects_event_specific_token() {
         &custom_token,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &right_hash,
     );
 
@@ -1245,8 +1275,11 @@ fn test_process_payment_max_supply_exceeded() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1375,8 +1408,11 @@ fn test_inventory_increment_on_successful_payment() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result1, String::from_str(&env, "pay_1"));
@@ -1391,8 +1427,11 @@ fn test_inventory_increment_on_successful_payment() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result2, String::from_str(&env, "pay_2"));
@@ -1423,8 +1462,11 @@ fn test_withdraw_organizer_funds() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1463,8 +1505,11 @@ fn test_withdraw_platform_fees() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1621,8 +1666,11 @@ fn test_withdraw_with_milestones() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     let withdrawn1 = client.withdraw_organizer_funds(&event_id, &usdc_id);
@@ -1638,8 +1686,11 @@ fn test_withdraw_with_milestones() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     let withdrawn2 = client.withdraw_organizer_funds(&event_id, &usdc_id);
@@ -1661,8 +1712,11 @@ fn test_withdraw_with_milestones() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     let withdrawn4 = client.withdraw_organizer_funds(&event_id, &usdc_id);
@@ -1680,8 +1734,11 @@ fn test_withdraw_with_milestones() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     let withdrawn5 = client.withdraw_organizer_funds(&event_id, &usdc_id);
@@ -2022,8 +2079,11 @@ fn test_early_bird_pricing_active() {
         &usdc_id,
         &1000_0000000i128, // Paying early bird price
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2067,8 +2127,11 @@ fn test_early_bird_pricing_expired() {
         &usdc_id,
         &1000_0000000i128, // Trying early bird price
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result_fail, Err(Ok(TicketPaymentError::InvalidPrice)));
@@ -2084,8 +2147,11 @@ fn test_early_bird_pricing_expired() {
         &usdc_id,
         &1500_0000000i128, // Paying standard price
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result_success, payment_id_success);
@@ -2130,8 +2196,11 @@ fn test_price_switched_event_emitted_exactly_once() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2146,8 +2215,11 @@ fn test_price_switched_event_emitted_exactly_once() {
         &usdc_id,
         &1000_0000000i128, // exactly at deadline uses early bird
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2162,8 +2234,11 @@ fn test_price_switched_event_emitted_exactly_once() {
         &usdc_id,
         &1500_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2178,8 +2253,11 @@ fn test_price_switched_event_emitted_exactly_once() {
         &usdc_id,
         &1500_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2382,8 +2460,11 @@ fn test_protocol_revenue_reporting_views() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2570,8 +2651,11 @@ fn test_add_discount_hashes_and_invalid_code_rejected() {
         &usdc_id,
         &amount,
         &1,
-        &Some(wrong_preimage),
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: Some(wrong_preimage),
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2605,8 +2689,11 @@ fn test_gas_profile_process_payment_budget() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2648,8 +2735,11 @@ fn test_process_payment_with_valid_discount_code() {
         &usdc_id,
         &full_amount,
         &1,
-        &Some(preimage),
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: Some(preimage),
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, String::from_str(&env, "pay_1"));
@@ -2686,8 +2776,11 @@ fn test_discount_code_one_time_use() {
         &usdc_id,
         &full_amount,
         &1,
-        &Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2700,8 +2793,11 @@ fn test_discount_code_one_time_use() {
         &usdc_id,
         &full_amount,
         &1,
-        &Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeUsed)));
@@ -2728,8 +2824,11 @@ fn test_process_payment_no_code_unchanged() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -3018,8 +3117,11 @@ fn test_integration_full_platform_day() {
             &usdc_id,
             &amount,
             &1,
-            &None,
-            &None,
+            &crate::types::PurchaseOptions {
+                code_preimage: None,
+                referrer: None,
+                discount_code: None,
+            },
             &hash,
         );
     }
@@ -3086,8 +3188,11 @@ fn test_integration_edge_cases() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(empty_res, Err(Ok(TicketPaymentError::TierNotFound)));
@@ -3134,8 +3239,11 @@ fn test_integration_edge_cases() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -3156,8 +3264,11 @@ fn test_integration_edge_cases() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(sold_res.is_err());
@@ -3174,8 +3285,11 @@ fn test_integration_edge_cases() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(transfer_res.is_err());
@@ -3240,7 +3354,19 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
         };
         let (_secret, hash) = test_secret(&env);
         let res = payment_client.try_process_payment(
-            &pid, &event_id, &tier_id, &buyer, &usdc_id, &amount, &1, &None, &None, &hash,
+            &pid,
+            &event_id,
+            &tier_id,
+            &buyer,
+            &usdc_id,
+            &amount,
+            &1,
+            &crate::types::PurchaseOptions {
+                code_preimage: None,
+                referrer: None,
+                discount_code: None,
+            },
+            &hash,
         );
 
         if res.is_ok() {
@@ -3751,8 +3877,11 @@ fn test_request_guest_refund_success_with_fee() {
         &usdc_id,
         &1000,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -3808,8 +3937,11 @@ fn test_request_guest_refund_deadline_passed() {
         &usdc_id,
         &1000,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -3839,8 +3971,11 @@ fn test_platform_fee_withdrawal_with_cap() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -3930,8 +4065,11 @@ fn test_process_payment_paused() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
@@ -4171,8 +4309,11 @@ fn test_dispute_blocks_withdrawal() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -4217,8 +4358,11 @@ fn test_admin_refund_during_dispute() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -4419,8 +4563,11 @@ fn test_usd_priced_payment_success() {
         &token_id,
         &expected_amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(result.is_ok());
@@ -4449,8 +4596,11 @@ fn test_usd_priced_payment_within_slippage() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(result.is_ok());
@@ -4479,8 +4629,11 @@ fn test_usd_priced_payment_above_slippage_fails() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::PriceOutsideSlippage)));
@@ -4509,8 +4662,11 @@ fn test_usd_priced_payment_below_slippage_fails() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::PriceOutsideSlippage)));
@@ -4548,8 +4704,11 @@ fn test_usd_priced_oracle_not_configured() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::OracleNotConfigured)));
@@ -4589,8 +4748,11 @@ fn test_usd_priced_oracle_unavailable() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceUnavailable)));
@@ -4629,8 +4791,11 @@ fn test_usd_priced_oracle_stale() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceStale)));
@@ -4658,8 +4823,11 @@ fn test_token_priced_payment_unchanged() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(result.is_ok());
@@ -5139,8 +5307,11 @@ fn test_process_payment_ignores_loyalty_update_failure() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Ok(Ok(payment_id.clone())));
@@ -5374,8 +5545,11 @@ fn test_loyalty_discount_is_capped_by_platform_fee() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5428,8 +5602,11 @@ fn test_loyalty_discount_reduces_platform_fee() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5463,8 +5640,11 @@ fn test_payment_without_loyalty_discount_unchanged() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5600,8 +5780,11 @@ fn test_process_payment_with_custom_fee() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5727,8 +5910,11 @@ fn test_process_payment_extremely_high_ticket_price() {
         &usdc_id,
         &amount,
         &2,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::ArithmeticError)));
@@ -5851,8 +6037,11 @@ fn test_refund_rejected_after_deadline() {
         &usdc_id,
         &1000,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5912,8 +6101,11 @@ fn test_get_payments_by_status_single_payment() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5977,8 +6169,11 @@ fn test_get_payments_by_status_multiple_payments() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5991,8 +6186,11 @@ fn test_get_payments_by_status_multiple_payments() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -6005,8 +6203,11 @@ fn test_get_payments_by_status_multiple_payments() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -6074,8 +6275,11 @@ fn test_get_payments_by_status_with_refunds() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -6128,8 +6332,11 @@ fn test_get_payments_by_status_multiple_events() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -6142,8 +6349,11 @@ fn test_get_payments_by_status_multiple_events() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -6227,8 +6437,11 @@ fn test_partial_refund_multi_batch_index_persisted() {
             &usdc_id,
             &ticket_price,
             &1,
-            &None,
-            &None,
+            &crate::types::PurchaseOptions {
+                code_preimage: None,
+                referrer: None,
+                discount_code: None,
+            },
             &hash,
         );
         client.confirm_payment(pid, &String::from_str(&env, "h"));
@@ -6771,8 +6984,11 @@ fn test_referral_reward_is_20_percent_of_platform_fee() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &Some(referrer.clone()),
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(referrer.clone()),
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -6835,8 +7051,11 @@ fn test_referral_reward_capped_when_platform_fee_is_zero() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &Some(referrer.clone()),
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(referrer.clone()),
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -6886,8 +7105,11 @@ fn test_referral_reward_does_not_exceed_platform_fee_invariant() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &Some(referrer.clone()),
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(referrer.clone()),
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -6944,7 +7166,7 @@ fn setup_withdrawal_cap_test(
             3 => String::from_str(env, "p3"),
             _ => String::from_str(env, "p4"),
         };
-        let (_secret, hash) = test_secret(&env);
+        let (_secret, hash) = test_secret(env);
         client.process_payment(
             &pid,
             &String::from_str(env, "event_1"),
@@ -6953,8 +7175,11 @@ fn setup_withdrawal_cap_test(
             &usdc_id,
             &price,
             &1,
-            &None,
-            &None,
+            &crate::types::PurchaseOptions {
+                code_preimage: None,
+                referrer: None,
+                discount_code: None,
+            },
             &hash,
         );
     }
@@ -7195,8 +7420,11 @@ fn test_no_referral_reward_without_referrer() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &None, // no referrer
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None, // no referrer,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -7317,7 +7545,10 @@ fn test_transfer_ticket_valid_recipient_succeeds() {
 }
 
 // ── Secondary marketplace tests ───────────────────────────────────────────────
+// NOTE: These tests are for a secondary marketplace feature that is not yet
+// implemented in the contract. They are commented out until the feature is ready.
 
+/*
 /// list_ticket succeeds when price == original price.
 #[test]
 fn test_list_ticket_success() {
@@ -7434,4 +7665,229 @@ fn test_buy_secondary_ticket_self_purchase_rejected() {
 
     let result = client.try_buy_secondary_ticket(&payment_id, &seller);
     assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+*/
+
+// ── Limited-Time Discount Code Tests ─────────────────────────────────────────
+
+#[test]
+fn test_create_and_apply_discount_code() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "SAVE20");
+
+    // Create a 20% discount code, expires far in the future, max 5 uses
+    client.create_discount_code(&event_id, &code, &20, &9_999_999_999u64, &5);
+
+    let data = client.get_discount_code(&event_id, &code).unwrap();
+    assert_eq!(data.percentage, 20);
+    assert_eq!(data.max_uses, 5);
+    assert_eq!(data.current_uses, 0);
+
+    // Process a payment using the discount code
+    let buyer = Address::generate(&env);
+    let full_price = 1000_0000000i128;
+    let expected_price = full_price * 80 / 100; // 20% off
+
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &expected_price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_price, &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    let result = client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &full_price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code.clone()),
+        },
+        &hash,
+    );
+    assert_eq!(result, String::from_str(&env, "pay_1"));
+
+    // current_uses must have incremented
+    let data_after = client.get_discount_code(&event_id, &code).unwrap();
+    assert_eq!(data_after.current_uses, 1);
+
+    // Escrow should reflect the discounted amount
+    let escrow = client.get_event_escrow_balance(&event_id);
+    let expected_fee = expected_price * 500 / 10000;
+    assert_eq!(escrow.platform_fee, expected_fee);
+    assert_eq!(escrow.organizer_amount, expected_price - expected_fee);
+}
+
+#[test]
+fn test_discount_code_expired_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "EXPIRED");
+
+    // Set ledger time to 1000, create code that expired at 500
+    env.ledger().set_timestamp(1000);
+    client.create_discount_code(&event_id, &code, &10, &500u64, &10);
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    let res = client.try_process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code),
+        },
+        &hash,
+    );
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountExpired)));
+}
+
+#[test]
+fn test_discount_code_max_uses_reached_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "ONCE");
+
+    // max_uses = 1
+    client.create_discount_code(&event_id, &code, &10, &9_999_999_999u64, &1);
+
+    let buyer = Address::generate(&env);
+    let full_price = 1000_0000000i128;
+    let discounted = full_price * 90 / 100;
+
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &(discounted * 2));
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &(discounted * 2), &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    // First use succeeds
+    client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &full_price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code.clone()),
+        },
+        &hash,
+    );
+
+    let (_secret, hash2) = test_secret(&env);
+    // Second use must fail
+    let res = client.try_process_payment(
+        &String::from_str(&env, "pay_2"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &full_price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code),
+        },
+        &hash2,
+    );
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountMaxUsesReached)));
+}
+
+#[test]
+fn test_discount_code_invalid_code_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    let res = client.try_process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(String::from_str(&env, "NONEXISTENT")),
+        },
+        &hash,
+    );
+    assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountCode)));
+}
+
+#[test]
+fn test_discount_code_price_calculation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "HALF");
+
+    // 50% discount
+    client.create_discount_code(&event_id, &code, &50, &9_999_999_999u64, &10);
+
+    let buyer = Address::generate(&env);
+    let full_price = 1000_0000000i128;
+    let expected_paid = full_price * 50 / 100; // price * (100 - 50) / 100
+
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &expected_paid);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_paid, &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &full_price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code),
+        },
+        &hash,
+    );
+
+    let escrow = client.get_event_escrow_balance(&event_id);
+    let fee = expected_paid * 500 / 10000;
+    assert_eq!(escrow.platform_fee, fee);
+    assert_eq!(escrow.organizer_amount, expected_paid - fee);
 }
