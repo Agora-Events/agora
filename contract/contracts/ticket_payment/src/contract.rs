@@ -19,7 +19,8 @@ use crate::storage::{
     subtract_from_total_fees_collected_by_token, update_event_balance, verify_secret,
 };
 use crate::types::{
-    DataKey, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus, ProposalStatus,
+    DataKey, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus,
+    ProposalStatus, MAX_BPS, TRANSFER_FEE_BPS,
 };
 use crate::{
     error::TicketPaymentError,
@@ -30,7 +31,7 @@ use crate::{
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
         PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
         PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent, RevenueClaimedEvent,
-        TicketTransferredEvent,
+        TicketCheckedInEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{
@@ -102,6 +103,7 @@ pub mod event_registry {
     pub trait EventRegistryInterface {
         fn get_event_payment_info(env: Env, event_id: String) -> PaymentInfo;
         fn get_event(env: Env, event_id: String) -> Option<EventInfo>;
+        fn get_organizer_address(env: Env, event_id: String) -> Option<Address>;
         fn increment_inventory(env: Env, event_id: String, tier_id: String, quantity: u32);
         fn decrement_inventory(env: Env, event_id: String, tier_id: String);
         fn get_global_promo_bps(env: Env) -> u32;
@@ -113,6 +115,7 @@ pub mod event_registry {
             guest: Address,
             tickets_purchased: u32,
             amount_spent: i128,
+            loyalty_multiplier: u32,
         );
         fn get_loyalty_discount_bps(env: Env, guest: Address) -> u32;
         fn get_guest_profile(env: Env, guest: Address) -> Option<GuestProfile>;
@@ -132,6 +135,7 @@ pub mod event_registry {
         pub current_sold: i128,
         pub is_refundable: bool,
         pub auction_config: soroban_sdk::Vec<AuctionConfig>,
+        pub loyalty_multiplier: u32,
     }
 
     #[soroban_sdk::contracttype]
@@ -145,6 +149,7 @@ pub mod event_registry {
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct EventInfo {
         pub event_id: String,
+        pub name: String,
         pub organizer_address: Address,
         pub payment_address: Address,
         pub platform_fee_percent: u32,
@@ -165,7 +170,15 @@ pub mod event_registry {
         pub custom_fee_bps: Option<u32>,
         pub banner_cid: Option<String>,
         pub tags: Option<soroban_sdk::Vec<String>>,
+        pub start_time: u64,
+        pub end_time: u64,
     }
+}
+
+fn require_admin(env: &Env) -> Result<Address, TicketPaymentError> {
+    let admin = get_admin(env).ok_or(TicketPaymentError::NotInitialized)?;
+    admin.require_auth();
+    Ok(admin)
 }
 
 #[contract]
@@ -218,8 +231,7 @@ impl TicketPaymentContract {
     /// Pauses or resumes the contract. Only callable by the multi-sig admin.
     /// Upgrade and emergency-withdrawal remain available while the contract is paused.
     pub fn set_pause(env: Env, paused: bool) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        require_admin(&env)?;
         set_is_paused(&env, paused);
         #[allow(deprecated)]
         env.events().publish(
@@ -248,8 +260,7 @@ impl TicketPaymentContract {
         event_id: String,
         disputed: bool,
     ) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        require_admin(&env)?;
 
         set_event_dispute_status(&env, event_id.clone(), disputed);
 
@@ -271,8 +282,7 @@ impl TicketPaymentContract {
     }
 
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let admin = get_admin(&env).expect("Admin not set");
-        admin.require_auth();
+        require_admin(&env).expect("Admin not set");
 
         let old_wasm_hash = match env.current_contract_address().executable() {
             Some(soroban_sdk::Executable::Wasm(hash)) => hash,
@@ -486,8 +496,7 @@ impl TicketPaymentContract {
 
     /// Sets the oracle contract address. Only callable by admin.
     pub fn set_oracle(env: Env, oracle_address: Address) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        require_admin(&env)?;
         set_oracle_address(&env, &oracle_address);
         Ok(())
     }
@@ -560,8 +569,8 @@ impl TicketPaymentContract {
         let (after_promo, promo_applied_bps) = if global_promo_bps > 0 && current_ts < promo_expiry
         {
             let discounted = total_amount
-                .checked_mul((10000 - global_promo_bps as i128) as i128)
-                .and_then(|v| v.checked_div(10000))
+                .checked_mul((MAX_BPS - global_promo_bps) as i128)
+                .and_then(|v| v.checked_div(MAX_BPS as i128))
                 .ok_or(TicketPaymentError::ArithmeticError)?;
             (discounted, global_promo_bps)
         } else {
@@ -575,7 +584,7 @@ impl TicketPaymentContract {
                 return Err(TicketPaymentError::InvalidDiscountCode);
             }
             if is_discount_hash_used(&env, &hash) {
-                return Err(TicketPaymentError::DiscountCodeAlreadyUsed);
+                return Err(TicketPaymentError::DiscountCodeUsed);
             }
             // 10% discount
             let discounted = after_promo
@@ -627,12 +636,12 @@ impl TicketPaymentContract {
 
             let bps = get_slippage_bps(&env) as i128;
             let min_amount = expected
-                .checked_mul(10000 - bps)
-                .and_then(|v| v.checked_div(10000))
+                .checked_mul(MAX_BPS as i128 - bps)
+                .and_then(|v| v.checked_div(MAX_BPS as i128))
                 .ok_or(TicketPaymentError::ArithmeticError)?;
             let max_amount = expected
-                .checked_mul(10000 + bps)
-                .and_then(|v| v.checked_div(10000))
+                .checked_mul(MAX_BPS as i128 + bps)
+                .and_then(|v| v.checked_div(MAX_BPS as i128))
                 .ok_or(TicketPaymentError::ArithmeticError)?;
 
             if amount < min_amount || amount > max_amount {
@@ -676,7 +685,7 @@ impl TicketPaymentContract {
 
         let mut total_platform_fee = effective_total
             .checked_mul(fee_bps as i128)
-            .and_then(|v| v.checked_div(10000))
+            .and_then(|v| v.checked_div(MAX_BPS as i128))
             .ok_or(TicketPaymentError::ArithmeticError)?;
 
         // Apply loyalty discount: reduce the platform fee for guests with high scores.
@@ -691,7 +700,7 @@ impl TicketPaymentContract {
             core::cmp::min(
                 total_platform_fee
                     .checked_mul(loyalty_discount_bps as i128)
-                    .and_then(|v| v.checked_div(10000))
+                    .and_then(|v| v.checked_div(MAX_BPS as i128))
                     .ok_or(TicketPaymentError::ArithmeticError)?,
                 total_platform_fee,
             )
@@ -824,6 +833,7 @@ impl TicketPaymentContract {
                 created_at,
                 confirmed_at: None,
                 refunded_amount: 0,
+                last_checked_in_at: 0,
             };
 
             store_payment(&env, payment);
@@ -849,6 +859,7 @@ impl TicketPaymentContract {
             &buyer_address,
             &quantity,
             &effective_total,
+            &tier.loyalty_multiplier,
         ) {
             Ok(_) | Err(_) => {}
         }
@@ -891,9 +902,7 @@ impl TicketPaymentContract {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
         }
-        let admin = get_admin(&env).expect("Admin not set");
-        admin.require_auth();
-        // In a real scenario, this would be restricted to a specific backend/admin address.
+        require_admin(&env).expect("Admin not set");
         if let Some(mut payment) = get_payment(&env, payment_id.clone()) {
             let old_status = payment.status.clone();
             payment.status = PaymentStatus::Confirmed;
@@ -943,8 +952,7 @@ impl TicketPaymentContract {
 
     /// Triggers a refund as an administrator, regardless of dispute status.
     pub fn admin_refund(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        require_admin(&env)?;
 
         Self::internal_refund(env, payment_id)
     }
@@ -1254,13 +1262,45 @@ impl TicketPaymentContract {
         }
 
         let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
-        if !registry_client.is_scanner_authorized(&payment.event_id, &scanner) {
+
+        // Allow organizer OR an authorized scanner
+        let organizer = registry_client
+            .get_organizer_address(&payment.event_id)
+            .ok_or(TicketPaymentError::EventNotFound)?;
+        let is_organizer = scanner == organizer;
+        let is_scanner = registry_client.is_scanner_authorized(&payment.event_id, &scanner);
+        if !is_organizer && !is_scanner {
             return Err(TicketPaymentError::UnauthorizedScanner);
         }
 
+        // Check if the event has ended (prevent check-ins after end_time)
+        let event_info = registry_client
+            .try_get_event(&payment.event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+            .ok_or(TicketPaymentError::EventNotFound)?;
+
+        let current_time = env.ledger().timestamp();
+        if event_info.end_time > 0 && current_time > event_info.end_time {
+            return Err(TicketPaymentError::EventEnded);
+        }
+
         payment.status = PaymentStatus::CheckedIn;
-        payment.confirmed_at = Some(env.ledger().timestamp());
-        store_payment(&env, payment);
+        payment.last_checked_in_at = now;
+        store_payment(&env, payment.clone());
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::TicketCheckedIn,),
+            TicketCheckedInEvent {
+                payment_id,
+                event_id: payment.event_id,
+                attendee,
+                scanner,
+                timestamp: now,
+            },
+        );
 
         Ok(())
     }
@@ -1310,7 +1350,7 @@ impl TicketPaymentContract {
             return Ok(0);
         }
 
-        let mut release_percent = 10000u32;
+        let mut release_percent = MAX_BPS;
         if let Some(milestones) = event_info.milestone_plan {
             let mut highest_met = 0u32;
             for milestone in milestones.iter() {
@@ -1327,7 +1367,7 @@ impl TicketPaymentContract {
 
         let max_allowed = total_revenue
             .checked_mul(release_percent as i128)
-            .and_then(|v| v.checked_div(10000))
+            .and_then(|v| v.checked_div(MAX_BPS as i128))
             .ok_or(TicketPaymentError::ArithmeticError)?;
         let mut available_to_withdraw = max_allowed
             .checked_sub(balance.total_withdrawn)
@@ -1374,8 +1414,7 @@ impl TicketPaymentContract {
         event_id: String,
         _token_address: Address,
     ) -> Result<i128, TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        require_admin(&env)?;
 
         let balance = get_event_balance(&env, event_id.clone());
         if balance.platform_fee == 0 {
@@ -1417,8 +1456,7 @@ impl TicketPaymentContract {
         amount: i128,
         token_address: Address,
     ) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        require_admin(&env)?;
 
         if amount <= 0 {
             return Err(TicketPaymentError::ArithmeticError);
@@ -1468,8 +1506,7 @@ impl TicketPaymentContract {
         token: Address,
         amount: i128,
     ) -> Result<(), TicketPaymentError> {
-        let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
-        admin.require_auth();
+        require_admin(&env)?;
 
         if amount < 0 {
             return Err(TicketPaymentError::ArithmeticError);
@@ -1623,7 +1660,7 @@ impl TicketPaymentContract {
     pub fn set_transfer_fee(
         env: Env,
         event_id: String,
-        amount: i128,
+        bps: u32, // Changed from i128 amount to u32 basis points
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
@@ -1639,11 +1676,12 @@ impl TicketPaymentContract {
 
         event_info.organizer_address.require_auth();
 
-        if amount < 0 {
-            panic!("Transfer fee must be non-negative");
+        if bps > MAX_BPS {
+            return Err(TicketPaymentError::InvalidFeePercent);
         }
 
-        set_transfer_fee(&env, event_id, amount);
+        // Store the basis points, not the calculated amount
+        set_transfer_fee(&env, event_id, bps);
         Ok(())
     }
 
@@ -1676,33 +1714,41 @@ impl TicketPaymentContract {
         if from == to {
             return Err(TicketPaymentError::InvalidAddress);
         }
-
         // Prevent transfer to the zero address or the contract itself
         validate_recipient(&env, &to)?;
 
         // Validate resale price against the organizer's cap
         if let Some(price) = sale_price {
             let event_registry_addr = get_event_registry(&env);
-            let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+            let registry_client = event_registry::Client::new(&env, &event_registry_addr); // Re-initialize client
 
-            if let Some(event_info) = registry_client.get_event(&payment.event_id) {
+            let event_info = match registry_client.try_get_event(&payment.event_id) {
+                Ok(Ok(Some(info))) => info,
+                _ => return Err(TicketPaymentError::EventNotFound), // Should not happen if payment exists
+            };
+
+            // Check if resale cap is defined for the event
+            if event_info.resale_cap_bps.is_some() {
                 if let Some(cap_bps) = event_info.resale_cap_bps {
                     // Look up the original tier face-value price
                     let tier = event_info
                         .tiers
                         .get(payment.ticket_tier_id.clone())
                         .ok_or(TicketPaymentError::TierNotFound)?;
+                    // Use the original price from the payment record, not the tier's current price,
+                    // as tier prices can change (e.g., early bird expiry).
+                    // The payment.amount is the actual price paid for this specific ticket.
                     let original_price = tier.price;
 
-                    // max_price = original_price * (10000 + cap_bps) / 10000
+                    // max_price = original_price * (MAX_BPS + cap_bps) / MAX_BPS
                     let max_price = original_price
                         .checked_mul(
-                            (10000i128)
+                            (MAX_BPS as i128)
                                 .checked_add(cap_bps as i128)
                                 .unwrap_or(i128::MAX),
                         )
                         .ok_or(TicketPaymentError::ArithmeticError)?
-                        / 10000;
+                        / (MAX_BPS as i128);
 
                     if price > max_price {
                         return Err(TicketPaymentError::ResalePriceExceedsCap);
@@ -1711,20 +1757,36 @@ impl TicketPaymentContract {
             }
         }
 
-        let transfer_fee = get_transfer_fee(&env, payment.event_id.clone());
+        let transfer_fee_bps =
+            get_transfer_fee(&env, payment.event_id.clone()).unwrap_or(TRANSFER_FEE_BPS);
 
-        if transfer_fee > 0 {
-            let token_address = crate::storage::get_usdc_token(&env);
-            let token_client = token::Client::new(&env, &token_address);
-            let contract_address = env.current_contract_address();
+        let mut actual_transfer_fee: i128 = 0;
 
-            // Transfer fee from old owner to contract
-            token_client.transfer_from(&contract_address, &from, &contract_address, &transfer_fee);
+        if transfer_fee_bps > 0 {
+            // Calculate the actual transfer fee based on the original ticket amount
+            actual_transfer_fee = payment
+                .amount
+                .checked_mul(transfer_fee_bps as i128)
+                .and_then(|v| v.checked_div(MAX_BPS as i128))
+                .ok_or(TicketPaymentError::ArithmeticError)?;
 
-            // Update escrow balances (fee goes to organizer)
-            update_event_balance(&env, payment.event_id.clone(), transfer_fee, 0);
+            if actual_transfer_fee > 0 {
+                let token_address = crate::storage::get_usdc_token(&env);
+                let token_client = token::Client::new(&env, &token_address);
+                let contract_address = env.current_contract_address();
+
+                // Transfer fee from old owner to contract
+                token_client.transfer_from(
+                    &contract_address,
+                    &from,
+                    &contract_address,
+                    &actual_transfer_fee,
+                );
+
+                // Update escrow balances (fee goes to organizer)
+                update_event_balance(&env, payment.event_id.clone(), actual_transfer_fee, 0);
+            }
         }
-
         // Update payment record
         payment.buyer_address = to.clone();
         let key = crate::types::DataKey::Payment(payment_id.clone());
@@ -1741,8 +1803,8 @@ impl TicketPaymentContract {
             TicketTransferredEvent {
                 payment_id,
                 from,
-                to,
-                transfer_fee,
+                to: to.clone(),
+                transfer_fee: actual_transfer_fee,
                 timestamp: env.ledger().timestamp(),
             },
         );
@@ -1859,7 +1921,7 @@ impl TicketPaymentContract {
         if is_paused(&env) {
             return Err(TicketPaymentError::ContractPaused);
         }
-        if percentage_bps > 10000 {
+        if percentage_bps > MAX_BPS {
             panic!("Percentage cannot exceed 100%");
         }
 
@@ -1910,7 +1972,7 @@ impl TicketPaymentContract {
                         .amount
                         .checked_mul(active_pct as i128)
                         .ok_or(TicketPaymentError::ArithmeticError)?)
-                        / 10000;
+                        / (MAX_BPS as i128);
 
                     if refund_amount > 0 && payment.organizer_amount >= refund_amount {
                         token_client.transfer(
@@ -2168,7 +2230,7 @@ impl TicketPaymentContract {
 
         let total_platform_fee = amount
             .checked_mul(fee_bps as i128)
-            .and_then(|v| v.checked_div(10000))
+            .and_then(|v| v.checked_div(MAX_BPS as i128))
             .ok_or(TicketPaymentError::ArithmeticError)?;
 
         let total_organizer_amount = amount
@@ -2205,6 +2267,7 @@ impl TicketPaymentContract {
             created_at: env.ledger().timestamp(),
             confirmed_at: Some(env.ledger().timestamp()),
             refunded_amount: 0,
+            last_checked_in_at: 0,
         };
         store_payment(&env, payment);
 

@@ -48,20 +48,22 @@ export function GuestNav({ pathname }: { pathname: string }) {
           />
         </div>
 
-        <Button
-          backgroundColor="bg-white"
-          textColor="text-black"
-          shadowColor="rgba(0,0,0,1)"
-        >
-          <span>Create Your Event</span>
-          <Image
-            src="/icons/arrow-up-right-01.svg"
-            alt="Arrow"
-            width={24}
-            height={24}
-            className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-          />
-        </Button>
+        <Link href="/auth">
+          <Button
+            backgroundColor="bg-white"
+            textColor="text-black"
+            shadowColor="rgba(0,0,0,1)"
+          >
+            <span>Create Your Event</span>
+            <Image
+              src="/icons/arrow-up-right-01.svg"
+              alt="Arrow"
+              width={24}
+              height={24}
+              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+            />
+          </Button>
+        </Link>
       </div>
     </div>
   );

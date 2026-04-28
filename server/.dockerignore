@@ -1,0 +1,28 @@
+# Rust build artifacts - largest contributor to build context bloat
+target/
+
+# Environment files - should never be baked into an image
+.env
+.env.*
+!.env.example
+
+# Git metadata
+.git/
+.gitignore
+
+# Editor/IDE artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# CI/CD
+.github/
+
+# Docs and scripts not needed at build time
+*.md
+*.sh

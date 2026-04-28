@@ -49,55 +49,61 @@ export function UserNav({ pathname }: { pathname: string }) {
             />
           </div>
 
+          <Link href="/create-event">
+            <Button
+              backgroundColor="bg-white"
+              textColor="text-black"
+              shadowColor="rgba(0,0,0,1)"
+            >
+              <span>Create Your Event</span>
+              <Image
+                src="/icons/arrow-up-right-01.svg"
+                alt="Arrow"
+                width={24}
+                height={24}
+                className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+              />
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      <div className="hidden md:flex items-center gap-4 lg:gap-[29px]">
+        <Link href="#">
           <Button
             backgroundColor="bg-white"
+            className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
             textColor="text-black"
             shadowColor="rgba(0,0,0,1)"
           >
-            <span>Create Your Event</span>
+            <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
             <Image
-              src="/icons/arrow-up-right-01.svg"
+              src="/icons/notification.svg"
               alt="Arrow"
               width={24}
               height={24}
               className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
             />
           </Button>
-        </div>
-      </div>
-
-      <div className="hidden md:flex items-center gap-4 lg:gap-[29px]">
-        <Button
-          backgroundColor="bg-white"
-          className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
-          textColor="text-black"
-          shadowColor="rgba(0,0,0,1)"
-        >
-          <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
-          <Image
-            src="/icons/notification.svg"
-            alt="Arrow"
-            width={24}
-            height={24}
-            className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-          />
-        </Button>
-        <Button
-          backgroundColor="bg-white"
-          className="relative w-[55.22px] h-[53px] !px-0 py-0"
-          textColor="text-black"
-          shadowColor="rgba(0,0,0,1)"
-        >
-          <div className=" size-[49px] rounded-full">
-            <Image
-              src="/images/pfp.png"
-              alt="Arrow"
-              width={49}
-              height={49}
-              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-            />
-          </div>
-        </Button>
+        </Link>
+        <Link href="/profile">
+          <Button
+            backgroundColor="bg-white"
+            className="relative w-[55.22px] h-[53px] px-0! py-0"
+            textColor="text-black"
+            shadowColor="rgba(0,0,0,1)"
+          >
+            <div className=" size-[49px] rounded-full">
+              <Image
+                src="/images/pfp.png"
+                alt="Arrow"
+                width={49}
+                height={49}
+                className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+              />
+            </div>
+          </Button>
+        </Link>
       </div>
     </div>
   );

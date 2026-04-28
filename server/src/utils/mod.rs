@@ -1,5 +1,6 @@
 pub mod error;
 pub mod logging;
+pub mod pagination;
 pub mod response;
 
 // Utility helpers (hashing, validation) will be added here
