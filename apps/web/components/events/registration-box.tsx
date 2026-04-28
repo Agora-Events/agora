@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import React, { useState } from "react";
 import { TicketModal } from "./TicketModal";
 
@@ -23,6 +24,19 @@ interface RegistrationBoxProps {
 export function RegistrationBox({ event, host }: RegistrationBoxProps) {
   const [quantity, setQuantity] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const router = useRouter();
+
+  const handleRegisterClick = () => {
+    // In a real production environment, you would use the app's specific auth hook here.
+    // For this ticket, we will check local storage as a standard fallback for authentication state.
+    const isAuthenticated = typeof window !== 'undefined' && localStorage.getItem('token'); 
+
+    if (isAuthenticated) {
+      setIsModalOpen(true);
+    } else {
+      router.push('/auth');
+    }
+  };
 
   const isFree = event.price.toLowerCase() === "free";
   const priceValue = isFree ? 0 : parseFloat(event.price.replace("$", ""));
@@ -61,7 +75,7 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
 
         <div className="flex items-center justify-between z-10 gap-4 flex-wrap">
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleRegisterClick}
             className="bg-[#FDDA23] text-black font-bold text-[18px] sm:text-[22px] h-14 sm:h-16 px-8 sm:px-10 rounded-full border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none flex items-center justify-center gap-4 group transition-all"
           >
             {!isFree && (

@@ -3,10 +3,10 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
-import { CheckCircle2, ArrowRight, Home, ExternalLink } from "lucide-react";
+import { CheckCircle2, Home, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
 export default function CreateEventPage() {
@@ -93,6 +93,7 @@ export default function CreateEventPage() {
       setCreatedEventId(data.event.id);
       setIsSuccess(true);
       toast.success("Event created successfully!");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       toast.error(error.message || "Something went wrong");
     } finally {

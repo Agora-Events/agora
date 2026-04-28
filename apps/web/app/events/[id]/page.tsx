@@ -33,7 +33,6 @@ export default function EventDetailPage({
     notFound();
   }
 
-  const isFree = event.price.toLowerCase() === "free";
 
   // Mock host data matching Figma
   const host = {

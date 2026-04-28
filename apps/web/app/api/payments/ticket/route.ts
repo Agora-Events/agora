@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getEventById,
-  hasAvailableTickets,
-  incrementMintedTickets,
-} from "@/lib/events-store";
+import { prisma } from "@/lib/prisma";
 import { mintTicket } from "@/utils/stellar";
+import { withErrorHandler } from "@/lib/api-handler";
+import { throwApiError, ApiError } from "@/lib/api-errors";
 
 type TicketRequestBody = {
   eventId?: string;
@@ -12,40 +10,57 @@ type TicketRequestBody = {
   buyerWallet?: string;
 };
 
-export async function POST(request: NextRequest) {
+export const POST = withErrorHandler(async (request: NextRequest) => {
   let payload: TicketRequestBody;
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    throwApiError("Invalid JSON payload", 400);
   }
 
   const { eventId, quantity, buyerWallet } = payload;
 
   if (!eventId || typeof eventId !== "string") {
-    return NextResponse.json({ error: "Invalid eventId" }, { status: 400 });
+    throwApiError("Invalid eventId", 400);
   }
   if (!Number.isInteger(quantity) || (quantity ?? 0) <= 0) {
-    return NextResponse.json({ error: "Invalid quantity" }, { status: 400 });
+    throwApiError("Invalid quantity", 400);
   }
   if (!buyerWallet || typeof buyerWallet !== "string") {
-    return NextResponse.json({ error: "Invalid buyerWallet" }, { status: 400 });
+    throwApiError("Invalid buyerWallet", 400);
   }
 
-  const event = getEventById(eventId);
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+  });
+
   if (!event) {
-    return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    throwApiError("Event not found", 404);
   }
 
   const qty = quantity as number;
 
-  if (!hasAvailableTickets(event, qty)) {
-    return NextResponse.json({ error: "Not enough tickets available" }, { status: 409 });
+  if (event.mintedTickets + qty > event.totalTickets) {
+    throwApiError("Not enough tickets available", 409);
   }
 
   try {
     const mintResult = await mintTicket(eventId, buyerWallet, qty);
-    incrementMintedTickets(eventId, qty);
+
+    await prisma.$transaction([
+      prisma.event.update({
+        where: { id: eventId },
+        data: { mintedTickets: { increment: qty } },
+      }),
+      prisma.ticket.create({
+        data: {
+          stellarId: mintResult.ticketId,
+          eventId,
+          buyerWallet,
+          quantity: qty,
+        },
+      }),
+    ]);
 
     return NextResponse.json(
       {
@@ -54,7 +69,10 @@ export async function POST(request: NextRequest) {
       },
       { status: 200 },
     );
-  } catch {
-    return NextResponse.json({ error: "Failed to mint ticket" }, { status: 502 });
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throwApiError("Failed to mint ticket", 502);
   }
-}
+});
+
+

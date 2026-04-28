@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@prisma/client": "^7.8.0",
     "@stellar/stellar-sdk": "^13.3.0",
     "framer-motion": "^12.26.2",
     "jsonwebtoken": "^9.0.3",
@@ -21,7 +22,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-leaflet": "^5.0.0",
-    "sonner": "^2.0.7"
+    "sonner": "^2.0.7",
+    "swr": "^2.4.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -33,6 +35,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.3",
+    "prisma": "^7.8.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.4"
