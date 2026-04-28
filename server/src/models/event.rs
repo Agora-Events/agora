@@ -27,8 +27,23 @@ pub struct Event {
     pub start_time: DateTime<Utc>,
     /// Optional scheduled end time of the event (UTC). `None` if open-ended.
     pub end_time: Option<DateTime<Utc>>,
+    /// Accumulated total of all star ratings for this event.
+    pub sum_of_ratings: i64,
+    /// Total number of ratings submitted for this event.
+    pub count_of_ratings: i32,
     /// Timestamp when this event record was created.
     pub created_at: DateTime<Utc>,
     /// Timestamp of the last update to this record. Managed by a DB trigger.
     pub updated_at: DateTime<Utc>,
+}
+
+impl Event {
+    /// Returns the average star rating for the event if any ratings exist.
+    pub fn average_rating(&self) -> Option<f32> {
+        if self.count_of_ratings == 0 {
+            None
+        } else {
+            Some(self.sum_of_ratings as f32 / self.count_of_ratings as f32)
+        }
+    }
 }

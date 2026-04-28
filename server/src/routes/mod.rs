@@ -30,7 +30,7 @@ use crate::config::{
 };
 use crate::handlers::{
     categories::{get_category, list_categories},
-    events::{get_event, list_events},
+    events::{get_event, list_events, submit_event_rating},
     example_empty_success,
     example_not_found,
     example_validation_error,
@@ -74,6 +74,7 @@ pub fn create_routes(pool: PgPool) -> Router {
     let event_routes = Router::new()
         .route("/", get(list_events))
         .route("/:id", get(get_event))
+        .route("/:id/rate", post(submit_event_rating))
         .with_state(pool.clone());
 
     // Category routes
