@@ -863,7 +863,7 @@ impl EventRegistry {
     /// * `EventNotFound` - If no event with the given ID exists.
     /// * `EventInactive` - If the event is not currently active.
     /// * `TierNotFound` - If the tier does not exist.
-    /// * `TierSupplyExceeded` - If the tier's limit has been reached.
+    /// * `TierSoldOut` - If the tier's limit has been reached.
     /// * `MaxSupplyExceeded` - If the event's max supply has been reached (when max_supply > 0).
     /// * `SupplyOverflow` - If incrementing would cause an i128 overflow.
     /// * `PerUserLimitExceeded` - If the user has exceeded the per-user limit for this tier.
@@ -914,7 +914,7 @@ impl EventRegistry {
             .ok_or(EventRegistryError::SupplyOverflow)?;
 
         if new_tier_sold > tier.tier_limit {
-            return Err(EventRegistryError::TierSupplyExceeded);
+            return Err(EventRegistryError::TierSoldOut);
         }
 
         // Check per-user limit

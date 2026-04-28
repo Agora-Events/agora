@@ -19,7 +19,7 @@ pub enum EventRegistryError {
     UnauthorizedCaller = 12,
     TierLimitExceedsMaxSupply = 13,
     TierNotFound = 14,
-    TierSupplyExceeded = 15,
+    TierSoldOut = 15,
     SupplyUnderflow = 16,
     InvalidQuantity = 17,
     OrganizerBlacklisted = 18,
@@ -119,7 +119,7 @@ impl core::fmt::Display for EventRegistryError {
                     "The specified ticket tier ID does not exist for this event"
                 )
             }
-            EventRegistryError::TierSupplyExceeded => {
+            EventRegistryError::TierSoldOut => {
                 write!(
                     f,
                     "The requested ticket tier has sold out and cannot accept more registrations"

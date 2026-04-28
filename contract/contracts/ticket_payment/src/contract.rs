@@ -104,8 +104,14 @@ pub mod event_registry {
         fn get_event_payment_info(env: Env, event_id: String) -> PaymentInfo;
         fn get_event(env: Env, event_id: String) -> Option<EventInfo>;
         fn get_organizer_address(env: Env, event_id: String) -> Option<Address>;
-        fn increment_inventory(env: Env, event_id: String, tier_id: String, quantity: u32);
-        fn decrement_inventory(env: Env, event_id: String, tier_id: String);
+        fn increment_inventory(
+            env: Env,
+            event_id: String,
+            tier_id: String,
+            user: Address,
+            quantity: u32,
+        );
+        fn decrement_inventory(env: Env, event_id: String, tier_id: String, user: Address);
         fn get_global_promo_bps(env: Env) -> u32;
         fn get_promo_expiry(env: Env) -> u64;
         fn is_scanner_authorized(env: Env, event_id: String, scanner: Address) -> bool;
@@ -785,7 +791,12 @@ impl TicketPaymentContract {
         }
 
         // 6. Increment inventory after successful payment
-        registry_client.increment_inventory(&event_id, &ticket_tier_id, &quantity);
+        registry_client.increment_inventory(
+            &event_id,
+            &ticket_tier_id,
+            &buyer_address,
+            &quantity,
+        );
 
         // 7. Create payment records for each individual ticket
         let quantity_i128 = quantity as i128;
@@ -1043,7 +1054,11 @@ impl TicketPaymentContract {
             .ok_or(TicketPaymentError::ArithmeticError)?;
 
         // Return ticket to inventory (increments available inventory)
-        registry_client.decrement_inventory(&payment.event_id, &payment.ticket_tier_id);
+        registry_client.decrement_inventory(
+            &payment.event_id,
+            &payment.ticket_tier_id,
+            &payment.buyer_address,
+        );
 
         let old_status = payment.status.clone();
         payment.status = PaymentStatus::Refunded;
@@ -2227,7 +2242,12 @@ impl TicketPaymentContract {
         add_to_total_fees_collected_by_token(&env, token_address.clone(), total_platform_fee);
 
         // Increment inventory
-        registry_client.increment_inventory(&event_id, &ticket_tier_id, &1);
+        registry_client.increment_inventory(
+            &event_id,
+            &ticket_tier_id,
+            &bidder_address,
+            &1,
+        );
 
         // Record the payment
         let empty_tx_hash = String::from_str(&env, "");
