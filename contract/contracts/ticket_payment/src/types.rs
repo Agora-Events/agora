@@ -69,6 +69,7 @@ pub struct Payment {
     pub created_at: u64,
     pub confirmed_at: Option<u64>,
     pub refunded_amount: i128,
+    pub last_checked_in_at: u64,
 }
 
 #[contracttype]
@@ -135,4 +136,6 @@ pub enum DataKey {
     EventPaymentStatus(String, PaymentStatus),
     /// Individual entry for status index: (event_id, status, payment_id) -> bool
     EventPaymentStatusEntry(String, PaymentStatus, String),
+    /// SHA-256 hash of the ticket secret: payment_id -> BytesN<32>
+    ValidationHash(String),
 }

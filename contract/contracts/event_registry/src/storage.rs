@@ -1118,3 +1118,22 @@ pub fn add_to_waitlist(env: &Env, event_id: &String, user: &Address) {
         .persistent()
         .set(&DataKey::Waitlist(event_id.clone(), user.clone()), &true);
 }
+
+// ── Event Pause Storage ────────────────────────────────────────────────────────
+
+/// Returns whether an event is paused. Returns false if the pause status is not set (i.e., event is not paused).
+/// Storage key: DataKey::EventPaused(event_id). Storage type: Persistent
+pub fn is_event_paused(env: &Env, event_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&DataKey::EventPaused(event_id.clone()))
+        .unwrap_or(false)
+}
+
+/// Sets the pause status for an event.
+/// Storage key: DataKey::EventPaused(event_id). Storage type: Persistent
+pub fn set_event_paused(env: &Env, event_id: &String, is_paused: bool) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventPaused(event_id.clone()), &is_paused);
+}
