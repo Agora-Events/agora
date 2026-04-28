@@ -27,6 +27,24 @@ pub struct Config {
 
     /// Logging configuration (RUST_LOG).
     pub rust_log: String,
+
+    /// S3/R2 bucket name.
+    pub s3_bucket: String,
+
+    /// S3/R2 region (e.g. "us-east-1" or "auto" for R2).
+    pub s3_region: String,
+
+    /// S3/R2 access key ID.
+    pub s3_access_key_id: String,
+
+    /// S3/R2 secret access key.
+    pub s3_secret_access_key: String,
+
+    /// Optional custom endpoint URL (required for Cloudflare R2).
+    pub s3_endpoint_url: Option<String>,
+
+    /// Public base URL used to construct the returned image URL.
+    pub s3_public_url: String,
 }
 
 impl Config {
@@ -51,12 +69,37 @@ impl Config {
 
         let rust_log = env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
 
+        let s3_bucket = env::var("S3_BUCKET").map_err(|_| {
+            AppError::ValidationError("S3_BUCKET environment variable is required".to_string())
+        })?;
+        let s3_region = env::var("S3_REGION").unwrap_or_else(|_| "auto".to_string());
+        let s3_access_key_id = env::var("S3_ACCESS_KEY_ID").map_err(|_| {
+            AppError::ValidationError(
+                "S3_ACCESS_KEY_ID environment variable is required".to_string(),
+            )
+        })?;
+        let s3_secret_access_key = env::var("S3_SECRET_ACCESS_KEY").map_err(|_| {
+            AppError::ValidationError(
+                "S3_SECRET_ACCESS_KEY environment variable is required".to_string(),
+            )
+        })?;
+        let s3_endpoint_url = env::var("S3_ENDPOINT_URL").ok();
+        let s3_public_url = env::var("S3_PUBLIC_URL").map_err(|_| {
+            AppError::ValidationError("S3_PUBLIC_URL environment variable is required".to_string())
+        })?;
+
         Ok(Self {
             database_url,
             port,
             rust_env,
             cors_allowed_origins,
             rust_log,
+            s3_bucket,
+            s3_region,
+            s3_access_key_id,
+            s3_secret_access_key,
+            s3_endpoint_url,
+            s3_public_url,
         })
     }
 

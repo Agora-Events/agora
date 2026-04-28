@@ -1,4 +1,5 @@
 pub mod health;
+pub mod upload;
 
 use axum::{extract::Path, response::IntoResponse, response::Response};
 

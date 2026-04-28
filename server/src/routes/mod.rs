@@ -1,16 +1,17 @@
-use axum::{routing::get, Router};
+use axum::{routing::{get, post}, Extension, Router};
 use sqlx::PgPool;
 
 use crate::config::{
     create_cors_layer, create_security_headers_layer, propagate_request_id_layer,
-    set_request_id_layer,
+    set_request_id_layer, Config,
 };
 use crate::handlers::{
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_db, health_check_ready},
+    upload::upload_image,
 };
 
-pub fn create_routes(pool: PgPool) -> Router {
+pub fn create_routes(pool: PgPool, config: Config) -> Router {
     let api_routes = Router::new()
         .route("/health", get(health_check))
         .route("/health/db", get(health_check_db))
@@ -18,6 +19,8 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
+        .route("/upload/image", post(upload_image))
+        .layer(Extension(config))
         .with_state(pool);
 
     Router::new()
@@ -45,6 +48,7 @@ mod tests {
             .route("/api/v1/examples/validation-error", get(|| async { "ok" }))
             .route("/api/v1/examples/empty-success", get(|| async { "ok" }))
             .route("/api/v1/examples/not-found/:id", get(|| async { "ok" }))
+            .route("/api/v1/upload/image", post(|| async { "ok" }))
     }
 
     async fn get_status(router: Router, path: &str) -> StatusCode {
@@ -104,6 +108,19 @@ mod tests {
             get_status(router, "/api/v1/examples/not-found/123").await,
             StatusCode::NOT_FOUND
         );
+    }
+
+    #[tokio::test]
+    async fn test_upload_image_route_exists_under_api_v1() {
+        let router = test_router();
+        // POST /api/v1/upload/image should not 404 (method-not-allowed or ok, but not 404)
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/upload/image")
+            .body(Body::empty())
+            .unwrap();
+        let status = router.oneshot(req).await.unwrap().status();
+        assert_ne!(status, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

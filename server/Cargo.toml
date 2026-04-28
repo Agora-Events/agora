@@ -5,7 +5,12 @@ edition = "2021"
 
 [dependencies]
 # Web framework
-axum = "0.7"
+axum = { version = "0.7", features = ["multipart"] }
+
+# AWS S3 / Cloudflare R2
+aws-config = { version = "1.5", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.51"
+aws-credential-types = "1.2"
 
 # Async runtime
 tokio = { version = "1.37", features = ["full"] }
