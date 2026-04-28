@@ -1284,6 +1284,103 @@ impl EventRegistry {
         storage::is_scanner_authorized(&env, event_id, &scanner)
     }
 
+    // ── Event Pause Management ─────────────────────────────────────────────────
+
+    /// Pauses an event, preventing new ticket sales. Only callable by the organizer.
+    ///
+    /// Organizers can temporarily halt ticket sales due to venue issues or capacity reassessment.
+    /// While paused, the TicketPayment contract will reject new purchase requests.
+    /// All other event data remains intact and unchanged.
+    ///
+    /// # Arguments
+    /// * `event_id` - The event ID to pause
+    ///
+    /// # Errors
+    /// * `EventNotFound` - If no event with the given ID exists
+    /// * `Unauthorized` - If the caller is not the event organizer
+    /// * `NoStateChange` - If the event is already paused
+    pub fn pause_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Verify organizer authorization
+        event_info.organizer_address.require_auth();
+
+        // Check if already paused
+        if storage::is_event_paused(&env, &event_id) {
+            return Err(EventRegistryError::NoStateChange);
+        }
+
+        // Set the pause flag
+        storage::set_event_paused(&env, &event_id, true);
+
+        env.events().publish(
+            (AgoraEvent::EventStatusUpdated,),
+            EventStatusUpdatedEvent {
+                event_id,
+                is_active: event_info.is_active,
+                updated_by: event_info.organizer_address,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Resumes a paused event, allowing ticket sales to resume. Only callable by the organizer.
+    ///
+    /// Reactivates ticket sales for a previously paused event.
+    /// The event must be currently paused to call this function.
+    ///
+    /// # Arguments
+    /// * `event_id` - The event ID to resume
+    ///
+    /// # Errors
+    /// * `EventNotFound` - If no event with the given ID exists
+    /// * `Unauthorized` - If the caller is not the event organizer
+    /// * `NoStateChange` - If the event is not currently paused
+    pub fn resume_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Verify organizer authorization
+        event_info.organizer_address.require_auth();
+
+        // Check if not paused
+        if !storage::is_event_paused(&env, &event_id) {
+            return Err(EventRegistryError::NoStateChange);
+        }
+
+        // Clear the pause flag
+        storage::set_event_paused(&env, &event_id, false);
+
+        env.events().publish(
+            (AgoraEvent::EventStatusUpdated,),
+            EventStatusUpdatedEvent {
+                event_id,
+                is_active: event_info.is_active,
+                updated_by: event_info.organizer_address,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns whether an event is currently paused.
+    ///
+    /// Read-only function for external contract consumption. Can be queried by the
+    /// TicketPayment contract to determine if ticket sales should be blocked.
+    ///
+    /// # Arguments
+    /// * `event_id` - The event ID to check
+    ///
+    /// # Returns
+    /// `true` if the event is paused; `false` otherwise (including if the event doesn't exist).
+    pub fn is_event_paused(env: Env, event_id: String) -> bool {
+        storage::is_event_paused(&env, &event_id)
+    }
+
     // ── Loyalty & Staking ──────────────────────────────────────────────────────
 
     /// Configures staking parameters. Only callable by the admin.

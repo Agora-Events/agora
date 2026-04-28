@@ -80,6 +80,10 @@ pub enum EventRegistryError {
     ProposalAlreadyCancelled = 49,
     /// refund_deadline or target_deadline must be before end_time when end_time is set
     DeadlineAfterEndTime = 50,
+    /// Event is currently paused and does not accept tickets sales
+    EventPaused = 51,
+    /// Event is already in the requested state (pause/resume)
+    NoStateChange = 52,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -244,6 +248,12 @@ impl core::fmt::Display for EventRegistryError {
                     f,
                     "refund_deadline and target_deadline must be before end_time"
                 )
+            }
+            EventRegistryError::EventPaused => {
+                write!(f, "Event is currently paused and does not accept ticket sales")
+            }
+            EventRegistryError::NoStateChange => {
+                write!(f, "Event is already in the requested state")
             }
         }
     }
