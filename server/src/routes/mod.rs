@@ -220,6 +220,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_upload_image_route_exists_under_api_v1() {
+        let router = test_router();
+        // POST /api/v1/upload/image should not 404 (method-not-allowed or ok, but not 404)
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/upload/image")
+            .body(Body::empty())
+            .unwrap();
+        let status = router.oneshot(req).await.unwrap().status();
+        assert_ne!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn test_old_routes_without_prefix_return_404() {
         let router = test_router();
         assert_eq!(get_status(router.clone(), "/health").await, StatusCode::NOT_FOUND);
