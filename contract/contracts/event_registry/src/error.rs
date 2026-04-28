@@ -19,7 +19,7 @@ pub enum EventRegistryError {
     UnauthorizedCaller = 12,
     TierLimitExceedsMaxSupply = 13,
     TierNotFound = 14,
-    TierSupplyExceeded = 15,
+    TierSoldOut = 15,
     SupplyUnderflow = 16,
     InvalidQuantity = 17,
     OrganizerBlacklisted = 18,
@@ -72,6 +72,18 @@ pub enum EventRegistryError {
     InvalidTargetDeadline = 44,
     /// Admin has already approved this proposal
     AlreadyApproved = 45,
+    /// Event has not ended yet; feedback CID can only be set after end_time
+    EventNotEnded = 47,
+    /// User has exceeded the maximum number of tickets allowed for this tier
+    PerUserLimitExceeded = 48,
+    /// Proposal has already been cancelled
+    ProposalAlreadyCancelled = 49,
+    /// refund_deadline or target_deadline must be before end_time when end_time is set
+    DeadlineAfterEndTime = 50,
+    /// Event is currently paused and does not accept tickets sales
+    EventPaused = 51,
+    /// Event is already in the requested state (pause/resume)
+    NoStateChange = 52,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -111,7 +123,7 @@ impl core::fmt::Display for EventRegistryError {
                     "The specified ticket tier ID does not exist for this event"
                 )
             }
-            EventRegistryError::TierSupplyExceeded => {
+            EventRegistryError::TierSoldOut => {
                 write!(
                     f,
                     "The requested ticket tier has sold out and cannot accept more registrations"
@@ -215,6 +227,33 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::AlreadyApproved => {
                 write!(f, "Admin has already approved this proposal")
+            }
+            EventRegistryError::EventNotEnded => {
+                write!(
+                    f,
+                    "Event has not ended yet; feedback CID can only be set after end_time"
+                )
+            }
+            EventRegistryError::PerUserLimitExceeded => {
+                write!(
+                    f,
+                    "User has exceeded the maximum number of tickets allowed for this tier"
+                )
+            }
+            EventRegistryError::ProposalAlreadyCancelled => {
+                write!(f, "Proposal has already been cancelled")
+            }
+            EventRegistryError::DeadlineAfterEndTime => {
+                write!(
+                    f,
+                    "refund_deadline and target_deadline must be before end_time"
+                )
+            }
+            EventRegistryError::EventPaused => {
+                write!(f, "Event is currently paused and does not accept ticket sales")
+            }
+            EventRegistryError::NoStateChange => {
+                write!(f, "Event is already in the requested state")
             }
         }
     }

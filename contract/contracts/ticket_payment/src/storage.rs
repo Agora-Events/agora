@@ -2,7 +2,7 @@ use crate::{
     error::TicketPaymentError,
     types::{DataKey, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus},
 };
-use soroban_sdk::{vec, Address, Env, String, Vec};
+use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
 
@@ -800,16 +800,27 @@ pub fn get_payments_by_status(env: &Env, event_id: String, status: PaymentStatus
         .unwrap_or_else(|| vec![env])
 }
 
-/// Stores a mapping from a numeric ticket_id to a payment_id String.
-pub fn set_ticket_payment_id(env: &Env, ticket_id: u64, payment_id: soroban_sdk::String) {
+/// Stores the SHA-256 hash of the ticket secret for a payment.
+pub fn store_validation_hash(env: &Env, payment_id: &String, hash: &BytesN<32>) {
     env.storage()
         .persistent()
-        .set(&DataKey::TicketId(ticket_id), &payment_id);
+        .set(&DataKey::ValidationHash(payment_id.clone()), hash);
 }
 
-/// Retrieves the payment_id String for a given numeric ticket_id.
-pub fn get_ticket_payment_id(env: &Env, ticket_id: u64) -> Option<soroban_sdk::String> {
+/// Retrieves the stored validation hash for a payment.
+pub fn get_validation_hash(env: &Env, payment_id: &String) -> Option<BytesN<32>> {
     env.storage()
         .persistent()
-        .get(&DataKey::TicketId(ticket_id))
+        .get(&DataKey::ValidationHash(payment_id.clone()))
+}
+
+/// Verifies that `raw_secret` hashes to the stored validation hash.
+pub fn verify_secret(env: &Env, payment_id: &String, raw_secret: &Bytes) -> bool {
+    match get_validation_hash(env, payment_id) {
+        Some(stored_hash) => {
+            let computed: BytesN<32> = env.crypto().sha256(raw_secret).into();
+            computed == stored_hash
+        }
+        None => false,
+    }
 }

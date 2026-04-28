@@ -25,6 +25,8 @@ pub enum AgoraEvent {
     ProposalVoted,
     GovernanceActionExecuted,
     ContractVerificationFailed,
+    EventCancelled,
+    CancellationRefundClaimed,
 }
 
 #[contracttype]
@@ -159,6 +161,7 @@ pub struct PartialRefundProcessedEvent {
 pub struct TicketCheckedInEvent {
     pub payment_id: String,
     pub event_id: String,
+    pub attendee: Address,
     pub scanner: Address,
     pub timestamp: u64,
 }
@@ -212,5 +215,23 @@ pub struct GovernanceActionExecutedEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractVerificationFailedEvent {
     pub missing_key: String,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventCancelledEvent {
+    pub event_id: String,
+    pub organizer: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CancellationRefundClaimedEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub buyer: Address,
+    pub amount: i128,
     pub timestamp: u64,
 }

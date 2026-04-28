@@ -11,7 +11,10 @@
 //! All primary keys are UUID v4. `updated_at` fields are maintained automatically
 //! by database triggers defined in the initial schema migration.
 
+pub mod audit_log;
+pub mod category;
 pub mod event;
+pub mod event_rating;
 pub mod organizer;
 pub mod ticket;
 pub mod transaction;

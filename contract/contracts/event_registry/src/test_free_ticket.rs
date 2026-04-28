@@ -53,6 +53,8 @@ fn free_tier(env: &Env, limit: i128) -> Map<String, TicketTier> {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![env],
+            loyalty_multiplier: 1,
+            max_per_user: 0, // Unlimited for free tickets
         },
     );
     tiers
@@ -84,6 +86,12 @@ fn register_free_event(
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
     });
     id
 }
@@ -112,7 +120,7 @@ fn test_free_ticket_increments_inventory() {
     assert_eq!(before.tiers.get(tier_id.clone()).unwrap().current_sold, 0);
 
     // Simulate TicketPayment calling increment_inventory for qty = 1
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     // After purchase
     let after = client.get_event(&event_id).unwrap();
@@ -134,7 +142,7 @@ fn test_free_ticket_updates_global_counter() {
     let tier_id = String::from_str(&env, FREE_TIER_ID);
 
     let before = client.get_global_tickets_sold();
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     let after = client.get_global_tickets_sold();
 
     assert_eq!(after, before + 1);
@@ -159,7 +167,7 @@ fn test_free_ticket_no_token_transfer() {
     // increment_inventory must succeed without any token interaction.
     // If the contract attempted a zero-value transfer it would panic because
     // no token contract is deployed in this test environment.
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     // Confirm supply was updated — proving the call completed successfully.
     let info = client.get_event(&event_id).unwrap();
@@ -179,7 +187,7 @@ fn test_free_ticket_bulk_purchase() {
     let event_id = register_free_event(&env, &client, &organizer, "free_evt_bulk", 200, 200);
     let tier_id = String::from_str(&env, FREE_TIER_ID);
 
-    client.increment_inventory(&event_id, &tier_id, &5);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
 
     let info = client.get_event(&event_id).unwrap();
     assert_eq!(info.current_supply, 5);
@@ -200,12 +208,12 @@ fn test_free_ticket_respects_tier_limit() {
     let event_id = register_free_event(&env, &client, &organizer, "free_evt_cap", 10, 2);
     let tier_id = String::from_str(&env, FREE_TIER_ID);
 
-    client.increment_inventory(&event_id, &tier_id, &1);
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     // Third ticket must be rejected
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
-    assert_eq!(result, Err(Ok(EventRegistryError::TierSupplyExceeded)));
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    assert_eq!(result, Err(Ok(EventRegistryError::TierSoldOut)));
 }
 
 /// max_supply cap is enforced for free tickets when set.
@@ -223,10 +231,10 @@ fn test_free_ticket_respects_max_supply() {
     let tier_id = String::from_str(&env, FREE_TIER_ID);
 
     // Increment by 99 (should succeed)
-    client.increment_inventory(&event_id, &tier_id, &99);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &99);
 
     // Now try to increment by 2 more (should fail - only 1 left)
-    let result = client.try_increment_inventory(&event_id, &tier_id, &2);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &2);
     assert_eq!(result, Err(Ok(EventRegistryError::MaxSupplyExceeded)));
 }
 
@@ -243,12 +251,12 @@ fn test_free_ticket_decrement_on_refund() {
     let event_id = register_free_event(&env, &client, &organizer, "free_evt_refund", 50, 50);
     let tier_id = String::from_str(&env, FREE_TIER_ID);
 
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     let after_purchase = client.get_event(&event_id).unwrap();
     assert_eq!(after_purchase.current_supply, 1);
 
-    client.decrement_inventory(&event_id, &tier_id);
+    client.decrement_inventory(&event_id, &tier_id, &Address::generate(&env));
 
     let after_refund = client.get_event(&event_id).unwrap();
     assert_eq!(after_refund.current_supply, 0);
@@ -268,6 +276,6 @@ fn test_free_ticket_zero_quantity_rejected() {
     let event_id = register_free_event(&env, &client, &organizer, "free_evt_qty0", 50, 50);
     let tier_id = String::from_str(&env, FREE_TIER_ID);
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &0);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &0);
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
 }

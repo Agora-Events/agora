@@ -58,6 +58,12 @@ fn test_register_and_get_series() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
@@ -75,6 +81,12 @@ fn test_register_and_get_series() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Register a series
@@ -127,6 +139,12 @@ fn test_issue_and_use_series_pass() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
@@ -303,6 +321,14 @@ fn test_storage_operations() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
     };
 
     client.store_event(&event_info);
@@ -349,6 +375,8 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
             current_sold: 3,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -360,6 +388,8 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
             current_sold: 4,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -391,6 +421,14 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
     });
 
     assert_eq!(client.get_total_tickets_sold(&event_id), 9);
@@ -436,6 +474,12 @@ fn test_get_active_events_count_tracks_status_changes() {
             target_deadline: None,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            is_private: false,
+            end_time: 0,
+            transfer_lock_duration: 0,
+            accepted_tokens: soroban_sdk::Vec::new(&env),
+            use_global_whitelist: true,
         });
     }
 
@@ -444,7 +488,7 @@ fn test_get_active_events_count_tracks_status_changes() {
     client.update_event_status(&event_1, &false);
     assert_eq!(client.get_active_events_count(), 2);
 
-    client.cancel_event(&event_2);
+    client.cancel_event(&event_2, &None);
     assert_eq!(client.get_active_events_count(), 1);
 
     client.update_event_status(&event_1, &true);
@@ -494,6 +538,14 @@ fn test_organizer_events_list() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
     };
 
     let event_2 = EventInfo {
@@ -524,6 +576,14 @@ fn test_organizer_events_list() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -581,6 +641,14 @@ fn test_get_organizer_receipts_returns_archived_receipts() {
             custom_fee_bps: None,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            is_private: false,
+            end_time: 0,
+            transfer_lock_duration: 0,
+            accepted_tokens: soroban_sdk::Vec::new(&env),
+            use_global_whitelist: true,
+            feedback_cid: None,
+            cancellation_reason: None,
         };
 
     let event_id_1 = String::from_str(&env, "archived_1");
@@ -660,6 +728,8 @@ fn test_register_event_success() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -679,6 +749,12 @@ fn test_register_event_success() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -732,6 +808,12 @@ fn test_register_event_name_trimming() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let stored = client.get_event(&event_id).unwrap();
@@ -770,6 +852,8 @@ fn test_register_event_invalid_target_deadline() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -796,6 +880,12 @@ fn test_register_event_invalid_target_deadline() {
         target_deadline: Some(now - 1),
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -816,6 +906,12 @@ fn test_register_event_invalid_target_deadline() {
         target_deadline: Some(now),
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -836,10 +932,138 @@ fn test_register_event_invalid_target_deadline() {
         target_deadline: Some(now + 100),
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let stored = client.get_event(&event_id).unwrap();
     assert_eq!(stored.target_deadline, now + 100);
+}
+
+#[test]
+fn test_register_event_refund_deadline_after_end_time_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    env.ledger().with_mut(|li| li.timestamp = 1000);
+
+    let base_args = EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_rd"),
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 0,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        end_time: 5000,
+        refund_deadline: 5000, // equal to end_time — should fail
+        target_deadline: None,
+    };
+
+    // refund_deadline == end_time should fail
+    let result = client.try_register_event(&base_args);
+    assert_eq!(result, Err(Ok(EventRegistryError::DeadlineAfterEndTime)));
+
+    // refund_deadline > end_time should fail
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_rd2"),
+        refund_deadline: 6000,
+        ..base_args.clone()
+    });
+    assert_eq!(result, Err(Ok(EventRegistryError::DeadlineAfterEndTime)));
+
+    // refund_deadline < end_time should succeed
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_rd3"),
+        refund_deadline: 4999,
+        ..base_args
+    });
+}
+
+#[test]
+fn test_register_event_target_deadline_after_end_time_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    env.ledger().with_mut(|li| li.timestamp = 1000);
+
+    let base_args = EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_td"),
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 0,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        end_time: 5000,
+        refund_deadline: 0,
+        target_deadline: Some(5000), // equal to end_time — should fail
+    };
+
+    // target_deadline == end_time should fail
+    let result = client.try_register_event(&base_args);
+    assert_eq!(result, Err(Ok(EventRegistryError::DeadlineAfterEndTime)));
+
+    // target_deadline > end_time should fail
+    let result = client.try_register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_td2"),
+        target_deadline: Some(6000),
+        ..base_args.clone()
+    });
+    assert_eq!(result, Err(Ok(EventRegistryError::DeadlineAfterEndTime)));
+
+    // target_deadline < end_time should succeed
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_td3"),
+        target_deadline: Some(4999),
+        ..base_args
+    });
 }
 
 #[test]
@@ -872,6 +1096,12 @@ fn test_register_event_rejects_contract_as_organizer() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -912,6 +1142,12 @@ fn test_register_event_rejects_zero_organizer_address() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -954,6 +1190,12 @@ fn test_register_event_unlimited_supply() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -998,6 +1240,12 @@ fn test_register_duplicate_event_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -1016,6 +1264,12 @@ fn test_register_duplicate_event_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -1053,6 +1307,12 @@ fn test_register_event_invalid_metadata_cid_formats() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(
         short_result,
@@ -1079,6 +1339,12 @@ fn test_register_event_invalid_metadata_cid_formats() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(
         wrong_prefix_result,
@@ -1105,6 +1371,12 @@ fn test_register_event_invalid_metadata_cid_formats() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(
         oversized_result,
@@ -1149,6 +1421,12 @@ fn test_get_event_payment_info() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -1193,6 +1471,12 @@ fn test_update_event_status() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1236,6 +1520,12 @@ fn test_event_inactive_error() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1280,6 +1570,12 @@ fn test_complete_event_lifecycle() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -1336,6 +1632,12 @@ fn test_update_metadata_success() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let new_metadata_cid = String::from_str(
@@ -1385,6 +1687,12 @@ fn test_update_metadata_invalid_cid() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let wrong_char_cid = String::from_str(
@@ -1461,6 +1769,8 @@ fn test_set_custom_event_fee() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1480,6 +1790,12 @@ fn test_set_custom_event_fee() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Default fee
@@ -1536,6 +1852,12 @@ fn test_set_custom_event_fee_exceeds_max() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Try to set custom fee exceeding 10000 bps (100%)
@@ -1587,6 +1909,8 @@ fn test_increment_inventory_success() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1606,9 +1930,15 @@ fn test_increment_inventory_success() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.current_supply, 1);
@@ -1616,7 +1946,7 @@ fn test_increment_inventory_success() {
     let tier = event_info.tiers.get(tier_id.clone()).unwrap();
     assert_eq!(tier.current_sold, 1);
 
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.current_supply, 2);
@@ -1659,6 +1989,8 @@ fn test_increment_inventory_max_supply_exceeded() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1678,16 +2010,22 @@ fn test_increment_inventory_max_supply_exceeded() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
-    client.increment_inventory(&event_id, &tier_id, &1);
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.current_supply, 2);
     assert_eq!(event_info.max_supply, 2);
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::MaxSupplyExceeded)));
 }
 
@@ -1726,6 +2064,8 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1745,12 +2085,18 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Fill one slot, then attempt a bulk call that overshoots max_supply in one shot
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &5);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     assert_eq!(result, Err(Ok(EventRegistryError::MaxSupplyExceeded)));
 
     // Supply must remain unchanged after the failed call
@@ -1793,6 +2139,8 @@ fn test_increment_inventory_unlimited_supply() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -1812,10 +2160,16 @@ fn test_increment_inventory_unlimited_supply() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     for _ in 0..10 {
-        client.increment_inventory(&event_id, &tier_id, &1);
+        client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     }
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1841,7 +2195,8 @@ fn test_increment_inventory_event_not_found() {
 
     let fake_event_id = String::from_str(&env, "nonexistent");
     let tier_id = String::from_str(&env, "general");
-    let result = client.try_increment_inventory(&fake_event_id, &tier_id, &1);
+    let result =
+        client.try_increment_inventory(&fake_event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::EventNotFound)));
 }
 
@@ -1879,6 +2234,8 @@ fn test_increment_inventory_inactive_event() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -1897,11 +2254,17 @@ fn test_increment_inventory_inactive_event() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     client.update_event_status(&event_id, &false);
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::EventInactive)));
 }
 
@@ -1939,6 +2302,8 @@ fn test_increment_inventory_persists_across_reads() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     client.register_event(&EventRegistrationArgs {
@@ -1957,10 +2322,16 @@ fn test_increment_inventory_persists_across_reads() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     for _ in 0..5 {
-        client.increment_inventory(&event_id, &tier_id, &1);
+        client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     }
 
     let event_info_1 = client.get_event(&event_id).unwrap();
@@ -2004,6 +2375,8 @@ fn test_tier_limit_exceeds_max_supply() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -2015,6 +2388,8 @@ fn test_tier_limit_exceeds_max_supply() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2034,6 +2409,12 @@ fn test_tier_limit_exceeds_max_supply() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(
         result,
@@ -2075,6 +2456,8 @@ fn test_tier_not_found() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2094,10 +2477,17 @@ fn test_tier_not_found() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
-    let result = client.try_increment_inventory(&event_id, &wrong_tier_id, &1);
+    let result =
+        client.try_increment_inventory(&event_id, &wrong_tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::TierNotFound)));
 }
 
@@ -2136,6 +2526,8 @@ fn test_tier_supply_exceeded() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2155,14 +2547,20 @@ fn test_tier_supply_exceeded() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
-    client.increment_inventory(&event_id, &tier_id, &1);
-    client.increment_inventory(&event_id, &tier_id, &1);
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
-    assert_eq!(result, Err(Ok(EventRegistryError::TierSupplyExceeded)));
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    assert_eq!(result, Err(Ok(EventRegistryError::TierSoldOut)));
 }
 
 #[test]
@@ -2202,6 +2600,8 @@ fn test_multiple_tiers_inventory() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -2213,6 +2613,8 @@ fn test_multiple_tiers_inventory() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2232,11 +2634,17 @@ fn test_multiple_tiers_inventory() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
-    client.increment_inventory(&event_id, &general_id, &1);
-    client.increment_inventory(&event_id, &general_id, &1);
-    client.increment_inventory(&event_id, &vip_id, &1);
+    client.increment_inventory(&event_id, &general_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &general_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &vip_id, &Address::generate(&env), &1);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.current_supply, 3);
@@ -2246,6 +2654,124 @@ fn test_multiple_tiers_inventory() {
 
     let vip_tier = event_info.tiers.get(vip_id).unwrap();
     assert_eq!(vip_tier.current_sold, 1);
+}
+
+#[test]
+fn test_three_tiers_inventory_is_isolated_and_sold_out_tier_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = test_payment_address(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "three_tier_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let general_id = String::from_str(&env, "general");
+    let vip_id = String::from_str(&env, "vip");
+    let early_bird_id = String::from_str(&env, "early_bird");
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        general_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 50,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+    tiers.set(
+        vip_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "VIP"),
+            price: 10000000,
+            tier_limit: 20,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+    tiers.set(
+        early_bird_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "Early Bird"),
+            price: 3000000,
+            tier_limit: 1,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Tiered Event"),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 71,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+    });
+
+    client.increment_inventory(&event_id, &general_id, &Address::generate(&env), &2);
+    client.increment_inventory(&event_id, &vip_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &early_bird_id, &Address::generate(&env), &1);
+
+    let sold_out_attempt = client.try_increment_inventory(
+        &event_id,
+        &early_bird_id,
+        &Address::generate(&env),
+        &1,
+    );
+    assert_eq!(sold_out_attempt, Err(Ok(EventRegistryError::TierSoldOut)));
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.current_supply, 4);
+
+    let general_tier = event_info.tiers.get(general_id).unwrap();
+    assert_eq!(general_tier.current_sold, 2);
+
+    let vip_tier = event_info.tiers.get(vip_id).unwrap();
+    assert_eq!(vip_tier.current_sold, 1);
+
+    let early_bird_tier = event_info.tiers.get(early_bird_id).unwrap();
+    assert_eq!(early_bird_tier.current_sold, 1);
 }
 
 #[test]
@@ -2278,6 +2804,8 @@ fn test_increment_inventory_supply_overflow() {
             current_sold: i128::MAX - 1,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2310,9 +2838,17 @@ fn test_increment_inventory_supply_overflow() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
     });
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
 
@@ -2346,6 +2882,8 @@ fn test_increment_inventory_tier_sold_overflow() {
             current_sold: i128::MAX, // tier current_sold at max
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2377,9 +2915,17 @@ fn test_increment_inventory_tier_sold_overflow() {
         custom_fee_bps: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
     });
 
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
+    let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
 
@@ -2422,6 +2968,12 @@ fn test_update_event_status_noop_skips_event() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let _ = env.events().all();
@@ -2499,6 +3051,12 @@ fn test_blacklist_prevents_event_registration() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -2544,6 +3102,12 @@ fn test_update_metadata_noop_skips_event() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let _ = env.events().all();
@@ -2628,6 +3192,12 @@ fn test_blacklist_suspends_active_events() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2735,6 +3305,8 @@ fn test_register_event_with_resale_cap() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -2754,6 +3326,12 @@ fn test_register_event_with_resale_cap() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2798,6 +3376,12 @@ fn test_register_event_resale_cap_zero() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2842,6 +3426,12 @@ fn test_register_event_resale_cap_none() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2886,6 +3476,12 @@ fn test_postpone_event_sets_grace_period() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Set ledger time and grace period end in the future
@@ -2937,6 +3533,12 @@ fn test_register_event_resale_cap_invalid() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -2977,13 +3579,26 @@ fn test_cancel_event_success() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
-    client.cancel_event(&event_id);
+    client.cancel_event(
+        &event_id,
+        &Some(String::from_str(&env, "Venue unavailable")),
+    );
 
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.status, EventStatus::Cancelled);
     assert!(!event_info.is_active);
+    assert_eq!(
+        event_info.cancellation_reason,
+        Some(String::from_str(&env, "Venue unavailable"))
+    );
 }
 
 #[test]
@@ -3020,6 +3635,12 @@ fn test_archive_event_rejects_active_event() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let result = client.try_archive_event(&event_id);
@@ -3061,10 +3682,16 @@ fn test_cancel_already_cancelled_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
-    client.cancel_event(&event_id);
-    let result = client.try_cancel_event(&event_id);
+    client.cancel_event(&event_id, &None);
+    let result = client.try_cancel_event(&event_id, &None);
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCancelled)));
 }
 
@@ -3103,9 +3730,15 @@ fn test_update_status_on_cancelled_event_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
-    client.cancel_event(&event_id);
+    client.cancel_event(&event_id, &None);
     let result = client.try_update_event_status(&event_id, &true);
     assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 }
@@ -3144,7 +3777,7 @@ fn test_update_loyalty_score_creates_profile() {
     let (client, admin, _) = setup_loyalty_env(&env);
 
     let guest = Address::generate(&env);
-    client.update_loyalty_score(&admin, &guest, &2, &2000_0000000i128);
+    client.update_loyalty_score(&admin, &guest, &2, &2000_0000000i128, &1u32);
 
     let profile = client.get_guest_profile(&guest).unwrap();
     assert_eq!(profile.guest_address, guest);
@@ -3162,9 +3795,9 @@ fn test_update_loyalty_score_accumulates() {
     let guest = Address::generate(&env);
 
     // First purchase: 5 tickets
-    client.update_loyalty_score(&admin, &guest, &5, &5000_0000000i128);
+    client.update_loyalty_score(&admin, &guest, &5, &5000_0000000i128, &1u32);
     // Second purchase: 3 tickets
-    client.update_loyalty_score(&admin, &guest, &3, &3000_0000000i128);
+    client.update_loyalty_score(&admin, &guest, &3, &3000_0000000i128, &1u32);
 
     let profile = client.get_guest_profile(&guest).unwrap();
     assert_eq!(profile.loyalty_score, 80); // (5+3) × 10
@@ -3181,7 +3814,7 @@ fn test_update_loyalty_score_unauthorized_fails() {
     let guest = Address::generate(&env);
     let random_caller = Address::generate(&env);
 
-    let result = client.try_update_loyalty_score(&random_caller, &guest, &1, &1000i128);
+    let result = client.try_update_loyalty_score(&random_caller, &guest, &1, &1000i128, &1u32);
     assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized)));
 }
 
@@ -3192,7 +3825,7 @@ fn test_update_loyalty_score_zero_tickets_fails() {
     let (client, admin, _) = setup_loyalty_env(&env);
 
     let guest = Address::generate(&env);
-    let result = client.try_update_loyalty_score(&admin, &guest, &0, &0i128);
+    let result = client.try_update_loyalty_score(&admin, &guest, &0, &0i128, &1u32);
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
 }
 
@@ -3217,21 +3850,21 @@ fn test_loyalty_discount_bps_tiers() {
     let guest = Address::generate(&env);
 
     // Score < 100 → 0 bps
-    client.update_loyalty_score(&admin, &guest, &5, &100i128); // 50 pts
+    client.update_loyalty_score(&admin, &guest, &5, &100i128, &1u32); // 50 pts
     assert_eq!(client.get_loyalty_discount_bps(&guest), 0);
 
     // Score 100–499 → 250 bps
-    client.update_loyalty_score(&admin, &guest, &5, &100i128); // +50 = 100 pts
+    client.update_loyalty_score(&admin, &guest, &5, &100i128, &1u32); // +50 = 100 pts
     assert_eq!(client.get_loyalty_discount_bps(&guest), 250);
 
     // Score 500–999 → 500 bps
     // Need to get to 500 pts: currently 100, need 400 more = 40 tickets
-    client.update_loyalty_score(&admin, &guest, &40, &1000i128); // +400 = 500 pts
+    client.update_loyalty_score(&admin, &guest, &40, &1000i128, &1u32); // +400 = 500 pts
     assert_eq!(client.get_loyalty_discount_bps(&guest), 500);
 
     // Score ≥ 1000 → 1000 bps
     // Need 500 more pts = 50 tickets
-    client.update_loyalty_score(&admin, &guest, &50, &1000i128); // +500 = 1000 pts
+    client.update_loyalty_score(&admin, &guest, &50, &1000i128, &1u32); // +500 = 1000 pts
     assert_eq!(client.get_loyalty_discount_bps(&guest), 1000);
 }
 
@@ -3747,6 +4380,12 @@ fn test_register_event_with_banner_cid() {
         target_deadline: None,
         banner_cid: banner_cid.clone(),
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -3797,6 +4436,12 @@ fn test_goal_met_event_fires_only_once() {
         target_deadline: None,
         banner_cid: banner_cid.clone(),
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -3835,6 +4480,8 @@ fn test_register_event_without_banner_cid() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -3854,19 +4501,25 @@ fn test_register_event_without_banner_cid() {
         target_deadline: Some(1000),
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Drain setup events
     let _ = env.events().all();
 
     // Below threshold: only InventoryIncremented, no GoalMet
-    client.increment_inventory(&event_id, &tier_id, &5);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     let events = env.events().all();
     assert_eq!(events.len(), 1, "expected only InventoryIncremented event");
     assert!(!client.get_event(&event_id).unwrap().goal_met);
 
     // Cross the threshold (5 + 5 = 10 >= 10): GoalMet + InventoryIncremented
-    client.increment_inventory(&event_id, &tier_id, &5);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     let events = env.events().all();
     assert_eq!(
         events.len(),
@@ -3876,7 +4529,7 @@ fn test_register_event_without_banner_cid() {
     assert!(client.get_event(&event_id).unwrap().goal_met);
 
     // Past threshold: only InventoryIncremented, no second GoalMet
-    client.increment_inventory(&event_id, &tier_id, &5);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     let events = env.events().all();
     assert_eq!(
         events.len(),
@@ -3921,6 +4574,12 @@ fn test_series_pass_issued_at_timestamp() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Register a series
@@ -3998,6 +4657,12 @@ fn base_args(
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
     }
 }
 
@@ -4300,6 +4965,158 @@ fn test_active_proposals_list() {
 }
 
 #[test]
+fn test_propose_and_execute_set_platform_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    assert_eq!(client.get_platform_fee(), 500);
+
+    // Propose and execute a fee change via governance
+    let proposal_id = client.propose_set_platform_fee(&admin, &300, &0);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(proposal.proposal_id, proposal_id);
+    assert!(!proposal.executed);
+
+    client.execute_proposal(&admin, &proposal_id);
+
+    assert_eq!(client.get_platform_fee(), 300);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert!(proposal.executed);
+}
+
+#[test]
+fn test_propose_set_platform_fee_invalid() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Fee > 10000 bps should be rejected
+    let result = client.try_propose_set_platform_fee(&admin, &10001, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
+}
+
+#[test]
+fn test_propose_and_execute_set_min_stake_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    let staking_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    // Configure staking so there is an initial min stake amount
+    client.set_staking_config(&staking_token, &1_000_000);
+
+    // Propose and execute a min stake change via governance
+    let proposal_id = client.propose_set_min_stake_amount(&admin, &2_000_000_i128, &0);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(proposal.proposal_id, proposal_id);
+    assert!(!proposal.executed);
+
+    client.execute_proposal(&admin, &proposal_id);
+
+    assert_eq!(client.get_min_stake_amount(), 2_000_000_i128);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert!(proposal.executed);
+}
+
+#[test]
+fn test_propose_set_min_stake_amount_invalid() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Zero or negative amount should be rejected
+    let result = client.try_propose_set_min_stake_amount(&admin, &0_i128, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidStakeAmount)));
+
+    let result = client.try_propose_set_min_stake_amount(&admin, &-1_i128, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidStakeAmount)));
+}
+
+#[test]
+fn test_propose_set_platform_fee_unauthorized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let result = client.try_propose_set_platform_fee(&non_admin, &300, &0);
+    assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized)));
+}
+
+#[test]
+fn test_set_platform_fee_with_multisig() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // Add admin2 and set threshold to 2
+    let pid = client.propose_add_admin(&admin1, &admin2, &0);
+    client.execute_proposal(&admin1, &pid);
+    let pid = client.propose_set_threshold(&admin1, &2, &0);
+    client.execute_proposal(&admin1, &pid);
+
+    // Propose fee change — should need 2 approvals
+    let proposal_id = client.propose_set_platform_fee(&admin1, &200, &0);
+
+    // Single approval should not be enough
+    let result = client.try_execute_proposal(&admin1, &proposal_id);
+    assert!(result.is_err());
+
+    // Second admin approves and execution succeeds
+    client.approve_proposal(&admin2, &proposal_id);
+    client.execute_proposal(&admin1, &proposal_id);
+    assert_eq!(client.get_platform_fee(), 200);
+}
+
+#[test]
 fn test_cancelled_status_guard() {
     let env = Env::default();
     env.mock_all_auths();
@@ -4335,10 +5152,16 @@ fn test_cancelled_status_guard() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     // Cancel event
-    client.cancel_event(&event_id);
+    client.cancel_event(&event_id, &None);
 
     // Try to update status - should fail
     let result = client.try_update_event_status(&event_id, &true);
@@ -4409,7 +5232,7 @@ fn test_tier_not_found_error_message() {
 
 #[test]
 fn test_tier_supply_exceeded_error_message() {
-    let buf = fmt_to_str(EventRegistryError::TierSupplyExceeded);
+    let buf = fmt_to_str(EventRegistryError::TierSoldOut);
     assert!(
         buf_starts_with(
             &buf,
@@ -4445,6 +5268,8 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4468,6 +5293,12 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(
@@ -4500,6 +5331,8 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4523,6 +5356,12 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert!(result.is_ok());
@@ -4552,6 +5391,8 @@ fn test_register_event_restocking_fee_zero_always_valid() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4574,6 +5415,12 @@ fn test_register_event_restocking_fee_zero_always_valid() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert!(result.is_ok());
@@ -4603,6 +5450,8 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4625,6 +5474,12 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
 
     assert_eq!(
@@ -4677,6 +5532,8 @@ fn test_register_event_tier_limit_overflow() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     tiers.set(
@@ -4688,6 +5545,8 @@ fn test_register_event_tier_limit_overflow() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4707,6 +5566,12 @@ fn test_register_event_tier_limit_overflow() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -4742,6 +5607,8 @@ fn test_register_event_invalid_tier_limit_negative() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
@@ -4761,6 +5628,12 @@ fn test_register_event_invalid_tier_limit_negative() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
 }
@@ -4814,6 +5687,12 @@ fn test_register_event_milestone_overflow() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -4852,6 +5731,12 @@ fn tags_base_args(env: &Env, event_id: &str, organizer: &Address) -> EventRegist
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
     }
 }
 
@@ -5044,4 +5929,828 @@ fn test_version_fn_returns_1() {
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
     assert_eq!(client.version(), 1u32);
+}
+
+// ── Private Event Support Tests ───────────────────────────────────────────────
+
+fn setup_private_test(env: &Env) -> (EventRegistryClient<'static>, Address, Address, Address) {
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let organizer = Address::generate(env);
+    let platform_wallet = Address::generate(env);
+    let usdc_token = Address::generate(env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    let ticket_payment = Address::generate(env);
+    client.set_ticket_payment_contract(&ticket_payment);
+    (client, admin, organizer, ticket_payment)
+}
+
+fn register_event_with_privacy(
+    env: &Env,
+    client: &EventRegistryClient,
+    organizer: &Address,
+    event_id: &str,
+    is_private: bool,
+) {
+    let metadata_cid = String::from_str(
+        env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let mut tiers = Map::new(env);
+    tiers.set(
+        String::from_str(env, "tier_1"),
+        crate::types::TicketTier {
+            name: String::from_str(env, "General"),
+            price: 1000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: false,
+            auction_config: soroban_sdk::vec![env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(env, event_id),
+        name: String::from_str(env, "Test Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
+    });
+}
+
+/// A public event increments the global managed events counter.
+#[test]
+fn test_public_event_increments_managed_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, organizer, _) = setup_private_test(&env);
+
+    assert_eq!(client.get_managed_events_count(), 0);
+    register_event_with_privacy(&env, &client, &organizer, "pub_evt", false);
+    assert_eq!(client.get_managed_events_count(), 1);
+}
+
+/// A private event does NOT increment the global managed events counter.
+#[test]
+fn test_private_event_excluded_from_managed_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, organizer, _) = setup_private_test(&env);
+
+    assert_eq!(client.get_managed_events_count(), 0);
+    register_event_with_privacy(&env, &client, &organizer, "priv_evt", true);
+    assert_eq!(client.get_managed_events_count(), 0);
+}
+
+/// A public event increments the global active events counter.
+#[test]
+fn test_public_event_increments_active_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, organizer, _) = setup_private_test(&env);
+
+    assert_eq!(client.get_active_events_count(), 0);
+    register_event_with_privacy(&env, &client, &organizer, "pub_evt", false);
+    assert_eq!(client.get_active_events_count(), 1);
+}
+
+/// A private event does NOT increment the global active events counter.
+#[test]
+fn test_private_event_excluded_from_active_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, organizer, _) = setup_private_test(&env);
+
+    assert_eq!(client.get_active_events_count(), 0);
+    register_event_with_privacy(&env, &client, &organizer, "priv_evt", true);
+    assert_eq!(client.get_active_events_count(), 0);
+}
+
+/// Mixed registration: only public events count toward global counters.
+#[test]
+fn test_mixed_public_private_events_counters() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, organizer, _) = setup_private_test(&env);
+
+    register_event_with_privacy(&env, &client, &organizer, "pub_1", false);
+    register_event_with_privacy(&env, &client, &organizer, "priv_1", true);
+    register_event_with_privacy(&env, &client, &organizer, "pub_2", false);
+    register_event_with_privacy(&env, &client, &organizer, "priv_2", true);
+
+    // 2 public events counted, 2 private excluded
+    assert_eq!(client.get_managed_events_count(), 2);
+    assert_eq!(client.get_active_events_count(), 2);
+}
+
+/// Tickets sold for a public event are included in the global counter.
+#[test]
+fn test_public_event_tickets_counted_globally() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, organizer, ticket_payment) = setup_private_test(&env);
+
+    register_event_with_privacy(&env, &client, &organizer, "pub_evt", false);
+
+    assert_eq!(client.get_global_tickets_sold(), 0);
+    client.increment_inventory(
+        &String::from_str(&env, "pub_evt"),
+        &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
+        &2u32,
+    );
+    assert_eq!(client.get_global_tickets_sold(), 2);
+
+    // Decrement (refund) also updates the counter
+    client.decrement_inventory(
+        &String::from_str(&env, "pub_evt"),
+        &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
+    );
+    assert_eq!(client.get_global_tickets_sold(), 1);
+    let _ = ticket_payment; // suppress unused warning
+}
+
+/// Tickets sold for a private event are NOT included in the global counter.
+#[test]
+fn test_private_event_tickets_excluded_from_global_counter() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, organizer, ticket_payment) = setup_private_test(&env);
+
+    register_event_with_privacy(&env, &client, &organizer, "priv_evt", true);
+
+    assert_eq!(client.get_global_tickets_sold(), 0);
+    client.increment_inventory(
+        &String::from_str(&env, "priv_evt"),
+        &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
+        &5u32,
+    );
+    // Global counter must remain 0 for private events
+    assert_eq!(client.get_global_tickets_sold(), 0);
+
+    // Decrement (refund) also must not affect the global counter
+    client.decrement_inventory(
+        &String::from_str(&env, "priv_evt"),
+        &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
+    );
+    assert_eq!(client.get_global_tickets_sold(), 0);
+    let _ = ticket_payment;
+}
+
+/// is_private flag is stored and retrievable via get_event.
+#[test]
+fn test_max_per_user_limit_enforced() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    // Create event with per-user limit of 2
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "vip"),
+        TicketTier {
+            name: String::from_str(&env, "VIP"),
+            price: 1000,
+            tier_limit: 10,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 2, // Per-user limit of 2
+        },
+    );
+
+    let event_id = String::from_str(&env, "test_event");
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 10,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+    });
+
+    let vip_tier = String::from_str(&env, "vip");
+    let user1 = Address::generate(&env);
+
+    // First 2 purchases should succeed
+    client.increment_inventory(&event_id, &vip_tier, &user1, &1);
+    client.increment_inventory(&event_id, &vip_tier, &user1, &1);
+
+    // 3rd purchase should fail
+    let result = client.try_increment_inventory(&event_id, &vip_tier, &user1, &1);
+    assert_eq!(result, Err(Ok(EventRegistryError::PerUserLimitExceeded)));
+}
+
+#[test]
+fn test_is_private_flag_stored_on_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, organizer, _) = setup_private_test(&env);
+
+    register_event_with_privacy(&env, &client, &organizer, "priv_evt", true);
+    register_event_with_privacy(&env, &client, &organizer, "pub_evt", false);
+
+    let priv_event = client
+        .get_event(&String::from_str(&env, "priv_evt"))
+        .unwrap();
+    let pub_event = client
+        .get_event(&String::from_str(&env, "pub_evt"))
+        .unwrap();
+
+    assert!(priv_event.is_private);
+    assert!(!pub_event.is_private);
+}
+
+/// Deactivating a private event does not affect the active events counter.
+#[test]
+fn test_private_event_status_change_does_not_affect_active_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, organizer, _) = setup_private_test(&env);
+
+    register_event_with_privacy(&env, &client, &organizer, "pub_evt", false);
+    register_event_with_privacy(&env, &client, &organizer, "priv_evt", true);
+
+    assert_eq!(client.get_active_events_count(), 1);
+
+    // Deactivate the private event — counter must stay at 1
+    client.update_event_status(&String::from_str(&env, "priv_evt"), &false);
+    assert_eq!(client.get_active_events_count(), 1);
+
+    // Re-activate the private event — counter must stay at 1
+    client.update_event_status(&String::from_str(&env, "priv_evt"), &true);
+    assert_eq!(client.get_active_events_count(), 1);
+}
+
+// ── Tier-Specific Loyalty Multipliers ────────────────────────────────────────
+
+/// A multiplier of 1 (standard) awards 10 points per ticket — baseline behaviour.
+#[test]
+fn test_loyalty_multiplier_1x_awards_base_points() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // 3 tickets × 10 pts × 1x = 30 pts
+    client.update_loyalty_score(&admin, &guest, &3, &3000i128, &1u32);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 30);
+}
+
+/// A multiplier of 2 (e.g., VIP tier) awards 20 points per ticket.
+#[test]
+fn test_loyalty_multiplier_2x_doubles_points() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // 3 tickets × 10 pts × 2x = 60 pts
+    client.update_loyalty_score(&admin, &guest, &3, &6000i128, &2u32);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 60);
+}
+
+/// A multiplier of 3 (e.g., Platinum tier) awards 30 points per ticket.
+#[test]
+fn test_loyalty_multiplier_3x_triples_points() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // 2 tickets × 10 pts × 3x = 60 pts
+    client.update_loyalty_score(&admin, &guest, &2, &9000i128, &3u32);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 60);
+}
+
+/// A multiplier of 0 is treated as 1x (no zeroing of points).
+#[test]
+fn test_loyalty_multiplier_0_treated_as_1x() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // 4 tickets × 10 pts × 1x (0 treated as 1) = 40 pts
+    client.update_loyalty_score(&admin, &guest, &4, &4000i128, &0u32);
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 40);
+}
+
+/// Points from multiple purchases with different multipliers accumulate correctly.
+#[test]
+fn test_loyalty_multiplier_accumulates_across_purchases() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_loyalty_env(&env);
+
+    let guest = Address::generate(&env);
+    // Purchase 1: 2 tickets × 10 × 1x = 20 pts
+    client.update_loyalty_score(&admin, &guest, &2, &2000i128, &1u32);
+    // Purchase 2: 1 ticket × 10 × 2x = 20 pts
+    client.update_loyalty_score(&admin, &guest, &1, &5000i128, &2u32);
+    // Total: 40 pts
+
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert_eq!(profile.loyalty_score, 40);
+}
+
+/// TicketTier with loyalty_multiplier = 2 stores and retrieves the field correctly.
+#[test]
+fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let (client, _admin, _) = setup_loyalty_env(&env);
+
+    let _organizer = Address::generate(&env);
+    let _payment_address = Address::generate(&env);
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "vip"),
+        TicketTier {
+            name: String::from_str(&env, "VIP"),
+            price: 1000_0000000i128,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: false,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 2,
+            max_per_user: 0,
+        },
+    );
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 1000_0000000i128,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: false,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_multiplier"),
+        name: String::from_str(&env, "Multiplier Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 250,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+    });
+
+    let event = client
+        .get_event(&String::from_str(&env, "evt_multiplier"))
+        .unwrap();
+    let vip_tier = event.tiers.get(String::from_str(&env, "vip")).unwrap();
+    let general_tier = event.tiers.get(String::from_str(&env, "general")).unwrap();
+
+    assert_eq!(vip_tier.loyalty_multiplier, 2);
+    assert_eq!(general_tier.loyalty_multiplier, 1);
+}
+
+// ── set_feedback_cid tests ────────────────────────────────────────────────────
+
+fn setup_event_with_end_time(
+    env: &Env,
+    client: &EventRegistryClient,
+    event_id: &str,
+    end_time: u64,
+) -> (Address, Address) {
+    let admin = Address::generate(env);
+    let organizer = Address::generate(env);
+    let platform_wallet = Address::generate(env);
+    let usdc_token = Address::generate(env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let metadata_cid = String::from_str(
+        env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(env, event_id),
+        name: String::from_str(env, "Test Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
+    });
+    (admin, organizer)
+}
+
+fn setup_event_with_end_time_no_init(
+    env: &Env,
+    client: &EventRegistryClient,
+    organizer: &Address,
+    event_id: &str,
+    end_time: u64,
+) {
+    let metadata_cid = String::from_str(
+        env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(env, event_id),
+        name: String::from_str(env, "Test Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
+    });
+}
+
+/// Organizer can set feedback CID after end_time has passed.
+#[test]
+fn test_set_feedback_cid_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    // Set ledger time to 1000 so we can have a past end_time
+    env.ledger().set_timestamp(1000);
+    let past_end_time = 500u64;
+    setup_event_with_end_time(&env, &client, "evt_feedback", past_end_time);
+
+    let feedback_cid = String::from_str(
+        &env,
+        "bafkreifeedback222222222222222222222222222222222222222222222",
+    );
+    client.set_feedback_cid(&String::from_str(&env, "evt_feedback"), &feedback_cid);
+
+    let event = client
+        .get_event(&String::from_str(&env, "evt_feedback"))
+        .unwrap();
+    assert_eq!(event.feedback_cid, Some(feedback_cid));
+}
+
+/// set_feedback_cid fails when end_time is 0 (not set).
+#[test]
+fn test_set_feedback_cid_no_end_time_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    setup_event_with_end_time_no_init(&env, &client, &organizer, "evt_no_end", 0);
+
+    let feedback_cid = String::from_str(
+        &env,
+        "bafkreifeedback222222222222222222222222222222222222222222222",
+    );
+    let result = client.try_set_feedback_cid(&String::from_str(&env, "evt_no_end"), &feedback_cid);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotEnded)));
+}
+
+/// set_feedback_cid fails when end_time is in the future.
+#[test]
+fn test_set_feedback_cid_before_end_time_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let future_end_time = env.ledger().timestamp() + 10_000;
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    setup_event_with_end_time_no_init(&env, &client, &organizer, "evt_future", future_end_time);
+
+    let feedback_cid = String::from_str(
+        &env,
+        "bafkreifeedback222222222222222222222222222222222222222222222",
+    );
+    let result = client.try_set_feedback_cid(&String::from_str(&env, "evt_future"), &feedback_cid);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotEnded)));
+}
+
+/// set_feedback_cid fails for a non-existent event.
+#[test]
+fn test_set_feedback_cid_event_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let result = client.try_set_feedback_cid(
+        &String::from_str(&env, "nonexistent"),
+        &String::from_str(
+            &env,
+            "bafkreifeedback222222222222222222222222222222222222222222222",
+        ),
+    );
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotFound)));
+}
+
+/// set_feedback_cid fails with an invalid CID format.
+#[test]
+fn test_set_feedback_cid_invalid_cid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    env.ledger().set_timestamp(1000);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    setup_event_with_end_time_no_init(&env, &client, &organizer, "evt_bad_cid", 500);
+
+    let result = client.try_set_feedback_cid(
+        &String::from_str(&env, "evt_bad_cid"),
+        &String::from_str(&env, "short"),
+    );
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidMetadataCid)));
+}
+
+/// set_feedback_cid fails on a cancelled event.
+#[test]
+fn test_set_feedback_cid_cancelled_event_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "vip"),
+        crate::types::TicketTier {
+            name: String::from_str(&env, "VIP"),
+            price: 1000_0000000i128,
+            tier_limit: 50,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 2,
+            max_per_user: 0,
+        },
+    );
+    tiers.set(
+        String::from_str(&env, "general"),
+        crate::types::TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 1000,
+            tier_limit: 200,
+            current_sold: 0,
+            is_refundable: false,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.register_event(&EventRegistrationArgs {
+        event_id: String::from_str(&env, "evt_multiplier"),
+        name: String::from_str(&env, "Multiplier Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 250,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+    });
+
+    let event = client
+        .get_event(&String::from_str(&env, "evt_multiplier"))
+        .unwrap();
+    let vip_tier = event.tiers.get(String::from_str(&env, "vip")).unwrap();
+    let general_tier = event.tiers.get(String::from_str(&env, "general")).unwrap();
+
+    assert_eq!(vip_tier.loyalty_multiplier, 2);
+    assert_eq!(general_tier.loyalty_multiplier, 1);
+    env.ledger().set_timestamp(1000);
+    setup_event_with_end_time_no_init(&env, &client, &organizer, "evt_cancelled", 500);
+
+    let event_id = String::from_str(&env, "evt_cancelled");
+    client.cancel_event(&event_id, &None);
+
+    let result = client.try_set_feedback_cid(
+        &event_id,
+        &String::from_str(
+            &env,
+            "bafkreifeedback222222222222222222222222222222222222222222222",
+        ),
+    );
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
+}
+
+#[test]
+fn test_transfer_lock_duration_stored() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    // Create event with 24-hour transfer lock
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        String::from_str(&env, "general"),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 1000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0, // No per-user limit
+        },
+    );
+
+    let event_id = String::from_str(&env, "test_event");
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: Address::generate(&env),
+        metadata_cid: String::from_str(
+            &env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 86400, // 24 hours in seconds
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+    });
+
+    // Verify the transfer lock duration is stored correctly
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.transfer_lock_duration, 86400);
 }

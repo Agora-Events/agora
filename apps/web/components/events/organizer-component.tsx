@@ -4,16 +4,10 @@ import group from "../../public/icons/user-group.svg";
 import left from "../../public/icons/arrow-left.svg";
 import right from "../../public/icons/arrow-right.svg";
 import Image from "next/image";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 
-type InfoCard = {
-  id: string;
-  title: string;
-  description: string;
-  image: string;
-};
-
-const cardsData: InfoCard[] = [
+const fallbackCardsData: DiscoverOrganizer[] = [
   {
     id: "stellar-west-africa",
     title: "Stellar West Africa",
@@ -53,8 +47,43 @@ const Button: React.FC = () => {
   );
 };
 
-export function OrganizerComponent() {
+type OrganizerComponentProps = {
+  onError: (message: string) => void;
+};
+
+export function OrganizerComponent({ onError }: OrganizerComponentProps) {
   const cardsRef = useRef<HTMLDivElement>(null);
+  const [cardsData, setCardsData] = useState<DiscoverOrganizer[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadOrganizers = async () => {
+      try {
+        const data = await fetchOrganizers();
+        if (active) {
+          setCardsData(data);
+        }
+      } catch {
+        if (active) {
+          setCardsData([]);
+          onError("Could not load organizers");
+        }
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadOrganizers();
+    return () => {
+      active = false;
+    };
+  }, [onError]);
+
+  const organizersToRender = cardsData.length > 0 ? cardsData : fallbackCardsData;
 
   const scrollLeft = () => {
     cardsRef.current?.scrollBy({ left: -300, behavior: "smooth" });
@@ -78,7 +107,15 @@ export function OrganizerComponent() {
         className="flex justify-center items-center gap-10 overflow-x-auto h-65 pl-75 mr-50"
         ref={cardsRef}
       >
-        {cardsData.map((card) => (
+        {isLoading &&
+          Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={`organizer-skeleton-${index}`}
+              className="h-58 min-w-100 animate-pulse rounded-2xl border border-black/20 bg-black/10"
+            />
+          ))}
+        {!isLoading &&
+          organizersToRender.map((card) => (
           <div key={card.id} className="relative h-full">
             <section className="absolute border-10 rounded-2xl bg-yellow-400 border-yellow-400 w-102 h-58 -left-2 top-2 z-0"></section>
             <div
@@ -104,7 +141,10 @@ export function OrganizerComponent() {
               <Button />
             </div>
           </div>
-        ))}
+          ))}
+        {!isLoading && cardsData.length === 0 && (
+          <p className="text-sm text-black/60">No data available</p>
+        )}
       </section>
       <span className="flex justify-end gap-5 pr-50 pt-5">
         <Image
