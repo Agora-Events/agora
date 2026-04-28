@@ -6,14 +6,24 @@ import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import CalendarIcon from "@/public/icons/calendar.svg";
+import HostingIcon from "@/public/icons/ticket-star.svg";
+import PastIcon from "@/public/icons/camera-smile-01.svg";
+import BubbleChatIcon from "@/public/icons/bubble-chat.svg";
+import ZeroIcon from "@/public/icons/zero.svg";
+import EmptyStateBg from "@/public/icons/empty-state-bg.svg";
 
 type MyEventsTab = "upcoming" | "hosting" | "past";
 type ForYouTab = "discover" | "following";
 
-const myEventsTabs: { id: MyEventsTab; label: string }[] = [
-  { id: "upcoming", label: "Upcoming" },
-  { id: "hosting", label: "Hosting" },
-  { id: "past", label: "Past" },
+const myEventsTabs: { id: MyEventsTab; label: string; icon?: string }[] = [
+  {
+    id: "upcoming",
+    label: "Upcoming",
+    icon: CalendarIcon,
+  },
+  { id: "hosting", label: "Hosting", icon: HostingIcon },
+  { id: "past", label: "Past", icon: PastIcon },
 ];
 
 const forYouTabs: { id: ForYouTab; label: string }[] = [
@@ -33,6 +43,7 @@ interface TimelineEvent {
   isFree: boolean;
   price?: string;
   attendees: number;
+  status?: string;
 }
 
 interface GridEvent {
@@ -57,6 +68,7 @@ const upcomingEvents: TimelineEvent[] = [
     imageUrl: "/images/event1.png",
     isFree: true,
     attendees: 24,
+    status: "going",
   },
   {
     id: 2,
@@ -120,6 +132,7 @@ const pastEvents: TimelineEvent[] = [
     imageUrl: "/images/event6.png",
     isFree: true,
     attendees: 210,
+    status: "finished",
   },
   {
     id: 7,
@@ -132,6 +145,7 @@ const pastEvents: TimelineEvent[] = [
     isFree: false,
     price: "$30.00",
     attendees: 445,
+    status: "finished",
   },
 ];
 
@@ -238,23 +252,23 @@ function AnimatedToggle<T extends string>({
   onTabChange,
   layoutId,
 }: {
-  tabs: { id: T; label: string }[];
+  tabs: { id: T; label: string; icon?: string }[];
   activeTab: T;
   onTabChange: (tab: T) => void;
   layoutId: string;
 }) {
   return (
-    <div className="inline-flex items-center bg-white rounded-full p-1 sm:p-1.5 border border-black shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
+    <div className="inline-flex w-fit items-center bg-white rounded-full p-1 sm:p-1.5 ">
       {tabs.map((tab) => (
         <button
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
-          className="relative px-3 sm:px-5 py-1.5 sm:py-2 text-[13px] sm:text-[15px] font-medium transition-colors duration-200 z-10"
+          className="relative px-3 transition-all ease-in-out sm:px-5 py-1.5 sm:py-2 text-[13px] sm:text-[15px] font-medium  duration-200 z-10  flex items-center justify-center gap-2.5 flex-row"
         >
           {activeTab === tab.id && (
             <motion.div
               layoutId={layoutId}
-              className="absolute inset-0 bg-[#FDDA23] rounded-full border border-black"
+              className="absolute inset-0 bg-[#FFEFD3] rounded-full"
               transition={{
                 type: "spring",
                 stiffness: 400,
@@ -262,9 +276,19 @@ function AnimatedToggle<T extends string>({
               }}
             />
           )}
+          {tab.icon && (
+            <Image
+              src={tab.icon}
+              alt={`${tab.label} icon`}
+              width={16}
+              height={16}
+              className="object-contain w-4 h-4 sm:w-6 sm:h-6 relative"
+            />
+          )}
+
           <span
-            className={`relative z-10 ${
-              activeTab === tab.id ? "text-black" : "text-black/70"
+            className={`relative z-10 text-sm leading-7.5 tracking-[0%] ${
+              activeTab === tab.id ? "text-black font-bold" : "text-black/70"
             }`}
           >
             {tab.label}
@@ -281,36 +305,50 @@ function SectionHeader<T extends string>({
   activeTab,
   onTabChange,
   layoutId,
+  hasNotifications = false,
 }: {
   title: string;
   tabs: { id: T; label: string }[];
   activeTab: T;
   onTabChange: (tab: T) => void;
   layoutId: string;
+  hasNotifications?: boolean;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-6 sm:mb-8">
-      <h2 className="text-[24px] sm:text-[28px] lg:text-[32px] font-bold text-black">
+    <div className="flex flex-col  gap-3 sm:gap-8 mb-6 sm:mb-8">
+      <h2 className="text-[24px] sm:text-[28px] lg:text-[3.6rem] leading-16.5 tracking-[0px] font-semibold text-[#131517] italic">
         {title}
       </h2>
-      <AnimatedToggle
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={onTabChange}
-        layoutId={layoutId}
-      />
+      <div className="flex justify-between items-end">
+        <AnimatedToggle
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabChange={onTabChange}
+          layoutId={layoutId}
+        />
+        {hasNotifications && (
+          <Link href="#">
+            <div className="w-13.75 h-13.75 rounded-full bg-[#FFEFD3] flex items-center justify-center  relative">
+              <div className="absolute -top-1 right-1 rounded-full size-4.75 bg-[#F90B0B] text-white flex items-center justify-center">
+                <p>1</p>
+              </div>
+              <Image
+                src={BubbleChatIcon}
+                alt="chat"
+                width={24}
+                height={24}
+                className="object-contain w-6 h-6 mx-auto"
+              />
+            </div>
+          </Link>
+        )}
+      </div>
     </div>
   );
 }
 
 // Timeline Event Card Component
-function TimelineEventCard({
-  event,
-  isLast,
-}: {
-  event: TimelineEvent;
-  isLast: boolean;
-}) {
+function TimelineEventCard({ event }: { event: TimelineEvent }) {
   const locationImageSrc =
     event.location.toLowerCase().includes("discord") ||
     event.location.toLowerCase().includes("virtual") ||
@@ -319,109 +357,119 @@ function TimelineEventCard({
       : "/icons/location.svg";
 
   return (
-    <div className="flex gap-3 sm:gap-6">
+    <div className="flex md:gap-22.5  ">
       {/* Timeline Column */}
-      <div className="flex flex-col items-center w-[70px] sm:w-[100px] shrink-0">
-        <span className="text-[12px] sm:text-[14px] font-medium text-black text-center leading-tight">
+      <div className="flex  w-39 max-w-39 shrink-0  mb-3">
+        <span className="text-[1.625rem] text-left font-medium text-black  leading-10.25">
           {event.date}
         </span>
-        <div className="relative flex-1 w-px my-2 min-h-[40px]">
-          <div className="absolute inset-0 border-l-2 border-dashed border-black/30" />
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-[#FDDA23] rounded-full border-2 border-black" />
-          {!isLast && (
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-black/20 rounded-full" />
-          )}
-        </div>
       </div>
 
-      {/* Event Card */}
-      <Link
-        href={`/events/${event.id}`}
-        className="block flex-1 mb-6 sm:mb-8 min-w-0"
-      >
-        <div className="bg-[#FFEFD3] rounded-xl border border-black shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] overflow-hidden transition-transform hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
-          <div className="flex flex-col sm:flex-row">
-            {/* Left side - Image */}
-            <div className="w-full sm:w-[160px] md:w-[200px] shrink-0 h-[120px] sm:h-auto">
-              <Image
-                src={event.imageUrl}
-                width={200}
-                height={140}
-                alt={event.title}
-                className="object-cover w-full h-full"
-              />
-            </div>
+      <div className="flex gap-17.5 flex-1">
+        {/* divider */}
 
-            {/* Right side - Details */}
-            <div className="flex-1 p-3 sm:p-4 flex flex-col min-w-0">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12px] sm:text-[13px] text-black/60 mb-0.5 sm:mb-1">
-                    {event.time}
-                  </p>
-                  <h3 className="text-[14px] sm:text-[16px] font-semibold text-black leading-tight line-clamp-2">
-                    {event.title}
-                  </h3>
-                </div>
-                <span className="text-[12px] sm:text-[14px] font-semibold text-black shrink-0">
-                  {event.isFree ? "Free" : event.price}
-                </span>
+        <div className="h-full  flex flex-col gap-2">
+          <div className="rounded-full size-4.25 bg-black opacity-50" />
+          <div className="h-full w-0 border-[1.5px] border-dashed border-black  mx-auto flex-1 relative">
+            <div className="absolute w-1 h-full -left-0.5  bg-linear-to-b from-transparent to-[#FFFBE9] z-20" />
+          </div>
+        </div>
+        {/* Event Card */}
+        <Link href={`/events/${event.id}`} className="   h-full flex-1">
+          <div className="bg-[#FFEFD3] rounded-xl  shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] p-9.5 overflow-hidden transition-all ease-in-out hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
+            <div className="flex flex-col sm:flex-row gap-6">
+              {/* Left side - Image */}
+              <div className="w-full flex-1 ">
+                <Image
+                  src={event.imageUrl}
+                  width={400}
+                  height={140}
+                  alt={event.title}
+                  className="object-cover w-full h-full"
+                />
               </div>
 
-              <div className="mt-auto pt-2 sm:pt-3">
-                <div className="flex items-center gap-1.5 text-black/70">
-                  <Image
-                    src={locationImageSrc}
-                    alt="location"
-                    width={16}
-                    height={16}
-                    className="object-contain w-4 h-4 sm:w-[18px] sm:h-[18px]"
-                  />
-                  <span className="text-[12px] sm:text-[13px] truncate">
-                    {event.location}
-                  </span>
+              {/* Right side - Details */}
+              <div className="flex-1 p-3 sm:p-4 flex flex-col min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] text-black font-light leading-7.5 tracking-[0%] mb-4.5">
+                      {event.time}
+                    </p>
+                    <h3 className="text-[1.2rem] font-semibold text-black leading-5.5 line-clamp-2 mb-4.5">
+                      {event.title}
+                    </h3>
+                  </div>
+                  {/* <span className="text-[12px] sm:text-[14px] font-semibold text-black shrink-0">
+                    {event.isFree ? "Free" : event.price}
+                  </span> */}
                 </div>
 
-                <div className="flex items-center justify-between mt-2 sm:mt-3">
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <div className="flex -space-x-1.5 sm:-space-x-2">
-                      {[1, 2, 3].map((i) => (
-                        <div
-                          key={i}
-                          className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 border-white overflow-hidden bg-gray-300"
-                        >
-                          <Image
-                            src="/images/pfp.png"
-                            width={24}
-                            height={24}
-                            alt="attendee"
-                            className="object-cover w-full h-full"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <span className="text-[11px] sm:text-[12px] text-black/60">
-                      {event.attendees} going
+                <div className="">
+                  <div className="flex items-center gap-1.5 text-black/70">
+                    <Image
+                      src={locationImageSrc}
+                      alt="location"
+                      width={16}
+                      height={16}
+                      className="object-contain"
+                    />
+                    <span className="text-[12px] text-black ">
+                      {event.location}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1 text-black text-[12px] sm:text-[13px] font-medium">
-                    <span className="hidden sm:inline">View Event</span>
-                    <span className="sm:hidden">View</span>
-                    <Image
-                      src="/icons/arrow-right.svg"
-                      width={16}
-                      height={16}
-                      alt="arrow"
-                      className="object-contain w-4 h-4 sm:w-[18px] sm:h-[18px]"
-                    />
+                  <div className="flex items-center justify-between mt-2 sm:mt-3">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
+                      {/* barge */}
+                      {event.status && (
+                        <div
+                          className={`capitalize rounded-lg p-2.5 ${event.status === "going" ? "bg-[#DAFFB5] text-black" : event.status === "finished" ? "bg-[#FFFBE9] text-black" : ""} w-20.5 text-center text-xs font-medium`}
+                        >
+                          {event.status}
+                        </div>
+                      )}
+                      <div className="flex -space-x-1.5 sm:-space-x-2">
+                        {[1, 2, 3].map((i) => (
+                          <div
+                            key={i}
+                            className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 border-white overflow-hidden bg-gray-300"
+                          >
+                            {
+                              <Image
+                                src="/images/pfp.png"
+                                width={24}
+                                height={24}
+                                alt="attendee"
+                                className="object-cover w-full h-full"
+                              />
+                            }
+                          </div>
+                        ))}
+                      </div>
+                      <span className="text-[11px] sm:text-[12px] text-black/60">
+                        {event.attendees} going
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-black text-[12px] sm:text-[13px] font-medium">
+                      <span className="hidden sm:inline">View Event</span>
+                      <span className="sm:hidden">View</span>
+                      <Image
+                        src="/icons/arrow-right.svg"
+                        width={16}
+                        height={16}
+                        alt="arrow"
+                        className="object-contain w-4 h-4 sm:w-[18px] sm:h-[18px]"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </Link>
+        </Link>
+      </div>
     </div>
   );
 }
@@ -506,20 +554,42 @@ function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
 
   if (events.length === 0) {
     return (
-      <div className="min-h-[200px] rounded-xl border-2 border-dashed border-black/20 flex items-center justify-center">
-        <p className="text-black/50 text-lg">No events found</p>
+      <div className="w-full max-w-121.5 bg-[#FFEFD3] h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10 text-[#1315175C]">
+        <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
+          <Image
+            src={EmptyStateBg}
+            alt="Empty State Background"
+            width={224}
+            height={224}
+            className="object-cover w-full h-full rounded-4xl"
+          />
+
+          <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-[#63636312] -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
+            <Image
+              src={ZeroIcon}
+              alt="Nothing Here, Yet"
+              width={16}
+              height={16}
+              className="object-center w-full h-full"
+            />
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-4">
+          <p className="text-xl font-medium leading-5.5 text-center">Nothing Here, Yet</p>
+          <Link href="/create-event">
+            <button className="bg-black text-white px-6 py-2 rounded-full font-medium shadow-[-4px_4px_0_rgba(0,0,0,0.2)] hover:shadow-none hover:translate-x-[-2px] hover:translate-y-[2px] transition-all">
+              Create Your First Event
+            </button>
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="pt-4">
-      {events.map((event, index) => (
-        <TimelineEventCard
-          key={event.id}
-          event={event}
-          isLast={index === events.length - 1}
-        />
+    <div className="pt-4 space-y-13.25">
+      {events.map((event) => (
+        <TimelineEventCard key={event.id} event={event} />
       ))}
     </div>
   );
@@ -563,15 +633,16 @@ export default function HomePage() {
     <div className="min-h-screen bg-[#FFFDF0]">
       <Navbar />
 
-      <main className="w-full max-w-[1221px] mx-auto px-3 sm:px-4 lg:px-6 xl:px-0 pt-6 sm:pt-[35px] pb-12 sm:pb-20">
+      <main className="w-full max-w-304.5 mx-auto px-3 sm:px-4 lg:px-6 xl:px-0 pt-6 sm:pt-22.5 pb-12 sm:pb-20">
         {/* My Events Section */}
-        <section className="mb-10 sm:mb-16">
+        <section className="mb-10 sm:mb-16 space-y-15">
           <SectionHeader
             title="My Events"
             tabs={myEventsTabs}
             activeTab={myEventsTab}
             onTabChange={setMyEventsTab}
             layoutId="my-events-toggle"
+            hasNotifications={true}
           />
           <MyEventsContent activeTab={myEventsTab} />
         </section>

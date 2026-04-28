@@ -49,6 +49,7 @@ import { Button } from "@/components/ui/button";
 
 - **Navbar**: Located in `components/layout/navbar.tsx`.
 - **Footer**: Located in `components/layout/footer.tsx`.
+- **Component Catalog**: See `DOCS/COMPONENTS.md` for the reusable component library, folder map, and contribution rules.
 
 These should be used in your page layouts (e.g., `app/page.tsx`) to maintain a consistent wrapper.
 

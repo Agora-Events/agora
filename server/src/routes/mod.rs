@@ -1,14 +1,43 @@
-use axum::{routing::get, Router};
+//! # Routes Module
+//!
+//! This module defines the application's HTTP routing structure.
+//! It organizes all API endpoints under versioned paths and applies
+//! middleware layers for security, CORS, and request tracking.
+//!
+//! ## Route Structure
+//!
+//! All routes are nested under `/api/v1/` prefix:
+//! - Health check endpoints for monitoring
+//! - Example endpoints for testing error responses
+//! - Future: Event management endpoints
+//!
+//! ## Middleware Layers
+//!
+//! Routes are wrapped with middleware in this order:
+//! 1. Request ID generation and propagation
+//! 2. CORS handling
+//! 3. Security headers
+//! 4. Database connection state
+
+use axum::{ middleware, routing::{get, post}, Router };
 use sqlx::PgPool;
 use std::time::Duration;
 
 use crate::config::{
-    create_cors_layer, create_security_headers_layer, propagate_request_id_layer,
+    create_cors_layer,
+    create_security_headers_layer,
+    propagate_request_id_layer,
     set_request_id_layer,
 };
 use crate::handlers::{
-    example_empty_success, example_not_found, example_validation_error,
-    health::{health_check, health_check_db, health_check_ready},
+    categories::{get_category, list_categories},
+    events::{get_event, list_events},
+    example_empty_success,
+    example_not_found,
+    example_validation_error,
+    health::{ health_check, health_check_blockchain, health_check_db, health_check_ready },
+    qr_payload::{generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
+    ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
 use crate::utils::rate_limit::RateLimitLayer;
 
@@ -21,6 +50,13 @@ const SENSITIVE_WINDOW: Duration = Duration::from_secs(60);
 const GENERAL_RATE_LIMIT: usize = 120;
 const GENERAL_WINDOW: Duration = Duration::from_secs(60);
 
+/// Creates the main application router with all routes and middleware
+///
+/// # Arguments
+/// * `pool` - PostgreSQL connection pool for database operations
+///
+/// # Returns
+/// A configured Axum Router with all routes and middleware applied
 pub fn create_routes(pool: PgPool) -> Router {
     // Sensitive endpoints — stricter rate limit
     let sensitive_routes = Router::new()
@@ -53,20 +89,39 @@ pub fn create_routes(pool: PgPool) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-    };
+    use axum::{ body::Body, http::{ Request, StatusCode } };
     use tower::ServiceExt;
 
     fn test_router() -> Router {
         Router::new()
-            .route("/api/v1/health", get(|| async { "ok" }))
-            .route("/api/v1/health/db", get(|| async { "ok" }))
-            .route("/api/v1/health/ready", get(|| async { "ok" }))
-            .route("/api/v1/examples/validation-error", get(|| async { "ok" }))
-            .route("/api/v1/examples/empty-success", get(|| async { "ok" }))
-            .route("/api/v1/examples/not-found/:id", get(|| async { "ok" }))
+            .route(
+                "/api/v1/health",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/health/blockchain",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/health/db",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/health/ready",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/examples/validation-error",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/examples/empty-success",
+                get(|| async { "ok" })
+            )
+            .route(
+                "/api/v1/examples/not-found/:id",
+                get(|| async { "ok" })
+            )
     }
 
     async fn get_status(router: Router, path: &str) -> StatusCode {
@@ -77,17 +132,20 @@ mod tests {
     #[tokio::test]
     async fn test_health_route_exists_under_api_v1() {
         let router = test_router();
-        assert_ne!(
-            get_status(router, "/api/v1/health").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_ne!(get_status(router, "/api/v1/health").await, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn test_health_db_route_exists_under_api_v1() {
         let router = test_router();
+        assert_ne!(get_status(router, "/api/v1/health/db").await, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_health_blockchain_route_exists_under_api_v1() {
+        let router = test_router();
         assert_ne!(
-            get_status(router, "/api/v1/health/db").await,
+            get_status(router, "/api/v1/health/blockchain").await,
             StatusCode::NOT_FOUND
         );
     }
@@ -95,10 +153,7 @@ mod tests {
     #[tokio::test]
     async fn test_health_ready_route_exists_under_api_v1() {
         let router = test_router();
-        assert_ne!(
-            get_status(router, "/api/v1/health/ready").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_ne!(get_status(router, "/api/v1/health/ready").await, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
@@ -131,27 +186,16 @@ mod tests {
     #[tokio::test]
     async fn test_old_routes_without_prefix_return_404() {
         let router = test_router();
-        assert_eq!(
-            get_status(router.clone(), "/health").await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            get_status(router.clone(), "/health/db").await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            get_status(router, "/health/ready").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_eq!(get_status(router.clone(), "/health").await, StatusCode::NOT_FOUND);
+        assert_eq!(get_status(router.clone(), "/health/blockchain").await, StatusCode::NOT_FOUND);
+        assert_eq!(get_status(router.clone(), "/health/db").await, StatusCode::NOT_FOUND);
+        assert_eq!(get_status(router, "/health/ready").await, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn test_api_without_version_returns_404() {
         let router = test_router();
-        assert_eq!(
-            get_status(router, "/api/health").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_eq!(get_status(router, "/api/health").await, StatusCode::NOT_FOUND);
     }
 
     // -----------------------------------------------------------------------

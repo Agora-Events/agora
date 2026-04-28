@@ -31,7 +31,7 @@ use crate::{
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
         PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
         PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent, RevenueClaimedEvent,
-        TicketTransferredEvent,
+        TicketCheckedInEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{
@@ -115,6 +115,7 @@ pub mod event_registry {
             guest: Address,
             tickets_purchased: u32,
             amount_spent: i128,
+            loyalty_multiplier: u32,
         );
         fn get_loyalty_discount_bps(env: Env, guest: Address) -> u32;
         fn get_guest_profile(env: Env, guest: Address) -> Option<GuestProfile>;
@@ -134,6 +135,7 @@ pub mod event_registry {
         pub current_sold: i128,
         pub is_refundable: bool,
         pub auction_config: soroban_sdk::Vec<AuctionConfig>,
+        pub loyalty_multiplier: u32,
     }
 
     #[soroban_sdk::contracttype]
@@ -168,6 +170,8 @@ pub mod event_registry {
         pub custom_fee_bps: Option<u32>,
         pub banner_cid: Option<String>,
         pub tags: Option<soroban_sdk::Vec<String>>,
+        pub start_time: u64,
+        pub end_time: u64,
     }
 }
 
@@ -823,6 +827,7 @@ impl TicketPaymentContract {
                 created_at,
                 confirmed_at: None,
                 refunded_amount: 0,
+                last_checked_in_at: 0,
             };
 
             store_payment(&env, payment);
@@ -847,6 +852,7 @@ impl TicketPaymentContract {
             &buyer_address,
             &quantity,
             &effective_total,
+            &tier.loyalty_multiplier,
         ) {
             Ok(_) | Err(_) => {}
         }
@@ -1243,23 +1249,45 @@ impl TicketPaymentContract {
         }
 
         let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
-        if !registry_client.is_scanner_authorized(&payment.event_id, &scanner) {
+
+        // Allow organizer OR an authorized scanner
+        let organizer = registry_client
+            .get_organizer_address(&payment.event_id)
+            .ok_or(TicketPaymentError::EventNotFound)?;
+        let is_organizer = scanner == organizer;
+        let is_scanner = registry_client.is_scanner_authorized(&payment.event_id, &scanner);
+        if !is_organizer && !is_scanner {
             return Err(TicketPaymentError::UnauthorizedScanner);
         }
 
-        payment.status = PaymentStatus::CheckedIn;
-        payment.confirmed_at = Some(env.ledger().timestamp());
-        store_payment(&env, payment);
+        // Check if the event has ended (prevent check-ins after end_time)
+        let event_info = registry_client
+            .try_get_event(&payment.event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+            .ok_or(TicketPaymentError::EventNotFound)?;
 
-        // env.events().publish(
-        //     (AgoraEvent::TicketCheckedIn,),
-        //     crate::events::TicketCheckedInEvent {
-        //             payment_id,
-        //             // event_id: payment.event_id.clone(),
-        //             scanner,
-        //             timestamp: env.ledger().timestamp(),
-        //         },
-        // );
+        let current_time = env.ledger().timestamp();
+        if event_info.end_time > 0 && current_time > event_info.end_time {
+            return Err(TicketPaymentError::EventEnded);
+        }
+
+        payment.status = PaymentStatus::CheckedIn;
+        payment.last_checked_in_at = now;
+        store_payment(&env, payment.clone());
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::TicketCheckedIn,),
+            TicketCheckedInEvent {
+                payment_id,
+                event_id: payment.event_id,
+                attendee,
+                scanner,
+                timestamp: now,
+            },
+        );
 
         Ok(())
     }
@@ -2226,6 +2254,7 @@ impl TicketPaymentContract {
             created_at: env.ledger().timestamp(),
             confirmed_at: Some(env.ledger().timestamp()),
             refunded_amount: 0,
+            last_checked_in_at: 0,
         };
         store_payment(&env, payment);
 

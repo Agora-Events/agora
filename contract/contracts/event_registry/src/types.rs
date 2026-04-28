@@ -64,6 +64,12 @@ pub struct TicketTier {
     pub is_refundable: bool,
     /// Optional configuration for an auction
     pub auction_config: soroban_sdk::Vec<AuctionConfig>,
+    /// Loyalty points multiplier for this tier (e.g., 1 = 1x, 2 = 2x).
+    /// A value of 0 is treated as 1x. VIP tiers can award more points.
+    pub loyalty_multiplier: u32,
+    /// Maximum number of tickets a single user can purchase for this tier
+    /// A value of 0 means unlimited (no per-user limit)
+    pub max_per_user: u32,
 }
 
 /// Represents an early revenue release milestone.
@@ -139,6 +145,24 @@ pub struct EventInfo {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Unix timestamp when the event starts (0 = not set)
+    pub start_time: u64,
+    /// Whether the event is private and should be excluded from global public counters.
+    /// Private events do not appear in managed event counts, active event counts,
+    /// or global tickets sold totals.
+    pub is_private: bool,
+    /// Unix timestamp when the event ends (0 = not set)
+    pub end_time: u64,
+    /// Duration in seconds after purchase during which tickets cannot be transferred (0 = no lock)
+    pub transfer_lock_duration: u64,
+    /// List of whitelisted payment tokens for this event (empty = use global whitelist)
+    pub accepted_tokens: Vec<Address>,
+    /// Whether to use the global token whitelist instead of event-specific one
+    pub use_global_whitelist: bool,
+    /// Optional IPFS CID for post-event feedback (only settable after end_time)
+    pub feedback_cid: Option<String>,
+    /// Optional human-readable reason provided when the event was cancelled
+    pub cancellation_reason: Option<String>,
 }
 
 /// Payment information for an event
@@ -180,6 +204,18 @@ pub struct EventRegistrationArgs {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Unix timestamp when the event starts (0 = not set)
+    pub start_time: u64,
+    /// Whether the event is private and should be excluded from global public counters.
+    pub is_private: bool,
+    /// Unix timestamp when the event ends (0 = not set)
+    pub end_time: u64,
+    /// Duration in seconds after purchase during which tickets cannot be transferred (0 = no lock)
+    pub transfer_lock_duration: u64,
+    /// List of whitelisted payment tokens for this event (empty = use global whitelist)
+    pub accepted_tokens: Vec<Address>,
+    /// Whether to use the global token whitelist instead of event-specific one
+    pub use_global_whitelist: bool,
 }
 
 /// Audit log entry for blacklist actions
@@ -232,6 +268,8 @@ pub struct Proposal {
     pub approvals: Vec<Address>,
     /// Whether the proposal has been executed
     pub executed: bool,
+    /// Whether the proposal has been cancelled
+    pub cancelled: bool,
     /// Timestamp when the proposal was created
     pub created_at: u64,
     /// Timestamp when the proposal expires
@@ -286,6 +324,10 @@ pub enum ParameterChange {
     SetThreshold(u32),
     /// Update the platform wallet address
     UpdatePlatformWallet(Address),
+    /// Update the global platform fee in basis points (0–10000)
+    SetPlatformFee(u32),
+    /// Update the minimum stake amount required for Verified organizer status
+    SetMinStakeAmount(i128),
 }
 
 /// Storage keys for the Event Registry contract.
@@ -360,10 +402,14 @@ pub enum DataKey {
     StakersList,
     /// Mapping of token address to whitelist status (Persistent)
     TokenWhitelist(Address),
+    /// Mapping of (event_id, token_address) to whitelist status for event-specific tokens (Persistent)
+    EventTokenWhitelist(String, Address),
     /// Global counter of all events ever registered on the platform
     GlobalEventCount,
     /// Global counter of currently active events
     GlobalActiveEventCount,
     /// Global counter of all tickets sold across all events
     GlobalTicketsSold,
+    /// Mapping of (event_id, tier_id, user_address) to ticket count for per-user limits (Persistent)
+    UserTicketCount(String, String, Address),
 }
