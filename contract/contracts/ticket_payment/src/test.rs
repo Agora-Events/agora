@@ -1676,6 +1676,7 @@ fn test_transfer_ticket_rejects_soulbound_ticket() {
         confirmed_at: Some(101),
         refunded_amount: 0,
         is_soulbound: true,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -2459,6 +2460,7 @@ fn test_add_discount_hashes_and_invalid_code_rejected() {
         &1,
         &Some(wrong_preimage),
         &None,
+        &hash,
     );
 
     assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountCode)));
@@ -2536,6 +2538,7 @@ fn test_process_payment_with_valid_discount_code() {
         &1,
         &Some(preimage),
         &None,
+        &hash,
     );
     assert_eq!(result, String::from_str(&env, "pay_1"));
 
@@ -2573,6 +2576,7 @@ fn test_discount_code_one_time_use() {
         &1,
         &Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
         &None,
+        &hash,
     );
 
     let (_secret, hash) = test_secret(&env);
@@ -2586,6 +2590,7 @@ fn test_discount_code_one_time_use() {
         &1,
         &Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
         &None,
+        &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeUsed)));
 }
@@ -2901,6 +2906,7 @@ fn test_integration_full_platform_day() {
             &1,
             &None,
             &None,
+            &hash,
         );
     }
 
@@ -3120,7 +3126,7 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
         };
         let (_secret, hash) = test_secret(&env);
         let res = payment_client.try_process_payment(
-            &pid, &event_id, &tier_id, &buyer, &usdc_id, &amount, &1, &None, &None,
+            &pid, &event_id, &tier_id, &buyer, &usdc_id, &amount, &1, &None, &None, &hash,
         );
 
         if res.is_ok() {
@@ -6084,6 +6090,7 @@ fn test_partial_refund_multi_batch_index_persisted() {
             &1,
             &None,
             &None,
+            &hash,
         );
         client.confirm_payment(pid, &String::from_str(&env, "h"));
         buyers.push_back(buyer);
@@ -6621,6 +6628,7 @@ fn test_referral_reward_is_20_percent_of_platform_fee() {
         &1,
         &None,
         &Some(referrer.clone()),
+        &hash,
     );
 
     // platform_fee = 1000 * 5% = 50 USDC
@@ -6684,6 +6692,7 @@ fn test_referral_reward_capped_when_platform_fee_is_zero() {
         &1,
         &None,
         &Some(referrer.clone()),
+        &hash,
     );
 
     let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
@@ -6734,6 +6743,7 @@ fn test_referral_reward_does_not_exceed_platform_fee_invariant() {
         &1,
         &None,
         &Some(referrer.clone()),
+        &hash,
     );
 
     // platform_fee = 1000 * 5% = 50
@@ -6800,6 +6810,7 @@ fn setup_withdrawal_cap_test(
             &1,
             &None,
             &None,
+            &hash,
         );
     }
 
@@ -7041,6 +7052,7 @@ fn test_no_referral_reward_without_referrer() {
         &1,
         &None,
         &None, // no referrer
+        &hash,
     );
 
     // Full platform fee stays in escrow

@@ -54,6 +54,7 @@ pub enum TicketPaymentError {
     InvalidFeePercent = 58,
     EventEnded = 59,
     NonTransferable = 60,
+    InvalidSecret = 61,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -124,6 +125,7 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             58 => TicketPaymentError::InvalidFeePercent,
             59 => TicketPaymentError::EventEnded,
             60 => TicketPaymentError::NonTransferable,
+            61 => TicketPaymentError::InvalidSecret,
             _ => TicketPaymentError::ArithmeticError,
         }
     }

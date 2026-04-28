@@ -123,6 +123,7 @@ pub enum DataKey {
     DailyWithdrawalAmount(Address, u64), // (token_address, day_timestamp) -> amount withdrawn
     IsPaused,                            // bool – global circuit breaker flag
     DisputeStatus(String),               // event_id -> bool
+    EventCancelledForRefund(String),     // event_id -> bool
     PartialRefundIndex(String),          // event_id -> last processed payment index
     PartialRefundPercentage(String),     // event_id -> active refund percentage in bps
     OracleAddress,                       // Address of oracle contract

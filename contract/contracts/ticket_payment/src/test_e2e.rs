@@ -1263,7 +1263,8 @@ fn test_check_in_blocked_after_event_end_time() {
 
     let series_id: Option<String> = None;
     let pass_holder: Option<Address> = None;
-    client.check_in(&pay_id, &scanner, &series_id, &pass_holder);
+    let (raw_secret, _hash) = test_secret(&env);
+    client.check_in(&pay_id, &scanner, &series_id, &pass_holder, &raw_secret);
     let payment = client.get_payment_status(&pay_id).unwrap();
     assert_eq!(payment.status, PaymentStatus::CheckedIn);
 
@@ -1277,7 +1278,8 @@ fn test_check_in_blocked_after_event_end_time() {
         li.timestamp = 1001;
     });
 
-    let result = client.try_check_in(&pay_id_2, &scanner, &series_id, &pass_holder);
+    let (raw_secret, _hash) = test_secret(&env);
+    let result = client.try_check_in(&pay_id_2, &scanner, &series_id, &pass_holder, &raw_secret);
     assert_eq!(result, Err(Ok(TicketPaymentError::EventEnded)));
 
     // Verify payment status is still Confirmed (not checked in)
@@ -1314,7 +1316,8 @@ fn test_check_in_allowed_when_no_end_time_set() {
 
     let series_id: Option<String> = None;
     let pass_holder: Option<Address> = None;
-    client.check_in(&pay_id, &scanner, &series_id, &pass_holder);
+    let (raw_secret, _hash) = test_secret(&env);
+    client.check_in(&pay_id, &scanner, &series_id, &pass_holder, &raw_secret);
     let payment = client.get_payment_status(&pay_id).unwrap();
     assert_eq!(payment.status, PaymentStatus::CheckedIn);
 }

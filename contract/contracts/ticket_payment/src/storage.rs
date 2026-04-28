@@ -582,6 +582,19 @@ pub fn set_event_dispute_status(env: &Env, event_id: String, disputed: bool) {
         .set(&DataKey::DisputeStatus(event_id), &disputed);
 }
 
+pub fn is_event_cancelled_for_refund(env: &Env, event_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventCancelledForRefund(event_id.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_event_cancelled_for_refund(env: &Env, event_id: &String) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventCancelledForRefund(event_id.clone()), &true);
+}
+
 // ── Oracle configuration ──────────────────────────────────────────────────────
 
 pub fn set_oracle_address(env: &Env, address: &Address) {

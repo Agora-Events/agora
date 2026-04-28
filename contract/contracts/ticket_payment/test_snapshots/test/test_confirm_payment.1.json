@@ -861,6 +861,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "last_checked_in_at"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "organizer_amount"
                       },
                       "val": {
