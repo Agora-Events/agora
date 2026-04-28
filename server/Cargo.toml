@@ -5,12 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Web framework
-axum = { version = "0.7", features = ["multipart"] }
-
-# AWS S3 / Cloudflare R2
-aws-config = { version = "1.5", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1.51"
-aws-credential-types = "1.2"
+axum = { version = "0.7", features = ["ws"] }
 
 # Async runtime
 tokio = { version = "1.37", features = ["full"] }
@@ -23,6 +18,7 @@ pin-project = "1.1"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Env handling (recommended)
 dotenvy = "0.15"
@@ -37,6 +33,19 @@ rust_decimal = { version = "1.33", features = ["db-postgres"] }
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async trait support for notification providers
+async-trait = "0.1"
+
+# HTTP body buffering for audit middleware
+bytes = "1.0"
+http-body-util = "0.1"
+
+# Cryptography for QR payload signing
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+rand = "0.8"
+base64 = "0.21"
+hex = "0.4"
 
 # Testing
 [dev-dependencies]

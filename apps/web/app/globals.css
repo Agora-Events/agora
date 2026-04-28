@@ -3,3 +3,13 @@
 @theme inline {
   --font-sans: var(--font-inter);
 }
+
+/* NProgress Custom Styles */
+#nprogress .bar {
+  background: #FDDA23 !important;
+  height: 3px !important;
+}
+
+#nprogress .peg {
+  box-shadow: 0 0 10px #FDDA23, 0 0 5px #FDDA23 !important;
+}

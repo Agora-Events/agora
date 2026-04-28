@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 export function FAQSection() {
   return (
-    <section className="w-full bg-[#fffbe9] pb-24 select-none">
+    <section id="faqs" className="w-full bg-[#fffbe9] pb-24 select-none">
       <div className="w-full max-w-[1240px] mx-auto px-4 flex flex-col items-center">
         <div className="bg-[#FDDA23] text-black px-6 py-2 rounded-full font-medium text-sm mb-16">
           FAQs

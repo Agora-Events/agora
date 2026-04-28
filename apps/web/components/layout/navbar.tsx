@@ -1,20 +1,32 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Image from "next/image";
-import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 // Sub-components
 import { GuestNav } from "./navbar/guest-nav";
-import { UserNav } from "./navbar/user-nav";
 import { MobileNavLink } from "./navbar/mobile-nav-link";
+import { UserNav } from "./navbar/user-nav";
 
+/**
+ * Main navigation bar component for the application
+ *
+ * Features:
+ * - Responsive design with mobile menu toggle
+ * - Different navigation states for logged-in vs guest users
+ * - Body scroll lock when mobile menu is open
+ * - Animated mobile menu using Framer Motion
+ *
+ * @returns React component that renders the main navigation bar
+ */
 export function Navbar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
-  const [isLoggedIn] = useState(false);
+  const [isLoggedIn] = useState(true);
 
   // Lock body scroll when menu is open
   useEffect(() => {
@@ -140,10 +152,10 @@ export function Navbar() {
                   <>
                     <MobileNavLink
                       i={0}
-                      href="/"
+                      href="/home"
                       icon="/icons/home.svg"
                       text="Home"
-                      isActive={pathname === "/"}
+                      isActive={pathname === "/home"}
                       onClose={() => setIsOpen(false)}
                     />
                     <MobileNavLink
@@ -215,21 +227,23 @@ export function Navbar() {
                 )}
 
                 <motion.div custom={4} variants={linkVariants} className="mt-4">
-                  <Button
-                    className="w-full justify-center"
-                    backgroundColor="bg-black"
-                    textColor="text-white"
-                    shadowColor="rgba(0,0,0,0.5)"
-                  >
-                    <span>Create Your Event</span>
-                    <Image
-                      src="/icons/arrow-up-right-01.svg"
-                      alt="Arrow"
-                      width={24}
-                      height={24}
-                      className="invert group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-                    />
-                  </Button>
+                  <Link href={isLoggedIn ? "/create-event" : "/auth"} onClick={() => setIsOpen(false)}>
+                    <Button
+                      className="w-full justify-center"
+                      backgroundColor="bg-black"
+                      textColor="text-white"
+                      shadowColor="rgba(0,0,0,0.5)"
+                    >
+                      <span>Create Your Event</span>
+                      <Image
+                        src="/icons/arrow-up-right-01.svg"
+                        alt="Arrow"
+                        width={24}
+                        height={24}
+                        className="invert group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+                      />
+                    </Button>
+                  </Link>
                 </motion.div>
               </div>
             </motion.div>

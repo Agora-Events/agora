@@ -161,6 +161,7 @@ pub struct PartialRefundProcessedEvent {
 pub struct TicketCheckedInEvent {
     pub payment_id: String,
     pub event_id: String,
+    pub attendee: Address,
     pub scanner: Address,
     pub timestamp: u64,
 }

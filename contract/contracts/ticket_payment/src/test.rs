@@ -2,7 +2,7 @@ use super::contract::{
     event_registry, price_oracle, TicketPaymentContract, TicketPaymentContractClient,
 };
 use super::storage::*;
-use super::types::{DataKey, ParameterChange, Payment, PaymentStatus};
+use super::types::{DataKey, ParameterChange, Payment, PaymentStatus, MAX_BPS, TRANSFER_FEE_BPS};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, Events, Ledger},
@@ -30,6 +30,7 @@ impl MockCancelledRegistry {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -55,6 +56,7 @@ impl MockCancelledRegistry {
                         current_sold: 0,
                         is_refundable: false,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -67,9 +69,11 @@ impl MockCancelledRegistry {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
 }
 
 // Mock Event Registry Contract
@@ -94,6 +98,7 @@ impl MockEventRegistry {
         if event_id == String::from_str(&env, "event_1") {
             return Some(event_registry::EventInfo {
                 event_id: String::from_str(&env, "event_1"),
+                name: String::from_str(&env, "Test Event"),
                 organizer_address: Address::generate(&env), // This will be different each call unless mocked specifically
                 payment_address: Address::generate(&env),
                 platform_fee_percent: 500,
@@ -122,6 +127,7 @@ impl MockEventRegistry {
                             current_sold: 0,
                             is_refundable: true,
                             auction_config: soroban_sdk::vec![&env],
+                            loyalty_multiplier: 1,
                         },
                     );
                     tiers
@@ -134,13 +140,22 @@ impl MockEventRegistry {
                 goal_met: false,
                 banner_cid: None,
                 tags: None,
+                start_time: 0,
+                end_time: 0,
             });
         }
         None
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -166,6 +181,7 @@ impl MockEventRegistry2 {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 250,
@@ -194,6 +210,7 @@ impl MockEventRegistry2 {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -206,10 +223,19 @@ impl MockEventRegistry2 {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -252,11 +278,13 @@ impl MockAuctionEventRegistry {
                         min_increment: 100_0000000i128,
                     }
                 ],
+                loyalty_multiplier: 1,
             },
         );
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -277,11 +305,20 @@ impl MockAuctionEventRegistry {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -304,7 +341,14 @@ impl MockEventRegistryNotFound {
         None
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -479,6 +523,7 @@ fn test_confirm_payment() {
         created_at: 100,
         confirmed_at: None,
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1006,6 +1051,7 @@ impl MockEventRegistryMaxSupply {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1034,6 +1080,7 @@ impl MockEventRegistryMaxSupply {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -1046,10 +1093,18 @@ impl MockEventRegistryMaxSupply {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
         panic!("MaxSupplyExceeded");
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -1119,6 +1174,7 @@ impl MockEventRegistryWithInventory {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1147,6 +1203,7 @@ impl MockEventRegistryWithInventory {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -1159,10 +1216,18 @@ impl MockEventRegistryWithInventory {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(env: Env, _event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -1350,6 +1415,7 @@ impl MockEventRegistryWithMilestones {
 
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "milestone_event"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1378,6 +1444,7 @@ impl MockEventRegistryWithMilestones {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -1390,10 +1457,18 @@ impl MockEventRegistryWithMilestones {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(env: Env, _event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -1530,7 +1605,8 @@ fn test_withdraw_with_milestones() {
 fn test_transfer_ticket_success() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
@@ -1549,11 +1625,17 @@ fn test_transfer_ticket_success() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
     });
+
+    // Account for default transfer fee (1%)
+    let expected_fee = (1000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     client.transfer_ticket(&payment_id, &new_owner, &None);
 
@@ -1581,16 +1663,25 @@ fn test_transfer_ticket_with_fee() {
     let new_owner = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
     let event_id = String::from_str(&env, "event_1");
-    let transfer_fee = 100i128;
+
+    // Use the central constant for testing
+    let transfer_fee_bps = TRANSFER_FEE_BPS;
+    let ticket_amount = 1000i128;
+    let expected_absolute_fee = (ticket_amount * transfer_fee_bps as i128) / MAX_BPS as i128;
 
     // Set transfer fee
     env.as_contract(&client.address, || {
-        set_transfer_fee(&env, event_id.clone(), transfer_fee);
+        set_transfer_fee(&env, event_id.clone(), transfer_fee_bps);
     });
 
     // Mint USDC to buyer for fee
-    usdc_token.mint(&buyer, &transfer_fee);
-    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &transfer_fee, &9999);
+    usdc_token.mint(&buyer, &expected_absolute_fee);
+    token::Client::new(&env, &usdc_id).approve(
+        &buyer,
+        &client.address,
+        &expected_absolute_fee,
+        &9999,
+    );
 
     // Initial escrow balance
     let initial_escrow = client.get_event_escrow_balance(&event_id);
@@ -1601,7 +1692,7 @@ fn test_transfer_ticket_with_fee() {
         event_id: event_id.clone(),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
-        amount: 1000,
+        amount: ticket_amount,
         platform_fee: 50,
         organizer_amount: 950,
         status: PaymentStatus::Confirmed,
@@ -1609,6 +1700,7 @@ fn test_transfer_ticket_with_fee() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1621,7 +1713,7 @@ fn test_transfer_ticket_with_fee() {
     let new_escrow = client.get_event_escrow_balance(&event_id);
     assert_eq!(
         new_escrow.organizer_amount,
-        initial_escrow.organizer_amount + transfer_fee
+        initial_escrow.organizer_amount + expected_absolute_fee
     );
 
     let updated = client.get_payment_status(&payment_id).unwrap();
@@ -1651,6 +1743,7 @@ fn test_transfer_ticket_unauthorized() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -1680,6 +1773,7 @@ impl MockEventRegistryEarlyBird {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_eb_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -1708,6 +1802,7 @@ impl MockEventRegistryEarlyBird {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -1720,11 +1815,20 @@ impl MockEventRegistryEarlyBird {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -2004,6 +2108,7 @@ fn test_bulk_refund_success() {
                     created_at: 0,
                     confirmed_at: Some(1),
                     refunded_amount: 0,
+                    last_checked_in_at: 0,
                 },
             );
             update_event_balance(&env, event_id.clone(), 950_0000000, 50_0000000);
@@ -2081,6 +2186,7 @@ fn test_bulk_refund_batching() {
                     created_at: 0,
                     confirmed_at: Some(1),
                     refunded_amount: 0,
+                    last_checked_in_at: 0,
                 },
             );
             update_event_balance(&env, event_id.clone(), 950_0000000, 50_0000000);
@@ -2186,6 +2292,7 @@ impl MockEventRegistryWithOrganizer {
 
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -2214,6 +2321,7 @@ impl MockEventRegistryWithOrganizer {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -2226,11 +2334,20 @@ impl MockEventRegistryWithOrganizer {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -2428,7 +2545,7 @@ fn test_discount_code_one_time_use() {
         &Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
         &None,
     );
-    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeAlreadyUsed)));
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeUsed)));
 }
 
 #[test]
@@ -2522,6 +2639,7 @@ impl MockPlatformRegistryE2E {
 
         let event = event_registry::EventInfo {
             event_id: event_id.clone(),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address,
             platform_fee_percent: 500,
@@ -2545,6 +2663,8 @@ impl MockPlatformRegistryE2E {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         };
 
         env.storage()
@@ -2588,7 +2708,13 @@ impl MockPlatformRegistryE2E {
             .get(&MockPlatformDataKey::Event(event_id))
     }
 
-    pub fn increment_inventory(env: Env, event_id: String, tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let mut event = env
             .storage()
             .persistent()
@@ -2619,7 +2745,7 @@ impl MockPlatformRegistryE2E {
             .set(&MockPlatformDataKey::Event(event_id), &event);
     }
 
-    pub fn decrement_inventory(env: Env, event_id: String, tier_id: String) {
+    pub fn decrement_inventory(env: Env, event_id: String, tier_id: String, _user: Address) {
         let mut event = env
             .storage()
             .persistent()
@@ -2682,6 +2808,7 @@ fn test_integration_full_platform_day() {
                 current_sold: 0,
                 is_refundable: true,
                 auction_config: soroban_sdk::vec![&env],
+                loyalty_multiplier: 1,
             },
         );
     }
@@ -2818,6 +2945,7 @@ fn test_integration_edge_cases() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     registry.create_event(
@@ -2928,6 +3056,7 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     registry.create_event(&event_id, &organizer, &event_payment_addr, &10, &tiers);
@@ -2985,6 +3114,7 @@ impl MockEventRegistryRefund {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -3013,6 +3143,7 @@ impl MockEventRegistryRefund {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -3025,11 +3156,20 @@ impl MockEventRegistryRefund {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -3057,6 +3197,7 @@ impl MockEventRegistryWithResaleCap {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_capped"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -3085,6 +3226,7 @@ impl MockEventRegistryWithResaleCap {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -3097,11 +3239,20 @@ impl MockEventRegistryWithResaleCap {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -3138,7 +3289,8 @@ fn setup_test_with_resale_cap(
 fn test_transfer_ticket_resale_price_within_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3157,11 +3309,17 @@ fn test_transfer_ticket_resale_price_within_cap() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
     });
+
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     // Sale price at exactly the cap: 1000 * (10000 + 1000) / 10000 = 1100 USDC
     let sale_price = Some(1100_0000000i128);
@@ -3175,7 +3333,8 @@ fn test_transfer_ticket_resale_price_within_cap() {
 fn test_transfer_ticket_resale_price_exceeds_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3194,11 +3353,17 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
     });
+
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     // Sale price above the cap: 1200 USDC > 1100 USDC max
     let sale_price = Some(1200_0000000i128);
@@ -3214,7 +3379,8 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
 fn test_transfer_ticket_no_sale_price_with_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3233,11 +3399,17 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
     });
+
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     // No sale price (gift/free transfer) should always succeed
     client.transfer_ticket(&payment_id, &new_owner, &None);
@@ -3251,7 +3423,8 @@ fn test_transfer_ticket_sale_price_no_cap() {
     let env = Env::default();
     env.mock_all_auths();
     // Use the default mock registry which has resale_cap_bps: None
-    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let new_owner = Address::generate(&env);
@@ -3270,11 +3443,17 @@ fn test_transfer_ticket_sale_price_no_cap() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
     });
+
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     // Any sale price should be allowed when no cap is set
     let sale_price = Some(5000_0000000i128); // 5x the original price
@@ -3301,6 +3480,7 @@ impl MockRegistryZeroCap {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_zero_cap"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -3329,6 +3509,7 @@ impl MockRegistryZeroCap {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -3341,11 +3522,20 @@ impl MockRegistryZeroCap {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -3621,6 +3811,7 @@ fn test_claim_revenue_rejects_event_not_marked_inactive() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
         },
     );
     registry.create_event(&event_id, &organizer, &event_payment_addr, &10, &tiers);
@@ -3755,6 +3946,7 @@ fn test_claim_automatic_refund_success() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
 
     env.as_contract(&client.address, || {
@@ -3927,6 +4119,7 @@ impl MockEventRegistryUsdPriced {
     pub fn get_event(env: Env, _event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id: String::from_str(&env, "event_1"),
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -3955,6 +4148,7 @@ impl MockEventRegistryUsdPriced {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -3967,11 +4161,20 @@ impl MockEventRegistryUsdPriced {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -4568,6 +4771,46 @@ fn test_close_auction_rejects_when_no_bids_exist() {
 }
 
 #[test]
+fn test_close_auction_rejects_double_closure() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_auction_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let bidder = Address::generate(&env);
+    let funded_amount = 20_000_000_000i128;
+    usdc_token.mint(&bidder, &funded_amount);
+    token::Client::new(&env, &usdc_id).approve(&bidder, &client.address, &funded_amount, &99999);
+
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let first_payment_id = String::from_str(&env, "payment_1");
+    let second_payment_id = String::from_str(&env, "payment_2");
+
+    client.place_bid(&event_id, &tier_id, &bidder, &usdc_id, &1100_0000000i128);
+
+    env.ledger().set_timestamp(1001);
+
+    let first_close = client.try_close_auction(&first_payment_id, &event_id, &tier_id);
+    assert_eq!(first_close, Ok(Ok(())));
+
+    let second_close = client.try_close_auction(&second_payment_id, &event_id, &tier_id);
+    assert_eq!(second_close, Err(Ok(TicketPaymentError::AuctionEnded)));
+
+    let auction_closed = env.as_contract(&client.address, || {
+        is_auction_closed(&env, event_id.clone(), tier_id.clone())
+    });
+    assert!(auction_closed);
+
+    let payment = client.get_payment_status(&first_payment_id).unwrap();
+    assert_eq!(payment.payment_id, first_payment_id);
+    assert_eq!(payment.buyer_address, bidder);
+    assert_eq!(payment.status, PaymentStatus::Confirmed);
+    assert_eq!(client.get_payment_status(&second_payment_id), None);
+}
+
+#[test]
 fn test_governance_rejects_slippage_above_fifty_percent() {
     let env = Env::default();
     env.mock_all_auths();
@@ -4596,6 +4839,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4624,6 +4868,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -4636,9 +4881,18 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -4725,6 +4979,7 @@ impl MockEventRegistryWithLoyalty {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4753,6 +5008,7 @@ impl MockEventRegistryWithLoyalty {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -4765,9 +5021,18 @@ impl MockEventRegistryWithLoyalty {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -4806,6 +5071,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -4834,6 +5100,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -4846,9 +5113,18 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5028,6 +5304,7 @@ impl MockEventRegistryCustomFee {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -5052,6 +5329,7 @@ impl MockEventRegistryCustomFee {
                         current_sold: 0,
                         is_refundable: false,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -5065,10 +5343,19 @@ impl MockEventRegistryCustomFee {
             custom_fee_bps: Some(100),
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5155,6 +5442,7 @@ impl MockEventRegistryHighPrice {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -5183,6 +5471,7 @@ impl MockEventRegistryHighPrice {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -5195,11 +5484,20 @@ impl MockEventRegistryHighPrice {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5264,6 +5562,7 @@ impl MockEventRegistryRefundDeadline {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
@@ -5292,6 +5591,7 @@ impl MockEventRegistryRefundDeadline {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -5304,11 +5604,20 @@ impl MockEventRegistryRefundDeadline {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5856,6 +6165,7 @@ impl MockEventRegistryForDust {
             .unwrap_or_else(|| Address::generate(&env));
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: organizer,
             payment_address: payment_addr,
             platform_fee_percent: 500,
@@ -5876,6 +6186,8 @@ impl MockEventRegistryForDust {
             goal_met: true,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
 
@@ -5888,8 +6200,15 @@ impl MockEventRegistryForDust {
             .set(&Symbol::new(&env, "payment_addr"), &payment_addr);
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -6047,6 +6366,7 @@ impl MockEventRegistryForReferral {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500, // 5%
@@ -6072,6 +6392,7 @@ impl MockEventRegistryForReferral {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -6084,9 +6405,18 @@ impl MockEventRegistryForReferral {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -6126,6 +6456,7 @@ impl MockEventRegistryFullLoyaltyDiscount {
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         Some(event_registry::EventInfo {
             event_id,
+            name: String::from_str(&env, "Test Event"),
             organizer_address: Address::generate(&env),
             payment_address: Address::generate(&env),
             platform_fee_percent: 500, // 5%
@@ -6151,6 +6482,7 @@ impl MockEventRegistryFullLoyaltyDiscount {
                         current_sold: 0,
                         is_refundable: true,
                         auction_config: soroban_sdk::vec![&env],
+                        loyalty_multiplier: 1,
                     },
                 );
                 tiers
@@ -6163,9 +6495,18 @@ impl MockEventRegistryFullLoyaltyDiscount {
             goal_met: false,
             banner_cid: None,
             tags: None,
+            start_time: 0,
+            end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -6670,7 +7011,7 @@ fn insert_confirmed_payment(
     payment_id: &String,
     buyer: &Address,
     event_id: &str,
-) {
+) -> Payment {
     let payment = Payment {
         payment_id: payment_id.clone(),
         event_id: String::from_str(env, event_id),
@@ -6684,10 +7025,12 @@ fn insert_confirmed_payment(
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        last_checked_in_at: 0,
     };
     env.as_contract(client_address, || {
-        store_payment(env, payment);
+        store_payment(env, payment.clone());
     });
+    payment
 }
 
 /// Self-transfer must be rejected with InvalidAddress.
@@ -6699,7 +7042,7 @@ fn test_transfer_ticket_self_transfer_rejected() {
 
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_self");
-    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1"); // This returns Payment, but we don't use it.
 
     // Attempt to transfer to self
     let result = client.try_transfer_ticket(&payment_id, &buyer, &None);
@@ -6715,7 +7058,7 @@ fn test_transfer_ticket_zero_address_rejected() {
 
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_zero");
-    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1"); // This returns Payment, but we don't use it.
 
     // Construct the Stellar zero address from its well-known strkey
     let zero_addr = Address::from_str(
@@ -6736,7 +7079,7 @@ fn test_transfer_ticket_contract_address_rejected() {
 
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_contract");
-    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1"); // This returns Payment, but we don't use it.
 
     // The contract's own address is an invalid recipient
     let result = client.try_transfer_ticket(&payment_id, &client.address, &None);
@@ -6748,12 +7091,18 @@ fn test_transfer_ticket_contract_address_rejected() {
 fn test_transfer_ticket_valid_recipient_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
 
     let buyer = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let payment_id = String::from_str(&env, "pay_valid");
+    let payment_id = String::from_str(&env, "pay_valid"); // This returns Payment, but we don't use it.
     insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    // Account for default transfer fee
+    let expected_fee = (1000_0000000 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    usdc_token.mint(&buyer, &expected_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
     client.transfer_ticket(&payment_id, &recipient, &None);
 

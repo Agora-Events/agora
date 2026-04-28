@@ -15,7 +15,7 @@ export function PricingSection() {
   };
 
   return (
-    <section className="w-full bg-[#fffbe9] py-24 select-none">
+    <section id="pricing" className="w-full bg-[#fffbe9] py-24 select-none">
       <div className="w-full max-w-[1240px] mx-auto px-4 flex flex-col items-center">
         {/* Pill */}
         <motion.div
