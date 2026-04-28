@@ -54,7 +54,7 @@ async fn main() {
 
     tracing::info!("Migrations run successfully");
 
-    let app: Router = create_routes(pool.clone());
+    let app: Router = create_routes(pool.clone(), config.clone());
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("🚀 Server running at http://localhost:{}", config.port);
     tracing::info!("Request IDs will be set via '{REQUEST_ID_HEADER}' header");
