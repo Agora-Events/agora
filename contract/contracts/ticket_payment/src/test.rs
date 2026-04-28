@@ -71,9 +71,11 @@ impl MockCancelledRegistry {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
 }
 
 // Mock Event Registry Contract
@@ -92,6 +94,13 @@ impl MockEventRegistry {
 
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         let _organizer_address = Address::generate(&env);
+        let accepted_token_key = Symbol::new(&env, "accepted_token");
+        let accepted_token: Option<Address> = env.storage().instance().get(&accepted_token_key);
+        let use_global_whitelist = accepted_token.is_none();
+        let mut accepted_tokens = soroban_sdk::vec![&env];
+        if let Some(token) = accepted_token {
+            accepted_tokens.push_back(token);
+        }
         // We use a fixed predictable address for some tests by mapping it in storage if needed,
         // but for general setup, a generated one is fine.
         // For testing set_transfer_fee, we'll need to know this address.
@@ -142,13 +151,22 @@ impl MockEventRegistry {
                 tags: None,
                 start_time: 0,
                 end_time: 0,
+                accepted_tokens,
+                use_global_whitelist,
             });
         }
         None
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -218,10 +236,19 @@ impl MockEventRegistry2 {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -293,11 +320,20 @@ impl MockAuctionEventRegistry {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -320,7 +356,14 @@ impl MockEventRegistryNotFound {
         None
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -426,8 +469,11 @@ fn test_process_payment_success() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result_id, payment_id);
@@ -487,6 +533,7 @@ fn test_confirm_payment() {
         event_id: String::from_str(&env, "e1"),
         buyer_address: buyer,
         ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 100,
         platform_fee: 5,
         organizer_amount: 95,
@@ -495,6 +542,7 @@ fn test_confirm_payment() {
         created_at: 100,
         confirmed_at: None,
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
 
@@ -529,8 +577,11 @@ fn test_process_payment_zero_amount() {
         &usdc_id,
         &0,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 }
@@ -567,8 +618,11 @@ fn test_batch_purchase_success() {
         &usdc_id,
         &amount_per_ticket,
         &quantity,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result_id, payment_id);
@@ -628,8 +682,11 @@ fn test_fee_calculation_variants() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -669,8 +726,11 @@ fn test_process_payment_not_found() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     // Since panic inside get_event_payment_info cannot easily map to get_code() == 2 right now without explicit Error returning in the mock,
@@ -929,8 +989,11 @@ fn test_process_payment_with_non_whitelisted_token() {
         &non_whitelisted_token,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -977,8 +1040,11 @@ fn test_process_payment_with_multiple_tokens() {
         &usdc_id,
         &usdc_amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -991,8 +1057,11 @@ fn test_process_payment_with_multiple_tokens() {
         &xlm_id,
         &xlm_amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1012,6 +1081,92 @@ fn test_process_payment_with_multiple_tokens() {
 
     assert_eq!(payment1.amount, usdc_amount);
     assert_eq!(payment2.amount, xlm_amount);
+}
+
+#[test]
+fn test_process_payment_respects_event_specific_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _usdc_id, _platform_wallet, registry_id) = setup_test(&env);
+
+    let custom_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let wrong_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    for token in [custom_token.clone(), wrong_token.clone()] {
+        let proposal_id =
+            client.propose_parameter_change(&admin, &ParameterChange::AddTokenToWhitelist(token));
+        env.ledger()
+            .set_timestamp(env.ledger().timestamp() + 172801);
+        client.execute_proposal(&admin, &proposal_id);
+    }
+
+    let accepted_token_key = Symbol::new(&env, "accepted_token");
+    env.as_contract(&registry_id, || {
+        env.storage()
+            .instance()
+            .set(&accepted_token_key, &custom_token);
+    });
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+
+    token::StellarAssetClient::new(&env, &wrong_token).mint(&buyer, &amount);
+    token::Client::new(&env, &wrong_token).approve(&buyer, &client.address, &amount, &99999);
+
+    let (_secret, wrong_hash) = test_secret(&env);
+    let wrong_result = client.try_process_payment(
+        &String::from_str(&env, "pay_wrong"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &wrong_token,
+        &amount,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &wrong_hash,
+    );
+    assert_eq!(
+        wrong_result,
+        Err(Ok(TicketPaymentError::TokenNotWhitelisted))
+    );
+
+    token::StellarAssetClient::new(&env, &custom_token).mint(&buyer, &(amount * 2));
+    token::Client::new(&env, &custom_token).approve(&buyer, &client.address, &(amount * 2), &99999);
+
+    let (_secret, right_hash) = test_secret(&env);
+    let payment_id = client.process_payment(
+        &String::from_str(&env, "pay_custom"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &custom_token,
+        &amount,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &right_hash,
+    );
+
+    let stored_payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(stored_payment.token_address, custom_token);
+
+    client.confirm_payment(&payment_id, &String::from_str(&env, "tx_custom"));
+    client.request_guest_refund(&payment_id);
+
+    let refunded_balance = token::Client::new(&env, &custom_token).balance(&buyer);
+    assert_eq!(refunded_balance, 2 * amount);
 }
 
 // Mock Event Registry with max supply reached
@@ -1067,10 +1222,18 @@ impl MockEventRegistryMaxSupply {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
         panic!("MaxSupplyExceeded");
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -1112,8 +1275,11 @@ fn test_process_payment_max_supply_exceeded() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1184,10 +1350,18 @@ impl MockEventRegistryWithInventory {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(env: Env, _event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -1234,8 +1408,11 @@ fn test_inventory_increment_on_successful_payment() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result1, String::from_str(&env, "pay_1"));
@@ -1250,8 +1427,11 @@ fn test_inventory_increment_on_successful_payment() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result2, String::from_str(&env, "pay_2"));
@@ -1282,8 +1462,11 @@ fn test_withdraw_organizer_funds() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1322,8 +1505,11 @@ fn test_withdraw_platform_fees() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1419,10 +1605,18 @@ impl MockEventRegistryWithMilestones {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(env: Env, _event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -1472,8 +1666,11 @@ fn test_withdraw_with_milestones() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     let withdrawn1 = client.withdraw_organizer_funds(&event_id, &usdc_id);
@@ -1489,8 +1686,11 @@ fn test_withdraw_with_milestones() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     let withdrawn2 = client.withdraw_organizer_funds(&event_id, &usdc_id);
@@ -1512,8 +1712,11 @@ fn test_withdraw_with_milestones() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     let withdrawn4 = client.withdraw_organizer_funds(&event_id, &usdc_id);
@@ -1531,8 +1734,11 @@ fn test_withdraw_with_milestones() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     let withdrawn5 = client.withdraw_organizer_funds(&event_id, &usdc_id);
@@ -1571,6 +1777,7 @@ fn test_transfer_ticket_success() {
         event_id: String::from_str(&env, "event_1"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000,
         platform_fee: 50,
         organizer_amount: 950,
@@ -1579,6 +1786,7 @@ fn test_transfer_ticket_success() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
 
@@ -1603,6 +1811,44 @@ fn test_transfer_ticket_success() {
     let new_owner_payments = client.get_buyer_payments(&new_owner);
     assert_eq!(new_owner_payments.len(), 1);
     assert_eq!(new_owner_payments.get(0).unwrap(), payment_id);
+}
+
+#[test]
+fn test_transfer_ticket_rejects_soulbound_ticket() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let buyer = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_soulbound");
+
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "event_1"),
+        buyer_address: buyer.clone(),
+        ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
+        amount: 1000,
+        platform_fee: 50,
+        organizer_amount: 950,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx_sb"),
+        created_at: 100,
+        confirmed_at: Some(101),
+        refunded_amount: 0,
+        is_soulbound: true,
+        last_checked_in_at: 0,
+    };
+
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+    });
+
+    let result = client.try_transfer_ticket(&payment_id, &new_owner, &None);
+    assert_eq!(result, Err(Ok(TicketPaymentError::NonTransferable)));
+
+    let unchanged = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(unchanged.buyer_address, buyer);
 }
 
 #[test]
@@ -1646,6 +1892,7 @@ fn test_transfer_ticket_with_fee() {
         event_id: event_id.clone(),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: ticket_amount,
         platform_fee: 50,
         organizer_amount: 950,
@@ -1654,6 +1901,7 @@ fn test_transfer_ticket_with_fee() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
 
@@ -1689,6 +1937,7 @@ fn test_transfer_ticket_unauthorized() {
         event_id: String::from_str(&env, "event_1"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000,
         platform_fee: 50,
         organizer_amount: 950,
@@ -1697,6 +1946,7 @@ fn test_transfer_ticket_unauthorized() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
 
@@ -1771,11 +2021,20 @@ impl MockEventRegistryEarlyBird {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -1820,8 +2079,11 @@ fn test_early_bird_pricing_active() {
         &usdc_id,
         &1000_0000000i128, // Paying early bird price
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1865,8 +2127,11 @@ fn test_early_bird_pricing_expired() {
         &usdc_id,
         &1000_0000000i128, // Trying early bird price
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result_fail, Err(Ok(TicketPaymentError::InvalidPrice)));
@@ -1882,8 +2147,11 @@ fn test_early_bird_pricing_expired() {
         &usdc_id,
         &1500_0000000i128, // Paying standard price
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result_success, payment_id_success);
@@ -1928,8 +2196,11 @@ fn test_price_switched_event_emitted_exactly_once() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1944,8 +2215,11 @@ fn test_price_switched_event_emitted_exactly_once() {
         &usdc_id,
         &1000_0000000i128, // exactly at deadline uses early bird
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1960,8 +2234,11 @@ fn test_price_switched_event_emitted_exactly_once() {
         &usdc_id,
         &1500_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -1976,8 +2253,11 @@ fn test_price_switched_event_emitted_exactly_once() {
         &usdc_id,
         &1500_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2047,6 +2327,7 @@ fn test_bulk_refund_success() {
                     event_id: event_id.clone(),
                     buyer_address: buyer,
                     ticket_tier_id: String::from_str(&env, "tier_1"),
+                    token_address: get_usdc_token(&env),
                     amount: ticket_price,
                     platform_fee: 50_0000000,
                     organizer_amount: 950_0000000,
@@ -2055,6 +2336,7 @@ fn test_bulk_refund_success() {
                     created_at: 0,
                     confirmed_at: Some(1),
                     refunded_amount: 0,
+                    is_soulbound: false,
                     last_checked_in_at: 0,
                 },
             );
@@ -2125,6 +2407,7 @@ fn test_bulk_refund_batching() {
                     event_id: event_id.clone(),
                     buyer_address: buyer,
                     ticket_tier_id: String::from_str(&env, "tier_1"),
+                    token_address: get_usdc_token(&env),
                     amount: ticket_price,
                     platform_fee: 50_0000000,
                     organizer_amount: 950_0000000,
@@ -2133,6 +2416,7 @@ fn test_bulk_refund_batching() {
                     created_at: 0,
                     confirmed_at: Some(1),
                     refunded_amount: 0,
+                    is_soulbound: false,
                     last_checked_in_at: 0,
                 },
             );
@@ -2176,8 +2460,11 @@ fn test_protocol_revenue_reporting_views() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2283,11 +2570,20 @@ impl MockEventRegistryWithOrganizer {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -2355,8 +2651,12 @@ fn test_add_discount_hashes_and_invalid_code_rejected() {
         &usdc_id,
         &amount,
         &1,
-        &Some(wrong_preimage),
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: Some(wrong_preimage),
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
     );
 
     assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountCode)));
@@ -2389,8 +2689,11 @@ fn test_gas_profile_process_payment_budget() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2432,8 +2735,12 @@ fn test_process_payment_with_valid_discount_code() {
         &usdc_id,
         &full_amount,
         &1,
-        &Some(preimage),
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: Some(preimage),
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
     );
     assert_eq!(result, String::from_str(&env, "pay_1"));
 
@@ -2469,8 +2776,12 @@ fn test_discount_code_one_time_use() {
         &usdc_id,
         &full_amount,
         &1,
-        &Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
     );
 
     let (_secret, hash) = test_secret(&env);
@@ -2482,8 +2793,12 @@ fn test_discount_code_one_time_use() {
         &usdc_id,
         &full_amount,
         &1,
-        &Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeUsed)));
 }
@@ -2509,8 +2824,11 @@ fn test_process_payment_no_code_unchanged() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2605,6 +2923,8 @@ impl MockPlatformRegistryE2E {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         };
 
         env.storage()
@@ -2648,7 +2968,13 @@ impl MockPlatformRegistryE2E {
             .get(&MockPlatformDataKey::Event(event_id))
     }
 
-    pub fn increment_inventory(env: Env, event_id: String, tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let mut event = env
             .storage()
             .persistent()
@@ -2679,7 +3005,7 @@ impl MockPlatformRegistryE2E {
             .set(&MockPlatformDataKey::Event(event_id), &event);
     }
 
-    pub fn decrement_inventory(env: Env, event_id: String, tier_id: String) {
+    pub fn decrement_inventory(env: Env, event_id: String, tier_id: String, _user: Address) {
         let mut event = env
             .storage()
             .persistent()
@@ -2791,8 +3117,12 @@ fn test_integration_full_platform_day() {
             &usdc_id,
             &amount,
             &1,
-            &None,
-            &None,
+            &crate::types::PurchaseOptions {
+                code_preimage: None,
+                referrer: None,
+                discount_code: None,
+            },
+            &hash,
         );
     }
 
@@ -2858,8 +3188,11 @@ fn test_integration_edge_cases() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(empty_res, Err(Ok(TicketPaymentError::TierNotFound)));
@@ -2906,8 +3239,11 @@ fn test_integration_edge_cases() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -2928,8 +3264,11 @@ fn test_integration_edge_cases() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(sold_res.is_err());
@@ -2946,8 +3285,11 @@ fn test_integration_edge_cases() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(transfer_res.is_err());
@@ -3012,7 +3354,19 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
         };
         let (_secret, hash) = test_secret(&env);
         let res = payment_client.try_process_payment(
-            &pid, &event_id, &tier_id, &buyer, &usdc_id, &amount, &1, &None, &None,
+            &pid,
+            &event_id,
+            &tier_id,
+            &buyer,
+            &usdc_id,
+            &amount,
+            &1,
+            &crate::types::PurchaseOptions {
+                code_preimage: None,
+                referrer: None,
+                discount_code: None,
+            },
+            &hash,
         );
 
         if res.is_ok() {
@@ -3092,11 +3446,20 @@ impl MockEventRegistryRefund {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -3168,11 +3531,20 @@ impl MockEventRegistryWithResaleCap {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -3221,6 +3593,7 @@ fn test_transfer_ticket_resale_price_within_cap() {
         event_id: String::from_str(&env, "event_capped"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "general"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -3229,6 +3602,7 @@ fn test_transfer_ticket_resale_price_within_cap() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
 
@@ -3265,6 +3639,7 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
         event_id: String::from_str(&env, "event_capped"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "general"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -3273,6 +3648,7 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
 
@@ -3311,6 +3687,7 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
         event_id: String::from_str(&env, "event_capped"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "general"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -3319,6 +3696,7 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
 
@@ -3355,6 +3733,7 @@ fn test_transfer_ticket_sale_price_no_cap() {
         event_id: String::from_str(&env, "event_1"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "tier_1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -3363,6 +3742,7 @@ fn test_transfer_ticket_sale_price_no_cap() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
 
@@ -3444,11 +3824,20 @@ impl MockRegistryZeroCap {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -3488,8 +3877,11 @@ fn test_request_guest_refund_success_with_fee() {
         &usdc_id,
         &1000,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -3545,8 +3937,11 @@ fn test_request_guest_refund_deadline_passed() {
         &usdc_id,
         &1000,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -3576,8 +3971,11 @@ fn test_platform_fee_withdrawal_with_cap() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -3667,8 +4065,11 @@ fn test_process_payment_paused() {
         &usdc_id,
         &1000_0000000i128,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
@@ -3851,6 +4252,7 @@ fn test_claim_automatic_refund_success() {
         event_id: String::from_str(&env, "e1"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "tier_1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000,
         platform_fee: 50,
         organizer_amount: 950,
@@ -3859,6 +4261,7 @@ fn test_claim_automatic_refund_success() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
 
@@ -3906,8 +4309,11 @@ fn test_dispute_blocks_withdrawal() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -3952,8 +4358,11 @@ fn test_admin_refund_during_dispute() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -4076,11 +4485,20 @@ impl MockEventRegistryUsdPriced {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -4145,8 +4563,11 @@ fn test_usd_priced_payment_success() {
         &token_id,
         &expected_amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(result.is_ok());
@@ -4175,8 +4596,11 @@ fn test_usd_priced_payment_within_slippage() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(result.is_ok());
@@ -4205,8 +4629,11 @@ fn test_usd_priced_payment_above_slippage_fails() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::PriceOutsideSlippage)));
@@ -4235,8 +4662,11 @@ fn test_usd_priced_payment_below_slippage_fails() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::PriceOutsideSlippage)));
@@ -4274,8 +4704,11 @@ fn test_usd_priced_oracle_not_configured() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::OracleNotConfigured)));
@@ -4315,8 +4748,11 @@ fn test_usd_priced_oracle_unavailable() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceUnavailable)));
@@ -4355,8 +4791,11 @@ fn test_usd_priced_oracle_stale() {
         &token_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceStale)));
@@ -4384,8 +4823,11 @@ fn test_token_priced_payment_unchanged() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(result.is_ok());
@@ -4789,9 +5231,18 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -4856,8 +5307,11 @@ fn test_process_payment_ignores_loyalty_update_failure() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Ok(Ok(payment_id.clone())));
@@ -4922,9 +5376,18 @@ impl MockEventRegistryWithLoyalty {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5007,9 +5470,18 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5073,8 +5545,11 @@ fn test_loyalty_discount_is_capped_by_platform_fee() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5127,8 +5602,11 @@ fn test_loyalty_discount_reduces_platform_fee() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5162,8 +5640,11 @@ fn test_payment_without_loyalty_discount_unchanged() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5230,10 +5711,19 @@ impl MockEventRegistryCustomFee {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5290,8 +5780,11 @@ fn test_process_payment_with_custom_fee() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5364,11 +5857,20 @@ impl MockEventRegistryHighPrice {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5408,8 +5910,11 @@ fn test_process_payment_extremely_high_ticket_price() {
         &usdc_id,
         &amount,
         &2,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::ArithmeticError)));
@@ -5477,11 +5982,20 @@ impl MockEventRegistryRefundDeadline {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5523,8 +6037,11 @@ fn test_refund_rejected_after_deadline() {
         &usdc_id,
         &1000,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5584,8 +6101,11 @@ fn test_get_payments_by_status_single_payment() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5649,8 +6169,11 @@ fn test_get_payments_by_status_multiple_payments() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5663,8 +6186,11 @@ fn test_get_payments_by_status_multiple_payments() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5677,8 +6203,11 @@ fn test_get_payments_by_status_multiple_payments() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5746,8 +6275,11 @@ fn test_get_payments_by_status_with_refunds() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5800,8 +6332,11 @@ fn test_get_payments_by_status_multiple_events() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5814,8 +6349,11 @@ fn test_get_payments_by_status_multiple_events() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -5899,8 +6437,12 @@ fn test_partial_refund_multi_batch_index_persisted() {
             &usdc_id,
             &ticket_price,
             &1,
-            &None,
-            &None,
+            &crate::types::PurchaseOptions {
+                code_preimage: None,
+                referrer: None,
+                discount_code: None,
+            },
+            &hash,
         );
         client.confirm_payment(pid, &String::from_str(&env, "h"));
         buyers.push_back(buyer);
@@ -6052,6 +6594,8 @@ impl MockEventRegistryForDust {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -6064,8 +6608,15 @@ impl MockEventRegistryForDust {
             .set(&Symbol::new(&env, "payment_addr"), &payment_addr);
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -6264,9 +6815,18 @@ impl MockEventRegistryForReferral {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -6347,9 +6907,18 @@ impl MockEventRegistryFullLoyaltyDiscount {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -6415,8 +6984,12 @@ fn test_referral_reward_is_20_percent_of_platform_fee() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &Some(referrer.clone()),
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(referrer.clone()),
+            discount_code: None,
+        },
+        &hash,
     );
 
     // platform_fee = 1000 * 5% = 50 USDC
@@ -6478,8 +7051,12 @@ fn test_referral_reward_capped_when_platform_fee_is_zero() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &Some(referrer.clone()),
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(referrer.clone()),
+            discount_code: None,
+        },
+        &hash,
     );
 
     let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
@@ -6528,8 +7105,12 @@ fn test_referral_reward_does_not_exceed_platform_fee_invariant() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &Some(referrer.clone()),
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(referrer.clone()),
+            discount_code: None,
+        },
+        &hash,
     );
 
     // platform_fee = 1000 * 5% = 50
@@ -6585,7 +7166,7 @@ fn setup_withdrawal_cap_test(
             3 => String::from_str(env, "p3"),
             _ => String::from_str(env, "p4"),
         };
-        let (_secret, hash) = test_secret(&env);
+        let (_secret, hash) = test_secret(env);
         client.process_payment(
             &pid,
             &String::from_str(env, "event_1"),
@@ -6594,8 +7175,12 @@ fn setup_withdrawal_cap_test(
             &usdc_id,
             &price,
             &1,
-            &None,
-            &None,
+            &crate::types::PurchaseOptions {
+                code_preimage: None,
+                referrer: None,
+                discount_code: None,
+            },
+            &hash,
         );
     }
 
@@ -6835,8 +7420,12 @@ fn test_no_referral_reward_without_referrer() {
         &usdc_id,
         &price,
         &1,
-        &None,
-        &None, // no referrer
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None, // no referrer,
+            discount_code: None,
+        },
+        &hash,
     );
 
     // Full platform fee stays in escrow
@@ -6860,6 +7449,7 @@ fn insert_confirmed_payment(
         event_id: String::from_str(env, event_id),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(env, "tier_1"),
+        token_address: env.as_contract(client_address, || get_usdc_token(env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -6868,6 +7458,7 @@ fn insert_confirmed_payment(
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
         last_checked_in_at: 0,
     };
     env.as_contract(client_address, || {
@@ -6951,4 +7542,352 @@ fn test_transfer_ticket_valid_recipient_succeeds() {
 
     let updated = client.get_payment_status(&payment_id).unwrap();
     assert_eq!(updated.buyer_address, recipient);
+}
+
+// ── Secondary marketplace tests ───────────────────────────────────────────────
+// NOTE: These tests are for a secondary marketplace feature that is not yet
+// implemented in the contract. They are commented out until the feature is ready.
+
+/*
+/// list_ticket succeeds when price == original price.
+#[test]
+fn test_list_ticket_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_list_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    // List at original price (1000_0000000)
+    client.list_ticket(&payment_id, &1000_0000000i128);
+
+    // Ownership should now be the contract
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.buyer_address, client.address);
+}
+
+/// list_ticket succeeds when price < original price.
+#[test]
+fn test_list_ticket_below_original_price_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_list_2");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_ticket(&payment_id, &500_0000000i128);
+
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.buyer_address, client.address);
+}
+
+/// list_ticket fails with PriceLimitExceeded when price > original price.
+#[test]
+fn test_list_ticket_price_limit_exceeded() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_list_3");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    // Attempt to list above original price
+    let result = client.try_list_ticket(&payment_id, &2000_0000000i128);
+    assert_eq!(result, Err(Ok(TicketPaymentError::PriceLimitExceeded)));
+}
+
+/// buy_secondary_ticket transfers tokens to seller and ticket to buyer.
+#[test]
+fn test_buy_secondary_ticket_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let price = 800_0000000i128;
+
+    // Mint USDC to buyer
+    usdc_token.mint(&buyer, &price);
+
+    let payment_id = String::from_str(&env, "pay_buy_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    // List the ticket
+    client.list_ticket(&payment_id, &price);
+
+    let seller_balance_before = token::Client::new(&env, &usdc_id).balance(&seller);
+
+    // Buy the ticket
+    client.buy_secondary_ticket(&payment_id, &buyer);
+
+    // Ticket ownership transferred to buyer
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.buyer_address, buyer);
+
+    // Seller received the payment
+    let seller_balance_after = token::Client::new(&env, &usdc_id).balance(&seller);
+    assert_eq!(seller_balance_after - seller_balance_before, price);
+}
+
+/// buy_secondary_ticket fails when the listing does not exist.
+#[test]
+fn test_buy_secondary_ticket_not_listed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_not_listed");
+
+    let result = client.try_buy_secondary_ticket(&payment_id, &buyer);
+    assert_eq!(result, Err(Ok(TicketPaymentError::PaymentNotFound)));
+}
+
+/// Seller cannot buy their own listing.
+#[test]
+fn test_buy_secondary_ticket_self_purchase_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_self_buy");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_ticket(&payment_id, &500_0000000i128);
+
+    let result = client.try_buy_secondary_ticket(&payment_id, &seller);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
+*/
+
+// ── Limited-Time Discount Code Tests ─────────────────────────────────────────
+
+#[test]
+fn test_create_and_apply_discount_code() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "SAVE20");
+
+    // Create a 20% discount code, expires far in the future, max 5 uses
+    client.create_discount_code(&event_id, &code, &20, &9_999_999_999u64, &5);
+
+    let data = client.get_discount_code(&event_id, &code).unwrap();
+    assert_eq!(data.percentage, 20);
+    assert_eq!(data.max_uses, 5);
+    assert_eq!(data.current_uses, 0);
+
+    // Process a payment using the discount code
+    let buyer = Address::generate(&env);
+    let full_price = 1000_0000000i128;
+    let expected_price = full_price * 80 / 100; // 20% off
+
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &expected_price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_price, &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    let result = client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &full_price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code.clone()),
+        },
+        &hash,
+    );
+    assert_eq!(result, String::from_str(&env, "pay_1"));
+
+    // current_uses must have incremented
+    let data_after = client.get_discount_code(&event_id, &code).unwrap();
+    assert_eq!(data_after.current_uses, 1);
+
+    // Escrow should reflect the discounted amount
+    let escrow = client.get_event_escrow_balance(&event_id);
+    let expected_fee = expected_price * 500 / 10000;
+    assert_eq!(escrow.platform_fee, expected_fee);
+    assert_eq!(escrow.organizer_amount, expected_price - expected_fee);
+}
+
+#[test]
+fn test_discount_code_expired_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "EXPIRED");
+
+    // Set ledger time to 1000, create code that expired at 500
+    env.ledger().set_timestamp(1000);
+    client.create_discount_code(&event_id, &code, &10, &500u64, &10);
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    let res = client.try_process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code),
+        },
+        &hash,
+    );
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountExpired)));
+}
+
+#[test]
+fn test_discount_code_max_uses_reached_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "ONCE");
+
+    // max_uses = 1
+    client.create_discount_code(&event_id, &code, &10, &9_999_999_999u64, &1);
+
+    let buyer = Address::generate(&env);
+    let full_price = 1000_0000000i128;
+    let discounted = full_price * 90 / 100;
+
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &(discounted * 2));
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &(discounted * 2), &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    // First use succeeds
+    client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &full_price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code.clone()),
+        },
+        &hash,
+    );
+
+    let (_secret, hash2) = test_secret(&env);
+    // Second use must fail
+    let res = client.try_process_payment(
+        &String::from_str(&env, "pay_2"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &full_price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code),
+        },
+        &hash2,
+    );
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountMaxUsesReached)));
+}
+
+#[test]
+fn test_discount_code_invalid_code_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    let res = client.try_process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &amount,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(String::from_str(&env, "NONEXISTENT")),
+        },
+        &hash,
+    );
+    assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountCode)));
+}
+
+#[test]
+fn test_discount_code_price_calculation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "HALF");
+
+    // 50% discount
+    client.create_discount_code(&event_id, &code, &50, &9_999_999_999u64, &10);
+
+    let buyer = Address::generate(&env);
+    let full_price = 1000_0000000i128;
+    let expected_paid = full_price * 50 / 100; // price * (100 - 50) / 100
+
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &expected_paid);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_paid, &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &full_price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: Some(code),
+        },
+        &hash,
+    );
+
+    let escrow = client.get_event_escrow_balance(&event_id);
+    let fee = expected_paid * 500 / 10000;
+    assert_eq!(escrow.platform_fee, fee);
+    assert_eq!(escrow.organizer_amount, expected_paid - fee);
 }

@@ -416,4 +416,8 @@ pub enum DataKey {
     Waitlist(String, Address),
     /// Mapping of event_id to pause status (bool) – whether the event is paused (Persistent)
     EventPaused(String),
+    /// The administrator address specifically for organizer whitelisting (Instance)
+    ContractAdmin,
+    /// Mapping of organizer address to approved status (Instance)
+    ApprovedOrganizer(Address),
 }

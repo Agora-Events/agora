@@ -228,7 +228,10 @@
                   "u32": 1
                 },
                 "void",
-                "void"
+                "void",
+                {
+                  "bytes": "2dcdef7481b644c24ab53b76c069618f189bb5c3e14f7825b0d0f5d45a93f482"
+                }
               ]
             }
           },
@@ -267,7 +270,10 @@
                   "u32": 1
                 },
                 "void",
-                "void"
+                "void",
+                {
+                  "bytes": "2dcdef7481b644c24ab53b76c069618f189bb5c3e14f7825b0d0f5d45a93f482"
+                }
               ]
             }
           },
@@ -1552,6 +1558,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_soulbound"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "last_checked_in_at"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "organizer_amount"
                       },
                       "val": {
@@ -1600,6 +1622,14 @@
                       },
                       "val": {
                         "string": "tier_1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "token_address"
+                      },
+                      "val": {
+                        "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
                       }
                     },
                     {
@@ -1696,6 +1726,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "is_soulbound"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "last_checked_in_at"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "organizer_amount"
                       },
                       "val": {
@@ -1744,6 +1790,14 @@
                       },
                       "val": {
                         "string": "tier_1"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "token_address"
+                      },
+                      "val": {
+                        "address": "CD3FXVGYSLQFFTW3UH6WFF2OKZH7VERGZJZAMJHTGHBWO4F6URWEJL23"
                       }
                     },
                     {
@@ -2255,6 +2309,96 @@
                 "durability": "persistent",
                 "val": {
                   "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "ValidationHash"
+                },
+                {
+                  "string": "pay_usdc"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ValidationHash"
+                    },
+                    {
+                      "string": "pay_usdc"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "bytes": "2dcdef7481b644c24ab53b76c069618f189bb5c3e14f7825b0d0f5d45a93f482"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "ValidationHash"
+                },
+                {
+                  "string": "pay_xlm"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ValidationHash"
+                    },
+                    {
+                      "string": "pay_xlm"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "bytes": "2dcdef7481b644c24ab53b76c069618f189bb5c3e14f7825b0d0f5d45a93f482"
                 }
               }
             },

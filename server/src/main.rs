@@ -17,7 +17,6 @@ use tokio::net::TcpListener;
 
 use agora_server::config::request_id::REQUEST_ID_HEADER;
 use agora_server::config::Config;
-use agora_server::routes::create_routes;
 use agora_server::utils::logging::init_logging;
 
 /// Main application entry point.
@@ -41,6 +40,7 @@ async fn main() {
     tracing::info!("Configuration: RUST_LOG={}", config.rust_log);
     tracing::info!("Configuration: CORS_ALLOWED_ORIGINS={}", config.cors_allowed_origins);
     tracing::info!("Configuration: SOROBAN_RPC_URL={}", config.soroban_rpc_url);
+    tracing::info!("Configuration: REDIS_URL={}", config.redis_url);
     // Note: DATABASE_URL is strictly excluded from logging for security reasons.
 
     let pool = PgPoolOptions::new()
@@ -54,7 +54,20 @@ async fn main() {
 
     tracing::info!("Migrations run successfully");
 
-    let app: Router = create_routes(pool.clone());
+    // Initialize Redis cache
+    let redis = match agora_server::cache::RedisCache::new(&config.redis_url).await {
+        Ok(redis) => {
+            tracing::info!("Successfully connected to Redis at {}", config.redis_url);
+            redis
+        }
+        Err(e) => {
+            tracing::error!("Failed to connect to Redis: {:?}", e);
+            tracing::warn!("Continuing without Redis cache - performance may be degraded");
+            panic!("Redis connection required for caching");
+        }
+    };
+
+    let app: Router = agora_server::routes::create_routes(pool.clone(), config.clone(), redis).await;
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("🚀 Server running at http://localhost:{}", config.port);
     tracing::info!("Request IDs will be set via '{REQUEST_ID_HEADER}' header");

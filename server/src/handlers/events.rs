@@ -8,7 +8,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
+use std::time::Duration;
 
+use crate::cache::RedisCache;
 use crate::models::event::Event;
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
@@ -43,6 +45,16 @@ fn default_page() -> u32 {
 
 fn default_page_size() -> u32 {
     20
+}
+
+/// Cache TTL for event details (5 minutes)
+const EVENT_CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// Application state for event handlers
+#[derive(Clone)]
+pub struct EventState {
+    pub pool: PgPool,
+    pub redis: RedisCache,
 }
 
 /// Query parameters for filtering events
@@ -95,7 +107,7 @@ pub struct SubmitEventRatingResponse {
 /// # Response
 /// Returns a paginated list of events with metadata
 pub async fn list_events(
-    State(pool): State<PgPool>,
+    State(state): State<EventState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<EventFilters>,
 ) -> Response {
@@ -104,6 +116,9 @@ pub async fn list_events(
     // Build the WHERE clause dynamically based on filters
     let mut where_clauses = Vec::new();
     let mut param_count = 0;
+    
+    // Always exclude flagged events from public listings
+    where_clauses.push("is_flagged = FALSE".to_string());
     
     if filters.organizer_id.is_some() {
         param_count += 1;
@@ -159,7 +174,7 @@ pub async fn list_events(
         count_query_builder = count_query_builder.bind(format!("%{}%", search));
     }
     
-    let total = match count_query_builder.fetch_one(&pool).await {
+    let total = match count_query_builder.fetch_one(&state.pool).await {
         Ok(count) => count,
         Err(e) => {
             tracing::error!("Failed to count events: {:?}", e);
@@ -197,7 +212,7 @@ pub async fn list_events(
         .bind(validated_pagination.limit())
         .bind(validated_pagination.offset());
     
-    let items = match items_query_builder.fetch_all(&pool).await {
+    let items = match items_query_builder.fetch_all(&state.pool).await {
         Ok(events) => events,
         Err(e) => {
             tracing::error!("Failed to fetch events: {:?}", e);
@@ -213,15 +228,35 @@ pub async fn list_events(
 ///
 /// # Endpoint
 /// GET `/api/v1/events/:id`
+///
+/// # Caching
+/// Event details are cached in Redis with a 5-minute TTL to reduce database load.
 pub async fn get_event(
-    State(pool): State<PgPool>,
+    State(mut state): State<EventState>,
     axum::extract::Path(event_id): axum::extract::Path<Uuid>,
 ) -> Response {
+    let cache_key = format!("event:detail:{}", event_id);
+    
+    // Try to get from cache first
+    match state.redis.get::<Event>(&cache_key).await {
+        Ok(Some(event)) => {
+            tracing::debug!("Cache hit for event {}", event_id);
+            return success(event, "Event retrieved successfully (cached)").into_response();
+        }
+        Ok(None) => {
+            tracing::debug!("Cache miss for event {}", event_id);
+        }
+        Err(e) => {
+            tracing::warn!("Redis error, falling back to database: {:?}", e);
+        }
+    }
+    
+    // Cache miss or error, fetch from database
     let event = match sqlx::query_as::<_, Event>(
-        "SELECT * FROM events WHERE id = $1"
+        "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE"
     )
     .bind(event_id)
-    .fetch_optional(&pool)
+    .fetch_optional(&state.pool)
     .await
     {
         Ok(Some(event)) => event,
@@ -235,6 +270,11 @@ pub async fn get_event(
         }
     };
     
+    // Store in cache for future requests
+    if let Err(e) = state.redis.set(&cache_key, &event, EVENT_CACHE_TTL).await {
+        tracing::warn!("Failed to cache event {}: {:?}", event_id, e);
+    }
+    
     success(event, "Event retrieved successfully").into_response()
 }
 
@@ -243,7 +283,7 @@ pub async fn get_event(
 /// # Endpoint
 /// POST `/api/v1/events/:id/rate`
 pub async fn submit_event_rating(
-    State(pool): State<PgPool>,
+    State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
     Json(payload): Json<SubmitEventRatingRequest>,
 ) -> Response {
@@ -259,7 +299,7 @@ pub async fn submit_event_rating(
            WHERE t.id = $1"#,
         payload.ticket_id
     )
-    .fetch_optional(&pool)
+    .fetch_optional(&state.pool)
     .await
     {
         Ok(ticket) => match ticket {
@@ -286,7 +326,7 @@ pub async fn submit_event_rating(
         .into_response();
     }
 
-    let mut tx = match pool.begin().await {
+    let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(e) => {
             tracing::error!("Failed to begin transaction: {:?}", e);
@@ -376,20 +416,19 @@ pub async fn submit_event_rating(
 /// # Response
 /// Returns a paginated list of events matching the search criteria
 pub async fn search_events(
-    State(pool): State<PgPool>,
+    State(state): State<EventState>,
     Query(params): Query<SearchParams>,
 ) -> Response {
-    // Convert SearchParams to PaginationParams
     let pagination = PaginationParams {
         page: params.page,
         page_size: params.page_size,
     };
     let validated_pagination = pagination.validate();
-    
+
     // Build dynamic WHERE clause using WHERE 1=1 pattern
     let mut where_clauses = vec!["1=1".to_string()];
     let mut param_count = 0;
-    
+
     // Keyword search in title and description
     if params.q.is_some() {
         param_count += 1;
@@ -398,7 +437,7 @@ pub async fn search_events(
             param_count, param_count
         ));
     }
-    
+
     // Filter by category (requires join with event_categories)
     let category_join = if params.category_id.is_some() {
         param_count += 1;
@@ -407,46 +446,45 @@ pub async fn search_events(
     } else {
         ""
     };
-    
+
     // Filter by price range (requires join with ticket_tiers)
     let price_join = if params.min_price.is_some() || params.max_price.is_some() {
         "INNER JOIN ticket_tiers tt ON e.id = tt.event_id"
     } else {
         ""
     };
-    
+
     if params.min_price.is_some() {
         param_count += 1;
         where_clauses.push(format!("tt.price >= ${}", param_count));
     }
-    
+
     if params.max_price.is_some() {
         param_count += 1;
         where_clauses.push(format!("tt.price <= ${}", param_count));
     }
-    
+
     // Filter by date range
     if params.date_from.is_some() {
         param_count += 1;
         where_clauses.push(format!("e.start_time >= ${}", param_count));
     }
-    
+
     if params.date_to.is_some() {
         param_count += 1;
         where_clauses.push(format!("e.start_time <= ${}", param_count));
     }
-    
+
     let where_clause = where_clauses.join(" AND ");
-    
+
     // Count total items with DISTINCT to handle joins
     let count_query = format!(
         "SELECT COUNT(DISTINCT e.id) FROM events e {} {} WHERE {}",
         category_join, price_join, where_clause
     );
-    
+
     let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
-    
-    // Bind parameters in the same order as WHERE clause construction
+
     if let Some(ref q) = params.q {
         count_query_builder = count_query_builder.bind(format!("%{}%", q));
     }
@@ -454,7 +492,6 @@ pub async fn search_events(
         count_query_builder = count_query_builder.bind(category_id);
     }
     if let Some(min_price) = params.min_price {
-        // Convert cents to decimal (e.g., 1000 cents = 10.00)
         let min_price_decimal = min_price as f64 / 100.0;
         count_query_builder = count_query_builder.bind(min_price_decimal);
     }
@@ -468,15 +505,15 @@ pub async fn search_events(
     if let Some(date_to) = params.date_to {
         count_query_builder = count_query_builder.bind(date_to);
     }
-    
-    let total = match count_query_builder.fetch_one(&pool).await {
+
+    let total = match count_query_builder.fetch_one(&state.pool).await {
         Ok(count) => count,
         Err(e) => {
             tracing::error!("Failed to count search results: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
-    
+
     // Fetch paginated items with DISTINCT to handle joins
     let items_query = format!(
         "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
@@ -486,10 +523,9 @@ pub async fn search_events(
         param_count + 1,
         param_count + 2
     );
-    
+
     let mut items_query_builder = sqlx::query_as::<_, Event>(&items_query);
-    
-    // Bind parameters in the same order
+
     if let Some(ref q) = params.q {
         items_query_builder = items_query_builder.bind(format!("%{}%", q));
     }
@@ -510,21 +546,78 @@ pub async fn search_events(
     if let Some(date_to) = params.date_to {
         items_query_builder = items_query_builder.bind(date_to);
     }
-    
+
     items_query_builder = items_query_builder
         .bind(validated_pagination.limit())
         .bind(validated_pagination.offset());
-    
-    let items = match items_query_builder.fetch_all(&pool).await {
+
+    let items = match items_query_builder.fetch_all(&state.pool).await {
         Ok(events) => events,
         Err(e) => {
             tracing::error!("Failed to fetch search results: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
-    
+
     let response = PaginatedResponse::new(items, validated_pagination, total);
     success(response, "Search results retrieved successfully").into_response()
+}
+
+/// Toggle the flagged status of an event (admin only)
+///
+/// # Endpoint
+/// POST `/api/v1/admin/events/:id/toggle-flag`
+///
+/// # Description
+/// Flips the `is_flagged` status of the specified event.
+/// This endpoint is intended for admin use to moderate content.
+pub async fn toggle_event_flag(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // Fetch current flag status
+    let current_flagged = match sqlx::query_scalar::<_, bool>(
+        "SELECT is_flagged FROM events WHERE id = $1"
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(flagged)) => flagged,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch event flag status: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Toggle the flag
+    let new_flagged = !current_flagged;
+    if let Err(e) = sqlx::query(
+        "UPDATE events SET is_flagged = $1 WHERE id = $2"
+    )
+    .bind(new_flagged)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::error!("Failed to update event flag: {:?}", e);
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    // Invalidate cache for this event
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate cache for event {}: {:?}", event_id, e);
+    }
+
+    success(
+        serde_json::json!({ "is_flagged": new_flagged }),
+        "Event flag toggled successfully"
+    ).into_response()
 }
 
 #[cfg(test)]

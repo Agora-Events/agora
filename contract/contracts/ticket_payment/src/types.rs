@@ -5,6 +5,28 @@ pub const MAX_BPS: u32 = 10000;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiscountData {
+    pub percentage: u32,
+    pub expires_at: u64,
+    pub max_uses: u32,
+    pub current_uses: u32,
+}
+
+/// Optional parameters for `process_payment` that bundle rarely-used fields
+/// to stay within Soroban's 10-argument limit.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PurchaseOptions {
+    /// SHA-256 preimage for the legacy global discount code system.
+    pub code_preimage: Option<soroban_sdk::Bytes>,
+    /// Optional referrer address for referral rewards.
+    pub referrer: Option<soroban_sdk::Address>,
+    /// Per-event limited-time discount code string.
+    pub discount_code: Option<soroban_sdk::String>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuctionConfig {
     pub start_price: i128,
     pub end_time: u64,
@@ -61,7 +83,8 @@ pub struct Payment {
     pub event_id: String,
     pub buyer_address: Address,
     pub ticket_tier_id: String,
-    pub amount: i128, // USDC amount in stroops
+    pub token_address: Address,
+    pub amount: i128, // Payment token amount in stroops
     pub platform_fee: i128,
     pub organizer_amount: i128,
     pub status: PaymentStatus,
@@ -69,6 +92,7 @@ pub struct Payment {
     pub created_at: u64,
     pub confirmed_at: Option<u64>,
     pub refunded_amount: i128,
+    pub is_soulbound: bool,
     pub last_checked_in_at: u64,
 }
 
@@ -84,6 +108,7 @@ pub struct EventBalance {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HighestBid {
     pub bidder: Address,
+    pub token_address: Address,
     pub amount: i128,
 }
 
@@ -118,10 +143,12 @@ pub enum DataKey {
     ActiveEscrowByToken(Address),        // active escrow amount per token
     DiscountCodeHash(BytesN<32>),        // sha256_hash -> bool (registered)
     DiscountCodeUsed(BytesN<32>),        // sha256_hash -> bool (spent)
+    DiscountCode(String, String),        // (event_id, code) -> DiscountData
     WithdrawalCap(Address),              // token_address -> max amount per day
     DailyWithdrawalAmount(Address, u64), // (token_address, day_timestamp) -> amount withdrawn
     IsPaused,                            // bool – global circuit breaker flag
     DisputeStatus(String),               // event_id -> bool
+    EventCancelledForRefund(String),     // event_id -> bool
     PartialRefundIndex(String),          // event_id -> last processed payment index
     PartialRefundPercentage(String),     // event_id -> active refund percentage in bps
     OracleAddress,                       // Address of oracle contract

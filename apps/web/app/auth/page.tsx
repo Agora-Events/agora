@@ -53,11 +53,20 @@ export default function AuthPage() {
     }
   };
 
+  const handleGoBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[#A9A495] relative flex items-center justify-center">
       {/* Back Button */}
       <button
         type="button"
+        onClick={handleGoBack}
         className="
           absolute top-10 left-16
           bg-white
