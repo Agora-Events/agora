@@ -69,6 +69,7 @@ pub struct Payment {
     pub created_at: u64,
     pub confirmed_at: Option<u64>,
     pub refunded_amount: i128,
+    pub last_checked_in_at: u64,
 }
 
 #[contracttype]

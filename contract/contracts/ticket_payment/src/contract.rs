@@ -31,7 +31,7 @@ use crate::{
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
         PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
         PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent, RevenueClaimedEvent,
-        TicketTransferredEvent,
+        TicketCheckedInEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{
@@ -823,6 +823,7 @@ impl TicketPaymentContract {
                 created_at,
                 confirmed_at: None,
                 refunded_amount: 0,
+                last_checked_in_at: 0,
             };
 
             store_payment(&env, payment);
@@ -1243,23 +1244,34 @@ impl TicketPaymentContract {
         }
 
         let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
-        if !registry_client.is_scanner_authorized(&payment.event_id, &scanner) {
+
+        // Allow organizer OR an authorized scanner
+        let organizer = registry_client
+            .get_organizer_address(&payment.event_id)
+            .ok_or(TicketPaymentError::EventNotFound)?;
+        let is_organizer = scanner == organizer;
+        let is_scanner = registry_client.is_scanner_authorized(&payment.event_id, &scanner);
+        if !is_organizer && !is_scanner {
             return Err(TicketPaymentError::UnauthorizedScanner);
         }
 
+        let now = env.ledger().timestamp();
+        let attendee = payment.buyer_address.clone();
         payment.status = PaymentStatus::CheckedIn;
-        payment.confirmed_at = Some(env.ledger().timestamp());
-        store_payment(&env, payment);
+        payment.last_checked_in_at = now;
+        store_payment(&env, payment.clone());
 
-        // env.events().publish(
-        //     (AgoraEvent::TicketCheckedIn,),
-        //     crate::events::TicketCheckedInEvent {
-        //             payment_id,
-        //             // event_id: payment.event_id.clone(),
-        //             scanner,
-        //             timestamp: env.ledger().timestamp(),
-        //         },
-        // );
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::TicketCheckedIn,),
+            TicketCheckedInEvent {
+                payment_id,
+                event_id: payment.event_id,
+                attendee,
+                scanner,
+                timestamp: now,
+            },
+        );
 
         Ok(())
     }
@@ -2226,6 +2238,7 @@ impl TicketPaymentContract {
             created_at: env.ledger().timestamp(),
             confirmed_at: Some(env.ledger().timestamp()),
             refunded_amount: 0,
+            last_checked_in_at: 0,
         };
         store_payment(&env, payment);
 
