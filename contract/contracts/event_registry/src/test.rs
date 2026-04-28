@@ -770,6 +770,54 @@ fn test_register_event_success() {
 }
 
 #[test]
+fn test_metadata_cid_store_and_retrieve() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(
+        &Address::generate(&env),
+        &Address::generate(&env),
+        &500,
+        &usdc_token,
+    );
+
+    // Exactly 46 characters — the minimum valid CIDv1 length
+    let cid_46 = String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3o");
+    assert_eq!(cid_46.len(), 46);
+
+    let event_id = String::from_str(&env, "evt_cid_test");
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "CID Test Event"),
+        organizer_address: Address::generate(&env),
+        payment_address: test_payment_address(&env),
+        metadata_cid: cid_46.clone(),
+        max_supply: 10,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+    });
+
+    let event = client.get_event(&event_id).unwrap();
+    assert_eq!(event.metadata_cid, cid_46);
+}
+
+#[test]
 fn test_register_event_name_trimming() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
