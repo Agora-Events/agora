@@ -7891,3 +7891,203 @@ fn test_discount_code_price_calculation() {
     assert_eq!(escrow.platform_fee, fee);
     assert_eq!(escrow.organizer_amount, expected_paid - fee);
 }
+
+// ── Affiliate Commission Rate Tests ──────────────────────────────────────────
+
+/// Helper: set up a minimal contract + funded buyer for affiliate tests.
+/// Returns (client, admin, usdc_id, organizer, registry_id).
+fn setup_affiliate_test(
+    env: &Env,
+) -> (
+    TicketPaymentContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(env))
+        .address();
+    let platform_wallet = Address::generate(env);
+    let registry_id = env.register(MockEventRegistryForReferral, ());
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+    (client, admin, usdc_id, platform_wallet)
+}
+
+/// Affiliate A gets 10% of platform fee; Affiliate B gets 5% for the same event.
+/// price=1000, fee_bps=500 → platform_fee=50
+/// A reward = 50 * 10% = 5; B reward = 50 * 5% = 2.5 (truncated to 2 in integer math)
+#[test]
+fn test_affiliate_a_10pct_affiliate_b_5pct_same_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _) = setup_affiliate_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+
+    let affiliate_a = Address::generate(&env);
+    let affiliate_b = Address::generate(&env);
+
+    // Register affiliate rates: A=10% (1000 bps), B=5% (500 bps)
+    client.set_affiliate_rate(&event_id, &affiliate_a, &1000u32);
+    client.set_affiliate_rate(&event_id, &affiliate_b, &500u32);
+
+    let price = 1000_0000000i128;
+    let platform_fee = price * 500 / 10000; // 50_0000000
+
+    // ── Payment via Affiliate A ──
+    let buyer_a = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer_a, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer_a, &client.address, &price, &99999);
+
+    let (_s, hash_a) = test_secret(&env);
+    client.process_payment(
+        &String::from_str(&env, "pay_a"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer_a,
+        &usdc_id,
+        &price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(affiliate_a.clone()),
+            discount_code: None,
+        },
+        &hash_a,
+    );
+
+    let reward_a = token::Client::new(&env, &usdc_id).balance(&affiliate_a);
+    // 50 * 1000/10000 = 5 USDC
+    assert_eq!(reward_a, platform_fee * 1000 / 10000);
+
+    // ── Payment via Affiliate B ──
+    let buyer_b = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer_b, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer_b, &client.address, &price, &99999);
+
+    let (_s, hash_b) = test_secret(&env);
+    client.process_payment(
+        &String::from_str(&env, "pay_b"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer_b,
+        &usdc_id,
+        &price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(affiliate_b.clone()),
+            discount_code: None,
+        },
+        &hash_b,
+    );
+
+    let reward_b = token::Client::new(&env, &usdc_id).balance(&affiliate_b);
+    // 50 * 500/10000 = 2.5 → 2 (integer truncation)
+    assert_eq!(reward_b, platform_fee * 500 / 10000);
+
+    // A earned more than B for the same event
+    assert!(reward_a > reward_b);
+}
+
+/// A referrer with no registered affiliate rate falls back to the default 20%.
+#[test]
+fn test_unregistered_referrer_uses_default_20pct() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _) = setup_affiliate_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let referrer = Address::generate(&env);
+
+    let price = 1000_0000000i128;
+    let platform_fee = price * 500 / 10000; // 50_0000000
+
+    let buyer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let (_s, hash) = test_secret(&env);
+    client.process_payment(
+        &String::from_str(&env, "pay_default"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(referrer.clone()),
+            discount_code: None,
+        },
+        &hash,
+    );
+
+    // Default: 20% of platform_fee = 50 * 20% = 10 USDC
+    let expected_default_reward = platform_fee * 2000 / 10000;
+    let actual_reward = token::Client::new(&env, &usdc_id).balance(&referrer);
+    assert_eq!(actual_reward, expected_default_reward);
+}
+
+/// set_affiliate_rate rejects rate_bps > MAX_BPS (10000).
+#[test]
+fn test_set_affiliate_rate_rejects_invalid_bps() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _) = setup_affiliate_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let affiliate = Address::generate(&env);
+
+    let result = client.try_set_affiliate_rate(&event_id, &affiliate, &10001u32);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidFeePercent)));
+}
+
+/// Affiliate reward is capped at the platform fee (rate_bps = MAX_BPS = 100%).
+#[test]
+fn test_affiliate_reward_capped_at_platform_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _) = setup_affiliate_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let affiliate = Address::generate(&env);
+
+    // 100% of platform fee goes to affiliate
+    client.set_affiliate_rate(&event_id, &affiliate, &10000u32);
+
+    let price = 1000_0000000i128;
+    let platform_fee = price * 500 / 10000; // 50_0000000
+
+    let buyer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
+
+    let (_s, hash) = test_secret(&env);
+    client.process_payment(
+        &String::from_str(&env, "pay_full"),
+        &event_id,
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &usdc_id,
+        &price,
+        &1,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: Some(affiliate.clone()),
+            discount_code: None,
+        },
+        &hash,
+    );
+
+    let reward = token::Client::new(&env, &usdc_id).balance(&affiliate);
+    assert_eq!(reward, platform_fee);
+
+    // Escrow platform_fee must be 0 — all of it went to the affiliate
+    let escrow = client.get_event_escrow_balance(&event_id);
+    assert_eq!(escrow.platform_fee, 0);
+}

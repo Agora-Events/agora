@@ -801,12 +801,15 @@ impl TicketPaymentContract {
             .checked_sub(total_platform_fee)
             .ok_or(TicketPaymentError::ArithmeticError)?;
 
-        let referral_reward = if options.referrer.is_some() {
+        let referral_reward = if let Some(ref ref_addr) = options.referrer {
+            // Use affiliate-specific rate if registered; otherwise fall back to 20% of platform fee.
+            let rate_bps =
+                crate::storage::get_affiliate_rate(&env, &event_id, ref_addr).unwrap_or(2000u32); // default: 20% = 2000 bps
             let reward = total_platform_fee
-                .checked_mul(20)
-                .and_then(|v| v.checked_div(100))
-                .ok_or(TicketPaymentError::ArithmeticError)?; // 20%
-                                                              // Cap: referral reward must never exceed the remaining platform fee.
+                .checked_mul(rate_bps as i128)
+                .and_then(|v| v.checked_div(MAX_BPS as i128))
+                .ok_or(TicketPaymentError::ArithmeticError)?;
+            // Cap: referral reward must never exceed the remaining platform fee.
             let reward = core::cmp::min(reward, total_platform_fee);
             total_platform_fee = total_platform_fee
                 .checked_sub(reward)
@@ -1811,6 +1814,37 @@ impl TicketPaymentContract {
 
         // Store the basis points, not the calculated amount
         set_transfer_fee(&env, event_id, bps);
+        Ok(())
+    }
+
+    /// Sets a per-event affiliate commission rate in basis points.
+    /// Only the event organizer can call this.
+    /// `rate_bps` must be in [1, 10000]. Set to 0 to remove (revert to default).
+    pub fn set_affiliate_rate(
+        env: Env,
+        event_id: String,
+        affiliate: Address,
+        rate_bps: u32,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+
+        if rate_bps > MAX_BPS {
+            return Err(TicketPaymentError::InvalidFeePercent);
+        }
+
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+
+        let event_info = match registry_client.try_get_event(&event_id) {
+            Ok(Ok(Some(info))) => info,
+            _ => return Err(TicketPaymentError::EventNotFound),
+        };
+
+        event_info.organizer_address.require_auth();
+
+        crate::storage::set_affiliate_rate(&env, event_id, &affiliate, rate_bps);
         Ok(())
     }
 
