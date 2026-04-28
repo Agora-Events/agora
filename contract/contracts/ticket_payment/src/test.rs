@@ -73,7 +73,7 @@ impl MockCancelledRegistry {
             end_time: 0,
         })
     }
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
 }
 
 // Mock Event Registry Contract
@@ -147,8 +147,15 @@ impl MockEventRegistry {
         None
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -221,7 +228,14 @@ impl MockEventRegistry2 {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -296,8 +310,15 @@ impl MockAuctionEventRegistry {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -320,7 +341,14 @@ impl MockEventRegistryNotFound {
         None
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -1070,7 +1098,13 @@ impl MockEventRegistryMaxSupply {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
         panic!("MaxSupplyExceeded");
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -1187,7 +1221,13 @@ impl MockEventRegistryWithInventory {
         })
     }
 
-    pub fn increment_inventory(env: Env, _event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -1422,7 +1462,13 @@ impl MockEventRegistryWithMilestones {
         })
     }
 
-    pub fn increment_inventory(env: Env, _event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -1774,8 +1820,15 @@ impl MockEventRegistryEarlyBird {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -2286,8 +2339,15 @@ impl MockEventRegistryWithOrganizer {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -2648,7 +2708,13 @@ impl MockPlatformRegistryE2E {
             .get(&MockPlatformDataKey::Event(event_id))
     }
 
-    pub fn increment_inventory(env: Env, event_id: String, tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let mut event = env
             .storage()
             .persistent()
@@ -2679,7 +2745,7 @@ impl MockPlatformRegistryE2E {
             .set(&MockPlatformDataKey::Event(event_id), &event);
     }
 
-    pub fn decrement_inventory(env: Env, event_id: String, tier_id: String) {
+    pub fn decrement_inventory(env: Env, event_id: String, tier_id: String, _user: Address) {
         let mut event = env
             .storage()
             .persistent()
@@ -3095,8 +3161,15 @@ impl MockEventRegistryRefund {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -3171,8 +3244,15 @@ impl MockEventRegistryWithResaleCap {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -3447,8 +3527,15 @@ impl MockRegistryZeroCap {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -4079,8 +4166,15 @@ impl MockEventRegistryUsdPriced {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -4791,7 +4885,14 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -4924,7 +5025,14 @@ impl MockEventRegistryWithLoyalty {
             end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5009,7 +5117,14 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5233,7 +5348,14 @@ impl MockEventRegistryCustomFee {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5367,8 +5489,15 @@ impl MockEventRegistryHighPrice {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -5480,8 +5609,15 @@ impl MockEventRegistryRefundDeadline {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -6064,8 +6200,15 @@ impl MockEventRegistryForDust {
             .set(&Symbol::new(&env, "payment_addr"), &payment_addr);
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -6266,7 +6409,14 @@ impl MockEventRegistryForReferral {
             end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -6349,7 +6499,14 @@ impl MockEventRegistryFullLoyaltyDiscount {
             end_time: 0,
         })
     }
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }

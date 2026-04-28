@@ -2560,7 +2560,7 @@ fn test_tier_supply_exceeded() {
     client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
 
     let result = client.try_increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
-    assert_eq!(result, Err(Ok(EventRegistryError::TierSupplyExceeded)));
+    assert_eq!(result, Err(Ok(EventRegistryError::TierSoldOut)));
 }
 
 #[test]
@@ -2654,6 +2654,124 @@ fn test_multiple_tiers_inventory() {
 
     let vip_tier = event_info.tiers.get(vip_id).unwrap();
     assert_eq!(vip_tier.current_sold, 1);
+}
+
+#[test]
+fn test_three_tiers_inventory_is_isolated_and_sold_out_tier_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = test_payment_address(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "three_tier_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let general_id = String::from_str(&env, "general");
+    let vip_id = String::from_str(&env, "vip");
+    let early_bird_id = String::from_str(&env, "early_bird");
+
+    let mut tiers = Map::new(&env);
+    tiers.set(
+        general_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 50,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+    tiers.set(
+        vip_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "VIP"),
+            price: 10000000,
+            tier_limit: 20,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+    tiers.set(
+        early_bird_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "Early Bird"),
+            price: 3000000,
+            tier_limit: 1,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Tiered Event"),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 71,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+    });
+
+    client.increment_inventory(&event_id, &general_id, &Address::generate(&env), &2);
+    client.increment_inventory(&event_id, &vip_id, &Address::generate(&env), &1);
+    client.increment_inventory(&event_id, &early_bird_id, &Address::generate(&env), &1);
+
+    let sold_out_attempt = client.try_increment_inventory(
+        &event_id,
+        &early_bird_id,
+        &Address::generate(&env),
+        &1,
+    );
+    assert_eq!(sold_out_attempt, Err(Ok(EventRegistryError::TierSoldOut)));
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.current_supply, 4);
+
+    let general_tier = event_info.tiers.get(general_id).unwrap();
+    assert_eq!(general_tier.current_sold, 2);
+
+    let vip_tier = event_info.tiers.get(vip_id).unwrap();
+    assert_eq!(vip_tier.current_sold, 1);
+
+    let early_bird_tier = event_info.tiers.get(early_bird_id).unwrap();
+    assert_eq!(early_bird_tier.current_sold, 1);
 }
 
 #[test]
@@ -5114,7 +5232,7 @@ fn test_tier_not_found_error_message() {
 
 #[test]
 fn test_tier_supply_exceeded_error_message() {
-    let buf = fmt_to_str(EventRegistryError::TierSupplyExceeded);
+    let buf = fmt_to_str(EventRegistryError::TierSoldOut);
     assert!(
         buf_starts_with(
             &buf,

@@ -99,7 +99,13 @@ impl MockRegistryE2E {
         })
     }
 
-    pub fn increment_inventory(env: Env, _event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -107,7 +113,7 @@ impl MockRegistryE2E {
             .set(&key, &(current + quantity as i128));
     }
 
-    pub fn decrement_inventory(env: Env, _event_id: String, _tier_id: String) {
+    pub fn decrement_inventory(env: Env, _event_id: String, _tier_id: String, _user: Address) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         if current > 0 {
@@ -220,7 +226,7 @@ impl MockRegistryCancelledE2E {
         })
     }
 
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
 
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
@@ -320,7 +326,13 @@ impl MockRegistryWithGoal {
         })
     }
 
-    pub fn increment_inventory(env: Env, event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = (Symbol::new(&env, "supply"), event_id);
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -328,7 +340,7 @@ impl MockRegistryWithGoal {
             .set(&key, &(current + quantity as i128));
     }
 
-    pub fn decrement_inventory(env: Env, event_id: String, _tier_id: String) {
+    pub fn decrement_inventory(env: Env, event_id: String, _tier_id: String, _user: Address) {
         let key = (Symbol::new(&env, "supply"), event_id);
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         if current > 0 {
@@ -1122,8 +1134,15 @@ impl MockRegistryAuction {
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
