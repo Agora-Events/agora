@@ -86,6 +86,9 @@ pub async fn list_events(
     let mut where_clauses = Vec::new();
     let mut param_count = 0;
     
+    // Always exclude flagged events from public listings
+    where_clauses.push("is_flagged = FALSE".to_string());
+    
     if filters.organizer_id.is_some() {
         param_count += 1;
         where_clauses.push(format!("organizer_id = ${}", param_count));
@@ -219,7 +222,7 @@ pub async fn get_event(
     
     // Cache miss or error, fetch from database
     let event = match sqlx::query_as::<_, Event>(
-        "SELECT * FROM events WHERE id = $1"
+        "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE"
     )
     .bind(event_id)
     .fetch_optional(&state.pool)
@@ -362,6 +365,63 @@ pub async fn submit_event_rating(
     };
 
     success(response, "Rating recorded successfully").into_response()
+}
+
+/// Toggle the flagged status of an event (admin only)
+///
+/// # Endpoint
+/// POST `/api/v1/admin/events/:id/toggle-flag`
+///
+/// # Description
+/// Flips the `is_flagged` status of the specified event.
+/// This endpoint is intended for admin use to moderate content.
+pub async fn toggle_event_flag(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // Fetch current flag status
+    let current_flagged = match sqlx::query_scalar::<_, bool>(
+        "SELECT is_flagged FROM events WHERE id = $1"
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(flagged)) => flagged,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch event flag status: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Toggle the flag
+    let new_flagged = !current_flagged;
+    if let Err(e) = sqlx::query(
+        "UPDATE events SET is_flagged = $1 WHERE id = $2"
+    )
+    .bind(new_flagged)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::error!("Failed to update event flag: {:?}", e);
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    // Invalidate cache for this event
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate cache for event {}: {:?}", event_id, e);
+    }
+
+    success(
+        serde_json::json!({ "is_flagged": new_flagged }),
+        "Event flag toggled successfully"
+    ).into_response()
 }
 
 #[cfg(test)]

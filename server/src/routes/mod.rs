@@ -34,7 +34,7 @@ use crate::middleware::request_id_tracing::trace_request_id;
 use crate::cache::RedisCache;
 use crate::handlers::{
     categories::{get_category, list_categories},
-    events::{get_event, list_events, submit_event_rating, EventState},
+    events::{get_event, list_events, submit_event_rating, toggle_event_flag, EventState},
     example_empty_success,
     example_not_found,
     example_validation_error,
@@ -80,10 +80,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
 
     // Admin sub-router — every request is recorded in audit_logs.
     let admin_routes = Router::new()
-        // Placeholder: real admin handlers are mounted here as features land.
+        .route("/events/:id/toggle-flag", post(toggle_event_flag))
         .route("/health", get(health_check))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
-        .with_state(pool.clone());
+        .with_state(event_state.clone());
 
     // WebSocket sub-router for real-time purchase updates.
     let ws_routes = Router::new()
@@ -148,6 +148,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
 
     Router::new()
         .nest("/api/v1", api_routes)
+        .nest("/api/v1/admin", admin_routes)
         .merge(deep_link_routes)
         .layer(create_security_headers_layer())
         .layer(create_cors_layer())
