@@ -1,5 +1,42 @@
 use soroban_sdk::{contracttype, Address, Map, String, Vec};
 
+/// Platform-wide category mapping for event discovery.
+/// IDs are stable and must not be renumbered once deployed.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum Category {
+    Music = 1,
+    Sports = 2,
+    Tech = 3,
+    Arts = 4,
+    Food = 5,
+    Business = 6,
+    Health = 7,
+    Education = 8,
+    Community = 9,
+    Other = 10,
+}
+
+impl Category {
+    /// Returns `Some(Category)` for a valid ID, `None` otherwise.
+    pub fn from_id(id: u32) -> Option<Self> {
+        match id {
+            1 => Some(Self::Music),
+            2 => Some(Self::Sports),
+            3 => Some(Self::Tech),
+            4 => Some(Self::Arts),
+            5 => Some(Self::Food),
+            6 => Some(Self::Business),
+            7 => Some(Self::Health),
+            8 => Some(Self::Education),
+            9 => Some(Self::Community),
+            10 => Some(Self::Other),
+            _ => None,
+        }
+    }
+}
+
 /// Represents a series or festival grouping multiple events
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -145,6 +182,8 @@ pub struct EventInfo {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Category IDs for discovery (up to 5). See [`Category`] for the platform-wide mapping.
+    pub category_ids: Option<Vec<u32>>,
     /// Unix timestamp when the event starts (0 = not set)
     pub start_time: u64,
     /// Whether the event is private and should be excluded from global public counters.
@@ -204,6 +243,8 @@ pub struct EventRegistrationArgs {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Category IDs for discovery (up to 5). See [`Category`] for the platform-wide mapping.
+    pub category_ids: Option<Vec<u32>>,
     /// Unix timestamp when the event starts (0 = not set)
     pub start_time: u64,
     /// Whether the event is private and should be excluded from global public counters.
@@ -418,4 +459,6 @@ pub enum DataKey {
     ContractAdmin,
     /// Mapping of organizer address to approved status (Instance)
     ApprovedOrganizer(Address),
+    /// Index of event_ids tagged with a given category ID (Persistent)
+    CategoryEvents(u32),
 }

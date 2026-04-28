@@ -64,6 +64,7 @@ fn test_register_and_get_series() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
@@ -87,6 +88,7 @@ fn test_register_and_get_series() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     // Register a series
@@ -145,6 +147,7 @@ fn test_issue_and_use_series_pass() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
@@ -327,6 +330,7 @@ fn test_storage_operations() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
         feedback_cid: None,
         cancellation_reason: None,
     };
@@ -427,6 +431,7 @@ fn test_get_total_tickets_sold_uses_event_current_supply() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
         feedback_cid: None,
         cancellation_reason: None,
     });
@@ -480,6 +485,7 @@ fn test_get_active_events_count_tracks_status_changes() {
             transfer_lock_duration: 0,
             accepted_tokens: soroban_sdk::Vec::new(&env),
             use_global_whitelist: true,
+            category_ids: None,
         });
     }
 
@@ -544,6 +550,7 @@ fn test_organizer_events_list() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
         feedback_cid: None,
         cancellation_reason: None,
     };
@@ -582,6 +589,7 @@ fn test_organizer_events_list() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
         feedback_cid: None,
         cancellation_reason: None,
     };
@@ -647,6 +655,7 @@ fn test_get_organizer_receipts_returns_archived_receipts() {
             transfer_lock_duration: 0,
             accepted_tokens: soroban_sdk::Vec::new(&env),
             use_global_whitelist: true,
+            category_ids: None,
             feedback_cid: None,
             cancellation_reason: None,
         };
@@ -755,6 +764,7 @@ fn test_register_event_success() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -814,6 +824,7 @@ fn test_register_event_name_trimming() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let stored = client.get_event(&event_id).unwrap();
@@ -886,6 +897,7 @@ fn test_register_event_invalid_target_deadline() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -912,6 +924,7 @@ fn test_register_event_invalid_target_deadline() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
 
@@ -938,6 +951,7 @@ fn test_register_event_invalid_target_deadline() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let stored = client.get_event(&event_id).unwrap();
@@ -980,6 +994,7 @@ fn test_register_event_refund_deadline_after_end_time_fails() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
         end_time: 5000,
         refund_deadline: 5000, // equal to end_time — should fail
         target_deadline: None,
@@ -1041,6 +1056,7 @@ fn test_register_event_target_deadline_after_end_time_fails() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
         end_time: 5000,
         refund_deadline: 0,
         target_deadline: Some(5000), // equal to end_time — should fail
@@ -1102,6 +1118,7 @@ fn test_register_event_rejects_contract_as_organizer() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -1148,6 +1165,7 @@ fn test_register_event_rejects_zero_organizer_address() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
@@ -1196,6 +1214,7 @@ fn test_register_event_unlimited_supply() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -1246,6 +1265,7 @@ fn test_register_duplicate_event_fails() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
@@ -1270,6 +1290,7 @@ fn test_register_duplicate_event_fails() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -1313,6 +1334,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(
         short_result,
@@ -1345,6 +1367,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(
         wrong_prefix_result,
@@ -1377,6 +1400,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(
         oversized_result,
@@ -1427,6 +1451,7 @@ fn test_get_event_payment_info() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -1477,6 +1502,7 @@ fn test_update_event_status() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1526,6 +1552,7 @@ fn test_event_inactive_error() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1576,6 +1603,7 @@ fn test_complete_event_lifecycle() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -1638,6 +1666,7 @@ fn test_update_metadata_success() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let new_metadata_cid = String::from_str(
@@ -1693,6 +1722,7 @@ fn test_update_metadata_invalid_cid() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let wrong_char_cid = String::from_str(
@@ -1796,6 +1826,7 @@ fn test_set_custom_event_fee() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     // Default fee
@@ -1858,6 +1889,7 @@ fn test_set_custom_event_fee_exceeds_max() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     // Try to set custom fee exceeding 10000 bps (100%)
@@ -1936,6 +1968,7 @@ fn test_increment_inventory_success() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
@@ -2016,6 +2049,7 @@ fn test_increment_inventory_max_supply_exceeded() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
@@ -2091,6 +2125,7 @@ fn test_increment_inventory_bulk_exceeds_max_supply() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     // Fill one slot, then attempt a bulk call that overshoots max_supply in one shot
@@ -2166,6 +2201,7 @@ fn test_increment_inventory_unlimited_supply() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     for _ in 0..10 {
@@ -2260,6 +2296,7 @@ fn test_increment_inventory_inactive_event() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     client.update_event_status(&event_id, &false);
@@ -2328,6 +2365,7 @@ fn test_increment_inventory_persists_across_reads() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     for _ in 0..5 {
@@ -2415,6 +2453,7 @@ fn test_tier_limit_exceeds_max_supply() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(
         result,
@@ -2483,6 +2522,7 @@ fn test_tier_not_found() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -2553,6 +2593,7 @@ fn test_tier_supply_exceeded() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
@@ -2640,6 +2681,7 @@ fn test_multiple_tiers_inventory() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     client.increment_inventory(&event_id, &general_id, &Address::generate(&env), &1);
@@ -2747,6 +2789,7 @@ fn test_three_tiers_inventory_is_isolated_and_sold_out_tier_errors() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     client.increment_inventory(&event_id, &general_id, &Address::generate(&env), &2);
@@ -2840,6 +2883,7 @@ fn test_increment_inventory_supply_overflow() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
         feedback_cid: None,
         cancellation_reason: None,
     });
@@ -2917,6 +2961,7 @@ fn test_increment_inventory_tier_sold_overflow() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
         feedback_cid: None,
         cancellation_reason: None,
     });
@@ -2970,6 +3015,7 @@ fn test_update_event_status_noop_skips_event() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let _ = env.events().all();
@@ -3053,6 +3099,7 @@ fn test_blacklist_prevents_event_registration() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -3104,6 +3151,7 @@ fn test_update_metadata_noop_skips_event() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let _ = env.events().all();
@@ -3194,6 +3242,7 @@ fn test_blacklist_suspends_active_events() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -3328,6 +3377,7 @@ fn test_register_event_with_resale_cap() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -3378,6 +3428,7 @@ fn test_register_event_resale_cap_zero() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -3428,6 +3479,7 @@ fn test_register_event_resale_cap_none() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -3478,6 +3530,7 @@ fn test_postpone_event_sets_grace_period() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     // Set ledger time and grace period end in the future
@@ -3535,6 +3588,7 @@ fn test_register_event_resale_cap_invalid() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -3581,6 +3635,7 @@ fn test_cancel_event_success() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     client.cancel_event(
@@ -3637,6 +3692,7 @@ fn test_archive_event_rejects_active_event() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let result = client.try_archive_event(&event_id);
@@ -3684,6 +3740,7 @@ fn test_cancel_already_cancelled_fails() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     client.cancel_event(&event_id, &None);
@@ -3732,6 +3789,7 @@ fn test_update_status_on_cancelled_event_fails() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     client.cancel_event(&event_id, &None);
@@ -4382,6 +4440,7 @@ fn test_register_event_with_banner_cid() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -4438,6 +4497,7 @@ fn test_goal_met_event_fires_only_once() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -4503,6 +4563,7 @@ fn test_register_event_without_banner_cid() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     // Drain setup events
@@ -4576,6 +4637,7 @@ fn test_series_pass_issued_at_timestamp() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     // Register a series
@@ -4659,6 +4721,7 @@ fn base_args(
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(env),
         use_global_whitelist: true,
+        category_ids: None,
     }
 }
 
@@ -5154,6 +5217,7 @@ fn test_cancelled_status_guard() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     // Cancel event
@@ -5295,6 +5359,7 @@ fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     assert_eq!(
@@ -5358,6 +5423,7 @@ fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     assert!(result.is_ok());
@@ -5417,6 +5483,7 @@ fn test_register_event_restocking_fee_zero_always_valid() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     assert!(result.is_ok());
@@ -5476,6 +5543,7 @@ fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation()
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     assert_eq!(
@@ -5568,6 +5636,7 @@ fn test_register_event_tier_limit_overflow() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -5630,6 +5699,7 @@ fn test_register_event_invalid_tier_limit_negative() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidQuantity)));
 }
@@ -5689,6 +5759,7 @@ fn test_register_event_milestone_overflow() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
 }
@@ -5733,6 +5804,7 @@ fn tags_base_args(env: &Env, event_id: &str, organizer: &Address) -> EventRegist
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(env),
         use_global_whitelist: true,
+        category_ids: None,
     }
 }
 
@@ -5989,6 +6061,7 @@ fn register_event_with_privacy(
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 }
 
@@ -6174,6 +6247,7 @@ fn test_max_per_user_limit_enforced() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let vip_tier = String::from_str(&env, "vip");
@@ -6381,6 +6455,7 @@ fn test_ticket_tier_loyalty_multiplier_stored_in_event() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let event = client
@@ -6433,6 +6508,7 @@ fn setup_event_with_end_time(
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     (admin, organizer)
 }
@@ -6470,6 +6546,7 @@ fn setup_event_with_end_time_no_init(
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 }
 
@@ -6659,6 +6736,7 @@ fn test_set_feedback_cid_cancelled_event_fails() {
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     let event = client
@@ -6744,9 +6822,146 @@ fn test_transfer_lock_duration_stored() {
         transfer_lock_duration: 86400, // 24 hours in seconds
         accepted_tokens: soroban_sdk::Vec::new(&env),
         use_global_whitelist: true,
+        category_ids: None,
     });
 
     // Verify the transfer lock duration is stored correctly
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.transfer_lock_duration, 86400);
+}
+
+fn make_args(
+    env: &Env,
+    event_id: &str,
+    organizer: &Address,
+    category_ids: Option<soroban_sdk::Vec<u32>>,
+) -> EventRegistrationArgs {
+    EventRegistrationArgs {
+        event_id: String::from_str(env, event_id),
+        name: String::from_str(env, "Test Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(env),
+        metadata_cid: String::from_str(
+            env,
+            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+        ),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        category_ids,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
+    }
+}
+
+fn setup_contract(env: &Env) -> (EventRegistryClient<'_>, Address) {
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let platform_wallet = Address::generate(env);
+    let usdc_token = Address::generate(env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    (client, admin)
+}
+
+#[test]
+fn test_category_filter_returns_tagged_events() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+
+    // Music = 1, Sports = 2
+    let music_ids = soroban_sdk::vec![&env, 1u32];
+    let sports_ids = soroban_sdk::vec![&env, 2u32];
+    let both_ids = soroban_sdk::vec![&env, 1u32, 2u32];
+
+    client.register_event(&make_args(&env, "music_event", &organizer, Some(music_ids)));
+    client.register_event(&make_args(
+        &env,
+        "sports_event",
+        &organizer,
+        Some(sports_ids),
+    ));
+    client.register_event(&make_args(&env, "both_event", &organizer, Some(both_ids)));
+    client.register_event(&make_args(&env, "no_cat_event", &organizer, None));
+
+    let music_events = client.get_events_by_category(&1u32);
+    assert_eq!(music_events.len(), 2);
+    assert!(music_events.contains(String::from_str(&env, "music_event")));
+    assert!(music_events.contains(String::from_str(&env, "both_event")));
+
+    let sports_events = client.get_events_by_category(&2u32);
+    assert_eq!(sports_events.len(), 2);
+    assert!(sports_events.contains(String::from_str(&env, "sports_event")));
+    assert!(sports_events.contains(String::from_str(&env, "both_event")));
+
+    // Uncategorised event must not appear in any category
+    let tech_events = client.get_events_by_category(&3u32);
+    assert_eq!(tech_events.len(), 0);
+}
+
+#[test]
+fn test_category_ids_stored_on_event() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+
+    let ids = soroban_sdk::vec![&env, 1u32, 3u32];
+    client.register_event(&make_args(
+        &env,
+        "tagged_event",
+        &organizer,
+        Some(ids.clone()),
+    ));
+
+    let event = client
+        .get_event(&String::from_str(&env, "tagged_event"))
+        .unwrap();
+    assert_eq!(event.category_ids, Some(ids));
+}
+
+#[test]
+#[should_panic]
+fn test_category_ids_max_5_enforced() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+
+    // 6 IDs — should fail
+    let ids = soroban_sdk::vec![&env, 1u32, 2u32, 3u32, 4u32, 5u32, 6u32];
+    client.register_event(&make_args(&env, "too_many_cats", &organizer, Some(ids)));
+}
+
+#[test]
+#[should_panic]
+fn test_invalid_category_id_rejected() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+
+    // ID 99 is not a valid Category
+    let ids = soroban_sdk::vec![&env, 99u32];
+    client.register_event(&make_args(&env, "bad_cat", &organizer, Some(ids)));
+}
+
+#[test]
+fn test_unknown_category_returns_empty() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+
+    // No events registered under category 5
+    let result = client.get_events_by_category(&5u32);
+    assert_eq!(result.len(), 0);
 }

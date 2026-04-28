@@ -92,6 +92,7 @@ fn register_free_event(
         transfer_lock_duration: 0,
         accepted_tokens: soroban_sdk::Vec::new(env),
         use_global_whitelist: true,
+        category_ids: None,
     });
     id
 }

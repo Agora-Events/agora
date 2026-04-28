@@ -96,8 +96,9 @@ use crate::events::{
     StakerRewardsDistributedEvent, TokenWhitelistUpdatedEvent,
 };
 use crate::types::{
-    BlacklistAuditEntry, DataKey, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus,
-    GuestProfile, MultiSigConfig, OrganizerStake, PaymentInfo, SeriesPass, SeriesRegistry,
+    BlacklistAuditEntry, Category, DataKey, EventInfo, EventReceipt, EventRegistrationArgs,
+    EventStatus, GuestProfile, MultiSigConfig, OrganizerStake, PaymentInfo, SeriesPass,
+    SeriesRegistry,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
@@ -396,6 +397,18 @@ impl EventRegistry {
             }
         }
 
+        // Validate category IDs: max 5, each must map to a known Category
+        if let Some(ref ids) = args.category_ids {
+            if ids.len() > 5 {
+                return Err(EventRegistryError::InvalidCategoryId);
+            }
+            for id in ids.iter() {
+                if Category::from_id(id).is_none() {
+                    return Err(EventRegistryError::InvalidCategoryId);
+                }
+            }
+        }
+
         if let Some(deadline) = args.target_deadline {
             if deadline <= env.ledger().timestamp() {
                 return Err(EventRegistryError::InvalidTargetDeadline);
@@ -444,6 +457,7 @@ impl EventRegistry {
             custom_fee_bps: None,
             banner_cid: args.banner_cid,
             tags: args.tags,
+            category_ids: args.category_ids.clone(),
             start_time: args.start_time,
             is_private: args.is_private,
             end_time: args.end_time,
@@ -455,6 +469,13 @@ impl EventRegistry {
         };
 
         storage::store_event(&env, event_info);
+
+        // Index the event under each category ID for fast filtering
+        if let Some(ref ids) = args.category_ids {
+            for id in ids.iter() {
+                storage::index_event_category(&env, id, args.event_id.clone());
+            }
+        }
 
         env.events().publish(
             (AgoraEvent::EventRegistered,),
@@ -747,6 +768,12 @@ impl EventRegistry {
     /// Retrieves all event IDs for an organizer.
     pub fn get_organizer_events(env: Env, organizer: Address) -> Vec<String> {
         storage::get_organizer_events(&env, &organizer)
+    }
+
+    /// Returns all event IDs tagged with the given category ID.
+    /// Returns an empty list for unknown or unused category IDs.
+    pub fn get_events_by_category(env: Env, category_id: u32) -> Vec<String> {
+        storage::get_events_by_category(&env, category_id)
     }
 
     /// Retrieves all archived event receipts for an organizer.

@@ -56,6 +56,7 @@ pub enum EventRegistryError {
     StakingNotConfigured = 58,
     InvalidDeadline = 61, // deadline validation
     InvalidStakeAmount = 70,
+    InvalidCategoryId = 71,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -194,6 +195,9 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::ProposalAlreadyCancelled => {
                 write!(f, "Proposal has already been cancelled")
+            }
+            EventRegistryError::InvalidCategoryId => {
+                write!(f, "Category ID is invalid or list exceeds 5 entries")
             }
         }
     }
