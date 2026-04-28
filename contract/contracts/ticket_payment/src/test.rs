@@ -6,8 +6,14 @@ use super::types::{DataKey, ParameterChange, Payment, PaymentStatus};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, Events, Ledger},
-    token, Address, Bytes, Env, IntoVal, String, Symbol, TryIntoVal,
+    token, Address, Bytes, BytesN, Env, IntoVal, String, Symbol, TryIntoVal,
 };
+
+fn test_secret(env: &Env) -> (Bytes, BytesN<32>) {
+    let secret = Bytes::from_slice(env, b"test_secret_value");
+    let hash: BytesN<32> = env.crypto().sha256(&secret).into();
+    (secret, hash)
+}
 
 // Mock registry that returns a cancelled event
 #[soroban_sdk::contract]
@@ -395,6 +401,7 @@ fn test_process_payment_success() {
     let event_id = String::from_str(&env, "event_1");
     let tier_id = String::from_str(&env, "tier_1");
 
+    let (_secret, hash) = test_secret(&env);
     let result_id = client.process_payment(
         &payment_id,
         &event_id,
@@ -405,6 +412,7 @@ fn test_process_payment_success() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result_id, payment_id);
 
@@ -495,6 +503,7 @@ fn test_process_payment_zero_amount() {
     let buyer = Address::generate(&env);
     let payment_id = String::from_str(&env, "pay_1");
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "event_1"),
@@ -505,6 +514,7 @@ fn test_process_payment_zero_amount() {
         &1,
         &None,
         &None,
+        &hash,
     );
 }
 
@@ -531,6 +541,7 @@ fn test_batch_purchase_success() {
     let event_id = String::from_str(&env, "event_1");
     let tier_id = String::from_str(&env, "tier_1");
 
+    let (_secret, hash) = test_secret(&env);
     let result_id = client.process_payment(
         &payment_id,
         &event_id,
@@ -541,6 +552,7 @@ fn test_batch_purchase_success() {
         &quantity,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result_id, payment_id);
 
@@ -590,6 +602,7 @@ fn test_fee_calculation_variants() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "p1"),
         &String::from_str(&env, "event_1"),
@@ -600,6 +613,7 @@ fn test_fee_calculation_variants() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let payment = client
@@ -629,6 +643,7 @@ fn test_process_payment_not_found() {
     let buyer = Address::generate(&env);
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &1000_0000000i128);
 
+    let (_secret, hash) = test_secret(&env);
     let res = client.try_process_payment(
         &String::from_str(&env, "p1"),
         &String::from_str(&env, "event_1"),
@@ -639,6 +654,7 @@ fn test_process_payment_not_found() {
         &1,
         &None,
         &None,
+        &hash,
     );
     // Since panic inside get_event_payment_info cannot easily map to get_code() == 2 right now without explicit Error returning in the mock,
     // this might return a generic EventNotFound due to our fallback logic.
@@ -887,6 +903,7 @@ fn test_process_payment_with_non_whitelisted_token() {
     let non_whitelisted_token = Address::generate(&env);
     let buyer = Address::generate(&env);
 
+    let (_secret, hash) = test_secret(&env);
     let res = client.try_process_payment(
         &String::from_str(&env, "p1"),
         &String::from_str(&env, "event_1"),
@@ -897,6 +914,7 @@ fn test_process_payment_with_non_whitelisted_token() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     assert_eq!(res, Err(Ok(TicketPaymentError::TokenNotWhitelisted)));
@@ -933,6 +951,7 @@ fn test_process_payment_with_multiple_tokens() {
     token::Client::new(&env, &usdc_id).approve(&buyer1, &client.address, &usdc_amount, &99999);
     token::Client::new(&env, &xlm_id).approve(&buyer2, &client.address, &xlm_amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_usdc"),
         &String::from_str(&env, "event_1"),
@@ -943,8 +962,10 @@ fn test_process_payment_with_multiple_tokens() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_xlm"),
         &String::from_str(&env, "event_1"),
@@ -955,6 +976,7 @@ fn test_process_payment_with_multiple_tokens() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Check escrow balances instead of direct transfers
@@ -1060,6 +1082,7 @@ fn test_process_payment_max_supply_exceeded() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let res = client.try_process_payment(
         &String::from_str(&env, "p1"),
         &String::from_str(&env, "event_1"),
@@ -1070,6 +1093,7 @@ fn test_process_payment_max_supply_exceeded() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     assert!(res.is_err());
@@ -1176,6 +1200,7 @@ fn test_inventory_increment_on_successful_payment() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &(amount * 5), &99999);
 
     // Process first payment - should succeed
+    let (_secret, hash) = test_secret(&env);
     let result1 = client.process_payment(
         &String::from_str(&env, "pay_1"),
         &String::from_str(&env, "event_1"),
@@ -1186,10 +1211,12 @@ fn test_inventory_increment_on_successful_payment() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result1, String::from_str(&env, "pay_1"));
 
     // Process second payment - should also succeed
+    let (_secret, hash) = test_secret(&env);
     let result2 = client.process_payment(
         &String::from_str(&env, "pay_2"),
         &String::from_str(&env, "event_1"),
@@ -1200,6 +1227,7 @@ fn test_inventory_increment_on_successful_payment() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result2, String::from_str(&env, "pay_2"));
 }
@@ -1220,6 +1248,7 @@ fn test_withdraw_organizer_funds() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     let event_id = String::from_str(&env, "event_1");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_1"),
         &event_id,
@@ -1230,6 +1259,7 @@ fn test_withdraw_organizer_funds() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let balance = client.get_event_escrow_balance(&event_id);
@@ -1258,6 +1288,7 @@ fn test_withdraw_platform_fees() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     let event_id = String::from_str(&env, "event_1");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_1"),
         &event_id,
@@ -1268,6 +1299,7 @@ fn test_withdraw_platform_fees() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let balance = client.get_event_escrow_balance(&event_id);
@@ -1402,6 +1434,7 @@ fn test_withdraw_with_milestones() {
     let tier_id = String::from_str(&env, "tier_1");
 
     // Buy 1 ticket (Threshold 2 not reached, 0% release)
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "p1"),
         &event_id,
@@ -1412,11 +1445,13 @@ fn test_withdraw_with_milestones() {
         &1,
         &None,
         &None,
+        &hash,
     );
     let withdrawn1 = client.withdraw_organizer_funds(&event_id, &usdc_id);
     assert_eq!(withdrawn1, 0); // Still 0%
 
     // Buy 2nd ticket (Threshold 2 reached -> 25% of 2 * 95 = 47.5)
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "p2"),
         &event_id,
@@ -1427,6 +1462,7 @@ fn test_withdraw_with_milestones() {
         &1,
         &None,
         &None,
+        &hash,
     );
     let withdrawn2 = client.withdraw_organizer_funds(&event_id, &usdc_id);
     let expected_revenue_2_tickets = 190_0000000i128; // 95 + 95
@@ -1438,6 +1474,7 @@ fn test_withdraw_with_milestones() {
     assert_eq!(withdrawn3, 0);
 
     // Buy 3rd ticket (Threshold 4 not reached -> still 25% overall)
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "p3"),
         &event_id,
@@ -1448,6 +1485,7 @@ fn test_withdraw_with_milestones() {
         &1,
         &None,
         &None,
+        &hash,
     );
     let withdrawn4 = client.withdraw_organizer_funds(&event_id, &usdc_id);
     let expected_revenue_3_tickets = 285_0000000i128; // 95 * 3
@@ -1455,6 +1493,7 @@ fn test_withdraw_with_milestones() {
     assert_eq!(withdrawn4, expected_withdraw_25_total - withdrawn2);
 
     // Buy 4th ticket (Threshold 4 reached -> 50% overall)
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "p4"),
         &event_id,
@@ -1465,6 +1504,7 @@ fn test_withdraw_with_milestones() {
         &1,
         &None,
         &None,
+        &hash,
     );
     let withdrawn5 = client.withdraw_organizer_funds(&event_id, &usdc_id);
     let expected_revenue_4_tickets = 380_0000000i128;
@@ -1720,6 +1760,7 @@ fn test_early_bird_pricing_active() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &1000_0000000i128, &99999);
 
     let payment_id = String::from_str(&env, "pay_eb_1");
+    let (_secret, hash) = test_secret(&env);
     let result_id = client.process_payment(
         &payment_id,
         &String::from_str(&env, "event_eb_1"),
@@ -1730,6 +1771,7 @@ fn test_early_bird_pricing_active() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     assert_eq!(result_id, payment_id);
@@ -1763,6 +1805,7 @@ fn test_early_bird_pricing_expired() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &2500_0000000i128, &99999);
 
     let payment_id_fail = String::from_str(&env, "pay_eb_fail");
+    let (_secret, hash) = test_secret(&env);
     let result_fail = client.try_process_payment(
         &payment_id_fail,
         &String::from_str(&env, "event_eb_1"),
@@ -1773,11 +1816,13 @@ fn test_early_bird_pricing_expired() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result_fail, Err(Ok(TicketPaymentError::InvalidPrice)));
 
     // Try paying standard price
     let payment_id_success = String::from_str(&env, "pay_eb_success");
+    let (_secret, hash) = test_secret(&env);
     let result_success = client.process_payment(
         &payment_id_success,
         &String::from_str(&env, "event_eb_1"),
@@ -1788,6 +1833,7 @@ fn test_early_bird_pricing_expired() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result_success, payment_id_success);
 }
@@ -1822,6 +1868,7 @@ fn test_price_switched_event_emitted_exactly_once() {
     let event_id = String::from_str(&env, "event_eb_1");
     let tier_id_str = String::from_str(&env, "tier_1");
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_1"),
         &event_id,
@@ -1832,10 +1879,12 @@ fn test_price_switched_event_emitted_exactly_once() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // After setting ledger exactly at the deadline (still early bird)
     env.ledger().with_mut(|li| li.timestamp = 1000000);
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_2"),
         &event_id,
@@ -1846,10 +1895,12 @@ fn test_price_switched_event_emitted_exactly_once() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Setting ledger past deadline triggers switch
     env.ledger().with_mut(|li| li.timestamp = 1000001);
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_3"),
         &event_id,
@@ -1860,10 +1911,12 @@ fn test_price_switched_event_emitted_exactly_once() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // And another payment long past deadline
     env.ledger().with_mut(|li| li.timestamp = 1500000);
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_4"),
         &event_id,
@@ -1874,6 +1927,7 @@ fn test_price_switched_event_emitted_exactly_once() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Now count the occurrences of PriceSwitchedEvent in the logs
@@ -2060,6 +2114,7 @@ fn test_protocol_revenue_reporting_views() {
     usdc_token.mint(&buyer, &amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "metrics_p1"),
         &event_id,
@@ -2070,6 +2125,7 @@ fn test_protocol_revenue_reporting_views() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let expected_fee = (amount * 500) / 10000;
@@ -2233,6 +2289,7 @@ fn test_add_discount_hashes_and_invalid_code_rejected() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     let wrong_preimage = Bytes::from_slice(&env, b"WRONG_CODE");
+    let (_secret, hash) = test_secret(&env);
     let res = client.try_process_payment(
         &String::from_str(&env, "pay_1"),
         &event_id,
@@ -2266,6 +2323,7 @@ fn test_gas_profile_process_payment_budget() {
     usdc_token.mint(&buyer, &amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "gas_prof_pay"),
         &String::from_str(&env, "event_1"),
@@ -2276,6 +2334,7 @@ fn test_gas_profile_process_payment_budget() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let post_budget = env.cost_estimate().budget();
@@ -2307,6 +2366,7 @@ fn test_process_payment_with_valid_discount_code() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &discounted_amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &discounted_amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let result = client.process_payment(
         &String::from_str(&env, "pay_1"),
         &event_id,
@@ -2343,6 +2403,7 @@ fn test_discount_code_one_time_use() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &(discounted * 2));
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &(discounted * 2), &99999);
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_first"),
         &event_id,
@@ -2355,6 +2416,7 @@ fn test_discount_code_one_time_use() {
         &None,
     );
 
+    let (_secret, hash) = test_secret(&env);
     let res = client.try_process_payment(
         &String::from_str(&env, "pay_second"),
         &event_id,
@@ -2381,6 +2443,7 @@ fn test_process_payment_no_code_unchanged() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_nodiscount"),
         &String::from_str(&env, "event_1"),
@@ -2391,6 +2454,7 @@ fn test_process_payment_no_code_unchanged() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let escrow = client.get_event_escrow_balance(&String::from_str(&env, "event_1"));
@@ -2657,6 +2721,7 @@ fn test_integration_full_platform_day() {
         token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
         token::Client::new(&env, &usdc_id).approve(&buyer, &payment_client.address, &amount, &9999);
 
+        let (_secret, hash) = test_secret(&env);
         payment_client.process_payment(
             &payment_id,
             &event_id,
@@ -2723,6 +2788,7 @@ fn test_integration_edge_cases() {
         &1000_0000000i128,
         &9999,
     );
+    let (_secret, hash) = test_secret(&env);
     let empty_res = payment_client.try_process_payment(
         &String::from_str(&env, "empty-pay"),
         &empty_event_id,
@@ -2733,6 +2799,7 @@ fn test_integration_edge_cases() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(empty_res, Err(Ok(TicketPaymentError::TierNotFound)));
 
@@ -2768,6 +2835,7 @@ fn test_integration_edge_cases() {
         &1000_0000000i128,
         &9999,
     );
+    let (_secret, hash) = test_secret(&env);
     payment_client.process_payment(
         &String::from_str(&env, "sold-1"),
         &sold_event_id,
@@ -2778,6 +2846,7 @@ fn test_integration_edge_cases() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let buyer2 = Address::generate(&env);
@@ -2788,6 +2857,7 @@ fn test_integration_edge_cases() {
         &1000_0000000i128,
         &9999,
     );
+    let (_secret, hash) = test_secret(&env);
     let sold_res = payment_client.try_process_payment(
         &String::from_str(&env, "sold-2"),
         &sold_event_id,
@@ -2798,12 +2868,14 @@ fn test_integration_edge_cases() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert!(sold_res.is_err());
 
     // Edge 3: failed token transfer due to missing approval.
     let no_approval_buyer = Address::generate(&env);
     token::StellarAssetClient::new(&env, &usdc_id).mint(&no_approval_buyer, &1000_0000000i128);
+    let (_secret, hash) = test_secret(&env);
     let transfer_res = payment_client.try_process_payment(
         &String::from_str(&env, "no-approval"),
         &sold_event_id,
@@ -2814,6 +2886,7 @@ fn test_integration_edge_cases() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert!(transfer_res.is_err());
 }
@@ -2874,6 +2947,7 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
         } else {
             String::from_str(&env, "cg-b")
         };
+        let (_secret, hash) = test_secret(&env);
         let res = payment_client.try_process_payment(
             &pid, &event_id, &tier_id, &buyer, &usdc_id, &amount, &1, &None, &None,
         );
@@ -3302,6 +3376,7 @@ fn test_request_guest_refund_success_with_fee() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &1000, &9999);
 
     let payment_id = String::from_str(&env, "p1");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "e1"),
@@ -3312,6 +3387,7 @@ fn test_request_guest_refund_success_with_fee() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Initial escrow: 1000 total. Platform fee 5% = 50. Organizer = 950.
@@ -3357,6 +3433,7 @@ fn test_request_guest_refund_deadline_passed() {
     let payment_id = String::from_str(&env, "p1");
     // We can still process payment if deadlines are 0/past, but refund check should fail.
     // Actually process_payment might not check refund_deadline, only request_guest_refund does.
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "e1"),
@@ -3367,6 +3444,7 @@ fn test_request_guest_refund_deadline_passed() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let res = client.try_request_guest_refund(&payment_id);
@@ -3386,6 +3464,7 @@ fn test_platform_fee_withdrawal_with_cap() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &9999);
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "p1"),
         &String::from_str(&env, "event_1"),
@@ -3396,6 +3475,7 @@ fn test_platform_fee_withdrawal_with_cap() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let expected_fee = (amount * 500) / 10000; // 50 USDC
@@ -3475,6 +3555,7 @@ fn test_process_payment_paused() {
     client.set_pause(&true);
 
     let buyer = Address::generate(&env);
+    let (_secret, hash) = test_secret(&env);
     let res = client.try_process_payment(
         &String::from_str(&env, "p1"),
         &String::from_str(&env, "event_1"),
@@ -3485,6 +3566,7 @@ fn test_process_payment_paused() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
 }
@@ -3710,6 +3792,7 @@ fn test_dispute_blocks_withdrawal() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     let event_id = String::from_str(&env, "event_1");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "pay_1"),
         &event_id,
@@ -3720,6 +3803,7 @@ fn test_dispute_blocks_withdrawal() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Set event as disputed
@@ -3754,6 +3838,7 @@ fn test_admin_refund_during_dispute() {
 
     let event_id = String::from_str(&env, "event_1");
     let payment_id = String::from_str(&env, "pay_1");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &event_id,
@@ -3764,6 +3849,7 @@ fn test_admin_refund_during_dispute() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Set event as disputed
@@ -3941,6 +4027,7 @@ fn test_usd_priced_payment_success() {
     token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &expected_amount);
     token::Client::new(&env, &token_id).approve(&buyer, &client.address, &expected_amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_usd_1"),
         &String::from_str(&env, "event_1"),
@@ -3951,6 +4038,7 @@ fn test_usd_priced_payment_success() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert!(result.is_ok());
 }
@@ -3969,6 +4057,7 @@ fn test_usd_priced_payment_within_slippage() {
     token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
     token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_usd_2"),
         &String::from_str(&env, "event_1"),
@@ -3979,6 +4068,7 @@ fn test_usd_priced_payment_within_slippage() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert!(result.is_ok());
 }
@@ -3997,6 +4087,7 @@ fn test_usd_priced_payment_above_slippage_fails() {
     token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
     token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_usd_3"),
         &String::from_str(&env, "event_1"),
@@ -4007,6 +4098,7 @@ fn test_usd_priced_payment_above_slippage_fails() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::PriceOutsideSlippage)));
 }
@@ -4025,6 +4117,7 @@ fn test_usd_priced_payment_below_slippage_fails() {
     token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
     token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_usd_4"),
         &String::from_str(&env, "event_1"),
@@ -4035,6 +4128,7 @@ fn test_usd_priced_payment_below_slippage_fails() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::PriceOutsideSlippage)));
 }
@@ -4062,6 +4156,7 @@ fn test_usd_priced_oracle_not_configured() {
     token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
     token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_usd_5"),
         &String::from_str(&env, "event_1"),
@@ -4072,6 +4167,7 @@ fn test_usd_priced_oracle_not_configured() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::OracleNotConfigured)));
 }
@@ -4101,6 +4197,7 @@ fn test_usd_priced_oracle_unavailable() {
     token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
     token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_usd_6"),
         &String::from_str(&env, "event_1"),
@@ -4111,6 +4208,7 @@ fn test_usd_priced_oracle_unavailable() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceUnavailable)));
 }
@@ -4139,6 +4237,7 @@ fn test_usd_priced_oracle_stale() {
     token::StellarAssetClient::new(&env, &token_id).mint(&buyer, &amount);
     token::Client::new(&env, &token_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_usd_stale"),
         &String::from_str(&env, "event_1"),
@@ -4149,6 +4248,7 @@ fn test_usd_priced_oracle_stale() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::OraclePriceStale)));
 }
@@ -4166,6 +4266,7 @@ fn test_token_priced_payment_unchanged() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &String::from_str(&env, "pay_reg_1"),
         &String::from_str(&env, "event_1"),
@@ -4176,6 +4277,7 @@ fn test_token_priced_payment_unchanged() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert!(result.is_ok());
 }
@@ -4592,6 +4694,7 @@ fn test_process_payment_ignores_loyalty_update_failure() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
 
     let payment_id = String::from_str(&env, "pay_loyalty_fail");
+    let (_secret, hash) = test_secret(&env);
     let result = client.try_process_payment(
         &payment_id,
         &String::from_str(&env, "event_1"),
@@ -4602,6 +4705,7 @@ fn test_process_payment_ignores_loyalty_update_failure() {
         &1,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(result, Ok(Ok(payment_id.clone())));
 
@@ -4799,6 +4903,7 @@ fn test_loyalty_discount_is_capped_by_platform_fee() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
 
     let payment_id = String::from_str(&env, "pay_loyalty_cap");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "event_1"),
@@ -4809,6 +4914,7 @@ fn test_loyalty_discount_is_capped_by_platform_fee() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let payment = client.get_payment_status(&payment_id).unwrap();
@@ -4851,6 +4957,7 @@ fn test_loyalty_discount_reduces_platform_fee() {
     // loyalty_discount = 50 * 10% = 5 USDC
     // effective_total = 1000 - 5 = 995 USDC
     // buyer should be charged 995 USDC
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &event_id,
@@ -4861,6 +4968,7 @@ fn test_loyalty_discount_reduces_platform_fee() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Buyer should have 1000 - 995 = 5 USDC remaining (not charged for the loyalty discount portion)
@@ -4884,6 +4992,7 @@ fn test_payment_without_loyalty_discount_unchanged() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     let payment_id = String::from_str(&env, "pay_no_loyalty");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "event_1"),
@@ -4894,6 +5003,7 @@ fn test_payment_without_loyalty_discount_unchanged() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Full price charged; buyer has no remaining balance
@@ -5006,6 +5116,7 @@ fn test_process_payment_with_custom_fee() {
     token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &amount);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &String::from_str(&env, "p1"),
         &String::from_str(&env, "event_1"),
@@ -5016,6 +5127,7 @@ fn test_process_payment_with_custom_fee() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     let payment = client
@@ -5118,6 +5230,7 @@ fn test_process_payment_extremely_high_ticket_price() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     // quantity=2 causes total_amount = amount * 2 to overflow i128::MAX in checked_mul
+    let (_secret, hash) = test_secret(&env);
     let res = client.try_process_payment(
         &String::from_str(&env, "p1"),
         &String::from_str(&env, "event_1"),
@@ -5128,6 +5241,7 @@ fn test_process_payment_extremely_high_ticket_price() {
         &2,
         &None,
         &None,
+        &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::ArithmeticError)));
 }
@@ -5227,6 +5341,7 @@ fn test_refund_rejected_after_deadline() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &2000, &99999);
 
     let payment_id = String::from_str(&env, "p_deadline");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "e1"),
@@ -5237,6 +5352,7 @@ fn test_refund_rejected_after_deadline() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Advance time past the refund deadline (5000)
@@ -5286,6 +5402,7 @@ fn test_get_payments_by_status_single_payment() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     // Process a payment
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &event_id,
@@ -5296,6 +5413,7 @@ fn test_get_payments_by_status_single_payment() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Payment should be in Pending status initially
@@ -5349,6 +5467,7 @@ fn test_get_payments_by_status_multiple_payments() {
     let payment_id2 = String::from_str(&env, "payment_002");
     let payment_id3 = String::from_str(&env, "payment_003");
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id1,
         &event_id,
@@ -5359,8 +5478,10 @@ fn test_get_payments_by_status_multiple_payments() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id2,
         &event_id,
@@ -5371,8 +5492,10 @@ fn test_get_payments_by_status_multiple_payments() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id3,
         &event_id,
@@ -5383,6 +5506,7 @@ fn test_get_payments_by_status_multiple_payments() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // All three should be in Pending status
@@ -5440,6 +5564,7 @@ fn test_get_payments_by_status_with_refunds() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     // Process and confirm a payment
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &event_id,
@@ -5450,6 +5575,7 @@ fn test_get_payments_by_status_with_refunds() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     client.confirm_payment(&payment_id, &String::from_str(&env, "tx_hash_confirmed"));
@@ -5492,6 +5618,7 @@ fn test_get_payments_by_status_multiple_events() {
     let payment_id1 = String::from_str(&env, "payment_001");
     let payment_id2 = String::from_str(&env, "payment_002");
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id1,
         &event_id,
@@ -5502,8 +5629,10 @@ fn test_get_payments_by_status_multiple_events() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id2,
         &event_id,
@@ -5514,6 +5643,7 @@ fn test_get_payments_by_status_multiple_events() {
         &1,
         &None,
         &None,
+        &hash,
     );
 
     // Both should be pending
@@ -5587,6 +5717,7 @@ fn test_partial_refund_multi_batch_index_persisted() {
         let buyer = Address::generate(&env);
         usdc_token.mint(&buyer, &ticket_price);
         token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &ticket_price, &9999);
+        let (_secret, hash) = test_secret(&env);
         client.process_payment(
             pid,
             &event_id,
@@ -6091,6 +6222,7 @@ fn test_referral_reward_is_20_percent_of_platform_fee() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
 
     let payment_id = String::from_str(&env, "pay_ref_1");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "event_1"),
@@ -6153,6 +6285,7 @@ fn test_referral_reward_capped_when_platform_fee_is_zero() {
 
     let payment_id = String::from_str(&env, "pay_ref_cap");
     // Must succeed — reward is capped at 0, no underflow
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "event_1"),
@@ -6202,6 +6335,7 @@ fn test_referral_reward_does_not_exceed_platform_fee_invariant() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
 
     let payment_id = String::from_str(&env, "pay_ref_inv");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "event_1"),
@@ -6267,6 +6401,7 @@ fn setup_withdrawal_cap_test(
             3 => String::from_str(env, "p3"),
             _ => String::from_str(env, "p4"),
         };
+        let (_secret, hash) = test_secret(&env);
         client.process_payment(
             &pid,
             &String::from_str(env, "event_1"),
@@ -6507,6 +6642,7 @@ fn test_no_referral_reward_without_referrer() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &price, &99999);
 
     let payment_id = String::from_str(&env, "pay_no_ref");
+    let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id,
         &String::from_str(&env, "event_1"),
