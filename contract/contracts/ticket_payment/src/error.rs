@@ -55,6 +55,8 @@ pub enum TicketPaymentError {
     OraclePriceStale = 56,
     /// Cannot remove the last remaining governor
     CannotRemoveLastGovernor = 57,
+    /// Provided raw secret does not match the stored validation hash
+    InvalidSecret = 58,
 }
 
 impl core::fmt::Display for TicketPaymentError {
@@ -187,6 +189,9 @@ impl core::fmt::Display for TicketPaymentError {
                     f,
                     "Cannot remove the last governor; at least one governor must remain"
                 )
+            }
+            TicketPaymentError::InvalidSecret => {
+                write!(f, "Provided secret does not match the ticket validation hash")
             }
         }
     }

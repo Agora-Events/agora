@@ -14,9 +14,9 @@ use crate::storage::{
     set_event_registry, set_governor, set_highest_bid, set_initialized, set_is_paused,
     set_oracle_address, set_partial_refund_index, set_partial_refund_percentage,
     set_platform_wallet, set_price_switched, set_proposal, set_slippage_bps, set_total_governors,
-    set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment,
+    set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment, store_validation_hash,
     subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
-    subtract_from_total_fees_collected_by_token, update_event_balance,
+    subtract_from_total_fees_collected_by_token, update_event_balance, verify_secret,
 };
 use crate::types::{
     DataKey, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus, ProposalStatus,
@@ -518,6 +518,7 @@ impl TicketPaymentContract {
         quantity: u32,
         code_preimage: Option<Bytes>,
         referrer: Option<Address>,
+        validation_hash: BytesN<32>,
     ) -> Result<String, TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
@@ -821,6 +822,7 @@ impl TicketPaymentContract {
             };
 
             store_payment(&env, payment);
+            store_validation_hash(&env, &sub_payment_id, &validation_hash);
         }
 
         // 8. Emit payment event
@@ -1213,6 +1215,7 @@ impl TicketPaymentContract {
         scanner: Address,
         _series_id: Option<String>,
         _pass_holder: Option<Address>,
+        raw_secret: Bytes,
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
@@ -1240,6 +1243,11 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::TicketAlreadyUsed);
         }
 
+        // Verify the raw secret matches the stored validation hash
+        if !verify_secret(&env, &payment_id, &raw_secret) {
+            return Err(TicketPaymentError::InvalidSecret);
+        }
+
         let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
         if !registry_client.is_scanner_authorized(&payment.event_id, &scanner) {
             return Err(TicketPaymentError::UnauthorizedScanner);
@@ -1248,16 +1256,6 @@ impl TicketPaymentContract {
         payment.status = PaymentStatus::CheckedIn;
         payment.confirmed_at = Some(env.ledger().timestamp());
         store_payment(&env, payment);
-
-        // env.events().publish(
-        //     (AgoraEvent::TicketCheckedIn,),
-        //     crate::events::TicketCheckedInEvent {
-        //             payment_id,
-        //             // event_id: payment.event_id.clone(),
-        //             scanner,
-        //             timestamp: env.ledger().timestamp(),
-        //         },
-        // );
 
         Ok(())
     }
