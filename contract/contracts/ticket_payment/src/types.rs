@@ -61,7 +61,8 @@ pub struct Payment {
     pub event_id: String,
     pub buyer_address: Address,
     pub ticket_tier_id: String,
-    pub amount: i128, // USDC amount in stroops
+    pub token_address: Address,
+    pub amount: i128, // Payment token amount in stroops
     pub platform_fee: i128,
     pub organizer_amount: i128,
     pub status: PaymentStatus,
@@ -85,6 +86,7 @@ pub struct EventBalance {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HighestBid {
     pub bidder: Address,
+    pub token_address: Address,
     pub amount: i128,
 }
 

@@ -71,6 +71,8 @@ impl MockCancelledRegistry {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -92,6 +94,13 @@ impl MockEventRegistry {
 
     pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
         let _organizer_address = Address::generate(&env);
+        let accepted_token_key = Symbol::new(&env, "accepted_token");
+        let accepted_token: Option<Address> = env.storage().instance().get(&accepted_token_key);
+        let use_global_whitelist = accepted_token.is_none();
+        let mut accepted_tokens = soroban_sdk::vec![&env];
+        if let Some(token) = accepted_token {
+            accepted_tokens.push_back(token);
+        }
         // We use a fixed predictable address for some tests by mapping it in storage if needed,
         // but for general setup, a generated one is fine.
         // For testing set_transfer_fee, we'll need to know this address.
@@ -142,6 +151,8 @@ impl MockEventRegistry {
                 tags: None,
                 start_time: 0,
                 end_time: 0,
+                accepted_tokens,
+                use_global_whitelist,
             });
         }
         None
@@ -225,6 +236,8 @@ impl MockEventRegistry2 {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -307,6 +320,8 @@ impl MockAuctionEventRegistry {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -515,6 +530,7 @@ fn test_confirm_payment() {
         event_id: String::from_str(&env, "e1"),
         buyer_address: buyer,
         ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 100,
         platform_fee: 5,
         organizer_amount: 95,
@@ -1043,6 +1059,86 @@ fn test_process_payment_with_multiple_tokens() {
     assert_eq!(payment2.amount, xlm_amount);
 }
 
+#[test]
+fn test_process_payment_respects_event_specific_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _usdc_id, _platform_wallet, registry_id) = setup_test(&env);
+
+    let custom_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let wrong_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    for token in [custom_token.clone(), wrong_token.clone()] {
+        let proposal_id =
+            client.propose_parameter_change(&admin, &ParameterChange::AddTokenToWhitelist(token));
+        env.ledger()
+            .set_timestamp(env.ledger().timestamp() + 172801);
+        client.execute_proposal(&admin, &proposal_id);
+    }
+
+    let accepted_token_key = Symbol::new(&env, "accepted_token");
+    env.as_contract(&registry_id, || {
+        env.storage()
+            .instance()
+            .set(&accepted_token_key, &custom_token);
+    });
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+
+    token::StellarAssetClient::new(&env, &wrong_token).mint(&buyer, &amount);
+    token::Client::new(&env, &wrong_token).approve(&buyer, &client.address, &amount, &99999);
+
+    let (_secret, wrong_hash) = test_secret(&env);
+    let wrong_result = client.try_process_payment(
+        &String::from_str(&env, "pay_wrong"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &wrong_token,
+        &amount,
+        &1,
+        &None,
+        &None,
+        &wrong_hash,
+    );
+    assert_eq!(
+        wrong_result,
+        Err(Ok(TicketPaymentError::TokenNotWhitelisted))
+    );
+
+    token::StellarAssetClient::new(&env, &custom_token).mint(&buyer, &(amount * 2));
+    token::Client::new(&env, &custom_token).approve(&buyer, &client.address, &(amount * 2), &99999);
+
+    let (_secret, right_hash) = test_secret(&env);
+    let payment_id = client.process_payment(
+        &String::from_str(&env, "pay_custom"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &custom_token,
+        &amount,
+        &1,
+        &None,
+        &None,
+        &right_hash,
+    );
+
+    let stored_payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(stored_payment.token_address, custom_token);
+
+    client.confirm_payment(&payment_id, &String::from_str(&env, "tx_custom"));
+    client.request_guest_refund(&payment_id);
+
+    let refunded_balance = token::Client::new(&env, &custom_token).balance(&buyer);
+    assert_eq!(refunded_balance, 2 * amount);
+}
+
 // Mock Event Registry with max supply reached
 #[soroban_sdk::contract]
 pub struct MockEventRegistryMaxSupply;
@@ -1096,6 +1192,8 @@ impl MockEventRegistryMaxSupply {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -1219,6 +1317,8 @@ impl MockEventRegistryWithInventory {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -1460,6 +1560,8 @@ impl MockEventRegistryWithMilestones {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -1618,6 +1720,7 @@ fn test_transfer_ticket_success() {
         event_id: String::from_str(&env, "event_1"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000,
         platform_fee: 50,
         organizer_amount: 950,
@@ -1667,6 +1770,7 @@ fn test_transfer_ticket_rejects_soulbound_ticket() {
         event_id: String::from_str(&env, "event_1"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000,
         platform_fee: 50,
         organizer_amount: 950,
@@ -1731,6 +1835,7 @@ fn test_transfer_ticket_with_fee() {
         event_id: event_id.clone(),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: ticket_amount,
         platform_fee: 50,
         organizer_amount: 950,
@@ -1775,6 +1880,7 @@ fn test_transfer_ticket_unauthorized() {
         event_id: String::from_str(&env, "event_1"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "t1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000,
         platform_fee: 50,
         organizer_amount: 950,
@@ -1858,6 +1964,8 @@ impl MockEventRegistryEarlyBird {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -2141,6 +2249,7 @@ fn test_bulk_refund_success() {
                     event_id: event_id.clone(),
                     buyer_address: buyer,
                     ticket_tier_id: String::from_str(&env, "tier_1"),
+                    token_address: get_usdc_token(&env),
                     amount: ticket_price,
                     platform_fee: 50_0000000,
                     organizer_amount: 950_0000000,
@@ -2220,6 +2329,7 @@ fn test_bulk_refund_batching() {
                     event_id: event_id.clone(),
                     buyer_address: buyer,
                     ticket_tier_id: String::from_str(&env, "tier_1"),
+                    token_address: get_usdc_token(&env),
                     amount: ticket_price,
                     platform_fee: 50_0000000,
                     organizer_amount: 950_0000000,
@@ -2379,6 +2489,8 @@ impl MockEventRegistryWithOrganizer {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -2712,6 +2824,8 @@ impl MockPlatformRegistryE2E {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         };
 
         env.storage()
@@ -3206,6 +3320,8 @@ impl MockEventRegistryRefund {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -3289,6 +3405,8 @@ impl MockEventRegistryWithResaleCap {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -3349,6 +3467,7 @@ fn test_transfer_ticket_resale_price_within_cap() {
         event_id: String::from_str(&env, "event_capped"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "general"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -3394,6 +3513,7 @@ fn test_transfer_ticket_resale_price_exceeds_cap() {
         event_id: String::from_str(&env, "event_capped"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "general"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -3441,6 +3561,7 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
         event_id: String::from_str(&env, "event_capped"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "general"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -3486,6 +3607,7 @@ fn test_transfer_ticket_sale_price_no_cap() {
         event_id: String::from_str(&env, "event_1"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "tier_1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -3576,6 +3698,8 @@ impl MockRegistryZeroCap {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -3990,6 +4114,7 @@ fn test_claim_automatic_refund_success() {
         event_id: String::from_str(&env, "e1"),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(&env, "tier_1"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000,
         platform_fee: 50,
         organizer_amount: 950,
@@ -4216,6 +4341,8 @@ impl MockEventRegistryUsdPriced {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -4936,6 +5063,8 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
     pub fn increment_inventory(
@@ -5076,6 +5205,8 @@ impl MockEventRegistryWithLoyalty {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
     pub fn increment_inventory(
@@ -5168,6 +5299,8 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
     pub fn increment_inventory(
@@ -5398,6 +5531,8 @@ impl MockEventRegistryCustomFee {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -5539,6 +5674,8 @@ impl MockEventRegistryHighPrice {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -5659,6 +5796,8 @@ impl MockEventRegistryRefundDeadline {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -6242,6 +6381,8 @@ impl MockEventRegistryForDust {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -6461,6 +6602,8 @@ impl MockEventRegistryForReferral {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
     pub fn increment_inventory(
@@ -6551,6 +6694,8 @@ impl MockEventRegistryFullLoyaltyDiscount {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
     pub fn increment_inventory(
@@ -7076,6 +7221,7 @@ fn insert_confirmed_payment(
         event_id: String::from_str(env, event_id),
         buyer_address: buyer.clone(),
         ticket_tier_id: String::from_str(env, "tier_1"),
+        token_address: env.as_contract(client_address, || get_usdc_token(env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,

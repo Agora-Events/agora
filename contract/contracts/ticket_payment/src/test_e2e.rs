@@ -96,6 +96,8 @@ impl MockRegistryE2E {
             tags: None,
             start_time: 0,
             end_time: stored_end_time,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -223,6 +225,8 @@ impl MockRegistryCancelledE2E {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -323,6 +327,8 @@ impl MockRegistryWithGoal {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
@@ -1131,6 +1137,8 @@ impl MockRegistryAuction {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 

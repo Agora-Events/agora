@@ -6,17 +6,17 @@ use crate::storage::{
     get_event_payments, get_event_registry, get_highest_bid, get_oracle_address,
     get_partial_refund_index, get_partial_refund_percentage, get_payment, get_platform_wallet,
     get_proposal, get_slippage_bps, get_total_fees_collected_by_token, get_total_governors,
-    get_ticket_payment_id, get_transfer_fee, get_usdc_token, get_withdrawal_cap,
-    has_price_switched, increment_proposal_count, is_auction_closed, is_discount_hash_used,
-    is_discount_hash_valid, is_event_disputed, is_governor, is_initialized, is_paused,
-    is_token_whitelisted, mark_discount_hash_used, remove_payment_from_buyer_index,
-    remove_token_from_whitelist, set_admin, set_auction_closed, set_bulk_refund_index,
-    set_event_dispute_status, set_event_registry, set_governor, set_highest_bid, set_initialized,
-    set_is_paused, set_oracle_address, set_partial_refund_index, set_partial_refund_percentage,
-    set_platform_wallet, set_price_switched, set_proposal, set_slippage_bps, set_total_governors,
-    set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment, store_validation_hash,
-    subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
-    subtract_from_total_fees_collected_by_token, update_event_balance, verify_secret,
+    get_transfer_fee, get_withdrawal_cap, has_price_switched, increment_proposal_count,
+    is_auction_closed, is_discount_hash_used, is_discount_hash_valid, is_event_disputed,
+    is_governor, is_initialized, is_paused, is_token_whitelisted, mark_discount_hash_used,
+    remove_payment_from_buyer_index, remove_token_from_whitelist, set_admin, set_auction_closed,
+    set_bulk_refund_index, set_event_dispute_status, set_event_registry, set_governor,
+    set_highest_bid, set_initialized, set_is_paused, set_oracle_address, set_partial_refund_index,
+    set_partial_refund_percentage, set_platform_wallet, set_price_switched, set_proposal,
+    set_slippage_bps, set_total_governors, set_transfer_fee, set_usdc_token, set_withdrawal_cap,
+    store_payment, store_validation_hash, subtract_from_active_escrow_by_token,
+    subtract_from_active_escrow_total, subtract_from_total_fees_collected_by_token,
+    update_event_balance, verify_secret,
 };
 use crate::types::{
     DataKey, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus,
@@ -178,6 +178,8 @@ pub mod event_registry {
         pub tags: Option<soroban_sdk::Vec<String>>,
         pub start_time: u64,
         pub end_time: u64,
+        pub accepted_tokens: soroban_sdk::Vec<Address>,
+        pub use_global_whitelist: bool,
     }
 }
 
@@ -185,6 +187,22 @@ fn require_admin(env: &Env) -> Result<Address, TicketPaymentError> {
     let admin = get_admin(env).ok_or(TicketPaymentError::NotInitialized)?;
     admin.require_auth();
     Ok(admin)
+}
+
+fn event_accepts_token(
+    env: &Env,
+    event_info: &event_registry::EventInfo,
+    token_address: &Address,
+) -> bool {
+    if event_info.use_global_whitelist || event_info.accepted_tokens.is_empty() {
+        is_token_whitelisted(env, token_address)
+    } else {
+        event_info.accepted_tokens.contains(token_address)
+    }
+}
+
+fn get_ticket_payment_id(_env: &Env, _ticket_id: u64) -> Option<String> {
+    None
 }
 
 #[contract]
@@ -617,6 +635,10 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::EventInactive);
         }
 
+        if !event_accepts_token(&env, &event_info, &token_address) {
+            return Err(TicketPaymentError::TokenNotWhitelisted);
+        }
+
         // Block sales if the event has been locally cancelled for refunds
         if crate::storage::is_event_cancelled_for_refund(&env, &event_id) {
             return Err(TicketPaymentError::EventCancelled);
@@ -797,12 +819,7 @@ impl TicketPaymentContract {
         }
 
         // 6. Increment inventory after successful payment
-        registry_client.increment_inventory(
-            &event_id,
-            &ticket_tier_id,
-            &buyer_address,
-            &quantity,
-        );
+        registry_client.increment_inventory(&event_id, &ticket_tier_id, &buyer_address, &quantity);
 
         // 7. Create payment records for each individual ticket
         let quantity_i128 = quantity as i128;
@@ -836,6 +853,7 @@ impl TicketPaymentContract {
                 event_id: event_id.clone(),
                 buyer_address: buyer_address.clone(),
                 ticket_tier_id: ticket_tier_id.clone(),
+                token_address: token_address.clone(),
                 amount,
                 platform_fee: platform_fee_per_ticket,
                 organizer_amount: organizer_amount_per_ticket,
@@ -976,8 +994,8 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::ContractPaused);
         }
 
-        let payment_id = get_ticket_payment_id(&env, ticket_id)
-            .ok_or(TicketPaymentError::PaymentNotFound)?;
+        let payment_id =
+            get_ticket_payment_id(&env, ticket_id).ok_or(TicketPaymentError::PaymentNotFound)?;
 
         let payment =
             get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
@@ -1137,8 +1155,7 @@ impl TicketPaymentContract {
 
         // Process token transfer
         if refund_amount > 0 {
-            let token_address = crate::storage::get_usdc_token(&env);
-            token::Client::new(&env, &token_address).transfer(
+            token::Client::new(&env, &payment.token_address).transfer(
                 &env.current_contract_address(),
                 &payment.buyer_address,
                 &refund_amount,
@@ -1162,11 +1179,7 @@ impl TicketPaymentContract {
         );
 
         subtract_from_active_escrow_total(&env, refund_amount);
-        subtract_from_active_escrow_by_token(
-            &env,
-            crate::storage::get_usdc_token(&env),
-            refund_amount,
-        );
+        subtract_from_active_escrow_by_token(&env, payment.token_address.clone(), refund_amount);
 
         // Clear escrow record if both amounts are now zero (fully refunded event)
         let updated_balance = get_event_balance(&env, payment.event_id.clone());
@@ -1835,8 +1848,7 @@ impl TicketPaymentContract {
                 .ok_or(TicketPaymentError::ArithmeticError)?;
 
             if actual_transfer_fee > 0 {
-                let token_address = crate::storage::get_usdc_token(&env);
-                let token_client = token::Client::new(&env, &token_address);
+                let token_client = token::Client::new(&env, &payment.token_address);
                 let contract_address = env.current_contract_address();
 
                 // Transfer fee from old owner to contract
@@ -1918,14 +1930,13 @@ impl TicketPaymentContract {
         let mut total_refunded = 0;
         let mut balance = get_event_balance(&env, event_id.clone());
 
-        let token_address = crate::storage::get_usdc_token(&env);
-        let token_client = token::Client::new(&env, &token_address);
         let contract_address = env.current_contract_address();
 
         for i in start_index..end_index {
             let payment_id = payment_ids.get(i).unwrap();
             if let Some(mut payment) = get_payment(&env, payment_id.clone()) {
                 if payment.status == PaymentStatus::Confirmed {
+                    let token_client = token::Client::new(&env, &payment.token_address);
                     // Refund full amount to buyer
                     token_client.transfer(
                         &contract_address,
@@ -1944,6 +1955,11 @@ impl TicketPaymentContract {
 
                     total_refunded += payment.amount;
                     processed_count += 1;
+                    subtract_from_active_escrow_by_token(
+                        &env,
+                        payment.token_address.clone(),
+                        payment.amount,
+                    );
                 }
             }
         }
@@ -1951,7 +1967,6 @@ impl TicketPaymentContract {
         if processed_count > 0 {
             crate::storage::set_event_balance(&env, event_id.clone(), balance);
             subtract_from_active_escrow_total(&env, total_refunded);
-            subtract_from_active_escrow_by_token(&env, token_address, total_refunded);
         }
 
         set_bulk_refund_index(&env, event_id.clone(), end_index);
@@ -2024,14 +2039,13 @@ impl TicketPaymentContract {
         let mut total_refunded = 0;
         let mut balance = get_event_balance(&env, event_id.clone());
 
-        let token_address = crate::storage::get_usdc_token(&env);
-        let token_client = token::Client::new(&env, &token_address);
         let contract_address = env.current_contract_address();
 
         for i in start_index..end_index {
             let payment_id = payment_ids.get(i).unwrap();
             if let Some(mut payment) = get_payment(&env, payment_id.clone()) {
                 if payment.status == PaymentStatus::Confirmed {
+                    let token_client = token::Client::new(&env, &payment.token_address);
                     let refund_amount = (payment
                         .amount
                         .checked_mul(active_pct as i128)
@@ -2052,6 +2066,11 @@ impl TicketPaymentContract {
                         balance.organizer_amount -= refund_amount;
                         total_refunded += refund_amount;
                         processed_count += 1;
+                        subtract_from_active_escrow_by_token(
+                            &env,
+                            payment.token_address.clone(),
+                            refund_amount,
+                        );
                     }
                 }
             }
@@ -2060,7 +2079,6 @@ impl TicketPaymentContract {
         if processed_count > 0 {
             crate::storage::set_event_balance(&env, event_id.clone(), balance);
             subtract_from_active_escrow_total(&env, total_refunded);
-            subtract_from_active_escrow_by_token(&env, token_address, total_refunded);
         }
 
         set_partial_refund_index(&env, event_id.clone(), end_index);
@@ -2151,6 +2169,10 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::EventInactive);
         }
 
+        if !event_accepts_token(&env, &event_info, &token_address) {
+            return Err(TicketPaymentError::TokenNotWhitelisted);
+        }
+
         let tier = event_info
             .tiers
             .get(ticket_tier_id.clone())
@@ -2204,14 +2226,19 @@ impl TicketPaymentContract {
 
         // Refund previous bidder if exists
         if let Some(prev) = previous_bidder {
-            token_client.transfer(&contract_address, &prev.bidder, &prev.amount);
+            token::Client::new(&env, &prev.token_address).transfer(
+                &contract_address,
+                &prev.bidder,
+                &prev.amount,
+            );
             subtract_from_active_escrow_total(&env, prev.amount);
-            subtract_from_active_escrow_by_token(&env, token_address.clone(), prev.amount);
+            subtract_from_active_escrow_by_token(&env, prev.token_address, prev.amount);
         }
 
         // Save new highest bid
         let new_bid = HighestBid {
             bidder: bidder_address.clone(),
+            token_address: token_address.clone(),
             amount,
         };
         set_highest_bid(&env, event_id.clone(), ticket_tier_id.clone(), new_bid);
@@ -2302,8 +2329,6 @@ impl TicketPaymentContract {
             .ok_or(TicketPaymentError::ArithmeticError)?;
 
         // Update protocol fees and event balances
-        let token_address = get_usdc_token(&env);
-
         update_event_balance(
             &env,
             event_id.clone(),
@@ -2311,15 +2336,14 @@ impl TicketPaymentContract {
             total_platform_fee,
         );
         add_to_total_volume_processed(&env, amount);
-        add_to_total_fees_collected_by_token(&env, token_address.clone(), total_platform_fee);
+        add_to_total_fees_collected_by_token(
+            &env,
+            winning_bid.token_address.clone(),
+            total_platform_fee,
+        );
 
         // Increment inventory
-        registry_client.increment_inventory(
-            &event_id,
-            &ticket_tier_id,
-            &bidder_address,
-            &1,
-        );
+        registry_client.increment_inventory(&event_id, &ticket_tier_id, &bidder_address, &1);
 
         // Record the payment
         let empty_tx_hash = String::from_str(&env, "");
@@ -2328,6 +2352,7 @@ impl TicketPaymentContract {
             event_id: event_id.clone(),
             buyer_address: bidder_address.clone(),
             ticket_tier_id: ticket_tier_id.clone(),
+            token_address: winning_bid.token_address,
             amount,
             platform_fee: total_platform_fee,
             organizer_amount: total_organizer_amount,
@@ -2504,8 +2529,7 @@ impl TicketPaymentContract {
         );
 
         // Transfer full amount back to buyer
-        let token_address = crate::storage::get_usdc_token(&env);
-        token::Client::new(&env, &token_address).transfer(
+        token::Client::new(&env, &payment.token_address).transfer(
             &env.current_contract_address(),
             &payment.buyer_address,
             &refund_amount,
@@ -2519,7 +2543,7 @@ impl TicketPaymentContract {
             -payment.platform_fee,
         );
         subtract_from_active_escrow_total(&env, refund_amount);
-        subtract_from_active_escrow_by_token(&env, token_address, refund_amount);
+        subtract_from_active_escrow_by_token(&env, payment.token_address.clone(), refund_amount);
 
         env.events().publish(
             (AgoraEvent::CancellationRefundClaimed,),
