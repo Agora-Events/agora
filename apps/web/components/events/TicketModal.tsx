@@ -52,6 +52,7 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
 
       setPurchasedTicket({ id: data.ticketId });
       toast.success("Ticket purchased successfully!");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       toast.error(error.message || "Something went wrong. Please try again.");
     } finally {

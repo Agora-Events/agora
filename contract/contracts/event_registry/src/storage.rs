@@ -1131,6 +1131,25 @@ pub fn subtract_from_user_ticket_count(
     );
 }
 
+// ── Waitlist Storage ──────────────────────────────────────────────────────────
+
+/// Check if a user is already on the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user). Storage type: Persistent
+pub fn is_on_waitlist(env: &Env, event_id: &String, user: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Waitlist(event_id.clone(), user.clone()))
+        .unwrap_or(false)
+}
+
+/// Add a user to the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user) -> true. Storage type: Persistent
+pub fn add_to_waitlist(env: &Env, event_id: &String, user: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Waitlist(event_id.clone(), user.clone()), &true);
+}
+
 // ── Event Pause Storage ────────────────────────────────────────────────────────
 
 /// Returns whether an event is paused. Returns false if the pause status is not set (i.e., event is not paused).

@@ -61,6 +61,8 @@ pub enum AgoraEvent {
     TokenWhitelistUpdated,
     /// A governance proposal has been cancelled by the proposer.
     ProposalCancelled,
+    /// A user has joined the waitlist for a sold-out event.
+    WaitlistJoined,
 }
 
 /// Emitted when an event is permanently cancelled.
@@ -558,5 +560,19 @@ pub struct TokenWhitelistUpdatedEvent {
     /// The organizer address that performed the update.
     pub organizer_address: Address,
     /// The ledger timestamp when the whitelist was updated.
+    pub timestamp: u64,
+}
+
+/// Emitted when a user successfully joins the waitlist for an event.
+///
+/// Published with topic `(AgoraEvent::WaitlistJoined,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WaitlistJoinedEvent {
+    /// The unique identifier of the event.
+    pub event_id: String,
+    /// The address of the user who joined the waitlist.
+    pub user: Address,
+    /// The ledger timestamp when the user joined.
     pub timestamp: u64,
 }

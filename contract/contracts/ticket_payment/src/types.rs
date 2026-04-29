@@ -35,6 +35,13 @@ pub struct AuctionConfig {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PriceSchedule {
+    pub price: i128,
+    pub valid_until: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParameterChange {
     AddGovernor(Address),
     RemoveGovernor(Address),
@@ -94,6 +101,8 @@ pub struct Payment {
     pub refunded_amount: i128,
     pub is_soulbound: bool,
     pub last_checked_in_at: u64,
+    pub referral_amount: i128,
+    pub referrer: Option<Address>,
 }
 
 #[contracttype]

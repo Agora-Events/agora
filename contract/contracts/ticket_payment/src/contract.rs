@@ -39,6 +39,7 @@ use soroban_sdk::{
 };
 
 const MAX_ORACLE_PRICE_AGE_SECS: u64 = 3600;
+const ESCROW_DELAY: u64 = 86400;
 
 /// Minimum claimable amount in stroops (0.01 USDC).
 /// Balances at or below this threshold are swept in full to avoid dust.
@@ -79,6 +80,7 @@ pub mod event_registry {
         pub payment_address: Address,
         pub platform_fee_percent: u32,
         pub custom_fee_bps: Option<u32>,
+        pub referral_rate_bps: u32,
     }
 
     #[soroban_sdk::contracttype]
@@ -180,6 +182,7 @@ pub mod event_registry {
         pub end_time: u64,
         pub accepted_tokens: soroban_sdk::Vec<Address>,
         pub use_global_whitelist: bool,
+        pub referral_rate_bps: u32,
     }
 }
 
@@ -203,6 +206,19 @@ fn event_accepts_token(
 
 fn get_ticket_payment_id(_env: &Env, _ticket_id: u64) -> Option<String> {
     None
+}
+
+fn get_scheduled_price(
+    schedules: &soroban_sdk::Vec<crate::types::PriceSchedule>,
+    current_time: u64,
+    final_price: i128,
+) -> i128 {
+    for s in schedules.iter() {
+        if s.valid_until > current_time {
+            return s.price;
+        }
+    }
+    final_price
 }
 
 #[contract]
@@ -730,7 +746,9 @@ impl TicketPaymentContract {
             }
         } else {
             // ── Exact token-price matching (existing behaviour) ───────────
-            let mut active_price = tier.price;
+            let schedules: soroban_sdk::Vec<crate::types::PriceSchedule> =
+                soroban_sdk::Vec::new(&env);
+            let mut active_price = get_scheduled_price(&schedules, current_time, tier.price);
 
             if tier.early_bird_deadline > 0 && current_time <= tier.early_bird_deadline {
                 active_price = tier.early_bird_price;
@@ -814,10 +832,17 @@ impl TicketPaymentContract {
             total_platform_fee = total_platform_fee
                 .checked_sub(reward)
                 .ok_or(TicketPaymentError::ArithmeticError)?;
+
+            // Cap: referral reward must never exceed the remaining organizer amount
+            let reward = core::cmp::min(reward, total_organizer_amount);
             reward
         } else {
             0
         };
+
+        let total_organizer_amount = total_organizer_amount
+            .checked_sub(referral_reward)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
 
         // 3. Transfer tokens to contract (escrow)
         let token_client = token::Client::new(&env, &token_address);
@@ -885,6 +910,9 @@ impl TicketPaymentContract {
         let organizer_amount_per_ticket = total_organizer_amount
             .checked_div(quantity_i128)
             .ok_or(TicketPaymentError::ArithmeticError)?;
+        let referral_amount_per_ticket = referral_reward
+            .checked_div(quantity_i128)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
         let created_at = env.ledger().timestamp();
         let empty_tx_hash = String::from_str(&env, "");
 
@@ -920,6 +948,8 @@ impl TicketPaymentContract {
                 refunded_amount: 0,
                 is_soulbound: false,
                 last_checked_in_at: 0,
+                referral_amount: referral_amount_per_ticket,
+                referrer: referrer.clone(),
             };
 
             store_payment(&env, payment);
@@ -1457,6 +1487,11 @@ impl TicketPaymentContract {
             .ok_or(TicketPaymentError::EventNotFound)?;
 
         event_info.organizer_address.require_auth();
+
+        if event_info.end_time > 0 && env.ledger().timestamp() < event_info.end_time + ESCROW_DELAY
+        {
+            return Err(TicketPaymentError::EventNotCompleted);
+        }
 
         let balance = get_event_balance(&env, event_id.clone());
         // Block all claim_revenue attempts for an event while a dispute is active.

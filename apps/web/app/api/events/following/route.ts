@@ -1,13 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
-import { listEvents } from "@/lib/events-store";
+import { prisma } from "@/lib/prisma";
+import { withErrorHandler } from "@/lib/api-handler";
+import { throwApiError } from "@/lib/api-errors";
 
-export async function GET(request: NextRequest) {
+export const GET = withErrorHandler(async (request: NextRequest) => {
   const auth = getAuthFromRequest(request);
   if (!auth?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    throwApiError("Unauthorized", 401);
   }
 
-  const items = listEvents().filter((event) => event.followersOnly);
+  const items = await prisma.event.findMany({
+    where: { followersOnly: true },
+    orderBy: { startsAt: "asc" },
+  });
+
   return NextResponse.json({ items });
-}
+});
+
+

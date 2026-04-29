@@ -70,9 +70,9 @@ impl MockCancelledRegistry {
             banner_cid: None,
             tags: None,
             start_time: 0,
-            end_time: 0,
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
+            referral_rate_bps: 0,
         })
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -153,6 +153,7 @@ impl MockEventRegistry {
                 end_time: 0,
                 accepted_tokens,
                 use_global_whitelist,
+                referral_rate_bps: 0,
             });
         }
         None
@@ -186,6 +187,7 @@ impl MockEventRegistry2 {
             payment_address: Address::generate(&env),
             platform_fee_percent: 250,
             custom_fee_bps: None, // 2.5%
+            referral_rate_bps: 0,
         }
     }
 

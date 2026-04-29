@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { listEvents } from "@/lib/events-store";
+import { prisma } from "@/lib/prisma";
+import { withErrorHandler } from "@/lib/api-handler";
 
-export async function GET() {
-  const events = listEvents();
+export const GET = withErrorHandler(async () => {
+  const events = await prisma.event.findMany();
 
   const categories = Array.from(
     new Set(events.map((event) => event.category)),
@@ -18,7 +19,7 @@ export async function GET() {
     .map((event) => ({
       id: event.id,
       title: event.title,
-      date: new Date(event.startsAt).toLocaleString(),
+      date: event.startsAt.toLocaleString(),
       location: event.location,
       price: event.ticketPrice === 0 ? "Free" : String(event.ticketPrice),
       imageUrl: event.imageUrl,
@@ -40,4 +41,6 @@ export async function GET() {
   ).map(([, value]) => value);
 
   return NextResponse.json({ categories, popularEvents, organizers });
-}
+});
+
+

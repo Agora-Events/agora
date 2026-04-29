@@ -24,7 +24,14 @@ Agora is an event and ticketing platform built for organizers, creators, and com
 This project is organized as a monorepo:
 
 - [`apps/web`](apps/web/README.md): The main frontend application (Next.js). **Please read the [Frontend Guidelines](apps/web/README.md) regarding styles and components before contributing.**
-- `contracts`: Smart contracts and blockchain logic.
+- [`contract`](contract/README.md): Smart contracts and blockchain logic.
+- [`docs`](docs/): Detailed platform documentation and guides.
+
+## 📚 Documentation
+
+- [**Ticket Purchase & Stellar Integration Guide**](docs/payments/ticket-purchase-guide.md): Deep dive into the ticketing technical flow.
+- [**Stellar Smart Contracts**](docs/contracts/stellar-contract.md): Overview of our on-chain logic.
+- [**Database Schema**](docs/DATABASE_SCHEMA.md): Detailed view of the system's data model.
 
 ## Backend Architecture (Axum)
 
