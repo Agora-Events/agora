@@ -34,7 +34,7 @@ use crate::middleware::request_id_tracing::trace_request_id;
 use crate::cache::RedisCache;
 use crate::handlers::{
     categories::{get_category, list_categories},
-    events::{get_event, list_events, submit_event_rating, toggle_event_flag, EventState},
+    events::{get_event, list_events, search_events, submit_event_rating, toggle_event_flag, EventState},
     example_empty_success,
     example_not_found,
     example_validation_error,
@@ -101,6 +101,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // Event routes with Redis caching
     let event_routes = Router::new()
         .route("/", get(list_events))
+        .route("/search", get(search_events))
         .route("/:id", get(get_event))
         .route("/:id/rate", post(submit_event_rating))
         .with_state(event_state);

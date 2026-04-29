@@ -16,6 +16,37 @@ use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
 
+/// Query parameters for searching events with filters
+#[derive(Debug, Deserialize)]
+pub struct SearchParams {
+    /// Keyword search in title/description
+    pub q: Option<String>,
+    /// Filter by category ID
+    pub category_id: Option<Uuid>,
+    /// Minimum ticket price in cents (e.g., 1000 = $10.00)
+    pub min_price: Option<i64>,
+    /// Maximum ticket price in cents (e.g., 5000 = $50.00)
+    pub max_price: Option<i64>,
+    /// Events starting after this date
+    pub date_from: Option<DateTime<Utc>>,
+    /// Events starting before this date
+    pub date_to: Option<DateTime<Utc>>,
+    /// Page number (default: 1)
+    #[serde(default = "default_page")]
+    pub page: u32,
+    /// Items per page (default: 20, max: 100)
+    #[serde(default = "default_page_size")]
+    pub page_size: u32,
+}
+
+fn default_page() -> u32 {
+    1
+}
+
+fn default_page_size() -> u32 {
+    20
+}
+
 /// Cache TTL for event details (5 minutes)
 const EVENT_CACHE_TTL: Duration = Duration::from_secs(300);
 
@@ -365,6 +396,171 @@ pub async fn submit_event_rating(
     };
 
     success(response, "Rating recorded successfully").into_response()
+}
+
+/// Search events with advanced filters
+///
+/// # Endpoint
+/// GET `/api/v1/events/search`
+///
+/// # Query Parameters
+/// - `q` (optional): Keyword search in title and description
+/// - `category_id` (optional): Filter by category UUID
+/// - `min_price` (optional): Minimum ticket price in cents
+/// - `max_price` (optional): Maximum ticket price in cents
+/// - `date_from` (optional): Events starting after this date
+/// - `date_to` (optional): Events starting before this date
+/// - `page` (optional): Page number (default: 1)
+/// - `page_size` (optional): Items per page (default: 20, max: 100)
+///
+/// # Response
+/// Returns a paginated list of events matching the search criteria
+pub async fn search_events(
+    State(state): State<EventState>,
+    Query(params): Query<SearchParams>,
+) -> Response {
+    let pagination = PaginationParams {
+        page: params.page,
+        page_size: params.page_size,
+    };
+    let validated_pagination = pagination.validate();
+
+    // Build dynamic WHERE clause using WHERE 1=1 pattern
+    let mut where_clauses = vec!["1=1".to_string()];
+    let mut param_count = 0;
+
+    // Keyword search in title and description
+    if params.q.is_some() {
+        param_count += 1;
+        where_clauses.push(format!(
+            "(e.title ILIKE ${} OR e.description ILIKE ${})",
+            param_count, param_count
+        ));
+    }
+
+    // Filter by category (requires join with event_categories)
+    let category_join = if params.category_id.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("ec.category_id = ${}", param_count));
+        "INNER JOIN event_categories ec ON e.id = ec.event_id"
+    } else {
+        ""
+    };
+
+    // Filter by price range (requires join with ticket_tiers)
+    let price_join = if params.min_price.is_some() || params.max_price.is_some() {
+        "INNER JOIN ticket_tiers tt ON e.id = tt.event_id"
+    } else {
+        ""
+    };
+
+    if params.min_price.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("tt.price >= ${}", param_count));
+    }
+
+    if params.max_price.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("tt.price <= ${}", param_count));
+    }
+
+    // Filter by date range
+    if params.date_from.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("e.start_time >= ${}", param_count));
+    }
+
+    if params.date_to.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("e.start_time <= ${}", param_count));
+    }
+
+    let where_clause = where_clauses.join(" AND ");
+
+    // Count total items with DISTINCT to handle joins
+    let count_query = format!(
+        "SELECT COUNT(DISTINCT e.id) FROM events e {} {} WHERE {}",
+        category_join, price_join, where_clause
+    );
+
+    let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
+
+    if let Some(ref q) = params.q {
+        count_query_builder = count_query_builder.bind(format!("%{}%", q));
+    }
+    if let Some(category_id) = params.category_id {
+        count_query_builder = count_query_builder.bind(category_id);
+    }
+    if let Some(min_price) = params.min_price {
+        let min_price_decimal = min_price as f64 / 100.0;
+        count_query_builder = count_query_builder.bind(min_price_decimal);
+    }
+    if let Some(max_price) = params.max_price {
+        let max_price_decimal = max_price as f64 / 100.0;
+        count_query_builder = count_query_builder.bind(max_price_decimal);
+    }
+    if let Some(date_from) = params.date_from {
+        count_query_builder = count_query_builder.bind(date_from);
+    }
+    if let Some(date_to) = params.date_to {
+        count_query_builder = count_query_builder.bind(date_to);
+    }
+
+    let total = match count_query_builder.fetch_one(&state.pool).await {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::error!("Failed to count search results: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Fetch paginated items with DISTINCT to handle joins
+    let items_query = format!(
+        "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
+        category_join,
+        price_join,
+        where_clause,
+        param_count + 1,
+        param_count + 2
+    );
+
+    let mut items_query_builder = sqlx::query_as::<_, Event>(&items_query);
+
+    if let Some(ref q) = params.q {
+        items_query_builder = items_query_builder.bind(format!("%{}%", q));
+    }
+    if let Some(category_id) = params.category_id {
+        items_query_builder = items_query_builder.bind(category_id);
+    }
+    if let Some(min_price) = params.min_price {
+        let min_price_decimal = min_price as f64 / 100.0;
+        items_query_builder = items_query_builder.bind(min_price_decimal);
+    }
+    if let Some(max_price) = params.max_price {
+        let max_price_decimal = max_price as f64 / 100.0;
+        items_query_builder = items_query_builder.bind(max_price_decimal);
+    }
+    if let Some(date_from) = params.date_from {
+        items_query_builder = items_query_builder.bind(date_from);
+    }
+    if let Some(date_to) = params.date_to {
+        items_query_builder = items_query_builder.bind(date_to);
+    }
+
+    items_query_builder = items_query_builder
+        .bind(validated_pagination.limit())
+        .bind(validated_pagination.offset());
+
+    let items = match items_query_builder.fetch_all(&state.pool).await {
+        Ok(events) => events,
+        Err(e) => {
+            tracing::error!("Failed to fetch search results: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let response = PaginatedResponse::new(items, validated_pagination, total);
+    success(response, "Search results retrieved successfully").into_response()
 }
 
 /// Toggle the flagged status of an event (admin only)

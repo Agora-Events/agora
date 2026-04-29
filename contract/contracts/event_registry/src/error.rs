@@ -162,21 +162,6 @@ impl core::fmt::Display for EventRegistryError {
             EventRegistryError::InvalidTargetDeadline | EventRegistryError::InvalidDeadline => {
                 write!(f, "Target deadline must be in the future")
             }
-            EventRegistryError::ProposalAlreadyExecuted => {
-                write!(f, "Proposal has already been executed")
-            }
-            EventRegistryError::DeadlineAfterEndTime => write!(
-                f,
-                "refund_deadline and target_deadline must be before end_time"
-            ),
-            EventRegistryError::PerUserLimitExceeded => write!(
-                f,
-                "User has exceeded the maximum number of tickets allowed for this tier"
-            ),
-            EventRegistryError::EventNotEnded => write!(
-                f,
-                "Event has not ended yet; feedback CID can only be set after end_time"
-            ),
             EventRegistryError::AdminAlreadyExists => {
                 write!(f, "Admin already exists in the multisig configuration")
             }
