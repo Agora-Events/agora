@@ -96,10 +96,18 @@ impl MockRegistryE2E {
             tags: None,
             start_time: 0,
             end_time: stored_end_time,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(env: Env, _event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -107,7 +115,7 @@ impl MockRegistryE2E {
             .set(&key, &(current + quantity as i128));
     }
 
-    pub fn decrement_inventory(env: Env, _event_id: String, _tier_id: String) {
+    pub fn decrement_inventory(env: Env, _event_id: String, _tier_id: String, _user: Address) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         if current > 0 {
@@ -217,10 +225,12 @@ impl MockRegistryCancelledE2E {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
 
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
@@ -317,10 +327,18 @@ impl MockRegistryWithGoal {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(env: Env, event_id: String, _tier_id: String, quantity: u32) {
+    pub fn increment_inventory(
+        env: Env,
+        event_id: String,
+        _tier_id: String,
+        _user: Address,
+        quantity: u32,
+    ) {
         let key = (Symbol::new(&env, "supply"), event_id);
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         env.storage()
@@ -328,7 +346,7 @@ impl MockRegistryWithGoal {
             .set(&key, &(current + quantity as i128));
     }
 
-    pub fn decrement_inventory(env: Env, event_id: String, _tier_id: String) {
+    pub fn decrement_inventory(env: Env, event_id: String, _tier_id: String, _user: Address) {
         let key = (Symbol::new(&env, "supply"), event_id);
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
         if current > 0 {
@@ -426,8 +444,11 @@ fn buy_ticket(
         usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     )
 }
@@ -647,8 +668,11 @@ fn test_e2e_duplicate_payment_id_rejected() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -699,8 +723,11 @@ fn test_e2e_state_consistent_after_failed_payment() {
         &non_whitelisted_token,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::TokenNotWhitelisted)));
@@ -748,8 +775,11 @@ fn test_e2e_batch_purchase_then_partial_refund() {
         &usdc_id,
         &amount_per_ticket,
         &quantity,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
 
@@ -878,8 +908,11 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert_eq!(result, Err(Ok(TicketPaymentError::ContractPaused)));
@@ -897,8 +930,11 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
         &usdc_id,
         &amount,
         &1,
-        &None,
-        &None,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
         &hash,
     );
     assert!(result.is_ok());
@@ -1119,11 +1155,20 @@ impl MockRegistryAuction {
             tags: None,
             start_time: 0,
             end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
         })
     }
 
-    pub fn increment_inventory(_env: Env, _event_id: String, _tier_id: String, _quantity: u32) {}
-    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String) {}
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
     pub fn get_global_promo_bps(_env: Env) -> u32 {
         0
     }
@@ -1244,7 +1289,8 @@ fn test_check_in_blocked_after_event_end_time() {
 
     let series_id: Option<String> = None;
     let pass_holder: Option<Address> = None;
-    client.check_in(&pay_id, &scanner, &series_id, &pass_holder);
+    let (raw_secret, _hash) = test_secret(&env);
+    client.check_in(&pay_id, &scanner, &series_id, &pass_holder, &raw_secret);
     let payment = client.get_payment_status(&pay_id).unwrap();
     assert_eq!(payment.status, PaymentStatus::CheckedIn);
 
@@ -1258,7 +1304,8 @@ fn test_check_in_blocked_after_event_end_time() {
         li.timestamp = 1001;
     });
 
-    let result = client.try_check_in(&pay_id_2, &scanner, &series_id, &pass_holder);
+    let (raw_secret, _hash) = test_secret(&env);
+    let result = client.try_check_in(&pay_id_2, &scanner, &series_id, &pass_holder, &raw_secret);
     assert_eq!(result, Err(Ok(TicketPaymentError::EventEnded)));
 
     // Verify payment status is still Confirmed (not checked in)
@@ -1295,7 +1342,8 @@ fn test_check_in_allowed_when_no_end_time_set() {
 
     let series_id: Option<String> = None;
     let pass_holder: Option<Address> = None;
-    client.check_in(&pay_id, &scanner, &series_id, &pass_holder);
+    let (raw_secret, _hash) = test_secret(&env);
+    client.check_in(&pay_id, &scanner, &series_id, &pass_holder, &raw_secret);
     let payment = client.get_payment_status(&pay_id).unwrap();
     assert_eq!(payment.status, PaymentStatus::CheckedIn);
 }

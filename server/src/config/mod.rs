@@ -52,6 +52,9 @@ pub struct Config {
 
     /// Soroban RPC URL for blockchain connectivity checks.
     pub soroban_rpc_url: String,
+
+    /// Redis connection URL for caching.
+    pub redis_url: String,
 }
 
 impl Config {
@@ -83,6 +86,46 @@ impl Config {
         let rust_log = env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
         let soroban_rpc_url =
             env::var("SOROBAN_RPC_URL").unwrap_or_else(|_| "https://soroban-testnet.stellar.org".to_string());
+        
+        let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+
+        let s3_bucket = env::var("S3_BUCKET").map_err(|_| {
+            AppError::ValidationError("S3_BUCKET environment variable is required".to_string())
+        })?;
+        let s3_region = env::var("S3_REGION").unwrap_or_else(|_| "auto".to_string());
+        let s3_access_key_id = env::var("S3_ACCESS_KEY_ID").map_err(|_| {
+            AppError::ValidationError(
+                "S3_ACCESS_KEY_ID environment variable is required".to_string(),
+            )
+        })?;
+        let s3_secret_access_key = env::var("S3_SECRET_ACCESS_KEY").map_err(|_| {
+            AppError::ValidationError(
+                "S3_SECRET_ACCESS_KEY environment variable is required".to_string(),
+            )
+        })?;
+        let s3_endpoint_url = env::var("S3_ENDPOINT_URL").ok();
+        let s3_public_url = env::var("S3_PUBLIC_URL").map_err(|_| {
+            AppError::ValidationError("S3_PUBLIC_URL environment variable is required".to_string())
+        })?;
+
+        let s3_bucket = env::var("S3_BUCKET").map_err(|_| {
+            AppError::ValidationError("S3_BUCKET environment variable is required".to_string())
+        })?;
+        let s3_region = env::var("S3_REGION").unwrap_or_else(|_| "auto".to_string());
+        let s3_access_key_id = env::var("S3_ACCESS_KEY_ID").map_err(|_| {
+            AppError::ValidationError(
+                "S3_ACCESS_KEY_ID environment variable is required".to_string(),
+            )
+        })?;
+        let s3_secret_access_key = env::var("S3_SECRET_ACCESS_KEY").map_err(|_| {
+            AppError::ValidationError(
+                "S3_SECRET_ACCESS_KEY environment variable is required".to_string(),
+            )
+        })?;
+        let s3_endpoint_url = env::var("S3_ENDPOINT_URL").ok();
+        let s3_public_url = env::var("S3_PUBLIC_URL").map_err(|_| {
+            AppError::ValidationError("S3_PUBLIC_URL environment variable is required".to_string())
+        })?;
 
         Ok(Self {
             database_url,
@@ -91,6 +134,7 @@ impl Config {
             cors_allowed_origins,
             rust_log,
             soroban_rpc_url,
+            redis_url,
         })
     }
 

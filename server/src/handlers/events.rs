@@ -8,11 +8,23 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
+use std::time::Duration;
 
+use crate::cache::RedisCache;
 use crate::models::event::Event;
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
+
+/// Cache TTL for event details (5 minutes)
+const EVENT_CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// Application state for event handlers
+#[derive(Clone)]
+pub struct EventState {
+    pub pool: PgPool,
+    pub redis: RedisCache,
+}
 
 /// Query parameters for filtering events
 #[derive(Debug, Deserialize)]
@@ -64,7 +76,7 @@ pub struct SubmitEventRatingResponse {
 /// # Response
 /// Returns a paginated list of events with metadata
 pub async fn list_events(
-    State(pool): State<PgPool>,
+    State(state): State<EventState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<EventFilters>,
 ) -> Response {
@@ -73,6 +85,9 @@ pub async fn list_events(
     // Build the WHERE clause dynamically based on filters
     let mut where_clauses = Vec::new();
     let mut param_count = 0;
+    
+    // Always exclude flagged events from public listings
+    where_clauses.push("is_flagged = FALSE".to_string());
     
     if filters.organizer_id.is_some() {
         param_count += 1;
@@ -128,7 +143,7 @@ pub async fn list_events(
         count_query_builder = count_query_builder.bind(format!("%{}%", search));
     }
     
-    let total = match count_query_builder.fetch_one(&pool).await {
+    let total = match count_query_builder.fetch_one(&state.pool).await {
         Ok(count) => count,
         Err(e) => {
             tracing::error!("Failed to count events: {:?}", e);
@@ -166,7 +181,7 @@ pub async fn list_events(
         .bind(validated_pagination.limit())
         .bind(validated_pagination.offset());
     
-    let items = match items_query_builder.fetch_all(&pool).await {
+    let items = match items_query_builder.fetch_all(&state.pool).await {
         Ok(events) => events,
         Err(e) => {
             tracing::error!("Failed to fetch events: {:?}", e);
@@ -182,15 +197,35 @@ pub async fn list_events(
 ///
 /// # Endpoint
 /// GET `/api/v1/events/:id`
+///
+/// # Caching
+/// Event details are cached in Redis with a 5-minute TTL to reduce database load.
 pub async fn get_event(
-    State(pool): State<PgPool>,
+    State(mut state): State<EventState>,
     axum::extract::Path(event_id): axum::extract::Path<Uuid>,
 ) -> Response {
+    let cache_key = format!("event:detail:{}", event_id);
+    
+    // Try to get from cache first
+    match state.redis.get::<Event>(&cache_key).await {
+        Ok(Some(event)) => {
+            tracing::debug!("Cache hit for event {}", event_id);
+            return success(event, "Event retrieved successfully (cached)").into_response();
+        }
+        Ok(None) => {
+            tracing::debug!("Cache miss for event {}", event_id);
+        }
+        Err(e) => {
+            tracing::warn!("Redis error, falling back to database: {:?}", e);
+        }
+    }
+    
+    // Cache miss or error, fetch from database
     let event = match sqlx::query_as::<_, Event>(
-        "SELECT * FROM events WHERE id = $1"
+        "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE"
     )
     .bind(event_id)
-    .fetch_optional(&pool)
+    .fetch_optional(&state.pool)
     .await
     {
         Ok(Some(event)) => event,
@@ -204,6 +239,11 @@ pub async fn get_event(
         }
     };
     
+    // Store in cache for future requests
+    if let Err(e) = state.redis.set(&cache_key, &event, EVENT_CACHE_TTL).await {
+        tracing::warn!("Failed to cache event {}: {:?}", event_id, e);
+    }
+    
     success(event, "Event retrieved successfully").into_response()
 }
 
@@ -212,7 +252,7 @@ pub async fn get_event(
 /// # Endpoint
 /// POST `/api/v1/events/:id/rate`
 pub async fn submit_event_rating(
-    State(pool): State<PgPool>,
+    State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
     Json(payload): Json<SubmitEventRatingRequest>,
 ) -> Response {
@@ -228,7 +268,7 @@ pub async fn submit_event_rating(
            WHERE t.id = $1"#,
         payload.ticket_id
     )
-    .fetch_optional(&pool)
+    .fetch_optional(&state.pool)
     .await
     {
         Ok(ticket) => match ticket {
@@ -255,7 +295,7 @@ pub async fn submit_event_rating(
         .into_response();
     }
 
-    let mut tx = match pool.begin().await {
+    let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(e) => {
             tracing::error!("Failed to begin transaction: {:?}", e);
@@ -325,6 +365,63 @@ pub async fn submit_event_rating(
     };
 
     success(response, "Rating recorded successfully").into_response()
+}
+
+/// Toggle the flagged status of an event (admin only)
+///
+/// # Endpoint
+/// POST `/api/v1/admin/events/:id/toggle-flag`
+///
+/// # Description
+/// Flips the `is_flagged` status of the specified event.
+/// This endpoint is intended for admin use to moderate content.
+pub async fn toggle_event_flag(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // Fetch current flag status
+    let current_flagged = match sqlx::query_scalar::<_, bool>(
+        "SELECT is_flagged FROM events WHERE id = $1"
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(flagged)) => flagged,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch event flag status: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Toggle the flag
+    let new_flagged = !current_flagged;
+    if let Err(e) = sqlx::query(
+        "UPDATE events SET is_flagged = $1 WHERE id = $2"
+    )
+    .bind(new_flagged)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::error!("Failed to update event flag: {:?}", e);
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    // Invalidate cache for this event
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate cache for event {}: {:?}", event_id, e);
+    }
+
+    success(
+        serde_json::json!({ "is_flagged": new_flagged }),
+        "Event flag toggled successfully"
+    ).into_response()
 }
 
 #[cfg(test)]

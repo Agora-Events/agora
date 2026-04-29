@@ -163,7 +163,7 @@ fn test_unlimited_per_user_limit() {
     
     // But not beyond the tier limit
     let result = client.try_increment_inventory(&event_id, &vip_tier, &user1, 1);
-    assert_eq!(result, Err(Ok(event_registry::error::EventRegistryError::TierSupplyExceeded)));
+    assert_eq!(result, Err(Ok(event_registry::error::EventRegistryError::TierSoldOut)));
 }
 
 #[test]

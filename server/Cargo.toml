@@ -47,6 +47,15 @@ rand = "0.8"
 base64 = "0.21"
 hex = "0.4"
 
+# Redis for caching
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# Rate limiting
+tower-governor = "0.3"
+
+# System monitoring
+sysinfo = "0.30"
+
 # Testing
 [dev-dependencies]
 temp-env = { version = "0.3", features = ["async_closure"] }

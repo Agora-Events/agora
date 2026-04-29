@@ -13,6 +13,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { dataEvents } from "../events/mockups";
 import { useRecommendedEvents, RecommendedEvent } from "@/hooks/useRecommendedEvents";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -194,7 +195,7 @@ export default function RecommendedEvents({
           {personalised && basedOnCategories.length > 0 && (
             <p className="mt-1 text-sm text-neutral-500">
               Based on your interest in{" "}
-              {basedOnCategories.map((cat, i) => (
+              {basedOnCategories.map((cat: string, i: number) => (
                 <span key={cat}>
                   <span className="font-medium text-violet-600">{cat}</span>
                   {i < basedOnCategories.length - 1 ? ", " : ""}
@@ -216,7 +217,8 @@ export default function RecommendedEvents({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {isLoading
           ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-          : events.map((event) => <EventCard key={event.id} event={event} />)}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          : events.map((event: any) => <EventCard key={event.id} event={event as any} />)}
       </div>
     </section>
   );

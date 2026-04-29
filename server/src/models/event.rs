@@ -27,6 +27,8 @@ pub struct Event {
     pub start_time: DateTime<Utc>,
     /// Optional scheduled end time of the event (UTC). `None` if open-ended.
     pub end_time: Option<DateTime<Utc>>,
+    /// Whether the event is flagged for moderation.
+    pub is_flagged: bool,
     /// Accumulated total of all star ratings for this event.
     pub sum_of_ratings: i64,
     /// Total number of ratings submitted for this event.

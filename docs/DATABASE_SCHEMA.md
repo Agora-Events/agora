@@ -31,6 +31,9 @@ erDiagram
         TEXT location
         TIMESTAMPTZ start_time
         TIMESTAMPTZ end_time
+        BOOLEAN is_flagged
+        BIGINT sum_of_ratings
+        INTEGER count_of_ratings
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
     }
@@ -116,6 +119,9 @@ Events created by organizers.
 | `location` | TEXT | NOT NULL | Venue or address |
 | `start_time` | TIMESTAMPTZ | NOT NULL | Event start |
 | `end_time` | TIMESTAMPTZ | nullable | Event end |
+| `is_flagged` | BOOLEAN | NOT NULL, default `FALSE` | Flagged for moderation |
+| `sum_of_ratings` | BIGINT | NOT NULL, default `0` | Accumulated total of all star ratings |
+| `count_of_ratings` | INTEGER | NOT NULL, default `0` | Total number of ratings submitted |
 | `created_at` | TIMESTAMPTZ | NOT NULL, default `NOW()` | Record creation time |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, default `NOW()` | Last update time (auto-managed by trigger) |
 

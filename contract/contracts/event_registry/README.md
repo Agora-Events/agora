@@ -215,7 +215,7 @@ The contract returns `EventRegistryError` enum variants for various failure cond
 - `OrganizerBlacklisted` - Organizer is blacklisted
 - `InvalidFeePercent` - Fee exceeds 100%
 - `MaxSupplyExceeded` - Ticket limit reached
-- `TierSupplyExceeded` - Tier limit reached
+- `TierSoldOut` - Tier limit reached
 - `EventInactive` - Event is not active
 - And many more...
 
