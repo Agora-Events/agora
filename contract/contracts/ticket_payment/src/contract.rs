@@ -1754,6 +1754,11 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::GoalNotMet);
         }
 
+        // Block all claim_revenue attempts for an event while a dispute is active.
+        if is_event_disputed(&env, event_id.clone()) {
+            return Err(TicketPaymentError::EventDisputed);
+        }
+
         let balance = get_event_balance(&env, event_id.clone());
         if balance.organizer_amount == 0 && balance.platform_fee == 0 {
             return Err(TicketPaymentError::NoFundsAvailable);

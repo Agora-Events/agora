@@ -8872,3 +8872,283 @@ fn test_referral_commission_zero_when_no_referrer() {
         "referrer field must be None when no referrer is provided"
     );
 }
+
+#[test]
+fn test_claim_revenue_blocked_when_disputed() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+
+    let registry_id = env.register(MockEventRegistryForDust, ());
+    let registry = MockEventRegistryForDustClient::new(&env, &registry_id);
+    registry.set_organizer(&organizer, &payment_addr);
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let event_id = String::from_str(&env, "event_1");
+    let amount = 1000_0000000i128;
+
+    // Set up event balance and fund the contract
+    usdc_token.mint(&client.address, &amount);
+    env.as_contract(&client.address, || {
+        let expected_fee = (amount * 500) / 10000;
+        let organizer_amount = amount - expected_fee;
+        update_event_balance(&env, event_id.clone(), organizer_amount, expected_fee);
+    });
+
+    // Set event as disputed
+    client.set_event_dispute(&event_id, &true);
+    
+    // Verify the dispute is actually set
+    assert!(client.is_event_disputed(&event_id));
+
+    // Attempt to claim revenue - should fail with EventDisputed
+    let res = client.try_claim_revenue(&event_id, &usdc_id);
+    assert_eq!(res, Err(Ok(TicketPaymentError::EventDisputed)));
+}
+
+#[test]
+fn test_claim_revenue_allowed_after_dispute_resolved() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+
+    let registry_id = env.register(MockEventRegistryForDust, ());
+    let registry = MockEventRegistryForDustClient::new(&env, &registry_id);
+    registry.set_organizer(&organizer, &payment_addr);
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let event_id = String::from_str(&env, "event_1");
+    let amount = 1000_0000000i128;
+
+    // Set up event balance and fund the contract
+    usdc_token.mint(&client.address, &amount);
+    env.as_contract(&client.address, || {
+        let expected_fee = (amount * 500) / 10000;
+        let organizer_amount = amount - expected_fee;
+        update_event_balance(&env, event_id.clone(), organizer_amount, expected_fee);
+    });
+
+    // Set dispute first
+    client.set_event_dispute(&event_id, &true);
+    
+    // Clear dispute
+    client.set_event_dispute(&event_id, &false);
+
+    // Attempt to claim revenue - should succeed
+    let claimed = client.claim_revenue(&event_id, &usdc_id);
+    assert!(claimed > 0);
+}
+
+#[test]
+fn test_set_event_dispute_unauthorized() {
+    let env = Env::default();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let _non_admin = Address::generate(&env);
+
+    let event_id = String::from_str(&env, "event_1");
+    
+    // Clear all auths to test unauthorized access
+    env.set_auths(&[]);
+    
+    // Try to call set_event_dispute from non-admin address - should fail
+    let res = client.try_set_event_dispute(&event_id, &true);
+    
+    // The error should be related to authorization failure
+    // In Soroban, this typically manifests as a contract error when require_auth fails
+    assert!(res.is_err());
+    
+    // Now test that admin can successfully call it
+    env.mock_all_auths();
+    let success_res = client.try_set_event_dispute(&event_id, &true);
+    assert!(success_res.is_ok());
+}
+
+#[test]
+fn test_process_payment_blocked_when_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    
+    // Pause the contract
+    client.set_pause(&true);
+    
+    let buyer = Address::generate(&env);
+    let (_secret, hash) = test_secret(&env);
+    
+    // Attempt to process payment while paused - should fail
+    let res = client.try_process_payment(
+        &String::from_str(&env, "pay_1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &1000_0000000i128,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    
+    assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
+}
+
+#[test]
+fn test_refund_blocked_when_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    let payment_id = String::from_str(&env, "pay_1");
+    
+    // First, process a payment successfully
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+    
+    let (_secret, hash) = test_secret(&env);
+    client.process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &amount,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    
+    // Confirm the payment
+    client.confirm_payment(&payment_id, &String::from_str(&env, "tx_hash"));
+    
+    // Now pause the contract
+    client.set_pause(&true);
+    
+    // Attempt to request refund while paused - should fail
+    let res = client.try_request_guest_refund(&payment_id);
+    assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
+}
+
+#[test]
+fn test_transfer_ticket_blocked_when_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (client, _admin, _, _, _) = setup_test(&env);
+    
+    // Pause the contract
+    client.set_pause(&true);
+    
+    let to = Address::generate(&env);
+    
+    // Attempt to transfer ticket while paused - should fail
+    let res = client.try_transfer_ticket(&String::from_str(&env, "pay_1"), &to, &None);
+    assert_eq!(res, Err(Ok(TicketPaymentError::ContractPaused)));
+}
+
+#[test]
+fn test_operations_resume_after_unpause() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+    
+    // Mint tokens and approve
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+    
+    // Pause the contract
+    client.set_pause(&true);
+    
+    // Verify that process_payment is blocked when paused
+    let (_secret, hash) = test_secret(&env);
+    let res_paused = client.try_process_payment(
+        &String::from_str(&env, "pay_1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &amount,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    assert_eq!(res_paused, Err(Ok(TicketPaymentError::ContractPaused)));
+    
+    // Unpause the contract
+    client.set_pause(&false);
+    
+    // Verify that process_payment works after unpause
+    let (_secret, hash) = test_secret(&env);
+    let result = client.process_payment(
+        &String::from_str(&env, "pay_1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &amount,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    
+    // Should succeed and return the payment ID
+    assert_eq!(result, String::from_str(&env, "pay_1"));
+    
+    // Verify the payment was actually processed
+    let payment = client.get_payment_status(&String::from_str(&env, "pay_1")).unwrap();
+    assert_eq!(payment.amount, amount);
+    assert_eq!(payment.status, PaymentStatus::Pending);
+}
