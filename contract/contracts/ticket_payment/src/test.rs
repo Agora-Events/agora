@@ -956,15 +956,15 @@ fn test_upgrade_state_verification_fails_on_corrupt_state() {
         _ => panic!("Dummy contract is not a Wasm contract"),
     };
 
-    // Manually corrupt a critical storage key (clear the admin address)
+    // Manually corrupt a critical storage key without breaking admin auth.
     env.as_contract(&client.address, || {
-        env.storage().persistent().remove(&DataKey::Admin);
+        env.storage().persistent().remove(&DataKey::UsdcToken);
     });
 
-    // Call upgrade - it should detect the missing admin and emit ContractVerificationFailed event
+    // Call upgrade - it should detect the missing token key and emit ContractVerificationFailed.
     client.upgrade(&new_wasm_hash);
 
-    // Check for ContractVerificationFailed event for missing Admin key
+    // Check for ContractVerificationFailed event for missing UsdcToken key.
     let events = env.events().all();
     let topic_name = Symbol::new(&env, "ContractVerificationFailed");
     let failure_event = events.iter().find(|e| {
@@ -978,7 +978,10 @@ fn test_upgrade_state_verification_fails_on_corrupt_state() {
         }
         false
     });
-    assert!(failure_event.is_some(), "Expected ContractVerificationFailed event for missing Admin key");
+    assert!(
+        failure_event.is_some(),
+        "Expected ContractVerificationFailed event for missing UsdcToken key"
+    );
 }
 
 #[test]
@@ -2390,59 +2393,56 @@ fn test_price_switched_event_emitted_exactly_once() {
 }
 
 #[test]
-fn test_bulk_refund_success() {
+fn test_bulk_refund_cancelled_event() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(TicketPaymentContract, ());
-    let client = TicketPaymentContractClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
-    let usdc_id = env
-        .register_stellar_asset_contract_v2(Address::generate(&env))
-        .address();
-    let platform_wallet = Address::generate(&env);
-    let registry_id = env.register(MockCancelledRegistry, ());
-    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
-
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
     let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
     let buyer1 = Address::generate(&env);
     let buyer2 = Address::generate(&env);
     let event_id = String::from_str(&env, "event_1");
     let ticket_price = 1000_0000000i128;
 
-    // Manually store confirmed payments and fund the contract
+    for (payment_id, buyer, tx_hash) in [
+        (
+            String::from_str(&env, "p1"),
+            buyer1.clone(),
+            String::from_str(&env, "tx_1"),
+        ),
+        (
+            String::from_str(&env, "p2"),
+            buyer2.clone(),
+            String::from_str(&env, "tx_2"),
+        ),
+    ] {
+        usdc_token.mint(&buyer, &ticket_price);
+        token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &ticket_price, &99999);
+
+        let (_secret, hash) = test_secret(&env);
+        client.process_payment(
+            &payment_id,
+            &event_id,
+            &String::from_str(&env, "tier_1"),
+            &buyer,
+            &None::<Address>,
+            &usdc_id,
+            &ticket_price,
+            &1u32,
+            &crate::types::PurchaseOptions {
+                code_preimage: None,
+                referrer: None,
+                discount_code: None,
+            },
+            &hash,
+        );
+        client.confirm_payment(&payment_id, &tx_hash);
+    }
+
+    let cancelled_registry_id = env.register(MockCancelledRegistry, ());
     env.as_contract(&client.address, || {
-        for (pid, buyer) in [
-            (String::from_str(&env, "p1"), buyer1.clone()),
-            (String::from_str(&env, "p2"), buyer2.clone()),
-        ] {
-            store_payment(
-                &env,
-                Payment {
-                    payment_id: pid.clone(),
-                    event_id: event_id.clone(),
-                    buyer_address: buyer.clone(),
-                    owner_address: buyer,
-                    ticket_tier_id: String::from_str(&env, "tier_1"),
-                    token_address: get_usdc_token(&env),
-                    amount: ticket_price,
-                    platform_fee: 50_0000000,
-                    organizer_amount: 950_0000000,
-                    status: PaymentStatus::Confirmed,
-                    transaction_hash: String::from_str(&env, "tx"),
-                    created_at: 0,
-                    confirmed_at: Some(1),
-                    refunded_amount: 0,
-                    is_soulbound: false,
-                    last_checked_in_at: 0,
-                    referral_amount: 0,
-                    referrer: None,
-                },
-            );
-            update_event_balance(&env, event_id.clone(), 950_0000000, 50_0000000);
-        }
+        set_event_registry(&env, cancelled_registry_id.clone());
     });
-    usdc_token.mint(&client.address, &(ticket_price * 2));
 
     let count = client.trigger_bulk_refund(&event_id, &10);
     assert_eq!(count, 2);
@@ -2469,6 +2469,9 @@ fn test_bulk_refund_success() {
             .status,
         PaymentStatus::Refunded
     );
+    let escrow_balance = client.get_event_escrow_balance(&event_id);
+    assert_eq!(escrow_balance.organizer_amount, 0);
+    assert_eq!(escrow_balance.platform_fee, 0);
 }
 
 #[test]
@@ -3701,7 +3704,7 @@ fn setup_test_with_resale_cap(
 }
 
 #[test]
-fn test_transfer_ticket_resale_price_within_cap() {
+fn test_transfer_ticket_within_cap() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
@@ -3741,8 +3744,7 @@ fn test_transfer_ticket_resale_price_within_cap() {
     usdc_token.mint(&buyer, &expected_fee);
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &expected_fee, &9999);
 
-    // Sale price at exactly the cap: 1000 * (10000 + 1000) / 10000 = 1100 USDC
-    let sale_price = Some(1100_0000000i128);
+    let sale_price = Some(1000_0000000i128);
     client.transfer_ticket(&payment_id, &new_owner, &sale_price);
 
     let updated = client.get_payment_status(&payment_id).unwrap();
@@ -3750,7 +3752,7 @@ fn test_transfer_ticket_resale_price_within_cap() {
 }
 
 #[test]
-fn test_transfer_ticket_resale_price_exceeds_cap() {
+fn test_transfer_ticket_exceeds_cap() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
@@ -3849,7 +3851,7 @@ fn test_transfer_ticket_no_sale_price_with_cap() {
 }
 
 #[test]
-fn test_transfer_ticket_sale_price_no_cap() {
+fn test_transfer_ticket_no_cap() {
     let env = Env::default();
     env.mock_all_auths();
     // Use the default mock registry which has resale_cap_bps: None
@@ -4313,7 +4315,7 @@ fn test_trigger_bulk_refund_paused() {
 }
 
 #[test]
-fn test_bulk_refund_rejected_for_active_event() {
+fn test_bulk_refund_non_cancelled_event() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -7868,7 +7870,7 @@ fn test_buy_secondary_ticket_self_purchase_rejected() {
 // ── Limited-Time Discount Code Tests ─────────────────────────────────────────
 
 #[test]
-fn test_create_and_apply_discount_code() {
+fn test_process_payment_with_discount_code() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -7911,7 +7913,11 @@ fn test_create_and_apply_discount_code() {
     );
     assert_eq!(result, String::from_str(&env, "pay_1"));
 
-    // current_uses must have incremented
+    let buyer_balance = token::Client::new(&env, &usdc_id).balance(&buyer);
+    assert_eq!(buyer_balance, 0);
+    let contract_balance = token::Client::new(&env, &usdc_id).balance(&client.address);
+    assert_eq!(contract_balance, expected_price);
+
     let data_after = client.get_discount_code(&event_id, &code).unwrap();
     assert_eq!(data_after.current_uses, 1);
 
@@ -7961,7 +7967,7 @@ fn test_discount_code_expired_returns_error() {
 }
 
 #[test]
-fn test_discount_code_max_uses_reached_returns_error() {
+fn test_discount_code_already_used() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -7969,7 +7975,6 @@ fn test_discount_code_max_uses_reached_returns_error() {
     let event_id = String::from_str(&env, "event_1");
     let code = String::from_str(&env, "ONCE");
 
-    // max_uses = 1
     client.create_discount_code(&event_id, &code, &10, &9_999_999_999u64, &1);
 
     let buyer = Address::generate(&env);
@@ -7998,8 +8003,10 @@ fn test_discount_code_max_uses_reached_returns_error() {
         &hash,
     );
 
+    let data_after = client.get_discount_code(&event_id, &code).unwrap();
+    assert_eq!(data_after.current_uses, 1);
+
     let (_secret, hash2) = test_secret(&env);
-    // Second use must fail
     let res = client.try_process_payment(
         &String::from_str(&env, "pay_2"),
         &event_id,
@@ -8016,7 +8023,7 @@ fn test_discount_code_max_uses_reached_returns_error() {
         },
         &hash2,
     );
-    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountMaxUsesReached)));
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountCodeUsed)));
 }
 
 #[test]

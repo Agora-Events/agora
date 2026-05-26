@@ -693,7 +693,11 @@ impl TicketPaymentContract {
                 return Err(TicketPaymentError::DiscountExpired);
             }
             if data.current_uses >= data.max_uses {
-                return Err(TicketPaymentError::DiscountMaxUsesReached);
+                return Err(if data.max_uses == 1 {
+                    TicketPaymentError::DiscountCodeUsed
+                } else {
+                    TicketPaymentError::DiscountMaxUsesReached
+                });
             }
             let discounted = effective_total
                 .checked_mul((100 - data.percentage) as i128)

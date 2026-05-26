@@ -105,6 +105,7 @@ use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, V
 pub mod error;
 pub mod events;
 pub mod storage;
+mod topics;
 pub mod types;
 
 use crate::error::EventRegistryError;

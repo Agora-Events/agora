@@ -1,6 +1,6 @@
-use soroban_sdk::{Env, Symbol, IntoVal};
+use soroban_sdk::{Env, IntoVal, Symbol};
 
-use crate::location::{Location, validate_location};
+use crate::location::{validate_location, Location};
 
 const EVENT_LOCATION: Symbol = Symbol::short("EVENT_LOC");
 
@@ -13,7 +13,5 @@ pub fn set_event_location(env: &Env, event_id: u64, location: Location) {
 }
 
 pub fn get_event_location(env: &Env, event_id: u64) -> Option<Location> {
-    env.storage()
-        .persistent()
-        .get(&(EVENT_LOCATION, event_id))
+    env.storage().persistent().get(&(EVENT_LOCATION, event_id))
 }
