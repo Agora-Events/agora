@@ -214,12 +214,7 @@ fn register_event_with_supply(
 
 // ── Helper: sell out an event by incrementing inventory up to max_supply ─────
 
-fn sell_out_event(
-    env: &Env,
-    client: &EventRegistryClient,
-    event_id: &String,
-    max_supply: u32,
-) {
+fn sell_out_event(env: &Env, client: &EventRegistryClient, event_id: &String, max_supply: u32) {
     // Register a mock ticket-payment contract so increment_inventory is callable.
     // mock_all_auths() is already active, so all require_auth() calls pass.
     let ticket_payment = Address::generate(env);

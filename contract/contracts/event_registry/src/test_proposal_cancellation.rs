@@ -1,4 +1,4 @@
- use crate::{EventRegistry, EventRegistryClient};
+use crate::{EventRegistry, EventRegistryClient};
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 fn create_test_env() -> (Env, EventRegistryClient<'static>, Address, Address) {
@@ -157,7 +157,9 @@ fn test_cancel_proposal_by_proposer() {
     let result = client.try_cancel_proposal(&admin1, &proposal_id);
     assert_eq!(
         result,
-        Err(Ok(crate::error::EventRegistryError::ProposalAlreadyCancelled)),
+        Err(Ok(
+            crate::error::EventRegistryError::ProposalAlreadyCancelled
+        )),
         "second cancel should return ProposalAlreadyCancelled"
     );
 }
@@ -176,13 +178,18 @@ fn test_cancel_already_executed_proposal() {
     client.execute_proposal(&admin1, &proposal_id);
 
     let proposal = client.get_proposal(&proposal_id).unwrap();
-    assert!(proposal.executed, "proposal should be executed before cancel attempt");
+    assert!(
+        proposal.executed,
+        "proposal should be executed before cancel attempt"
+    );
 
     // Trying to cancel an already-executed proposal must return ProposalAlreadyExecuted (#38)
     let result = client.try_cancel_proposal(&admin1, &proposal_id);
     assert_eq!(
         result,
-        Err(Ok(crate::error::EventRegistryError::ProposalAlreadyExecuted)),
+        Err(Ok(
+            crate::error::EventRegistryError::ProposalAlreadyExecuted
+        )),
         "cancelling an executed proposal should return ProposalAlreadyExecuted"
     );
 }
@@ -213,7 +220,10 @@ fn test_cancel_proposal_by_non_proposer() {
 
     // The proposal must still be active (not cancelled)
     let proposal = client.get_proposal(&proposal_id).unwrap();
-    assert!(!proposal.cancelled, "proposal should not be cancelled after unauthorized attempt");
+    assert!(
+        !proposal.cancelled,
+        "proposal should not be cancelled after unauthorized attempt"
+    );
 }
 
 /// Cancel a proposal, then try to vote on it.
@@ -242,7 +252,9 @@ fn test_vote_on_cancelled_proposal() {
     let result = client.try_approve_proposal(&admin2, &proposal_id);
     assert_eq!(
         result,
-        Err(Ok(crate::error::EventRegistryError::ProposalAlreadyCancelled)),
+        Err(Ok(
+            crate::error::EventRegistryError::ProposalAlreadyCancelled
+        )),
         "voting on a cancelled proposal should return ProposalAlreadyCancelled"
     );
 }
