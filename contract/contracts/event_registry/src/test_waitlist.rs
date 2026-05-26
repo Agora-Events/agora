@@ -228,7 +228,7 @@ fn sell_out_event(
     let tier_id = String::from_str(env, "general");
     for i in 0..max_supply {
         let buyer = Address::generate(env);
-        client
+        let _ = client
             .try_increment_inventory(event_id, &tier_id, &buyer, &1)
             .unwrap_or_else(|_| panic!("sell_out_event: increment failed at ticket {}", i));
     }

@@ -75,6 +75,7 @@ impl MockCancelledRegistry {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -91,7 +92,7 @@ impl MockEventRegistry {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None, // 5%
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -157,6 +158,7 @@ impl MockEventRegistry {
                 accepted_tokens,
                 use_global_whitelist,
                 referral_rate_bps: 0,
+                transfer_lock_duration: 0,
             });
         }
         None
@@ -190,7 +192,7 @@ impl MockEventRegistry2 {
             payment_address: Address::generate(&env),
             platform_fee_percent: 250,
             custom_fee_bps: None, // 2.5%
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -244,6 +246,7 @@ impl MockEventRegistry2 {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -273,7 +276,7 @@ impl MockAuctionEventRegistry {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -330,6 +333,7 @@ impl MockAuctionEventRegistry {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -1246,6 +1250,7 @@ impl MockEventRegistryMaxSupply {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -1320,7 +1325,7 @@ impl MockEventRegistryWithInventory {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -1377,6 +1382,7 @@ impl MockEventRegistryWithInventory {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -1571,7 +1577,7 @@ impl MockEventRegistryWithMilestones {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -1638,6 +1644,7 @@ impl MockEventRegistryWithMilestones {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -2018,7 +2025,7 @@ impl MockEventRegistryEarlyBird {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None, // 5%
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -2072,6 +2079,7 @@ impl MockEventRegistryEarlyBird {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -2571,7 +2579,7 @@ impl MockEventRegistryWithOrganizer {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -2637,6 +2645,7 @@ impl MockEventRegistryWithOrganizer {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -2997,6 +3006,7 @@ impl MockPlatformRegistryE2E {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         };
 
         env.storage()
@@ -3031,7 +3041,7 @@ impl MockPlatformRegistryE2E {
             payment_address: event.payment_address,
             platform_fee_percent: event.platform_fee_percent,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -3475,7 +3485,7 @@ impl MockEventRegistryRefund {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -3529,6 +3539,7 @@ impl MockEventRegistryRefund {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -3562,7 +3573,7 @@ impl MockEventRegistryWithResaleCap {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -3616,6 +3627,7 @@ impl MockEventRegistryWithResaleCap {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -3869,7 +3881,7 @@ impl MockRegistryZeroCap {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -3923,6 +3935,7 @@ impl MockRegistryZeroCap {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -4541,7 +4554,7 @@ impl MockEventRegistryUsdPriced {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None, // 5%
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -4595,6 +4608,7 @@ impl MockEventRegistryUsdPriced {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -5350,6 +5364,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
     pub fn increment_inventory(
@@ -5386,7 +5401,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 }
@@ -5498,6 +5513,7 @@ impl MockEventRegistryWithLoyalty {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
     pub fn increment_inventory(
@@ -5534,7 +5550,7 @@ impl MockEventRegistryWithLoyalty {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 }
@@ -5594,6 +5610,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
     pub fn increment_inventory(
@@ -5629,7 +5646,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 }
@@ -5790,7 +5807,7 @@ impl MockEventRegistryCustomFee {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: Some(100), // 1%
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -5841,6 +5858,7 @@ impl MockEventRegistryCustomFee {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -5936,7 +5954,7 @@ impl MockEventRegistryHighPrice {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -5990,6 +6008,7 @@ impl MockEventRegistryHighPrice {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -6064,7 +6083,7 @@ impl MockEventRegistryRefundDeadline {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -6118,6 +6137,7 @@ impl MockEventRegistryRefundDeadline {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -6698,7 +6718,7 @@ impl MockEventRegistryForDust {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 
@@ -6741,6 +6761,7 @@ impl MockEventRegistryForDust {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
 
@@ -6963,6 +6984,7 @@ impl MockEventRegistryForReferral {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
     pub fn increment_inventory(
@@ -6998,7 +7020,7 @@ impl MockEventRegistryForReferral {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 }
@@ -7057,6 +7079,7 @@ impl MockEventRegistryFullLoyaltyDiscount {
             accepted_tokens: soroban_sdk::vec![&env],
             use_global_whitelist: true,
             referral_rate_bps: 0,
+            transfer_lock_duration: 0,
         })
     }
     pub fn increment_inventory(
@@ -7093,7 +7116,7 @@ impl MockEventRegistryFullLoyaltyDiscount {
             payment_address: Address::generate(&env),
             platform_fee_percent: 500,
             custom_fee_bps: None,
-            referral_rate_bps: 0,
+            referral_rate_bps: 0
         }
     }
 }
@@ -8257,4 +8280,254 @@ fn test_affiliate_reward_capped_at_platform_fee() {
     // Escrow platform_fee must be 0 — all of it went to the affiliate
     let escrow = client.get_event_escrow_balance(&event_id);
     assert_eq!(escrow.platform_fee, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transfer lock duration tests  (issue C-60)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Mock registry that returns events with a configurable transfer_lock_duration.
+/// The lock duration is stored in instance storage under the key "lock_secs" so
+/// each test can set it independently without needing a separate mock contract.
+#[soroban_sdk::contract]
+pub struct MockTransferLockRegistry;
+
+#[soroban_sdk::contractimpl]
+impl MockTransferLockRegistry {
+    /// Store the lock duration that subsequent get_event calls will return.
+    pub fn set_lock(env: Env, secs: u64) {
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "lock_secs"), &secs);
+    }
+
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            referral_rate_bps: 0,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        let lock_secs: u64 = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, "lock_secs"))
+            .unwrap_or(0u64);
+
+        let mut tiers = soroban_sdk::Map::new(&env);
+        tiers.set(
+            String::from_str(&env, "tier_1"),
+            event_registry::TicketTier {
+                name: String::from_str(&env, "General"),
+                price: 1000_0000000i128,
+                early_bird_price: 1000_0000000i128,
+                early_bird_deadline: 0,
+                usd_price: 0,
+                tier_limit: 100,
+                current_sold: 0,
+                is_refundable: true,
+                auction_config: soroban_sdk::vec![&env],
+                loyalty_multiplier: 1,
+            },
+        );
+
+        Some(event_registry::EventInfo {
+            event_id,
+            name: String::from_str(&env, "Test Event"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(
+                &env,
+                "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers,
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            banner_cid: None,
+            tags: None,
+            start_time: 0,
+            end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
+            referral_rate_bps: 0,
+            transfer_lock_duration: lock_secs,
+        })
+    }
+
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+    }
+    pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
+    pub fn get_global_promo_bps(_env: Env) -> u32 {
+        0
+    }
+    pub fn get_promo_expiry(_env: Env) -> u64 {
+        0
+    }
+}
+
+/// Helper: set up a TicketPayment contract backed by MockTransferLockRegistry.
+/// Returns (client, usdc_id, registry_id).
+fn setup_transfer_lock_test(env: &Env) -> (TicketPaymentContractClient<'static>, Address, Address) {
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(env, &contract_id);
+
+    let admin = Address::generate(env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(env))
+        .address();
+    let platform_wallet = Address::generate(env);
+    let registry_id = env.register(MockTransferLockRegistry, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    (client, usdc_id, registry_id)
+}
+
+
+/// A ticket purchased while a 1-hour transfer lock is active must return
+/// NonTransferable when a transfer is attempted immediately after purchase.
+#[test]
+fn test_transfer_blocked_within_lock_period() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _usdc_id, registry_id) = setup_transfer_lock_test(&env);
+
+    // Set the ledger timestamp to a known value and record it as purchase time.
+    let purchase_time: u64 = 1_000_000;
+    env.ledger().with_mut(|li| li.timestamp = purchase_time);
+
+    // Configure the mock registry to return a 1-hour (3600 s) transfer lock.
+    // Call set_lock via the generated client — use env.as_contract to call directly.
+    env.as_contract(&registry_id, || {
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "lock_secs"), &3600u64);
+    });
+
+    let payment_id = String::from_str(&env, "pay_lock_1");
+    let buyer = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    // Insert a confirmed payment with created_at = purchase_time (lock not yet expired).
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    // Ledger is still at purchase_time — lock window has NOT elapsed.
+    let result = client.try_transfer_ticket(&payment_id, &new_owner, &None);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::NonTransferable)),
+        "transfer within lock period must return NonTransferable"
+    );
+
+    // Ownership must be unchanged.
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(
+        payment.buyer_address, buyer,
+        "buyer_address must not change after a blocked transfer"
+    );
+}
+
+/// After the transfer lock window has elapsed the transfer must succeed.
+#[test]
+fn test_transfer_allowed_after_lock_period() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, usdc_id, registry_id) = setup_transfer_lock_test(&env);
+
+    let purchase_time: u64 = 1_000_000;
+    env.ledger().with_mut(|li| li.timestamp = purchase_time);
+
+    // 1-hour lock.
+    env.as_contract(&registry_id, || {
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "lock_secs"), &3600u64);
+    });
+
+    let payment_id = String::from_str(&env, "pay_lock_2");
+    let buyer = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    // Advance ledger past the lock window (purchase_time + 3600 + 1 = 1_003_601).
+    env.ledger()
+        .with_mut(|li| li.timestamp = purchase_time + 3601);
+
+    // Mint and approve the transfer fee so the token transfer succeeds.
+    let transfer_fee = (1000_0000000i128 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &transfer_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &transfer_fee, &99999);
+
+    // Transfer must now succeed.
+    client.transfer_ticket(&payment_id, &new_owner, &None);
+
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(
+        updated.buyer_address, new_owner,
+        "buyer_address must be updated to new_owner after successful transfer"
+    );
+}
+
+/// When transfer_lock_duration is 0 the ticket is always transferable immediately.
+#[test]
+fn test_transfer_no_lock_always_allowed() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, usdc_id, registry_id) = setup_transfer_lock_test(&env);
+
+    let purchase_time: u64 = 1_000_000;
+    env.ledger().with_mut(|li| li.timestamp = purchase_time);
+
+    // Explicitly set lock to 0 (no lock).
+    env.as_contract(&registry_id, || {
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "lock_secs"), &0u64);
+    });
+
+    let payment_id = String::from_str(&env, "pay_no_lock");
+    let buyer = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+
+    // Payment created_at == current ledger time — would be blocked if lock > 0.
+    insert_confirmed_payment(&env, &client.address, &payment_id, &buyer, "event_1");
+
+    // Mint and approve the transfer fee.
+    let transfer_fee = (1000_0000000i128 * TRANSFER_FEE_BPS as i128) / MAX_BPS as i128;
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &transfer_fee);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &transfer_fee, &99999);
+
+    // Must succeed immediately with no lock.
+    client.transfer_ticket(&payment_id, &new_owner, &None);
+
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(
+        updated.buyer_address, new_owner,
+        "transfer with no lock must succeed immediately"
+    );
 }

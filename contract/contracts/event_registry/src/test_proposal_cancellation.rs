@@ -1,4 +1,4 @@
-use crate::{EventRegistry, EventRegistryClient};
+ use crate::{EventRegistry, EventRegistryClient};
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 fn create_test_env() -> (Env, EventRegistryClient<'static>, Address, Address) {
