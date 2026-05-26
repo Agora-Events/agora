@@ -7098,3 +7098,366 @@ fn test_unknown_category_returns_empty() {
     let result = client.get_events_by_category(&5u32);
     assert_eq!(result.len(), 0);
 }
+
+// #683: Add event_registry unit test for min_sales_target and target_deadline enforcement
+
+#[test]
+fn test_goal_met_flag_set_when_target_reached() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "goal_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let mut tiers = Map::new(&env);
+    let tier_id = String::from_str(&env, "general");
+    tiers.set(
+        tier_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: Some(10),
+        target_deadline: Some(10000),
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 20000,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
+    });
+
+    // Initially goal_met should be false
+    assert!(!client.get_event(&event_id).unwrap().goal_met);
+
+    // Increment inventory 10 times to reach the target
+    for _ in 0..10 {
+        client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+    }
+
+    // After reaching target, goal_met should be true
+    assert!(client.get_event(&event_id).unwrap().goal_met);
+}
+
+#[test]
+#[should_panic]
+fn test_target_deadline_after_end_time_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "deadline_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    // target_deadline (20000) > end_time (10000) should panic with DeadlineAfterEndTime
+    client.register_event(&EventRegistrationArgs {
+        event_id,
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: Some(10),
+        target_deadline: Some(20000),
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 10000,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
+    });
+}
+
+#[test]
+#[should_panic]
+fn test_target_deadline_in_past_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(50000);
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "past_deadline_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    // target_deadline (10000) is in the past (current timestamp is 50000)
+    // Should panic with InvalidTargetDeadline
+    client.register_event(&EventRegistrationArgs {
+        event_id,
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: Some(10),
+        target_deadline: Some(10000),
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 60000,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
+    });
+}
+
+// #685: Add event_registry unit test for global_counters consistency
+
+#[test]
+fn test_global_counters_full_lifecycle() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    // Start: assert all counters are 0
+    assert_eq!(client.get_managed_events_count(), 0);
+    assert_eq!(client.get_active_events_count(), 0);
+    assert_eq!(client.get_global_tickets_sold(), 0);
+
+    let event_id = String::from_str(&env, "counter_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let mut tiers = Map::new(&env);
+    let tier_id = String::from_str(&env, "general");
+    tiers.set(
+        tier_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer.clone(),
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
+    });
+
+    // Register an event: assert GlobalEventCount = 1, GlobalActiveEventCount = 1
+    assert_eq!(client.get_managed_events_count(), 1);
+    assert_eq!(client.get_active_events_count(), 1);
+
+    // Deactivate the event: assert GlobalActiveEventCount = 0
+    client.update_event_status(&event_id, &false);
+    assert_eq!(client.get_active_events_count(), 0);
+
+    // Reactivate: assert GlobalActiveEventCount = 1
+    client.update_event_status(&event_id, &true);
+    assert_eq!(client.get_active_events_count(), 1);
+
+    // Cancel: assert GlobalActiveEventCount = 0, GlobalEventCount unchanged
+    client.cancel_event(&event_id, &None);
+    assert_eq!(client.get_active_events_count(), 0);
+    assert_eq!(client.get_managed_events_count(), 1);
+
+    // Increment inventory 5 times: assert GlobalTicketsSold = 5
+    // Note: cancelled events cannot increment inventory, so we need to register a new event
+    let event_id2 = String::from_str(&env, "counter_event2");
+    let metadata_cid2 = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let mut tiers2 = Map::new(&env);
+    let tier_id2 = String::from_str(&env, "general");
+    tiers2.set(
+        tier_id2.clone(),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id2.clone(),
+        name: String::from_str(&env, "Test Event 2"),
+        organizer_address: organizer,
+        payment_address: test_payment_address(&env),
+        metadata_cid: metadata_cid2,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers2,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
+    });
+
+    for _ in 0..5 {
+        client.increment_inventory(&event_id2, &tier_id2, &Address::generate(&env), &1);
+    }
+    assert_eq!(client.get_global_tickets_sold(), 5);
+}
+
+// #681: Add event_registry unit test for add_event_to_category and get_events_by_category
+
+#[test]
+fn test_event_indexed_by_category_on_register() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+
+    let category_ids = soroban_sdk::vec![&env, 1u32, 3u32];
+    client.register_event(&make_args(&env, "cat_event", &organizer, Some(category_ids.clone())));
+
+    // Assert both category indexes contain the event ID
+    let cat1_events = client.get_events_by_category(&1u32);
+    assert_eq!(cat1_events.len(), 1);
+    assert!(cat1_events.contains(String::from_str(&env, "cat_event")));
+
+    let cat3_events = client.get_events_by_category(&3u32);
+    assert_eq!(cat3_events.len(), 1);
+    assert!(cat3_events.contains(String::from_str(&env, "cat_event")));
+}
+
+#[test]
+fn test_get_events_by_category_returns_correct_events() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+
+    let cat1_ids = soroban_sdk::vec![&env, 1u32];
+    let cat2_ids = soroban_sdk::vec![&env, 2u32];
+
+    // Register two events in category 1
+    client.register_event(&make_args(&env, "event1_cat1", &organizer, Some(cat1_ids.clone())));
+    client.register_event(&make_args(&env, "event2_cat1", &organizer, Some(cat1_ids.clone())));
+
+    // Register one event in category 2
+    client.register_event(&make_args(&env, "event1_cat2", &organizer, Some(cat2_ids)));
+
+    // Assert get_events_by_category(1) returns exactly two events
+    let cat1_events = client.get_events_by_category(&1u32);
+    assert_eq!(cat1_events.len(), 2);
+    assert!(cat1_events.contains(String::from_str(&env, "event1_cat1")));
+    assert!(cat1_events.contains(String::from_str(&env, "event2_cat1")));
+}
