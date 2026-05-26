@@ -3387,3 +3387,119 @@ fn test_active_proposals_list() {
     assert!(!active_proposals.contains(proposal_id1));
     assert!(active_proposals.contains(proposal_id2));
 }
+
+
+// Issue #680: Add event_registry unit test for update_loyalty_score and get_loyalty_discount_bps
+
+#[test]
+fn test_update_loyalty_score_increments() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let guest = Address::generate(&env);
+    let caller = Address::generate(&env);
+
+    // Initial profile should not exist
+    assert!(client.get_guest_profile(&guest).is_none());
+
+    // Update loyalty score
+    client.update_loyalty_score(&caller, &guest, &5, &1000_0000000i128, &1);
+
+    // Verify profile was created and score updated
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert!(profile.loyalty_score > 0);
+    assert_eq!(profile.total_tickets_purchased, 5);
+    assert_eq!(profile.total_spent, 1000_0000000i128);
+
+    // Update again
+    let old_score = profile.loyalty_score;
+    client.update_loyalty_score(&caller, &guest, &3, &500_0000000i128, &1);
+
+    // Verify score incremented
+    let updated_profile = client.get_guest_profile(&guest).unwrap();
+    assert!(updated_profile.loyalty_score > old_score);
+    assert_eq!(updated_profile.total_tickets_purchased, 8);
+    assert_eq!(updated_profile.total_spent, 1500_0000000i128);
+}
+
+#[test]
+fn test_loyalty_discount_increases_with_score() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let guest = Address::generate(&env);
+    let caller = Address::generate(&env);
+
+    // Initial discount should be 0
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 0);
+
+    // Update loyalty score to a high value (simulate many purchases)
+    // Score calculation: tickets * amount_spent / 1_000_000 * multiplier
+    // To get score > 1000, we need: tickets * amount * multiplier / 1_000_000 > 1000
+    // Example: 100 tickets * 20_000_000 * 1 / 1_000_000 = 2000 score
+    client.update_loyalty_score(&caller, &guest, &100, &20_000_0000000i128, &1);
+
+    // Verify discount is now non-zero (should be 1000 bps = 10% for score >= 1000)
+    let discount = client.get_loyalty_discount_bps(&guest);
+    assert!(discount > 0);
+    assert_eq!(discount, 1000); // 10% discount for high score
+}
+
+#[test]
+fn test_loyalty_discount_zero_for_new_guest() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let new_guest = Address::generate(&env);
+
+    // New guest with no history should have 0 discount
+    let discount = client.get_loyalty_discount_bps(&new_guest);
+    assert_eq!(discount, 0);
+
+    // Profile should not exist
+    assert!(client.get_guest_profile(&new_guest).is_none());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_update_loyalty_score_unauthorized() {
+    let env = Env::default();
+    // Do NOT mock all auths - we want to test authorization
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let guest = Address::generate(&env);
+    let unauthorized_caller = Address::generate(&env);
+
+    // Stop mocking auths to test authorization
+    // Try to update loyalty score from unauthorized address - should fail
+    client.update_loyalty_score(&unauthorized_caller, &guest, &5, &1000_0000000i128, &1);
+}

@@ -883,5 +883,3 @@ pub fn get_affiliate_rate(env: &Env, event_id: &String, affiliate: &Address) -> 
         .persistent()
         .get(&DataKey::AffiliateRate(event_id.clone(), affiliate.clone()))
 }
-=======
->>>>>>> 123b1ce (feat: Add payment search by status functionality (#201))

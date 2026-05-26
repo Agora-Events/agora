@@ -6296,7 +6296,6 @@ fn test_get_payments_by_status_multiple_payments() {
     let payment_id2 = String::from_str(&env, "payment_002");
     let payment_id3 = String::from_str(&env, "payment_003");
 
-<<<<<<< HEAD
     let (_secret, hash) = test_secret(&env);
     client.process_payment(
         &payment_id1,
@@ -6406,16 +6405,12 @@ fn test_get_payments_by_status_with_refunds() {
     token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
 
     // Process and confirm a payment
-<<<<<<< HEAD
     let (_secret, hash) = test_secret(&env);
-=======
->>>>>>> 123b1ce (feat: Add payment search by status functionality (#201))
     client.process_payment(
         &payment_id,
         &event_id,
         &tier_id,
         &buyer,
-<<<<<<< HEAD
         &None::<Address>,
         &usdc_id,
         &amount,
@@ -6426,13 +6421,6 @@ fn test_get_payments_by_status_with_refunds() {
             discount_code: None,
         },
         &hash,
-=======
-        &usdc_id,
-        &amount,
-        &1,
-        &None,
-        &None,
->>>>>>> 123b1ce (feat: Add payment search by status functionality (#201))
     );
 
     client.confirm_payment(&payment_id, &String::from_str(&env, "tx_hash_confirmed"));
@@ -8514,3 +8502,133 @@ fn test_transfer_no_lock_always_allowed() {
 }
 =======
 >>>>>>> 123b1ce (feat: Add payment search by status functionality (#201))
+
+
+// Issue #678: Add ticket_payment unit test for auction bid flow
+
+#[test]
+fn test_auction_place_bid_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_auction_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let bidder = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let bid_amount = 1500_0000000i128; // Above starting price of 1000
+
+    // Mint USDC to bidder
+    usdc_token.mint(&bidder, &bid_amount);
+
+    // Approve contract to spend tokens
+    token::Client::new(&env, &usdc_id).approve(&bidder, &client.address, &bid_amount, &99999);
+
+    // Place bid
+    client.place_bid(&event_id, &tier_id, &bidder, &usdc_id, &bid_amount);
+
+    // Verify highest bid was recorded
+    let highest_bid = client.get_highest_bid(&event_id, &tier_id).unwrap();
+    assert_eq!(highest_bid.bidder, bidder);
+    assert_eq!(highest_bid.amount, bid_amount);
+    assert_eq!(highest_bid.token_address, usdc_id);
+}
+
+#[test]
+#[should_panic(expected = "Bid too low")]
+fn test_auction_bid_too_low() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_auction_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let bidder1 = Address::generate(&env);
+    let bidder2 = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    
+    let first_bid = 1500_0000000i128;
+    let low_bid = 1550_0000000i128; // Less than first_bid + min_increment (100)
+
+    // First bidder places bid
+    usdc_token.mint(&bidder1, &first_bid);
+    token::Client::new(&env, &usdc_id).approve(&bidder1, &client.address, &first_bid, &99999);
+    client.place_bid(&event_id, &tier_id, &bidder1, &usdc_id, &first_bid);
+
+    // Second bidder tries to place bid that's too low
+    usdc_token.mint(&bidder2, &low_bid);
+    token::Client::new(&env, &usdc_id).approve(&bidder2, &client.address, &low_bid, &99999);
+    
+    // This should panic with "Bid too low"
+    client.place_bid(&event_id, &tier_id, &bidder2, &usdc_id, &low_bid);
+}
+
+#[test]
+fn test_auction_close_and_claim() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_auction_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let bidder = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let bid_amount = 1500_0000000i128;
+    let payment_id = String::from_str(&env, "auction_payment_1");
+
+    // Set ledger time before auction end
+    env.ledger().with_mut(|li| li.timestamp = 500);
+
+    // Mint USDC to bidder
+    usdc_token.mint(&bidder, &bid_amount);
+
+    // Approve contract to spend tokens
+    token::Client::new(&env, &usdc_id).approve(&bidder, &client.address, &bid_amount, &99999);
+
+    // Place bid
+    client.place_bid(&event_id, &tier_id, &bidder, &usdc_id, &bid_amount);
+
+    // Advance ledger past auction end_time (1000)
+    env.ledger().with_mut(|li| li.timestamp = 1001);
+
+    let (_secret, hash) = test_secret(&env);
+
+    // Close auction and claim ticket
+    client.close_auction(&payment_id, &event_id, &tier_id, &hash);
+
+    // Verify payment was created for the winner
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.buyer_address, bidder);
+    assert_eq!(payment.amount, bid_amount);
+    assert_eq!(payment.status, PaymentStatus::Pending);
+}
+
+#[test]
+#[should_panic(expected = "Auction ended")]
+fn test_auction_bid_after_end_time() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_auction_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let bidder = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let bid_amount = 1500_0000000i128;
+
+    // Advance ledger past auction end_time (1000)
+    env.ledger().with_mut(|li| li.timestamp = 1001);
+
+    // Mint USDC to bidder
+    usdc_token.mint(&bidder, &bid_amount);
+
+    // Approve contract to spend tokens
+    token::Client::new(&env, &usdc_id).approve(&bidder, &client.address, &bid_amount, &99999);
+
+    // Try to place bid after auction ended - should panic
+    client.place_bid(&event_id, &tier_id, &bidder, &usdc_id, &bid_amount);
+}

@@ -382,7 +382,7 @@ fn test_archive_event_with_sold_tickets() {
     client.set_ticket_payment_contract(&ticket_payment);
 
     // Simulate ticket sales
-    client.increment_inventory(&event_id, &String::from_str(&env, "general"), &buyer, &5);
+    client.increment_inventory(&event_id, &String::from_str(&env, "general"), &5);
 
     // Verify tickets were sold
     let event_before = client.get_event(&event_id).unwrap();
@@ -491,4 +491,169 @@ fn test_multiple_events_archival() {
     // Verify all receipts exist
     let receipts = client.get_organizer_receipts(&organizer);
     assert_eq!(receipts.len(), 3);
+}
+
+
+// Issue #684: Add event_registry unit test for archive_event storage reclamation
+
+#[test]
+fn test_archive_removes_full_event_info() {
+    let (env, client, _admin, _platform_wallet, _usdc_token) = setup_test_env();
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_storage_reclaim");
+
+    // Set initial ledger time
+    let initial_time = 1_000_000u64;
+    env.ledger().set(LedgerInfo {
+        timestamp: initial_time,
+        protocol_version: 23,
+        sequence_number: 10,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    // Register event with end_time
+    let event_end_time = initial_time + (24 * 60 * 60);
+    register_test_event(&env, &client, event_id.clone(), &organizer, event_end_time);
+
+    // Simulate some ticket sales
+    let ticket_payment = Address::generate(&env);
+    client.set_ticket_payment_contract(&ticket_payment);
+    let buyer = Address::generate(&env);
+    client.increment_inventory(&event_id, &String::from_str(&env, "general"), &10);
+
+    // Verify full EventInfo exists before archival
+    let event_before = client.get_event(&event_id);
+    assert!(event_before.is_some());
+    let event_info = event_before.unwrap();
+    assert_eq!(event_info.current_supply, 10);
+    assert!(event_info.tiers.len() > 0);
+    assert!(event_info.tags.is_some());
+
+    // Deactivate the event
+    client.update_event_status(&event_id, &false);
+
+    // Advance ledger past end_time + 30 days
+    let archive_time = event_end_time + (30 * 24 * 60 * 60) + 1;
+    env.ledger().set(LedgerInfo {
+        timestamp: archive_time,
+        protocol_version: 23,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    // Call archive_event
+    let result = client.try_archive_event(&event_id);
+    assert!(result.is_ok());
+
+    // Assert get_event returns None (full info removed)
+    let event_after = client.get_event(&event_id);
+    assert!(event_after.is_none(), "Full EventInfo should be removed after archiving");
+
+    // Assert get_event_receipt returns Some(EventReceipt) with correct fields
+    let receipts = client.get_organizer_receipts(&organizer);
+    assert_eq!(receipts.len(), 1);
+    
+    let receipt = receipts.get(0).unwrap();
+    assert_eq!(receipt.event_id, event_id);
+    assert_eq!(receipt.organizer_address, organizer);
+    assert_eq!(receipt.total_sold, 10);
+    assert_eq!(receipt.archived_at, archive_time);
+}
+
+#[test]
+fn test_archive_before_end_time_rejected() {
+    let (env, client, _admin, _platform_wallet, _usdc_token) = setup_test_env();
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_archive_before_end");
+
+    // Set initial ledger time
+    let initial_time = 1_000_000u64;
+    env.ledger().set(LedgerInfo {
+        timestamp: initial_time,
+        protocol_version: 23,
+        sequence_number: 10,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    // Register event with end_time in the future
+    let event_end_time = initial_time + (365 * 24 * 60 * 60); // 1 year later
+    register_test_event(&env, &client, event_id.clone(), &organizer, event_end_time);
+
+    // Deactivate the event
+    client.update_event_status(&event_id, &false);
+
+    // Try to archive before event has ended (current time < end_time)
+    // Current time is still initial_time, which is before event_end_time
+    let result = client.try_archive_event(&event_id);
+    
+    // Assert EventNotEnded error
+    assert!(result.is_err());
+    assert_eq!(result.err(), Some(Ok(EventRegistryError::EventNotEnded)));
+
+    // Verify event still exists
+    let event_after = client.get_event(&event_id);
+    assert!(event_after.is_some());
+}
+
+#[test]
+fn test_archive_active_event_rejected() {
+    let (env, client, _admin, _platform_wallet, _usdc_token) = setup_test_env();
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_archive_active_rejected");
+
+    // Set initial ledger time
+    let initial_time = 1_000_000u64;
+    env.ledger().set(LedgerInfo {
+        timestamp: initial_time,
+        protocol_version: 23,
+        sequence_number: 10,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    // Register event with end_time
+    let event_end_time = initial_time + (24 * 60 * 60);
+    register_test_event(&env, &client, event_id.clone(), &organizer, event_end_time);
+
+    // Event is still active - do NOT deactivate
+
+    // Advance ledger past end_time + 30 days
+    let archive_time = event_end_time + (30 * 24 * 60 * 60) + 1;
+    env.ledger().set(LedgerInfo {
+        timestamp: archive_time,
+        protocol_version: 23,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    // Try to archive while event is still active (not yet 30 days past end)
+    let result = client.try_archive_event(&event_id);
+    
+    // Assert appropriate error (EventIsActive)
+    assert!(result.is_err());
+    assert_eq!(result.err(), Some(Ok(EventRegistryError::EventIsActive)));
+
+    // Verify event still exists
+    let event_after = client.get_event(&event_id);
+    assert!(event_after.is_some());
+    assert!(event_after.unwrap().is_active);
 }
