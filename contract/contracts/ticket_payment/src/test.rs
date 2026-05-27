@@ -6950,6 +6950,285 @@ fn test_remove_governor_succeeds_when_multiple_governors_exist() {
     assert_eq!(failed, Err(Ok(TicketPaymentError::NotGovernor)));
 }
 
+// ── Per-user limit enforcement tests for process_payment ───────────────
+
+#[soroban_sdk::contract]
+pub struct MockEventRegistryEnforceMaxPerUser;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryEnforceMaxPerUser {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            referral_rate_bps: 0,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        let mut tiers = soroban_sdk::Map::new(&env);
+        tiers.set(
+            String::from_str(&env, "tier_1"),
+            event_registry::TicketTier {
+                name: String::from_str(&env, "General"),
+                price: 1000_0000000i128,
+                early_bird_price: 1000_0000000i128,
+                early_bird_deadline: 0,
+                usd_price: 0,
+                tier_limit: 100,
+                current_sold: 0,
+                is_refundable: true,
+                auction_config: soroban_sdk::vec![&env],
+                loyalty_multiplier: 1,
+                max_per_user: 1,
+            },
+        );
+
+        Some(event_registry::EventInfo {
+            event_id,
+            name: String::from_str(&env, "Test Event"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers,
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            banner_cid: None,
+            tags: None,
+            start_time: 0,
+            end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
+            referral_rate_bps: 0,
+        })
+    }
+
+    pub fn increment_inventory(
+        env: Env,
+        _event_id: String,
+        _tier_id: String,
+        user: Address,
+        quantity: u32,
+    ) {
+        // Track purchases per user in instance storage keyed by Address.
+        let current: u32 = env.storage().instance().get(&user).unwrap_or(0u32);
+        let new = current.checked_add(quantity).unwrap_or(u32::MAX);
+        if new > 1u32 {
+            panic!("MaxPerUserExceeded");
+        }
+        env.storage().instance().set(&user, &new);
+    }
+}
+
+#[soroban_sdk::contract]
+pub struct MockEventRegistryUnlimitedPerUser;
+
+#[soroban_sdk::contractimpl]
+impl MockEventRegistryUnlimitedPerUser {
+    pub fn get_event_payment_info(env: Env, _event_id: String) -> event_registry::PaymentInfo {
+        event_registry::PaymentInfo {
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            referral_rate_bps: 0,
+        }
+    }
+
+    pub fn get_event(env: Env, event_id: String) -> Option<event_registry::EventInfo> {
+        let mut tiers = soroban_sdk::Map::new(&env);
+        tiers.set(
+            String::from_str(&env, "tier_1"),
+            event_registry::TicketTier {
+                name: String::from_str(&env, "General"),
+                price: 1000_0000000i128,
+                early_bird_price: 1000_0000000i128,
+                early_bird_deadline: 0,
+                usd_price: 0,
+                tier_limit: 100,
+                current_sold: 0,
+                is_refundable: true,
+                auction_config: soroban_sdk::vec![&env],
+                loyalty_multiplier: 1,
+                max_per_user: 0,
+            },
+        );
+
+        Some(event_registry::EventInfo {
+            event_id,
+            name: String::from_str(&env, "Test Event"),
+            organizer_address: Address::generate(&env),
+            payment_address: Address::generate(&env),
+            platform_fee_percent: 500,
+            custom_fee_bps: None,
+            is_active: true,
+            status: event_registry::EventStatus::Active,
+            created_at: 0,
+            metadata_cid: String::from_str(&env, "cid"),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers,
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            banner_cid: None,
+            tags: None,
+            start_time: 0,
+            end_time: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
+            referral_rate_bps: 0,
+        })
+    }
+
+    pub fn increment_inventory(
+        _env: Env,
+        _event_id: String,
+        _tier_id: String,
+        _user: Address,
+        _quantity: u32,
+    ) {
+        // Unlimited: accept any increments
+    }
+}
+
+#[test]
+fn test_process_payment_respects_max_per_user() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryEnforceMaxPerUser, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &1000_0000000i128);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &1000_0000000i128, &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    let ok = client.try_process_payment(
+        &String::from_str(&env, "p1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &1000_0000000i128,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    assert!(ok.is_ok());
+
+    // Second purchase by same buyer should fail due to max_per_user = 1
+    let (_secret, hash) = test_secret(&env);
+    let res = client.try_process_payment(
+        &String::from_str(&env, "p2"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &1000_0000000i128,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_process_payment_allows_unlimited_max_per_user() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let platform_wallet = Address::generate(&env);
+    let registry_id = env.register(MockEventRegistryUnlimitedPerUser, ());
+
+    client.initialize(&admin, &usdc_id, &platform_wallet, &registry_id);
+
+    let buyer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc_id).mint(&buyer, &(1000_0000000i128 * 2));
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &(1000_0000000i128 * 2), &99999);
+
+    let (_secret, hash) = test_secret(&env);
+    let ok1 = client.try_process_payment(
+        &String::from_str(&env, "u1"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &1000_0000000i128,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    assert!(ok1.is_ok());
+
+    let (_secret, hash) = test_secret(&env);
+    let ok2 = client.try_process_payment(
+        &String::from_str(&env, "u2"),
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &1000_0000000i128,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    assert!(ok2.is_ok());
+}
+
 // ── Referral Reward Cap Validation Tests ─────────────────────────────────────
 
 /// Mock registry with 5% platform fee and no loyalty discount — baseline for referral tests.

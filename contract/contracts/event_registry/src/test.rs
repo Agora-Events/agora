@@ -378,6 +378,177 @@ fn test_organizer_events_list() {
 }
 
 #[test]
+fn test_organizer_events_shard_boundary() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let organizer = Address::generate(&env);
+    let payment_address = Address::generate(&env);
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    for i in 0..51 {
+        let event_id = String::from_str(&env, format!("event_{}", i).as_str());
+        let mut tiers = Map::new(&env);
+        tiers.set(
+            String::from_str(&env, "general"),
+            TicketTier {
+                name: String::from_str(&env, "General"),
+                price: 1000,
+                tier_limit: 100,
+                current_sold: 0,
+                is_refundable: true,
+                auction_config: soroban_sdk::vec![&env],
+                loyalty_multiplier: 1,
+                max_per_user: 0,
+            },
+        );
+
+        let event_info = EventInfo {
+            event_id: event_id.clone(),
+            name: String::from_str(&env, "Test Event"),
+            organizer_address: organizer.clone(),
+            payment_address: payment_address.clone(),
+            platform_fee_percent: 5,
+            is_active: true,
+            status: EventStatus::Active,
+            created_at: i as u64,
+            metadata_cid: String::from_str(
+                &env,
+                "bafkreifh22222222222222222222222222222222222222222222222222",
+            ),
+            max_supply: 0,
+            current_supply: 0,
+            milestone_plan: None,
+            tiers,
+            refund_deadline: 0,
+            restocking_fee: 0,
+            resale_cap_bps: None,
+            is_postponed: false,
+            grace_period_end: 0,
+            min_sales_target: 0,
+            target_deadline: 0,
+            goal_met: false,
+            custom_fee_bps: None,
+            banner_cid: None,
+            tags: None,
+            category_ids: None,
+            start_time: 0,
+            is_private: false,
+            end_time: 0,
+            transfer_lock_duration: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
+            feedback_cid: None,
+            cancellation_reason: None,
+            referral_rate_bps: 0,
+        };
+
+        client.store_event(&event_info);
+    }
+
+    let organizer_events = client.get_organizer_events(&organizer);
+    assert_eq!(organizer_events.len(), 51);
+    for i in 0..51 {
+        assert_eq!(organizer_events.get(i).unwrap(), String::from_str(&env, format!("event_{}", i).as_str()));
+    }
+
+    let shard_0 = storage::get_organizer_event_shard(&env, &organizer, 0);
+    let shard_1 = storage::get_organizer_event_shard(&env, &organizer, 1);
+    assert_eq!(shard_0.len(), 50);
+    assert_eq!(shard_1.len(), 1);
+}
+
+#[test]
+fn test_postpone_event_grace_period_in_past() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "expired_grace_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let grace_period_end = 500u64;
+
+    let result = client.try_postpone_event(&event_id, &grace_period_end);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidGracePeriodEnd)));
+}
+
+#[test]
+fn test_postpone_cancelled_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "cancelled_postpone_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    client.cancel_event(&event_id);
+
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let grace_period_end = 2_000u64;
+
+    let result = client.try_postpone_event(&event_id, &grace_period_end);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
+}
+
+#[test]
 fn test_register_event_success() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
