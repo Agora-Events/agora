@@ -132,7 +132,22 @@ export function Navbar() {
                 className="absolute top-6 right-6 p-2 rounded-full hover:bg-gray-100 transition-colors"
                 aria-label="Close Menu"
               >
-                <Image src="/icons/x.svg" width={24} height={24} alt="Close menu" className="object-contain" />
+                <Image
+                  src="/icons/x.svg"
+                  width={24}
+                  height={24}
+                  alt="Close menu"
+                  className="object-contain"
+                />
+=======
+                <Image
+                  src="/icons/x.svg"
+                  width={24}
+                  height={24}
+                  alt="Close menu"
+                  className="object-contain"
+                />
+>>>>>>> origin/main
               </button>
 
               <div className="flex flex-col gap-6">
