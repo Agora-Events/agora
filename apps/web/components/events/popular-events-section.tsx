@@ -7,6 +7,7 @@ import { EventCard } from "./event-card";
 import { Button } from "../ui/button";
 import { FilterSidebar, FilterState } from "./filter-sidebar";
 import { fetchPopularEvents, type DiscoverEvent } from "@/utils/api";
+import debounce from "lodash.debounce";
 
 const container = {
   hidden: { opacity: 0 },
@@ -55,6 +56,12 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [events, setEvents] = useState<DiscoverEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Debounce the search input to prevent excessive API calls
+  const debouncedSetSearch = useMemo(
+    () => debounce((value) => setSearch(value), 200),
+    []
+  );
 
   useEffect(() => {
     let active = true;
@@ -181,7 +188,7 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
                 type="text"
                 placeholder="Search"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => debouncedSetSearch(e.target.value)}
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 variants={widthVariants}
@@ -189,12 +196,12 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
                 animate={isFocused ? "focused" : "unfocused"}
                 transition={{ duration: 0.3, ease: "easeInOut" }}
               />
-
+              
               <motion.input
                 className="sm:hidden h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => debouncedSetSearch(e.target.value)}
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 variants={widthVariantsMobile}
