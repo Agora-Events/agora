@@ -81,13 +81,7 @@ export function Footer() {
               rel="noopener noreferrer"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group"
             >
-              <div className="w-5 h-5 flex items-center justify-center">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-                  <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-                  <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
-                </svg>
-              </div>
+              <Image src="/icons/instagram.svg" width={20} height={20} alt="Instagram" className="text-gray-300 group-hover:text-white" />
               <span className="text-sm">Instagram</span>
             </a>
 
@@ -98,12 +92,7 @@ export function Footer() {
               rel="noopener noreferrer"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group"
             >
-              <div className="w-5 h-5 flex items-center justify-center">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 4l11.733 16h4.267l-11.733 -16z" />
-                  <path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772" />
-                </svg>
-              </div>
+              <Image src="/icons/x.svg" width={20} height={20} alt="X" className="text-gray-300 group-hover:text-white" />
               <span className="text-sm">X</span>
             </a>
 
@@ -112,12 +101,7 @@ export function Footer() {
               href="mailto:hello@agora.com"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group"
             >
-              <div className="w-5 h-5 flex items-center justify-center">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                  <polyline points="22,6 12,13 2,6"></polyline>
-                </svg>
-              </div>
+              <Image src="/icons/mail.svg" width={20} height={20} alt="Mail" className="text-gray-300 group-hover:text-white" />
               <span className="text-sm">Mail</span>
             </a>
 
