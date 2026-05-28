@@ -127,7 +127,7 @@ export default function CreateEventForm() {
               value={formData.startDate}
               onChange={handleChange}
               placeholder="Thu, 19 Feb"
-              className="bg-[#FAF9F6] rounded-lg px-3 py-2 text-sm font-medium w-full outline-none focus:ring-1 focus:ring-black"
+              className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-full outline-none focus:ring-1 focus:ring-black"
             />
             <input
               type="text"
@@ -135,7 +135,7 @@ export default function CreateEventForm() {
               value={formData.startTime}
               onChange={handleChange}
               placeholder="08:00AM"
-              className="bg-[#FAF9F6] rounded-lg px-3 py-2 text-sm font-medium w-32 outline-none focus:ring-1 focus:ring-black"
+              className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-32 outline-none focus:ring-1 focus:ring-black"
             />
           </div>
           <div className="flex items-center gap-4 relative">
@@ -150,7 +150,7 @@ export default function CreateEventForm() {
               value={formData.endDate}
               onChange={handleChange}
               placeholder="Thu, 20 Feb"
-              className="bg-[#FAF9F6] rounded-lg px-3 py-2 text-sm font-medium w-full outline-none focus:ring-1 focus:ring-black"
+              className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-full outline-none focus:ring-1 focus:ring-black"
             />
             <input
               type="text"
@@ -158,12 +158,12 @@ export default function CreateEventForm() {
               value={formData.endTime}
               onChange={handleChange}
               placeholder="09:00AM"
-              className="bg-[#FAF9F6] rounded-lg px-3 py-2 text-sm font-medium w-32 outline-none focus:ring-1 focus:ring-black"
+              className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-32 outline-none focus:ring-1 focus:ring-black"
             />
           </div>
         </div>
 
-        <div className="bg-[#FFFBEA] rounded-xl p-4 shadow-sm w-full sm:w-auto min-w-[140px] flex items-center justify-between gap-4 border border-black shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]">
+        <div className="bg-base-alt rounded-xl p-4 shadow-sm w-full sm:w-auto min-w-[140px] flex items-center justify-between gap-4 border border-black shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]">
           <div className="flex flex-col">
             <span className="text-sm font-semibold">GMT+00:00</span>
             <span className="text-xs text-gray-500">UTC</span>
@@ -196,7 +196,7 @@ export default function CreateEventForm() {
             <button
               type="button"
               onClick={() => setLocationMode("Virtual")}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${locationMode === "Virtual" ? "bg-black" : "bg-[#FAF9F6] hover:bg-gray-100"}`}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${locationMode === "Virtual" ? "bg-black" : "bg-muted hover:bg-gray-100"}`}
             >
               <Image
                 src="/icons/video.svg"
@@ -213,7 +213,7 @@ export default function CreateEventForm() {
             <button
               type="button"
               onClick={() => setLocationMode("Physical")}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${locationMode === "Physical" ? "bg-black" : "bg-[#FAF9F6] hover:bg-gray-100"}`}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${locationMode === "Physical" ? "bg-black" : "bg-muted hover:bg-gray-100"}`}
             >
               <Image
                 src="/icons/location.svg"
@@ -251,7 +251,7 @@ export default function CreateEventForm() {
             placeholder="Add Description about this Event..."
             className="flex-1 text-base font-medium bg-transparent outline-none placeholder:text-gray-300 resize-none overflow-hidden min-h-[80px]"
           />
-          <div className="w-10 h-10 rounded-full bg-[#FAF9F6] flex items-center justify-center shrink-0 mt-1">
+          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0 mt-1">
             <Image
               src="/icons/edit.svg"
               width={20}
@@ -273,7 +273,7 @@ export default function CreateEventForm() {
             <label className="block text-sm font-semibold mb-3">
               Event Visibility
             </label>
-            <div className="flex bg-[#FAF9F6] p-1 rounded-xl w-full">
+            <div className="flex bg-muted p-1 rounded-xl w-full">
               <button
                 type="button"
                 onClick={() => handleVisibilityChange("Public")}
@@ -339,7 +339,7 @@ export default function CreateEventForm() {
                 placeholder="Unlimited"
                 className="w-full text-base font-medium bg-transparent outline-none placeholder:text-gray-300"
               />
-              <div className="w-10 h-10 bg-[#FFFBEA] border border-black rounded-lg shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 bg-base-alt border border-black rounded-lg shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0">
                 <Image
                   src="/icons/edit.svg"
                   width={20}
@@ -367,7 +367,7 @@ export default function CreateEventForm() {
               placeholder="Free"
               className="w-full text-base font-medium bg-transparent outline-none placeholder:text-gray-300"
             />
-            <div className="w-10 h-10 bg-[#FFFBEA] border border-black rounded-lg shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 bg-base-alt border border-black rounded-lg shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0">
               <Image
                 src="/icons/ticket.svg"
                 width={20}
@@ -382,19 +382,16 @@ export default function CreateEventForm() {
       {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row justify-end items-center gap-4 mt-6 mb-8">
         <Button
+          variant="secondary"
           onClick={handleClear}
-          backgroundColor="bg-white"
-          textColor="text-black"
-          shadowColor="transparent"
-          className="w-full sm:w-auto hover:bg-gray-50 border border-transparent"
+          className="w-full sm:w-auto"
         >
           Clear Event
         </Button>
         <Button
+          variant="primary"
           disabled={isSubmitDisabled}
           onClick={handleSubmit}
-          backgroundColor="bg-[#FFD233]"
-          textColor="text-black"
           className={`w-full sm:w-auto ${
             isSubmitDisabled
               ? "opacity-50 cursor-not-allowed hover:translate-x-0 hover:translate-y-0 active:translate-x-0 active:translate-y-0"

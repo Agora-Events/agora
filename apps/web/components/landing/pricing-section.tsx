@@ -15,7 +15,7 @@ export function PricingSection() {
   };
 
   return (
-    <section id="pricing" className="w-full bg-[#fffbe9] py-24 select-none">
+    <section id="pricing" className="w-full bg-base py-24 select-none">
       <div className="w-full max-w-[1240px] mx-auto px-4 flex flex-col items-center">
         {/* Pill */}
         <motion.div
@@ -23,7 +23,7 @@ export function PricingSection() {
           whileInView="visible"
           viewport={{ once: true }}
           variants={fadeInUp}
-          className="bg-[#FDDA23] text-black px-6 py-2 rounded-full font-medium text-sm mb-12"
+          className="bg-accent text-black px-6 py-2 rounded-full font-medium text-sm mb-12"
         >
           Pricing Plan
         </motion.div>
@@ -78,7 +78,7 @@ export function PricingSection() {
             <div className="relative z-10 flex justify-center">
               <Button
                 className="w-[215px]"
-                backgroundColor="bg-[#FDDA23]"
+                backgroundColor="bg-accent"
                 textColor="text-black"
                 shadowColor="rgba(0,0,0,1)"
               >
@@ -99,9 +99,9 @@ export function PricingSection() {
             whileInView="visible"
             viewport={{ once: true }}
             variants={fadeInUp}
-            className="w-full max-w-[400px] bg-[#060606] rounded-3xl p-8 relative overflow-hidden flex flex-col"
+            className="w-full max-w-[400px] bg-ink rounded-3xl p-8 relative overflow-hidden flex flex-col"
           >
-            <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-60 bg-[#060606]" />
+            <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-60 bg-ink" />
             {/* gradients */}
             <div
               className="absolute top-[40%] -left-[10%] w-[50%] h-[40%] rounded-full blur-[100px]"
@@ -142,7 +142,7 @@ export function PricingSection() {
             <div className="relative z-10 flex justify-center">
               <Button
                 className="w-[215px]"
-                backgroundColor="bg-[#FDDA23]"
+                backgroundColor="bg-accent"
                 textColor="text-black"
                 shadowColor="rgba(255,255,255,1)"
               >

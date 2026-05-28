@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 export default function OrganizersPage() {
   return (
-    <main className="flex flex-col min-h-screen bg-[#FFFBE9]">
+    <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
       <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
         <h1 className="text-4xl font-bold mb-4">Organizers</h1>

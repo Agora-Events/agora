@@ -3,7 +3,7 @@ import { Camera } from "lucide-react";
 
 export default function CreateEventPage() {
   return (
-    <div className="container mx-auto px-4 py-8 max-w-7xl pb-24 bg-[#FAF9F6] min-h-screen">
+    <div className="container mx-auto px-4 py-8 max-w-7xl pb-24 bg-muted min-h-screen">
       <h1 className="text-4xl md:text-5xl font-bold mb-8 italic">Create your Event</h1>
       <div className="flex flex-col md:flex-row gap-8">
         

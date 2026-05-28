@@ -17,11 +17,11 @@ export function NavLink({
     <Link
       href={href}
       className={`flex items-center gap-1 text-[15px] font-medium transition-colors ${
-        isActive ? "text-[#FDDA23]" : "text-black hover:opacity-80"
+        isActive ? "text-accent" : "text-black hover:opacity-80"
       }`}
     >
       <div
-        className={`w-6 h-6 transition-colors ${isActive ? "bg-[#FDDA23]" : "bg-black"}`}
+        className={`w-6 h-6 transition-colors ${isActive ? "bg-accent" : "bg-black"}`}
         style={{
           maskImage: `url("${icon}")`,
           WebkitMaskImage: `url("${icon}")`,

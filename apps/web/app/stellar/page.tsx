@@ -6,10 +6,10 @@ import Image from "next/image";
 
 export default function StellarPage() {
   return (
-    <main className="flex flex-col min-h-screen bg-[#FFFBE9]">
+    <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
       <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
-        <div className="bg-[#060606] p-8 rounded-3xl mb-8">
+        <div className="bg-ink p-8 rounded-3xl mb-8">
            <Image
             src="/icons/stellar-logo.svg"
             alt="Stellar"
@@ -22,7 +22,7 @@ export default function StellarPage() {
             Agora is powered by Stellar. Secure, fast, and low-cost transactions for global events.
           </p>
           <Link href="/">
-            <Button backgroundColor="bg-[#FDDA23]" textColor="text-black" shadowColor="rgba(253,218,35,0.4)">
+            <Button backgroundColor="bg-accent" textColor="text-black" shadowColor="rgba(253,218,35,0.4)">
               Learn More About Stellar
             </Button>
           </Link>

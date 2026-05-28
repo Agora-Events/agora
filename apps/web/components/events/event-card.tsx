@@ -39,7 +39,7 @@ export function EventCard({
           - sm:max-w-147.5 preserves original desktop size.
           - Shadow reduced from -9 to -6 on mobile to avoid viewport bleeding.
       */}
-      <div className="w-full sm:max-w-147.5 shadow-[-6px_6px_0_rgba(0,0,0,1)] sm:shadow-[-9px_9px_0_rgba(0,0,0,1)] flex flex-col bg-[#FFEFD3] pb-4.75 sm:pl-12.5 pl-4 pt-5 sm:pt-9.75 rounded-xl sm:pr-5 pr-3.75 transition-transform hover:scale-[1.02] overflow-hidden">
+      <div className="w-full sm:max-w-147.5 shadow-[-6px_6px_0_rgba(0,0,0,1)] sm:shadow-[-9px_9px_0_rgba(0,0,0,1)] flex flex-col bg-surface pb-4.75 sm:pl-12.5 pl-4 pt-5 sm:pt-9.75 rounded-xl sm:pr-5 pr-3.75 transition-transform hover:scale-[1.02] overflow-hidden">
         <div className="flex gap-4.75">
           {/* Left Side: Image & Mobile Actions */}
           <div className="flex-shrink-0 w-[40%] sm:w-auto">
@@ -47,7 +47,7 @@ export function EventCard({
               src={imageUrl}
               width={227}
               height={112}
-              alt="event image"
+              alt={title}
               className="object-cover w-full h-auto rounded-lg"
             />
             
@@ -96,7 +96,7 @@ export function EventCard({
               <div className="flex items-center gap-1.25 mt-1">
                 <Image
                   src={locationImageSrc}
-                  alt="location"
+                  alt={location.toLowerCase().includes("discord") ? "Discord" : "Location"}
                   width={16}
                   height={16}
                   className="object-contain flex-shrink-0"

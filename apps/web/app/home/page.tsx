@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { Button } from "@/components/ui/button";
 import CalendarIcon from "@/public/icons/calendar.svg";
 import HostingIcon from "@/public/icons/ticket-star.svg";
 import PastIcon from "@/public/icons/camera-smile-01.svg";
@@ -261,6 +262,7 @@ function AnimatedToggle<T extends string>({
     <div className="inline-flex w-fit items-center bg-white rounded-full p-1 sm:p-1.5 ">
       {tabs.map((tab) => (
         <button
+          type="button"
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
           className="relative px-3 transition-all ease-in-out sm:px-5 py-1.5 sm:py-2 text-[13px] sm:text-[15px] font-medium  duration-200 z-10  flex items-center justify-center gap-2.5 flex-row"
@@ -268,7 +270,7 @@ function AnimatedToggle<T extends string>({
           {activeTab === tab.id && (
             <motion.div
               layoutId={layoutId}
-              className="absolute inset-0 bg-[#FFEFD3] rounded-full"
+              className="absolute inset-0 bg-surface rounded-full"
               transition={{
                 type: "spring",
                 stiffness: 400,
@@ -316,7 +318,7 @@ function SectionHeader<T extends string>({
 }) {
   return (
     <div className="flex flex-col  gap-3 sm:gap-8 mb-6 sm:mb-8">
-      <h2 className="text-[24px] sm:text-[28px] lg:text-[3.6rem] leading-16.5 tracking-[0px] font-semibold text-[#131517] italic">
+      <h2 className="text-[24px] sm:text-[28px] lg:text-[3.6rem] leading-16.5 tracking-[0px] font-semibold text-ink-deep italic">
         {title}
       </h2>
       <div className="flex justify-between items-end">
@@ -328,8 +330,8 @@ function SectionHeader<T extends string>({
         />
         {hasNotifications && (
           <Link href="#">
-            <div className="w-13.75 h-13.75 rounded-full bg-[#FFEFD3] flex items-center justify-center  relative">
-              <div className="absolute -top-1 right-1 rounded-full size-4.75 bg-[#F90B0B] text-white flex items-center justify-center">
+            <div className="w-13.75 h-13.75 rounded-full bg-surface flex items-center justify-center  relative">
+              <div className="absolute -top-1 right-1 rounded-full size-4.75 bg-error text-white flex items-center justify-center">
                 <p>1</p>
               </div>
               <Image
@@ -371,12 +373,12 @@ function TimelineEventCard({ event }: { event: TimelineEvent }) {
         <div className="h-full  flex flex-col gap-2">
           <div className="rounded-full size-4.25 bg-black opacity-50" />
           <div className="h-full w-0 border-[1.5px] border-dashed border-black  mx-auto flex-1 relative">
-            <div className="absolute w-1 h-full -left-0.5  bg-linear-to-b from-transparent to-[#FFFBE9] z-20" />
+            <div className="absolute w-1 h-full -left-0.5  bg-linear-to-b from-transparent to-base z-20" />
           </div>
         </div>
         {/* Event Card */}
         <Link href={`/events/${event.id}`} className="   h-full flex-1">
-          <div className="bg-[#FFEFD3] rounded-xl  shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] p-9.5 overflow-hidden transition-all ease-in-out hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
+          <div className="bg-surface rounded-xl  shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] p-9.5 overflow-hidden transition-all ease-in-out hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
             <div className="flex flex-col sm:flex-row gap-6">
               {/* Left side - Image */}
               <div className="w-full flex-1 ">
@@ -409,7 +411,7 @@ function TimelineEventCard({ event }: { event: TimelineEvent }) {
                   <div className="flex items-center gap-1.5 text-black/70">
                     <Image
                       src={locationImageSrc}
-                      alt="location"
+                      alt={event.location.toLowerCase().includes("discord") ? "Discord" : "Location"}
                       width={16}
                       height={16}
                       className="object-contain"
@@ -424,7 +426,7 @@ function TimelineEventCard({ event }: { event: TimelineEvent }) {
                       {/* barge */}
                       {event.status && (
                         <div
-                          className={`capitalize rounded-lg p-2.5 ${event.status === "going" ? "bg-[#DAFFB5] text-black" : event.status === "finished" ? "bg-[#FFFBE9] text-black" : ""} w-20.5 text-center text-xs font-medium`}
+                          className={`capitalize rounded-lg p-2.5 ${event.status === "going" ? "bg-success-light text-black" : event.status === "finished" ? "bg-base text-black" : ""} w-20.5 text-center text-xs font-medium`}
                         >
                           {event.status}
                         </div>
@@ -554,7 +556,7 @@ function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
 
   if (events.length === 0) {
     return (
-      <div className="w-full max-w-121.5 bg-[#FFEFD3] h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10 text-[#1315175C]">
+      <div className="w-full max-w-121.5 bg-surface h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10 text-ink-deep/36">
         <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
           <Image
             src={EmptyStateBg}
@@ -564,7 +566,7 @@ function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
             className="object-cover w-full h-full rounded-4xl"
           />
 
-          <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-[#63636312] -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
+          <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-black/7 -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
             <Image
               src={ZeroIcon}
               alt="Nothing Here, Yet"
@@ -577,9 +579,9 @@ function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
         <div className="flex flex-col items-center gap-4">
           <p className="text-xl font-medium leading-5.5 text-center">Nothing Here, Yet</p>
           <Link href="/create-event">
-            <button className="bg-black text-white px-6 py-2 rounded-full font-medium shadow-[-4px_4px_0_rgba(0,0,0,0.2)] hover:shadow-none hover:translate-x-[-2px] hover:translate-y-[2px] transition-all">
+            <Button variant="dark" className="rounded-full">
               Create Your First Event
-            </button>
+            </Button>
           </Link>
         </div>
       </div>
@@ -630,7 +632,7 @@ export default function HomePage() {
   const [forYouTab, setForYouTab] = useState<ForYouTab>("discover");
 
   return (
-    <div className="min-h-screen bg-[#FFFDF0]">
+    <div className="min-h-screen bg-base-alt">
       <Navbar />
 
       <main className="w-full max-w-304.5 mx-auto px-3 sm:px-4 lg:px-6 xl:px-0 pt-6 sm:pt-22.5 pb-12 sm:pb-20">
