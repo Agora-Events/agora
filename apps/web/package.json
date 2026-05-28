@@ -26,6 +26,7 @@
     "swr": "^2.4.1"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
     "@tailwindcss/postcss": "^4",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/leaflet": "^1.9.21",
