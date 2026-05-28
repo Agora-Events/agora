@@ -3,11 +3,8 @@
 import { useState, FormEvent } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-
-function validateEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
+import { ZodError } from "zod";
+import { authSchema } from "@/lib/validation";
 
 export default function AuthPage() {
   const [email, setEmail] = useState("");
@@ -18,13 +15,14 @@ export default function AuthPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
-    if (!email) {
-      setError("Email is required");
-      return;
-    }
-
-    if (!validateEmail(email)) {
-      setError("Enter a valid email");
+    try {
+      authSchema.parse({ email });
+    } catch (err: unknown) {
+      if (err instanceof ZodError) {
+        setError(err.errors[0]?.message || "Invalid email");
+        return;
+      }
+      setError("Invalid input");
       return;
     }
 

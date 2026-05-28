@@ -8,6 +8,8 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { CheckCircle2, Home, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import { ZodError } from "zod";
+import { createEventSchema } from "@/lib/validation";
 
 export default function CreateEventPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -44,21 +46,26 @@ export default function CreateEventPage() {
     }
   };
 
-  const validate = () => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.title.trim()) newErrors.title = "Event title is required";
-    if (!formData.startDate) newErrors.startDate = "Start date is required";
-    if (!formData.startTime) newErrors.startTime = "Start time is required";
-    if (!formData.location.trim()) newErrors.location = "Location is required";
-    if (!formData.price.trim()) newErrors.price = "Price is required (put 0 for free)";
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  // Validation is handled via Zod schema on submit
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) {
+    // Clear previous errors
+    setErrors({});
+
+    try {
+      createEventSchema.parse(formData);
+    } catch (err: unknown) {
+      if (err instanceof ZodError) {
+        const newErrors: Record<string, string> = {};
+        err.errors.forEach((e) => {
+          const key = String(e.path[0] ?? "");
+          if (key) newErrors[key] = e.message;
+        });
+        setErrors(newErrors);
+        toast.error(err.errors[0]?.message || "Please fill in all required fields");
+        return;
+      }
       toast.error("Please fill in all required fields");
       return;
     }
