@@ -37,11 +37,11 @@ export function MobileNavLink({
         href={href}
         onClick={onClose}
         className={`flex items-center gap-3 text-lg font-medium transition-colors p-2 rounded-lg ${
-          isActive ? "text-[#FDDA23]" : "hover:opacity-80"
+          isActive ? "text-accent" : "hover:opacity-80"
         }`}
       >
         <div
-          className={`w-6 h-6 transition-colors ${isActive ? "bg-[#FDDA23]" : "bg-black"}`}
+          className={`w-6 h-6 transition-colors ${isActive ? "bg-accent" : "bg-black"}`}
           style={{
             maskImage: `url("${icon}")`,
             WebkitMaskImage: `url("${icon}")`,

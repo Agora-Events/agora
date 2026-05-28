@@ -4,7 +4,7 @@ import { Footer } from "@/components/layout/footer";
 
 export default function FAQPage() {
   return (
-    <main className="flex flex-col min-h-screen bg-[#FFFBE9]">
+    <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
       <div className="pt-20">
         <FAQSection />

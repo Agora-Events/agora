@@ -13,7 +13,7 @@ import Link from "next/link";
 
 export function Footer() {
   return (
-    <footer className="w-full bg-[#060606] pt-20 pb-12 relative overflow-hidden text-white select-none">
+    <footer className="w-full bg-ink pt-20 pb-12 relative overflow-hidden text-white select-none">
       {/* Background Graphic */}
       <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 w-full max-w-[700px] h-[500px] pointer-events-none opacity-30 mix-blend-screen">
         <Image

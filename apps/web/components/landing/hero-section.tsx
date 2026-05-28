@@ -32,7 +32,7 @@ export function HeroSection() {
         {/* Hero Heading */}
         <h1 className="text-4xl md:text-[58px] leading-tight md:leading-[66px] font-semibold italic text-center text-black mb-6 md:mb-8 transition-all">
           <div>Plan Events. Bring People Together.</div>
-          <div className="text-[#CAAE1C]">Grow Communities.</div>
+          <div className="text-accent-dark">Grow Communities.</div>
         </h1>
         <p className="text-lg md:text-[20px] font-light text-center max-w-[800px] mb-8 px-4">
           Create your event page, invite your community, and sell tickets
@@ -63,7 +63,7 @@ export function HeroSection() {
           <Link href="/pricing" className="w-full sm:w-auto">
             <Button
               className="w-full sm:w-[135px] h-[56px]"
-              backgroundColor="bg-[#FDDA23]"
+              backgroundColor="bg-accent"
               textColor="text-white"
               shadowColor="rgba(0,0,0,1)"
             >
@@ -148,7 +148,7 @@ function Tooltip({
         stiffness: 260,
         damping: 20,
       }}
-      className={`absolute ${className} z-20 w-16 h-16 md:w-24 md:h-24 outline-none focus-visible:ring-4 focus-visible:ring-[#FDDA23] rounded-full cursor-pointer transition-shadow`}
+      className={`absolute ${className} z-20 w-16 h-16 md:w-24 md:h-24 outline-none focus-visible:ring-4 focus-visible:ring-accent rounded-full cursor-pointer transition-shadow`}
       tabIndex={0}
       role="tooltip"
       aria-label={label}

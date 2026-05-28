@@ -2,6 +2,49 @@
 
 @theme inline {
   --font-sans: var(--font-inter);
+
+  /* ── Agora colour palette ── */
+  --color-accent:        #FDDA23;
+  --color-accent-hover:  #f0ce1e;
+  --color-accent-dark:   #CAAE1C;
+  --color-accent-muted:  #F2ECCD;
+
+  --color-base:          #FFFBE9;
+  --color-base-alt:      #FFFBEA;
+  --color-surface:       #FFEFD3;
+  --color-surface-alt:   #F7ECD5;
+  --color-cream:         #F3EEDC;
+  --color-muted:         #FAF9F6;
+  --color-subtle:        #D5D5D6;
+  --color-border-warm:   #F0EAD6;
+  --color-sand:          #A9A495;
+
+  --color-ink:           #060606;
+  --color-ink-soft:      #1A1A1A;
+  --color-ink-alt:       #1C1C1C;
+  --color-ink-deep:      #131517;
+  --color-dark:          #0B151F;
+  --color-dark-alt:      #2F2E24;
+  --color-dark-deep:     #171402;
+
+  --color-muted-text:    #747475;
+  --color-error:         #F90B0B;
+  --color-success-light: #DAFFB5;
+}
+
+/* ── Focus-visible styles (WCAG AA) ── */
+*:focus {
+  outline: none;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* NProgress Custom Styles */
