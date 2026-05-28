@@ -16,7 +16,7 @@ export default function DiscoverPage() {
   };
 
   return (
-    <main className="flex flex-col min-h-screen bg-[#FFFBE9]">
+    <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
       {toastMessage && (
         <div className="fixed top-4 right-4 z-[60] rounded-lg bg-black px-4 py-3 text-sm text-white shadow-lg">

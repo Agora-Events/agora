@@ -85,6 +85,7 @@ export function Navbar() {
 
         <div className="flex items-center lg:hidden">
           <button
+            type="button"
             onClick={toggleMenu}
             className="z-50 flex flex-col justify-center items-center w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-black/10 hover:bg-white/20 transition-colors"
             aria-label="Toggle Menu"
@@ -126,6 +127,7 @@ export function Navbar() {
               className="fixed top-0 right-0 h-full w-[300px] bg-white z-50 shadow-2xl flex flex-col p-8 pt-24 lg:hidden"
             >
               <button
+                type="button"
                 onClick={toggleMenu}
                 className="absolute top-6 right-6 p-2 rounded-full hover:bg-gray-100 transition-colors"
                 aria-label="Close Menu"
@@ -228,16 +230,11 @@ export function Navbar() {
 
                 <motion.div custom={4} variants={linkVariants} className="mt-4">
                   <Link href={isLoggedIn ? "/create-event" : "/auth"} onClick={() => setIsOpen(false)}>
-                    <Button
-                      className="w-full justify-center"
-                      backgroundColor="bg-black"
-                      textColor="text-white"
-                      shadowColor="rgba(0,0,0,0.5)"
-                    >
+                    <Button variant="dark" className="w-full justify-center">
                       <span>Create Your Event</span>
                       <Image
                         src="/icons/arrow-up-right-01.svg"
-                        alt="Arrow"
+                        alt="Create event"
                         width={24}
                         height={24}
                         className="invert group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"

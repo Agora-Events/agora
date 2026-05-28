@@ -58,7 +58,7 @@ export function UserNav({ pathname }: { pathname: string }) {
               <span>Create Your Event</span>
               <Image
                 src="/icons/arrow-up-right-01.svg"
-                alt="Arrow"
+                alt="Create event"
                 width={24}
                 height={24}
                 className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
@@ -79,7 +79,7 @@ export function UserNav({ pathname }: { pathname: string }) {
             <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
             <Image
               src="/icons/notification.svg"
-              alt="Arrow"
+              alt="Notifications"
               width={24}
               height={24}
               className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
@@ -96,7 +96,7 @@ export function UserNav({ pathname }: { pathname: string }) {
             <div className=" size-[49px] rounded-full">
               <Image
                 src="/images/pfp.png"
-                alt="Arrow"
+                alt="Profile"
                 width={49}
                 height={49}
                 className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
