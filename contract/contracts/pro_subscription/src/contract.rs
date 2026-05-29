@@ -15,6 +15,7 @@ use crate::{
         set_subscription,
     },
     types::{Subscription, SubscriptionTier},
+    validation::validate_address,
 };
 
 const SECONDS_PER_MONTH: u64 = 30 * 24 * 60 * 60; // 30 days
@@ -23,13 +24,6 @@ fn require_admin(env: &Env) -> Result<Address, ProSubscriptionError> {
     let admin = get_admin(env).ok_or(ProSubscriptionError::NotInitialized)?;
     admin.require_auth();
     Ok(admin)
-}
-
-fn validate_address(env: &Env, addr: &Address) -> Result<(), ProSubscriptionError> {
-    if addr == &env.current_contract_address() {
-        return Err(ProSubscriptionError::InvalidAddress);
-    }
-    Ok(())
 }
 
 #[contract]
@@ -308,5 +302,15 @@ impl ProSubscriptionContract {
         validate_address(&env, &new_admin)?;
         set_admin(&env, &new_admin);
         Ok(())
+    }
+
+    /// Get the platform wallet address
+    pub fn get_platform_wallet(env: Env) -> Option<Address> {
+        get_platform_wallet(&env)
+    }
+
+    /// Get the payment token address
+    pub fn get_payment_token(env: Env) -> Option<Address> {
+        get_payment_token(&env)
     }
 }

@@ -5,6 +5,7 @@ mod error;
 mod events;
 mod storage;
 mod types;
+mod validation;
 
 pub use contract::*;
 pub use error::*;
