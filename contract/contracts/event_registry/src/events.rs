@@ -339,6 +339,22 @@ pub struct ScannerAuthorizedEvent {
     pub timestamp: u64,
 }
 
+/// Emitted when a scanner wallet's authorization is revoked for an event.
+///
+/// Published with topic `(AgoraEvent::ScannerRevoked,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScannerRevokedEvent {
+    /// The unique identifier of the event.
+    pub event_id: String,
+    /// The wallet address of the revoked scanner.
+    pub scanner: Address,
+    /// The organizer address that revoked the scanner.
+    pub revoked_by: Address,
+    /// The ledger timestamp when the scanner was revoked.
+    pub timestamp: u64,
+}
+
 /// Emitted when an event's minimum sales target (goal) is reached.
 ///
 /// This signals that the event has sufficient ticket sales to proceed.
