@@ -10,14 +10,12 @@ use crate::{
         add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin,
         get_payment_token, get_platform_wallet, get_pro_members_list, get_pro_monthly_price,
         get_subscription, get_total_pro_subscriptions, increment_total_pro_subscriptions,
-        is_initialized, remove_from_pro_members_list, remove_subscription, set_admin,
+        is_initialized, remove_from_pro_members_list, set_admin,
         set_initialized, set_payment_token, set_platform_wallet, set_pro_monthly_price,
         set_subscription,
     },
-    types::{Subscription, SubscriptionTier},
+    types::{Subscription, SubscriptionTier, SECONDS_PER_MONTH},
 };
-
-const SECONDS_PER_MONTH: u64 = 30 * 24 * 60 * 60; // 30 days
 
 fn require_admin(env: &Env) -> Result<Address, ProSubscriptionError> {
     let admin = get_admin(env).ok_or(ProSubscriptionError::NotInitialized)?;
@@ -261,6 +259,35 @@ impl ProSubscriptionContract {
     /// Get all active pro members
     pub fn get_pro_members(env: Env) -> soroban_sdk::Vec<Address> {
         get_pro_members_list(&env)
+    }
+
+    /// Get count of pro members in the members list
+    pub fn get_pro_members_count(env: Env) -> u32 {
+        get_pro_members_list(&env).len()
+    }
+
+    /// Register a Basic (free) subscription for an organizer
+    pub fn register_basic(env: Env, organizer: Address) -> Result<(), ProSubscriptionError> {
+        if !is_initialized(&env) {
+            return Err(ProSubscriptionError::NotInitialized);
+        }
+        organizer.require_auth();
+        if let Some(existing) = get_subscription(&env, &organizer) {
+            if existing.tier == SubscriptionTier::Pro && existing.is_active {
+                return Err(ProSubscriptionError::SubscriptionAlreadyActive);
+            }
+        }
+        let subscription = Subscription {
+            organizer: organizer.clone(),
+            tier: SubscriptionTier::Basic,
+            started_at: env.ledger().timestamp(),
+            expires_at: 0,
+            is_active: true,
+            amount_paid: 0,
+            payment_token: get_payment_token(&env).unwrap_or(env.current_contract_address()),
+        };
+        set_subscription(&env, &subscription);
+        Ok(())
     }
 
     /// Get total count of active pro subscriptions
