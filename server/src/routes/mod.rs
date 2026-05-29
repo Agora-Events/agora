@@ -35,10 +35,12 @@ use crate::config::{
     set_request_id_layer, Config,
 };
 use crate::handlers::{
+<<<<<<< HEAD
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories},
     events::{
-        get_event, list_events, search_events, submit_event_rating, toggle_event_flag, EventState,
+        get_checkin_stats, get_event, list_events, search_events, submit_event_rating,
+        toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
@@ -133,6 +135,7 @@ pub async fn create_routes(pool: PgPool, _config: Config, redis: RedisCache) -> 
         .route("/search", get(search_events))
         .route("/:id", get(get_event))
         .route("/:id/rate", post(submit_event_rating))
+        .route("/:id/check-in-stats", get(get_checkin_stats))
         .with_state(event_state);
 
     // Category routes

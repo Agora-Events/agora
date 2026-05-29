@@ -2,6 +2,7 @@ pub mod auth;
 pub mod categories;
 pub mod events;
 pub mod health;
+<<<<<<< HEAD
 pub mod leaderboard;
 pub mod monitoring;
 pub mod profile;

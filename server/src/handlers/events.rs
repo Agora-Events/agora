@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 //! # Event Handlers
 //!
 //! This module provides HTTP handlers for event-related operations including
@@ -30,8 +31,10 @@ use crate::utils::response::success;
 pub struct SearchParams {
     /// Keyword search in title/description
     pub q: Option<String>,
-    /// Filter by category ID
+    /// Filter by category ID (single, backward-compat)
     pub category_id: Option<Uuid>,
+    /// Comma-separated category UUIDs for multi-select filtering
+    pub category_ids: Option<String>,
     /// Minimum ticket price in cents (e.g., 1000 = $10.00)
     pub min_price: Option<i64>,
     /// Maximum ticket price in cents (e.g., 5000 = $50.00)
@@ -507,10 +510,25 @@ pub async fn search_events(
         ));
     }
 
+    // Collect all category IDs (multi-select + backward-compat single)
+    let mut category_ids: Vec<Uuid> = Vec::new();
+    if let Some(raw) = &params.category_ids {
+        for part in raw.split(',') {
+            if let Ok(id) = part.trim().parse::<Uuid>() {
+                category_ids.push(id);
+            }
+        }
+    }
+    if let Some(id) = params.category_id {
+        if !category_ids.contains(&id) {
+            category_ids.push(id);
+        }
+    }
+
     // Filter by category (requires join with event_categories)
-    let category_join = if params.category_id.is_some() {
+    let category_join = if !category_ids.is_empty() {
         param_count += 1;
-        where_clauses.push(format!("ec.category_id = ${}", param_count));
+        where_clauses.push(format!("ec.category_id = ANY(${})", param_count));
         "INNER JOIN event_categories ec ON e.id = ec.event_id"
     } else {
         ""
@@ -704,5 +722,45 @@ mod tests {
 
         assert!(filters.organizer_id.is_some());
         assert_eq!(filters.location.unwrap(), "New York");
+    }
+}
+
+#[derive(Serialize)]
+pub struct CheckInStats {
+    pub checked_in: i64,
+    pub total_sold: i64,
+    pub remaining: i64,
+}
+
+/// GET /api/v1/events/:id/check-in-stats
+pub async fn get_checkin_stats(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    let row = sqlx::query!(
+        r#"
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'used') AS checked_in,
+            COUNT(*) AS total_sold
+        FROM tickets
+        WHERE event_id = $1
+        "#,
+        event_id
+    )
+    .fetch_optional(&state.pool)
+    .await;
+
+    match row {
+        Ok(Some(r)) => {
+            let checked_in = r.checked_in.unwrap_or(0);
+            let total_sold = r.total_sold.unwrap_or(0);
+            success(
+                CheckInStats { checked_in, total_sold, remaining: total_sold - checked_in },
+                "Check-in stats retrieved",
+            )
+            .into_response()
+        }
+        Ok(None) => AppError::NotFound(format!("Event '{}' not found", event_id)).into_response(),
+        Err(e) => AppError::InternalServerError(e.to_string()).into_response(),
     }
 }
