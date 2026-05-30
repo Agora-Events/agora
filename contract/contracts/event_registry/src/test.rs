@@ -1047,6 +1047,250 @@ fn test_update_metadata_invalid_cid() {
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidMetadataCid)));
 }
 
+#[test]
+fn test_update_metadata_unauthorized() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+
+    // Call update_metadata
+    client.update_metadata(&event_id, &new_metadata_cid);
+
+    // Verify that the authorization check was performed on the organizer address
+    let auths = env.auths();
+    assert_eq!(auths.len(), 1);
+    assert_eq!(auths[0].0, organizer);
+}
+
+#[test]
+#[should_panic] // Authentication failure
+fn test_update_metadata_unauthorized_panic() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    let register_args = EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr.clone(),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    };
+
+    // Mock the organizer authentication explicitly for registration
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+    use soroban_sdk::IntoVal;
+
+    env.mock_auths(&[MockAuth {
+        address: &organizer,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            function_name: "register_event",
+            args: (register_args.clone(),).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.register_event(&register_args);
+
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+
+    // Call update_metadata. Without mock auth, this should fail authentication and panic
+    client.update_metadata(&event_id, &new_metadata_cid);
+}
+
+#[test]
+fn test_update_metadata_event_not_found() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let fake_event_id = String::from_str(&env, "nonexistent");
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+
+    let result = client.try_update_metadata(&fake_event_id, &new_metadata_cid);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotFound)));
+}
+
+#[test]
+fn test_update_metadata_inactive_event() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    // Make the event inactive
+    client.update_event_status(&event_id, &false);
+
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+
+    // Call update_metadata on the inactive event - should still succeed
+    client.update_metadata(&event_id, &new_metadata_cid);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.metadata_cid, new_metadata_cid);
+    assert!(!event_info.is_active);
+}
+
+#[test]
+fn test_update_metadata_cancelled_event() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    // Cancel the event
+    client.cancel_event(&event_id);
+
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+
+    // Call update_metadata on the cancelled event - should still succeed
+    client.update_metadata(&event_id, &new_metadata_cid);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.metadata_cid, new_metadata_cid);
+    assert_eq!(event_info.is_active, false);
+    assert!(matches!(event_info.status, EventStatus::Cancelled));
+}
+
 // ==================== Inventory / Supply Tests ====================
 
 #[test]

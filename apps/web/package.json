@@ -13,6 +13,7 @@
   "dependencies": {
     "@prisma/client": "^7.8.0",
     "@stellar/stellar-sdk": "^13.3.0",
+    "@tailwindcss/typography": "^0.5.19",
     "framer-motion": "^12.26.2",
     "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",
@@ -23,6 +24,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-leaflet": "^5.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "swr": "^2.4.1"
   },

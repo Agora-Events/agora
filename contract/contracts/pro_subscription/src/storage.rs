@@ -9,9 +9,7 @@ const INSTANCE_BUMP_AMOUNT: u32 = DAY_IN_LEDGERS * 60; // 60 days
 // ── Admin & Configuration ──────────────────────────────────────────────────
 
 pub fn get_admin(env: &Env) -> Option<Address> {
-    env.storage()
-        .instance()
-        .get(&DataKey::Admin)
+    env.storage().instance().get(&DataKey::Admin)
 }
 
 pub fn set_admin(env: &Env, admin: &Address) {
@@ -38,9 +36,7 @@ pub fn set_initialized(env: &Env, initialized: bool) {
 }
 
 pub fn get_platform_wallet(env: &Env) -> Option<Address> {
-    env.storage()
-        .instance()
-        .get(&DataKey::PlatformWallet)
+    env.storage().instance().get(&DataKey::PlatformWallet)
 }
 
 pub fn set_platform_wallet(env: &Env, wallet: &Address) {
@@ -53,12 +49,11 @@ pub fn set_platform_wallet(env: &Env, wallet: &Address) {
 }
 
 pub fn get_payment_token(env: &Env) -> Option<Address> {
-    env.storage()
-        .instance()
-        .get(&DataKey::PaymentToken)
+    env.storage().instance().get(&DataKey::PaymentToken)
 }
 
 pub fn set_payment_token(env: &Env, token: &Address) {
+    env.storage().instance().set(&DataKey::PaymentToken, token);
     env.storage()
         .instance()
         .set(&DataKey::PaymentToken, token);
@@ -98,6 +93,7 @@ pub fn set_subscription(env: &Env, subscription: &Subscription) {
         .extend_ttl(&key, INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
+#[allow(dead_code)]
 pub fn remove_subscription(env: &Env, organizer: &Address) {
     let key = DataKey::Subscription(organizer.clone());
     env.storage().persistent().remove(&key);

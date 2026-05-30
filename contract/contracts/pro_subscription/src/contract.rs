@@ -15,19 +15,20 @@ use crate::{
         set_subscription,
     },
     types::{Subscription, SubscriptionTier, SECONDS_PER_MONTH},
+        add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin, get_payment_token,
+        get_platform_wallet, get_pro_members_list, get_pro_monthly_price, get_subscription,
+        get_total_pro_subscriptions, increment_total_pro_subscriptions, is_initialized,
+        remove_from_pro_members_list, set_admin, set_initialized, set_payment_token,
+        set_platform_wallet, set_pro_monthly_price, set_subscription,
+    },
+    types::{Subscription, SubscriptionTier},
+    validation::validate_address,
 };
 
 fn require_admin(env: &Env) -> Result<Address, ProSubscriptionError> {
     let admin = get_admin(env).ok_or(ProSubscriptionError::NotInitialized)?;
     admin.require_auth();
     Ok(admin)
-}
-
-fn validate_address(env: &Env, addr: &Address) -> Result<(), ProSubscriptionError> {
-    if addr == &env.current_contract_address() {
-        return Err(ProSubscriptionError::InvalidAddress);
-    }
-    Ok(())
 }
 
 #[contract]
@@ -178,7 +179,7 @@ impl ProSubscriptionContract {
         token_client.transfer(&organizer, &platform_wallet, &total_amount);
 
         let current_time = env.ledger().timestamp();
-        
+
         // If subscription is expired, start from now; otherwise extend from current expiry
         let base_time = if subscription.expires_at < current_time {
             current_time
@@ -198,7 +199,7 @@ impl ProSubscriptionContract {
             .ok_or(ProSubscriptionError::ArithmeticError)?;
 
         set_subscription(&env, &subscription);
-        
+
         // Ensure they're in the pro members list
         add_to_pro_members_list(&env, &organizer);
 
@@ -216,10 +217,7 @@ impl ProSubscriptionContract {
     }
 
     /// Cancel a subscription (admin only)
-    pub fn cancel_subscription(
-        env: Env,
-        organizer: Address,
-    ) -> Result<(), ProSubscriptionError> {
+    pub fn cancel_subscription(env: Env, organizer: Address) -> Result<(), ProSubscriptionError> {
         let admin = require_admin(&env)?;
 
         let mut subscription =
@@ -254,6 +252,11 @@ impl ProSubscriptionContract {
     /// Get subscription details for an organizer
     pub fn get_subscription(env: Env, organizer: Address) -> Option<Subscription> {
         get_subscription(&env, &organizer)
+    }
+
+    /// Get subscription expiry timestamp for an organizer
+    pub fn get_subscription_expiry(env: Env, organizer: Address) -> Option<u64> {
+        get_subscription(&env, &organizer).map(|s| s.expires_at)
     }
 
     /// Get all active pro members
@@ -329,11 +332,37 @@ impl ProSubscriptionContract {
         get_admin(&env)
     }
 
+    /// Check whether the contract has been initialized
+    pub fn is_initialized(env: Env) -> bool {
+        is_initialized(&env)
+    }
+
     /// Update the admin address (admin only)
     pub fn update_admin(env: Env, new_admin: Address) -> Result<(), ProSubscriptionError> {
         require_admin(&env)?;
         validate_address(&env, &new_admin)?;
         set_admin(&env, &new_admin);
         Ok(())
+    }
+
+    /// Get the platform wallet address
+    pub fn get_platform_wallet(env: Env) -> Option<Address> {
+        get_platform_wallet(&env)
+    }
+
+    /// Update the platform wallet address (admin only)
+    pub fn update_platform_wallet(
+        env: Env,
+        new_wallet: Address,
+    ) -> Result<(), ProSubscriptionError> {
+        require_admin(&env)?;
+        validate_address(&env, &new_wallet)?;
+        set_platform_wallet(&env, &new_wallet);
+        Ok(())
+    }
+
+    /// Get the payment token address
+    pub fn get_payment_token(env: Env) -> Option<Address> {
+        get_payment_token(&env)
     }
 }
