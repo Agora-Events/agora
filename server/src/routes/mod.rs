@@ -35,7 +35,6 @@ use crate::config::{
     set_request_id_layer, Config,
 };
 use crate::handlers::{
-<<<<<<< HEAD
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories},
     events::{
