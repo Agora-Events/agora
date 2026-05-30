@@ -42,6 +42,8 @@ pub struct SearchParams {
     pub date_from: Option<DateTime<Utc>>,
     /// Events starting before this date
     pub date_to: Option<DateTime<Utc>>,
+    /// Filter by location (partial match, case-insensitive)
+    pub location: Option<String>,
     /// Page number (default: 1)
     #[serde(default = "default_page")]
     pub page: u32,
@@ -495,6 +497,7 @@ pub async fn submit_event_rating(
 /// - `category_id` (optional): Filter by category UUID
 /// - `min_price` (optional): Minimum ticket price in cents
 /// - `max_price` (optional): Maximum ticket price in cents
+/// - `location` (optional): Filter by location (partial match, case-insensitive)
 /// - `date_from` (optional): Events starting after this date
 /// - `date_to` (optional): Events starting before this date
 /// - `page` (optional): Page number (default: 1)
@@ -566,6 +569,12 @@ pub async fn search_events(
         where_clauses.push(format!("tt.price <= ${}", param_count));
     }
 
+    // Filter by location (partial match)
+    if params.location.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("e.location ILIKE ${}", param_count));
+    }
+
     // Filter by date range
     if params.date_from.is_some() {
         param_count += 1;
@@ -600,6 +609,9 @@ pub async fn search_events(
     if let Some(max_price) = params.max_price {
         let max_price_decimal = max_price as f64 / 100.0;
         count_query_builder = count_query_builder.bind(max_price_decimal);
+    }
+    if let Some(ref location) = params.location {
+        count_query_builder = count_query_builder.bind(format!("%{}%", location));
     }
     if let Some(date_from) = params.date_from {
         count_query_builder = count_query_builder.bind(date_from);
@@ -641,6 +653,9 @@ pub async fn search_events(
     if let Some(max_price) = params.max_price {
         let max_price_decimal = max_price as f64 / 100.0;
         items_query_builder = items_query_builder.bind(max_price_decimal);
+    }
+    if let Some(ref location) = params.location {
+        items_query_builder = items_query_builder.bind(format!("%{}%", location));
     }
     if let Some(date_from) = params.date_from {
         items_query_builder = items_query_builder.bind(date_from);
@@ -805,6 +820,23 @@ mod tests {
         let weighted: i64 = rows.iter().map(|(r, c)| *r as i64 * c).sum();
         let average = weighted as f64 / total as f64;
         assert_eq!(average, 4.5);
+    }
+
+    #[test]
+    fn test_search_params_location() {
+        let params = SearchParams {
+            q: None,
+            category_id: None,
+            category_ids: None,
+            min_price: None,
+            max_price: None,
+            date_from: None,
+            date_to: None,
+            location: Some("Lagos".to_string()),
+            page: 1,
+            page_size: 20,
+        };
+        assert_eq!(params.location.as_deref(), Some("Lagos"));
     }
 }
 
