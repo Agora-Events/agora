@@ -38,8 +38,9 @@ use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories},
     events::{
-        get_checkin_stats, get_event, get_ratings_summary, list_events, search_events,
-        submit_event_rating, toggle_event_flag, EventState,
+        export_attendees_csv, get_checkin_stats, get_event, get_event_organizer,
+        get_ratings_summary, list_events, search_events, submit_event_rating,
+        toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
@@ -136,6 +137,8 @@ pub async fn create_routes(pool: PgPool, _config: Config, redis: RedisCache) -> 
         .route("/:id/rate", post(submit_event_rating))
         .route("/:id/check-in-stats", get(get_checkin_stats))
         .route("/:id/ratings/summary", get(get_ratings_summary))
+        .route("/:id/organizer", get(get_event_organizer))
+        .route("/:id/export-attendees", get(export_attendees_csv))
         .with_state(event_state);
 
     // Category routes

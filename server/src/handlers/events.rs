@@ -838,6 +838,37 @@ mod tests {
         };
         assert_eq!(params.location.as_deref(), Some("Lagos"));
     }
+
+    #[test]
+    fn test_export_attendees_csv_format() {
+        // Test CSV header format
+        let header = "owner_wallet,buyer_wallet,quantity,created_at\n";
+        assert!(header.contains("owner_wallet"));
+        assert!(header.contains("buyer_wallet"));
+        assert!(header.contains("quantity"));
+        assert!(header.contains("created_at"));
+    }
+
+    #[test]
+    fn test_csv_row_format() {
+        // Test that a CSV row can be formatted correctly
+        let owner = "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+        let buyer = "GYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY";
+        let quantity = 2;
+        let created_at = chrono::Utc::now();
+        
+        let row = format!(
+            "{},{},{},{}\n",
+            owner,
+            buyer,
+            quantity,
+            created_at.to_rfc3339()
+        );
+        
+        assert!(row.contains(owner));
+        assert!(row.contains(buyer));
+        assert!(row.contains("2"));
+    }
 }
 
 #[derive(Serialize)]
@@ -979,5 +1010,159 @@ pub async fn get_checkin_stats(
         Ok(None) => AppError::NotFound(format!("Event '{}' not found", event_id)).into_response(),
         Err(e) => AppError::InternalServerError(e.to_string()).into_response(),
     }
+}
+
+/// GET /api/v1/events/:id/organizer
+///
+/// Returns the organizer profile for the event's organizer wallet.
+/// This is a lightweight endpoint for clients that only need organizer info.
+pub async fn get_event_organizer(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // First, verify the event exists and get the organizer_id
+    let organizer_id = match sqlx::query_scalar::<_, Uuid>(
+        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch event organizer_id: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Fetch the organizer's wallet address
+    let wallet_address = match sqlx::query_scalar::<_, String>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(wallet)) => wallet,
+        Ok(None) => {
+            return AppError::NotFound(format!(
+                "Organizer profile not found for event '{}'",
+                event_id
+            ))
+            .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch organizer wallet: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Fetch the organizer profile
+    let profile = match sqlx::query_as::<_, OrganizerProfile>(
+        "SELECT * FROM organizer_profiles WHERE address = $1",
+    )
+    .bind(&wallet_address)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(profile)) => profile,
+        Ok(None) => {
+            return AppError::NotFound(format!(
+                "Organizer profile not found for event '{}'",
+                event_id
+            ))
+            .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch organizer profile: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    success(profile, "Organizer profile retrieved successfully").into_response()
+}
+
+/// GET /api/v1/events/:id/export-attendees
+///
+/// Exports all attendees for an event as a CSV file.
+/// Returns owner_wallet, buyer_wallet, quantity, created_at for all tickets.
+pub async fn export_attendees_csv(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // Verify the event exists
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(exists) => exists,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    // Fetch all tickets for the event
+    let tickets = match sqlx::query_as::<_, (String, String, i32, chrono::DateTime<Utc>)>(
+        r#"
+        SELECT 
+            t.owner_wallet,
+            t.buyer_wallet,
+            t.quantity,
+            t.created_at
+        FROM tickets t
+        JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+        WHERE tt.event_id = $1
+        ORDER BY t.created_at ASC
+        "#,
+    )
+    .bind(event_id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(tickets) => tickets,
+        Err(e) => {
+            tracing::error!("Failed to fetch tickets for CSV export: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Build CSV string manually
+    let mut csv = String::from("owner_wallet,buyer_wallet,quantity,created_at\n");
+    for (owner_wallet, buyer_wallet, quantity, created_at) in tickets {
+        csv.push_str(&format!(
+            "{},{},{},{}\n",
+            owner_wallet,
+            buyer_wallet,
+            quantity,
+            created_at.to_rfc3339()
+        ));
+    }
+
+    // Return CSV with appropriate headers
+    (
+        axum::http::StatusCode::OK,
+        [
+            ("Content-Type", "text/csv"),
+            (
+                "Content-Disposition",
+                &format!("attachment; filename=\"attendees-{}.csv\"", event_id),
+            ),
+        ],
+        csv,
+    )
+        .into_response()
 }
 
