@@ -2,7 +2,7 @@ use soroban_sdk::{contracttype, Address};
 
 /// Subscription plan tiers
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum SubscriptionTier {
     /// Basic tier - no benefits

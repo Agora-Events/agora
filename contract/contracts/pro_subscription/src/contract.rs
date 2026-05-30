@@ -7,12 +7,11 @@ use crate::{
         SubscriptionCreatedEvent, SubscriptionRenewedEvent,
     },
     storage::{
-        add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin,
-        get_payment_token, get_platform_wallet, get_pro_members_list, get_pro_monthly_price,
-        get_subscription, get_total_pro_subscriptions, increment_total_pro_subscriptions,
-        is_initialized, remove_from_pro_members_list, remove_subscription, set_admin,
-        set_initialized, set_payment_token, set_platform_wallet, set_pro_monthly_price,
-        set_subscription,
+        add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin, get_payment_token,
+        get_platform_wallet, get_pro_members_list, get_pro_monthly_price, get_subscription,
+        get_total_pro_subscriptions, increment_total_pro_subscriptions, is_initialized,
+        remove_from_pro_members_list, set_admin, set_initialized, set_payment_token,
+        set_platform_wallet, set_pro_monthly_price, set_subscription,
     },
     types::{Subscription, SubscriptionTier},
     validation::validate_address,
@@ -174,7 +173,7 @@ impl ProSubscriptionContract {
         token_client.transfer(&organizer, &platform_wallet, &total_amount);
 
         let current_time = env.ledger().timestamp();
-        
+
         // If subscription is expired, start from now; otherwise extend from current expiry
         let base_time = if subscription.expires_at < current_time {
             current_time
@@ -194,7 +193,7 @@ impl ProSubscriptionContract {
             .ok_or(ProSubscriptionError::ArithmeticError)?;
 
         set_subscription(&env, &subscription);
-        
+
         // Ensure they're in the pro members list
         add_to_pro_members_list(&env, &organizer);
 
@@ -212,10 +211,7 @@ impl ProSubscriptionContract {
     }
 
     /// Cancel a subscription (admin only)
-    pub fn cancel_subscription(
-        env: Env,
-        organizer: Address,
-    ) -> Result<(), ProSubscriptionError> {
+    pub fn cancel_subscription(env: Env, organizer: Address) -> Result<(), ProSubscriptionError> {
         let admin = require_admin(&env)?;
 
         let mut subscription =

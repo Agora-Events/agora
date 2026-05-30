@@ -40,6 +40,8 @@ pub enum AgoraEvent {
     EventArchived,
     /// A scanner wallet has been authorized for ticket validation at an event.
     ScannerAuthorized,
+    /// A scanner wallet's authorization has been revoked for an event.
+    ScannerRevoked,
     /// An event's minimum sales target has been reached.
     GoalMet,
     /// An organizer has staked collateral tokens toward Verified status.

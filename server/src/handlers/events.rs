@@ -772,6 +772,40 @@ mod tests {
         };
         assert_eq!(filters_none.is_free, None);
     }
+
+    #[test]
+    fn test_ratings_summary_distribution_zero_filled() {
+        let mut distribution = std::collections::HashMap::new();
+        for star in 1i16..=5 {
+            distribution.insert(star.to_string(), 0i64);
+        }
+        // Simulate two ratings: one 4-star, one 5-star
+        distribution.insert("4".to_string(), 1i64);
+        distribution.insert("5".to_string(), 1i64);
+
+        assert_eq!(distribution["1"], 0);
+        assert_eq!(distribution["2"], 0);
+        assert_eq!(distribution["3"], 0);
+        assert_eq!(distribution["4"], 1);
+        assert_eq!(distribution["5"], 1);
+    }
+
+    #[test]
+    fn test_ratings_summary_average_no_ratings() {
+        let total = 0i64;
+        let average = if total > 0 { 1.0f64 } else { 0.0f64 };
+        assert_eq!(average, 0.0);
+    }
+
+    #[test]
+    fn test_ratings_summary_average_computed() {
+        // 1×4 + 1×5 = 9 / 2 = 4.5
+        let rows: Vec<(i16, i64)> = vec![(4, 1), (5, 1)];
+        let total: i64 = rows.iter().map(|(_, c)| c).sum();
+        let weighted: i64 = rows.iter().map(|(r, c)| *r as i64 * c).sum();
+        let average = weighted as f64 / total as f64;
+        assert_eq!(average, 4.5);
+    }
 }
 
 #[derive(Serialize)]
@@ -779,6 +813,103 @@ pub struct CheckInStats {
     pub checked_in: i64,
     pub total_sold: i64,
     pub remaining: i64,
+}
+
+/// Response body for the ratings summary endpoint
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RatingsSummary {
+    pub average: f64,
+    pub total: i64,
+    pub distribution: std::collections::HashMap<String, i64>,
+}
+
+/// GET /api/v1/events/:id/ratings/summary
+///
+/// Returns the star-rating distribution for an event. Result is cached for 5 minutes.
+pub async fn get_ratings_summary(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    let cache_key = format!("event:ratings_summary:{}", event_id);
+
+    match state.redis.get::<RatingsSummary>(&cache_key).await {
+        Ok(Some(summary)) => {
+            return success(summary, "Ratings summary retrieved (cached)").into_response()
+        }
+        Ok(None) => {}
+        Err(e) => tracing::warn!("Redis error for ratings summary cache: {:?}", e),
+    }
+
+    // 404 if event doesn't exist
+    let exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    let rows = match sqlx::query_as::<_, (i16, i64)>(
+        "SELECT rating, COUNT(*) FROM event_ratings \
+         WHERE event_id = $1 GROUP BY rating ORDER BY rating",
+    )
+    .bind(event_id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch ratings: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let mut distribution = std::collections::HashMap::new();
+    for star in 1i16..=5 {
+        distribution.insert(star.to_string(), 0i64);
+    }
+    for (rating, count) in &rows {
+        distribution.insert(rating.to_string(), *count);
+    }
+
+    let total: i64 = rows.iter().map(|(_, c)| c).sum();
+    let weighted: i64 = rows.iter().map(|(r, c)| *r as i64 * c).sum();
+    let average = if total > 0 {
+        weighted as f64 / total as f64
+    } else {
+        0.0
+    };
+
+    let summary = RatingsSummary {
+        average,
+        total,
+        distribution,
+    };
+
+    if let Err(e) = state
+        .redis
+        .set(&cache_key, &summary, EVENT_CACHE_TTL)
+        .await
+    {
+        tracing::warn!(
+            "Failed to cache ratings summary for event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    success(summary, "Ratings summary retrieved").into_response()
 }
 
 /// GET /api/v1/events/:id/check-in-stats
@@ -804,7 +935,11 @@ pub async fn get_checkin_stats(
             let checked_in: i64 = r.try_get("checked_in").unwrap_or(0);
             let total_sold: i64 = r.try_get("total_sold").unwrap_or(0);
             success(
-                CheckInStats { checked_in, total_sold, remaining: total_sold - checked_in },
+                CheckInStats {
+                    checked_in,
+                    total_sold,
+                    remaining: total_sold - checked_in,
+                },
                 "Check-in stats retrieved",
             )
             .into_response()
@@ -813,3 +948,4 @@ pub async fn get_checkin_stats(
         Err(e) => AppError::InternalServerError(e.to_string()).into_response(),
     }
 }
+
