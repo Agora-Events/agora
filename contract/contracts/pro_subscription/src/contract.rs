@@ -248,6 +248,11 @@ impl ProSubscriptionContract {
         get_subscription(&env, &organizer)
     }
 
+    /// Get subscription expiry timestamp for an organizer
+    pub fn get_subscription_expiry(env: Env, organizer: Address) -> Option<u64> {
+        get_subscription(&env, &organizer).map(|s| s.expires_at)
+    }
+
     /// Get all active pro members
     pub fn get_pro_members(env: Env) -> soroban_sdk::Vec<Address> {
         get_pro_members_list(&env)
@@ -292,6 +297,11 @@ impl ProSubscriptionContract {
         get_admin(&env)
     }
 
+    /// Check whether the contract has been initialized
+    pub fn is_initialized(env: Env) -> bool {
+        is_initialized(&env)
+    }
+
     /// Update the admin address (admin only)
     pub fn update_admin(env: Env, new_admin: Address) -> Result<(), ProSubscriptionError> {
         require_admin(&env)?;
@@ -303,6 +313,17 @@ impl ProSubscriptionContract {
     /// Get the platform wallet address
     pub fn get_platform_wallet(env: Env) -> Option<Address> {
         get_platform_wallet(&env)
+    }
+
+    /// Update the platform wallet address (admin only)
+    pub fn update_platform_wallet(
+        env: Env,
+        new_wallet: Address,
+    ) -> Result<(), ProSubscriptionError> {
+        require_admin(&env)?;
+        validate_address(&env, &new_wallet)?;
+        set_platform_wallet(&env, &new_wallet);
+        Ok(())
     }
 
     /// Get the payment token address
