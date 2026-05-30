@@ -85,6 +85,9 @@ pub struct EventFilters {
     /// Filter by organizer ID
     pub organizer_id: Option<Uuid>,
 
+    /// Filter by organizer wallet address (Stellar public key)
+    pub organizer_wallet: Option<String>,
+
     /// Filter by location (partial match)
     pub location: Option<String>,
 
@@ -166,6 +169,14 @@ pub async fn list_events(
         where_clauses.push(format!("organizer_id = ${}", param_count));
     }
 
+    if filters.organizer_wallet.is_some() {
+        param_count += 1;
+        where_clauses.push(format!(
+            "organizer_id = (SELECT id FROM organizers WHERE wallet_address = ${})",
+            param_count
+        ));
+    }
+
     if filters.location.is_some() {
         param_count += 1;
         where_clauses.push(format!("location ILIKE ${}", param_count));
@@ -227,6 +238,9 @@ pub async fn list_events(
 
     if let Some(organizer_id) = filters.organizer_id {
         items_query_builder = items_query_builder.bind(organizer_id);
+    }
+    if let Some(ref organizer_wallet) = filters.organizer_wallet {
+        items_query_builder = items_query_builder.bind(organizer_wallet.clone());
     }
     if let Some(ref location) = filters.location {
         items_query_builder = items_query_builder.bind(format!("%{}%", location));
@@ -735,6 +749,83 @@ pub async fn toggle_event_flag(
     .into_response()
 }
 
+/// Revenue summary response for an event
+#[derive(Debug, Serialize)]
+pub struct EventRevenueResponse {
+    pub total_revenue_usd: f64,
+    pub tickets_sold: i64,
+    pub average_ticket_price: f64,
+}
+
+/// GET /api/v1/events/:id/revenue
+///
+/// Returns revenue statistics for an event: total revenue, tickets sold,
+/// and average ticket price. Returns zeros for events with no tickets sold.
+/// Returns 404 for non-existent events.
+pub async fn get_event_revenue(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // 404 if event doesn't exist
+    let exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    let row = match sqlx::query(
+        r#"
+        SELECT
+            COALESCE(SUM(tt.price * t.quantity), 0.0) AS total_revenue,
+            COUNT(t.id) AS tickets_sold
+        FROM tickets t
+        JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+        WHERE tt.event_id = $1
+        "#,
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch revenue stats: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let total_revenue: f64 = row.try_get::<f64, _>("total_revenue").unwrap_or(0.0);
+    let tickets_sold: i64 = row.try_get::<i64, _>("tickets_sold").unwrap_or(0);
+    let average_ticket_price = if tickets_sold > 0 {
+        total_revenue / tickets_sold as f64
+    } else {
+        0.0
+    };
+
+    success(
+        EventRevenueResponse {
+            total_revenue_usd: total_revenue,
+            tickets_sold,
+            average_ticket_price,
+        },
+        "Revenue stats retrieved",
+    )
+    .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -744,6 +835,7 @@ mod tests {
         // Test that filters can be deserialized from query params
         let filters = EventFilters {
             organizer_id: Some(Uuid::new_v4()),
+            organizer_wallet: Some("GABC123".to_string()),
             location: Some("New York".to_string()),
             start_after: None,
             start_before: None,
@@ -752,13 +844,29 @@ mod tests {
         };
 
         assert!(filters.organizer_id.is_some());
+        assert_eq!(filters.organizer_wallet.as_deref(), Some("GABC123"));
         assert_eq!(filters.location.unwrap(), "New York");
+    }
+
+    #[test]
+    fn test_organizer_wallet_filter() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: Some("GBXXX".to_string()),
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            is_free: None,
+        };
+        assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
     }
 
     #[test]
     fn test_is_free_filter() {
         let filters_free = EventFilters {
             organizer_id: None,
+            organizer_wallet: None,
             location: None,
             start_after: None,
             start_before: None,
@@ -769,6 +877,7 @@ mod tests {
 
         let filters_paid = EventFilters {
             organizer_id: None,
+            organizer_wallet: None,
             location: None,
             start_after: None,
             start_before: None,
@@ -779,6 +888,7 @@ mod tests {
 
         let filters_none = EventFilters {
             organizer_id: None,
+            organizer_wallet: None,
             location: None,
             start_after: None,
             start_before: None,
@@ -837,6 +947,27 @@ mod tests {
             page_size: 20,
         };
         assert_eq!(params.location.as_deref(), Some("Lagos"));
+    }
+
+    #[test]
+    fn test_revenue_average_no_tickets() {
+        let tickets_sold: i64 = 0;
+        let total_revenue: f64 = 0.0;
+        let average = if tickets_sold > 0 {
+            total_revenue / tickets_sold as f64
+        } else {
+            0.0
+        };
+        assert_eq!(average, 0.0);
+    }
+
+    #[test]
+    fn test_revenue_average_computed() {
+        // 142 tickets at $25 each = $3550 total, average = $25
+        let tickets_sold: i64 = 142;
+        let total_revenue: f64 = 3550.0;
+        let average = total_revenue / tickets_sold as f64;
+        assert!((average - 25.0).abs() < 0.001);
     }
 }
 
