@@ -132,6 +132,7 @@ pub async fn create_routes(pool: PgPool, _config: Config, redis: RedisCache) -> 
     // Event routes with Redis caching
     let event_routes = Router::new()
         .route("/", get(list_events))
+        .route("/count", get(get_event_counts))
         .route("/search", get(search_events))
         .route("/:id", get(get_event))
         .route("/:id/rate", post(submit_event_rating))

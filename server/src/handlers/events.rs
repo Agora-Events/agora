@@ -11,7 +11,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, PgPool};
+use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -84,6 +84,9 @@ pub struct EventDetail {
 pub struct EventFilters {
     /// Filter by organizer ID
     pub organizer_id: Option<Uuid>,
+
+    /// Filter by organizer wallet address (Stellar public key)
+    pub organizer_wallet: Option<String>,
 
     /// Filter by location (partial match)
     pub location: Option<String>,
@@ -166,6 +169,14 @@ pub async fn list_events(
         where_clauses.push(format!("organizer_id = ${}", param_count));
     }
 
+    if filters.organizer_wallet.is_some() {
+        param_count += 1;
+        where_clauses.push(format!(
+            "organizer_id = (SELECT id FROM organizers WHERE wallet_address = ${})",
+            param_count
+        ));
+    }
+
     if filters.location.is_some() {
         param_count += 1;
         where_clauses.push(format!("location ILIKE ${}", param_count));
@@ -227,6 +238,9 @@ pub async fn list_events(
 
     if let Some(organizer_id) = filters.organizer_id {
         items_query_builder = items_query_builder.bind(organizer_id);
+    }
+    if let Some(ref organizer_wallet) = filters.organizer_wallet {
+        items_query_builder = items_query_builder.bind(organizer_wallet.clone());
     }
     if let Some(ref location) = filters.location {
         items_query_builder = items_query_builder.bind(format!("%{}%", location));
@@ -364,6 +378,85 @@ pub async fn get_event(
     }
 
     success(detail, "Event retrieved successfully").into_response()
+}
+
+/// Request body for creating a new event
+#[derive(Debug, Deserialize)]
+pub struct CreateEventRequest {
+    pub organizer_id: Uuid,
+    pub title: String,
+    pub description: Option<String>,
+    pub location: String,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
+}
+
+/// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
+///
+/// # Endpoint
+/// POST `/api/v1/events`
+pub async fn create_event(
+    State(mut state): State<EventState>,
+    Json(payload): Json<CreateEventRequest>,
+) -> Response {
+    let event = match sqlx::query_as::<_, Event>(
+        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *",
+    )
+    .bind(payload.organizer_id)
+    .bind(&payload.title)
+    .bind(&payload.description)
+    .bind(&payload.location)
+    .bind(payload.start_time)
+    .bind(payload.end_time)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::error!("Failed to create event: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Cache warm-up: pre-populate event:detail:{id} so the first GET hits cache.
+    let organizer_profile = match sqlx::query_scalar::<_, Option<String>>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(event.organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(Some(wallet))) => {
+            match sqlx::query_as::<_, OrganizerProfile>(
+                "SELECT * FROM organizer_profiles WHERE address = $1",
+            )
+            .bind(&wallet)
+            .fetch_optional(&state.pool)
+            .await
+            {
+                Ok(profile) => profile,
+                Err(e) => {
+                    tracing::warn!("Cache warm-up: failed to fetch organizer profile: {:?}", e);
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+
+    let detail = EventDetail {
+        event: event.clone(),
+        organizer_profile,
+    };
+
+    let cache_key = format!("event:detail:{}", event.id);
+    if let Err(e) = state.redis.set(&cache_key, &detail, EVENT_CACHE_TTL).await {
+        tracing::warn!("Cache warm-up failed for event {}: {:?}", event.id, e);
+    }
+
+    success(event, "Event created successfully").into_response()
 }
 
 /// Record a star rating for an event.
@@ -735,6 +828,83 @@ pub async fn toggle_event_flag(
     .into_response()
 }
 
+/// Revenue summary response for an event
+#[derive(Debug, Serialize)]
+pub struct EventRevenueResponse {
+    pub total_revenue_usd: f64,
+    pub tickets_sold: i64,
+    pub average_ticket_price: f64,
+}
+
+/// GET /api/v1/events/:id/revenue
+///
+/// Returns revenue statistics for an event: total revenue, tickets sold,
+/// and average ticket price. Returns zeros for events with no tickets sold.
+/// Returns 404 for non-existent events.
+pub async fn get_event_revenue(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // 404 if event doesn't exist
+    let exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    let row = match sqlx::query(
+        r#"
+        SELECT
+            COALESCE(SUM(tt.price * t.quantity), 0.0) AS total_revenue,
+            COUNT(t.id) AS tickets_sold
+        FROM tickets t
+        JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+        WHERE tt.event_id = $1
+        "#,
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch revenue stats: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let total_revenue: f64 = row.try_get::<f64, _>("total_revenue").unwrap_or(0.0);
+    let tickets_sold: i64 = row.try_get::<i64, _>("tickets_sold").unwrap_or(0);
+    let average_ticket_price = if tickets_sold > 0 {
+        total_revenue / tickets_sold as f64
+    } else {
+        0.0
+    };
+
+    success(
+        EventRevenueResponse {
+            total_revenue_usd: total_revenue,
+            tickets_sold,
+            average_ticket_price,
+        },
+        "Revenue stats retrieved",
+    )
+    .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -744,6 +914,7 @@ mod tests {
         // Test that filters can be deserialized from query params
         let filters = EventFilters {
             organizer_id: Some(Uuid::new_v4()),
+            organizer_wallet: Some("GABC123".to_string()),
             location: Some("New York".to_string()),
             start_after: None,
             start_before: None,
@@ -752,13 +923,29 @@ mod tests {
         };
 
         assert!(filters.organizer_id.is_some());
+        assert_eq!(filters.organizer_wallet.as_deref(), Some("GABC123"));
         assert_eq!(filters.location.unwrap(), "New York");
+    }
+
+    #[test]
+    fn test_organizer_wallet_filter() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: Some("GBXXX".to_string()),
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            is_free: None,
+        };
+        assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
     }
 
     #[test]
     fn test_is_free_filter() {
         let filters_free = EventFilters {
             organizer_id: None,
+            organizer_wallet: None,
             location: None,
             start_after: None,
             start_before: None,
@@ -769,6 +956,7 @@ mod tests {
 
         let filters_paid = EventFilters {
             organizer_id: None,
+            organizer_wallet: None,
             location: None,
             start_after: None,
             start_before: None,
@@ -779,6 +967,7 @@ mod tests {
 
         let filters_none = EventFilters {
             organizer_id: None,
+            organizer_wallet: None,
             location: None,
             start_after: None,
             start_before: None,
@@ -904,19 +1093,18 @@ pub async fn get_ratings_summary(
     }
 
     // 404 if event doesn't exist
-    let exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
-    )
-    .bind(event_id)
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Failed to check event existence: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
-        }
-    };
+    let exists =
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("Failed to check event existence: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
 
     if !exists {
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
@@ -960,11 +1148,7 @@ pub async fn get_ratings_summary(
         distribution,
     };
 
-    if let Err(e) = state
-        .redis
-        .set(&cache_key, &summary, EVENT_CACHE_TTL)
-        .await
-    {
+    if let Err(e) = state.redis.set(&cache_key, &summary, EVENT_CACHE_TTL).await {
         tracing::warn!(
             "Failed to cache ratings summary for event {}: {:?}",
             event_id,
@@ -973,6 +1157,61 @@ pub async fn get_ratings_summary(
     }
 
     success(summary, "Ratings summary retrieved").into_response()
+}
+
+const EVENT_COUNT_CACHE_KEY: &str = "events:count";
+const EVENT_COUNT_CACHE_TTL: Duration = Duration::from_secs(600);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EventCounts {
+    pub total: i64,
+    pub upcoming: i64,
+}
+
+/// GET /api/v1/events/count
+///
+/// Returns the total and upcoming event counts, excluding flagged events.
+/// Result is cached in Redis for 10 minutes.
+pub async fn get_event_counts(State(mut state): State<EventState>) -> Response {
+    match state.redis.get::<EventCounts>(EVENT_COUNT_CACHE_KEY).await {
+        Ok(Some(counts)) => return success(counts, "Event counts retrieved (cached)").into_response(),
+        Ok(None) => {}
+        Err(e) => tracing::warn!("Redis error for event counts cache: {:?}", e),
+    }
+
+    let total = match sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM events WHERE is_flagged = FALSE",
+    )
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::error!("Failed to count events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let upcoming = match sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM events WHERE end_time > NOW() AND is_flagged = FALSE",
+    )
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::error!("Failed to count upcoming events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let counts = EventCounts { total, upcoming };
+
+    if let Err(e) = state.redis.set(EVENT_COUNT_CACHE_KEY, &counts, EVENT_COUNT_CACHE_TTL).await {
+        tracing::warn!("Failed to cache event counts: {:?}", e);
+    }
+
+    success(counts, "Event counts retrieved").into_response()
 }
 
 /// GET /api/v1/events/:id/check-in-stats
