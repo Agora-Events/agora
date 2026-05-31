@@ -44,6 +44,8 @@ pub struct SearchParams {
     pub date_to: Option<DateTime<Utc>>,
     /// Filter by location (partial match, case-insensitive)
     pub location: Option<String>,
+    /// Filter by ticket tier name (partial match, case-insensitive)
+    pub ticket_type: Option<String>,
     /// Page number (default: 1)
     #[serde(default = "default_page")]
     pub page: u32,
@@ -63,11 +65,15 @@ fn default_page_size() -> u32 {
 /// Cache TTL for event details (5 minutes)
 const EVENT_CACHE_TTL: Duration = Duration::from_secs(300);
 
+/// Cache TTL for social proof (60 seconds)
+const SOCIAL_PROOF_CACHE_TTL: Duration = Duration::from_secs(60);
+
 /// Application state for event handlers
 #[derive(Clone)]
 pub struct EventState {
     pub pool: PgPool,
     pub redis: RedisCache,
+    pub base_url: String,
 }
 
 /// Event detail response that includes the organizer's public profile (Issue #486).
@@ -652,6 +658,20 @@ pub async fn search_events(
         ""
     };
 
+    // Filter by ticket type (requires join with ticket_tiers)
+    let ticket_type_join = if params.ticket_type.is_some() {
+        "INNER JOIN ticket_tiers tt ON e.id = tt.event_id"
+    } else {
+        ""
+    };
+
+    // Combine joins - if both price and ticket_type need ticket_tiers, use one join
+    let ticket_tiers_join = if !price_join.is_empty() || !ticket_type_join.is_empty() {
+        "INNER JOIN ticket_tiers tt ON e.id = tt.event_id"
+    } else {
+        ""
+    };
+
     if params.min_price.is_some() {
         param_count += 1;
         where_clauses.push(format!("tt.price >= ${}", param_count));
@@ -660,6 +680,12 @@ pub async fn search_events(
     if params.max_price.is_some() {
         param_count += 1;
         where_clauses.push(format!("tt.price <= ${}", param_count));
+    }
+
+    // Filter by ticket type (partial match on tier name)
+    if params.ticket_type.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("tt.name ILIKE ${}", param_count));
     }
 
     // Filter by location (partial match)
@@ -684,7 +710,7 @@ pub async fn search_events(
     // Count total items with DISTINCT to handle joins
     let count_query = format!(
         "SELECT COUNT(DISTINCT e.id) FROM events e {} {} WHERE {}",
-        category_join, price_join, where_clause
+        category_join, ticket_tiers_join, where_clause
     );
 
     let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
@@ -706,6 +732,9 @@ pub async fn search_events(
     if let Some(ref location) = params.location {
         count_query_builder = count_query_builder.bind(format!("%{}%", location));
     }
+    if let Some(ref ticket_type) = params.ticket_type {
+        count_query_builder = count_query_builder.bind(format!("%{}%", ticket_type));
+    }
     if let Some(date_from) = params.date_from {
         count_query_builder = count_query_builder.bind(date_from);
     }
@@ -725,7 +754,7 @@ pub async fn search_events(
     let items_query = format!(
         "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
         category_join,
-        price_join,
+        ticket_tiers_join,
         where_clause,
         param_count + 1,
         param_count + 2
@@ -749,6 +778,9 @@ pub async fn search_events(
     }
     if let Some(ref location) = params.location {
         items_query_builder = items_query_builder.bind(format!("%{}%", location));
+    }
+    if let Some(ref ticket_type) = params.ticket_type {
+        items_query_builder = items_query_builder.bind(format!("%{}%", ticket_type));
     }
     if let Some(date_from) = params.date_from {
         items_query_builder = items_query_builder.bind(date_from);
@@ -834,6 +866,183 @@ pub struct EventRevenueResponse {
     pub total_revenue_usd: f64,
     pub tickets_sold: i64,
     pub average_ticket_price: f64,
+}
+
+/// Share link response for an event
+#[derive(Debug, Serialize)]
+pub struct EventShareLinkResponse {
+    pub url: String,
+    pub title: String,
+    pub description: String,
+}
+
+/// Social proof response for an event
+#[derive(Debug, Serialize)]
+pub struct EventSocialProofResponse {
+    pub recent_purchases: i64,
+    pub average_rating: f32,
+    pub waitlist_count: i64,
+    pub tickets_remaining: i64,
+}
+
+/// GET /api/v1/events/:id/share-link
+///
+/// Returns a canonical share URL for an event along with the event's title
+/// and a truncated description (max 160 characters). Returns 404 for non-existent events.
+pub async fn get_event_share_link(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    let event = match sqlx::query_as::<_, Event>(
+        "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(event)) => event,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch event: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Construct canonical URL
+    let url = format!("{}/events/{}", state.base_url, event_id);
+
+    // Truncate description to 160 characters
+    let description = event
+        .description
+        .unwrap_or_else(|| String::new())
+        .chars()
+        .take(160)
+        .collect();
+
+    let response = EventShareLinkResponse {
+        url,
+        title: event.title,
+        description,
+    };
+
+    success(response, "Share link retrieved successfully").into_response()
+}
+
+/// GET /api/v1/events/:id/social-proof
+///
+/// Returns social proof signals for an event: recent purchases (last 24 hours),
+/// average rating, waitlist count, and tickets remaining.
+/// Response is cached for 60 seconds. Returns 404 for non-existent events.
+pub async fn get_event_social_proof(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    let cache_key = format!("event:social_proof:{}", event_id);
+
+    // Try to get from cache first
+    match state.redis.get::<EventSocialProofResponse>(&cache_key).await {
+        Ok(Some(proof)) => {
+            tracing::debug!("Cache hit for social proof of event {}", event_id);
+            return success(proof, "Social proof retrieved successfully (cached)").into_response();
+        }
+        Ok(None) => {
+            tracing::debug!("Cache miss for social proof of event {}", event_id);
+        }
+        Err(e) => {
+            tracing::warn!("Redis error, falling back to database: {:?}", e);
+        }
+    }
+
+    // Check if event exists
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    // Run queries in parallel using tokio::join!
+    let (recent_purchases, rating_data, waitlist_count, tickets_remaining) = tokio::join!(
+        // Recent purchases in last 24 hours
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM tickets WHERE event_id = $1 AND created_at > NOW() - INTERVAL '24 hours'",
+            )
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0)
+        },
+        // Average rating from events table
+        async {
+            sqlx::query_as::<_, (i64, i32)>(
+                "SELECT sum_of_ratings, count_of_ratings FROM events WHERE id = $1",
+            )
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        },
+        // Waitlist count
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM waitlist_entries WHERE event_id = $1",
+            )
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0)
+        },
+        // Tickets remaining (total_tickets - minted_tickets)
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT total_tickets - minted_tickets FROM events WHERE id = $1",
+            )
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0)
+        }
+    );
+
+    let average_rating = match rating_data {
+        Ok((sum, count)) => {
+            if count > 0 {
+                sum as f32 / count as f32
+            } else {
+                0.0
+            }
+        }
+        Err(_) => 0.0,
+    };
+
+    let response = EventSocialProofResponse {
+        recent_purchases,
+        average_rating,
+        waitlist_count,
+        tickets_remaining,
+    };
+
+    // Store in cache for 60 seconds
+    if let Err(e) = state.redis.set(&cache_key, &response, SOCIAL_PROOF_CACHE_TTL).await {
+        tracing::warn!("Failed to cache social proof for event {}: {:?}", event_id, e);
+    }
+
+    success(response, "Social proof retrieved successfully").into_response()
 }
 
 /// GET /api/v1/events/:id/revenue
@@ -999,6 +1208,96 @@ mod tests {
         let total = 0i64;
         let average = if total > 0 { 1.0f64 } else { 0.0f64 };
         assert_eq!(average, 0.0);
+    }
+
+    #[test]
+    fn test_description_truncation() {
+        let long_description = "This is a very long description that should be truncated to exactly 160 characters to ensure it fits within the limit for social media sharing and other use cases where space is limited.";
+        let truncated: String = long_description.chars().take(160).collect();
+        assert!(truncated.len() <= 160);
+        assert_eq!(truncated.len(), 160);
+    }
+
+    #[test]
+    fn test_description_truncation_short() {
+        let short_description = "Short description";
+        let truncated: String = short_description.chars().take(160).collect();
+        assert_eq!(truncated, "Short description");
+    }
+
+    #[test]
+    fn test_description_truncation_empty() {
+        let empty_description = "";
+        let truncated: String = empty_description.chars().take(160).collect();
+        assert_eq!(truncated, "");
+    }
+
+    #[test]
+    fn test_social_proof_response_serialization() {
+        let response = EventSocialProofResponse {
+            recent_purchases: 12,
+            average_rating: 4.5,
+            waitlist_count: 8,
+            tickets_remaining: 43,
+        };
+
+        assert_eq!(response.recent_purchases, 12);
+        assert_eq!(response.average_rating, 4.5);
+        assert_eq!(response.waitlist_count, 8);
+        assert_eq!(response.tickets_remaining, 43);
+    }
+
+    #[test]
+    fn test_social_proof_zero_values() {
+        let response = EventSocialProofResponse {
+            recent_purchases: 0,
+            average_rating: 0.0,
+            waitlist_count: 0,
+            tickets_remaining: 0,
+        };
+
+        assert_eq!(response.recent_purchases, 0);
+        assert_eq!(response.average_rating, 0.0);
+        assert_eq!(response.waitlist_count, 0);
+        assert_eq!(response.tickets_remaining, 0);
+    }
+
+    #[test]
+    fn test_search_params_ticket_type() {
+        let params = SearchParams {
+            q: None,
+            category_id: None,
+            category_ids: None,
+            min_price: None,
+            max_price: None,
+            date_from: None,
+            date_to: None,
+            location: None,
+            ticket_type: Some("VIP".to_string()),
+            page: 1,
+            page_size: 20,
+        };
+
+        assert_eq!(params.ticket_type, Some("VIP".to_string()));
+    }
+
+    #[test]
+    fn test_search_params_ticket_type_none() {
+        let params = SearchParams {
+            q: None,
+            category_id: None,
+            category_ids: None,
+            min_price: None,
+            max_price: None,
+            date_from: None,
+            date_to: None,
+            location: None,
+            ticket_type: None,
+            page: 1,
+            page_size: 20,
+        };
+
+        assert!(params.ticket_type.is_none());
     }
 
     #[test]
