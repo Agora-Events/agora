@@ -1,21 +1,44 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Home, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useIsMounted } from "@/hooks/useIsMounted";
+import { z } from "zod";
+
+const eventSchema = z.object({
+  title: z.string().min(1, "Event title is required"),
+  startDate: z.string().min(1, "Start date is required"),
+  startTime: z.string().min(1, "Start time is required"),
+  location: z.string().min(1, "Location is required"),
+  price: z.string().min(1, "Price is required (put 0 for free)"),
+  endDate: z.string().optional(),
+  endTime: z.string().optional(),
+  description: z.string().optional(),
+  capacity: z.string().optional(),
+  visibility: z.enum(["Public", "Private"]),
+});
 
 export default function CreateEventPage() {
+  const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [createdEventId, setCreatedEventId] = useState<string | null>(null);
+  const [organizer, setOrganizer] = useState<{ name: string; wallet: string } | null>(null);
   const isMounted = useIsMounted();
+
+  useEffect(() => {
+    fetch("/api/profile")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.profile) {
+          setOrganizer({ name: data.profile.displayName, wallet: data.profile.address });
+        }
+      })
+      .catch(() => null);
+  }, []);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -47,39 +70,34 @@ export default function CreateEventPage() {
     }
   };
 
-  const validate = () => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.title.trim()) newErrors.title = "Event title is required";
-    if (!formData.startDate) newErrors.startDate = "Start date is required";
-    if (!formData.startTime) newErrors.startTime = "Start time is required";
-    if (!formData.location.trim()) newErrors.location = "Location is required";
-    if (!formData.price.trim()) newErrors.price = "Price is required (put 0 for free)";
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) {
+
+    const result = eventSchema.safeParse(formData);
+    if (!result.success) {
+      const fieldErrors: Record<string, string> = {};
+      for (const issue of result.error.issues) {
+        const field = issue.path[0] as string;
+        fieldErrors[field] = issue.message;
+      }
+      setErrors(fieldErrors);
       toast.error("Please fill in all required fields");
       return;
     }
+    setErrors({});
 
     setIsSubmitting(true);
     try {
       const response = await fetch("/api/events", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: formData.title,
           startsAt: `${formData.startDate}T${formData.startTime}:00.000Z`,
           location: formData.location,
-          category: "Tech", // Default category
-          organizerName: "Stellar Community", // Mocked
-          organizerWallet: "GD...MOCK_WALLET", // Mocked
+          category: "Tech",
+          organizerName: organizer?.name ?? "Agora Organizer",
+          organizerWallet: organizer?.wallet ?? "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
           description: formData.description,
           ticketPrice: parseFloat(formData.price) || 0,
           totalTickets: parseInt(formData.capacity) || 100,
@@ -88,64 +106,16 @@ export default function CreateEventPage() {
       });
 
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to create event");
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to create event");
-      }
-
-      setCreatedEventId(data.event.id);
-      setIsSuccess(true);
       toast.success("Event created successfully!");
+      router.push(`/events/${data.event.id}`);
     } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Something went wrong";
-      toast.error(errorMessage);
+      toast.error(error instanceof Error ? error.message : "Something went wrong");
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  if (isSuccess) {
-    return (
-      <main className="flex flex-col min-h-screen bg-base">
-        <Navbar />
-        <div className="flex-1 flex items-center justify-center p-6">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="w-full max-w-[600px] bg-white rounded-[40px] p-10 lg:p-16 border border-black/5 shadow-2xl flex flex-col items-center text-center gap-8"
-          >
-            <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center text-green-600">
-              <CheckCircle2 size={56} />
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <h1 className="text-[40px] lg:text-[48px] font-bold text-black font-heading leading-tight italic">
-                Your event has been created!
-              </h1>
-              <p className="text-xl text-black/60 font-medium">
-                Awesome! Your event is now live and ready for registrations.
-              </p>
-            </div>
-
-            <div className="flex flex-col w-full gap-4 mt-4">
-              <Link href={`/events/${createdEventId?.replace("evt_", "")}`} className="w-full">
-                <Button variant="primary" className="w-full h-16 rounded-full text-xl">
-                  View Event
-                  <ExternalLink size={24} />
-                </Button>
-              </Link>
-              <Link href="/home" className="w-full text-black/60 font-bold text-lg flex items-center justify-center gap-2 hover:text-black transition-colors">
-                <Home size={20} />
-                <span>Back to Dashboard</span>
-              </Link>
-            </div>
-          </motion.div>
-        </div>
-        <Footer />
-      </main>
-    );
-  }
 
   return (
     <main className="flex flex-col min-h-screen bg-base">

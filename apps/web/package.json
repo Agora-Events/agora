@@ -27,7 +27,8 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
-    "swr": "^2.4.1"
+    "swr": "^2.4.1",
+    "zod": "3.24.4"
   },
   "devDependencies": {
     "@rollup/rollup-win32-x64-msvc": "^4.60.4",
