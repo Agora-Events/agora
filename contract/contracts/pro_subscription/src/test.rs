@@ -553,3 +553,64 @@ fn test_pro_member_removed_event_on_cancel() {
     let payload: ProMemberRemovedEvent = data.into_val(&env);
     assert_eq!(payload.organizer, organizer);
 }
+
+// ── Issue #640: get_total_pro_subscriptions accounting ───────────────────────
+
+#[test]
+fn test_total_subscriptions_increments_on_subscribe() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let monthly_price = 1000i128;
+
+    let org1 = Address::generate(&env);
+    let org2 = Address::generate(&env);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&org1, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&org1, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&org1, &1u32);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&org2, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&org2, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&org2, &1u32);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 2u32);
+}
+
+#[test]
+fn test_total_subscriptions_decrements_on_cancel() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let monthly_price = 1000i128;
+    let organizer = Address::generate(&env);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    client.cancel_subscription(&organizer);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 0u32);
+}
+
+#[test]
+fn test_total_subscriptions_no_double_count() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let monthly_price = 1000i128;
+    let organizer = Address::generate(&env);
+
+    // First subscription — succeeds
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Second subscription while still active — must fail
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    let res = client.try_subscribe_pro(&organizer, &1u32);
+    assert_eq!(res, Err(Ok(ProSubscriptionError::SubscriptionAlreadyActive)));
+
+    // Counter must still be 1, not 2
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+}
