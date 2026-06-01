@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ApiError } from "./api-errors";
 
+type RouteContext = {
+  params: Promise<Record<string, string | string[]>>;
+};
+
 type RouteHandler = (
   request: NextRequest,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
+  context: RouteContext,
 ) => Promise<NextResponse> | NextResponse;
 
 export function withErrorHandler(handler: RouteHandler) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return async (request: NextRequest, context: any) => {
+  return async (request: NextRequest, context: RouteContext) => {
     try {
       return await handler(request, context);
     } catch (error) {

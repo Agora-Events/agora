@@ -10,6 +10,7 @@ export function MobileNavLink({
   i,
   isActive,
   onClose,
+  ariaLabel,
 }: {
   href: string;
   icon: string;
@@ -17,6 +18,7 @@ export function MobileNavLink({
   i: number;
   isActive: boolean;
   onClose?: () => void;
+  ariaLabel?: string;
 }) {
   const linkVariants = {
     closed: { opacity: 0, x: 20 },
@@ -36,6 +38,7 @@ export function MobileNavLink({
       <Link
         href={href}
         onClick={onClose}
+        aria-label={ariaLabel}
         className={`flex items-center gap-3 text-lg font-medium transition-colors p-2 rounded-lg ${
           isActive ? "text-accent" : "hover:opacity-80"
         }`}

@@ -1,8 +1,7 @@
 "use client";
 
 import { motion, type Transition } from "framer-motion";
-import Image from "next/image";
-import { useEffect, useState } from "react";
+import useSWR from "swr";
 import { fetchCategories, type DiscoverCategory } from "@/utils/api";
 
 const defaultCategories = [
@@ -50,38 +49,30 @@ type CategorySectionProps = {
 };
 
 export function CategorySection({ activeCategory, onCategoryChange, onError }: CategorySectionProps) {
-  const [categories, setCategories] = useState<DiscoverCategory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Use SWR for category fetching with automatic caching and revalidation
+  const { data: categories, error, isLoading } = useSWR<DiscoverCategory[]>(
+    "/api/events/discover/categories",
+    () => fetchCategories(),
+    {
+      // Revalidate on window focus to keep data fresh
+      revalidateOnFocus: true,
+      // Revalidate on reconnect
+      revalidateOnReconnect: true,
+      // Don't revalidate on mount if data is already cached
+      revalidateIfStale: false,
+      // Keep previous data while revalidating
+      keepPreviousData: true,
+      // Deduplicate requests within 2 seconds
+      dedupingInterval: 2000,
+    }
+  );
 
-  useEffect(() => {
-    // AbortController cancels the in-flight fetch when the component unmounts,
-    // preventing state updates on an unmounted component and avoiding memory leaks.
-    const controller = new AbortController();
+  // Handle errors from SWR
+  if (error && !categories) {
+    onError("Could not load categories");
+  }
 
-    const loadCategories = async () => {
-      try {
-        const data = await fetchCategories(controller.signal);
-        setCategories(data);
-      } catch (err) {
-        // Ignore abort errors — they are intentional and not user-facing.
-        if (err instanceof Error && err.name === "AbortError") return;
-        setCategories([]);
-        onError("Could not load categories");
-      } finally {
-        // Only update loading state if the fetch was not aborted.
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    loadCategories();
-    return () => {
-      controller.abort();
-    };
-  }, [onError]);
-
-  const categoriesToRender = categories.length > 0 ? categories : defaultCategories;
+  const categoriesToRender = categories && categories.length > 0 ? categories : defaultCategories;
 
   return (
     <section className="px-4 bg-base pt-12 pb-6">

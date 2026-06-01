@@ -1,14 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { type Event } from "@prisma/client";
 import { withErrorHandler } from "@/lib/api-handler";
 
 export const dynamic = "force-dynamic";
+
+type OrganizerData = {
+  id: string;
+  title: string;
+  description: string;
+  image: string;
+};
 
 export const GET = withErrorHandler(async () => {
   const events = await prisma.event.findMany();
 
   const categories = Array.from(
-    new Set<string>(events.map((event: { category: string }) => event.category))
+    new Set<string>(events.map((event: Event) => event.category))
   ).map((name) => ({
     name,
     icon: `/icons/${name.toLowerCase()}.svg`,
@@ -29,8 +37,7 @@ export const GET = withErrorHandler(async () => {
     }));
 
   const organizers = Array.from(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    events.reduce((acc: any, event: any) => {
+    events.reduce((acc: Map<string, OrganizerData>, event: Event) => {
       if (!acc.has(event.organizerName)) {
         acc.set(event.organizerName, {
           id: event.organizerName.toLowerCase().replace(/\s+/g, "-"),
@@ -40,11 +47,12 @@ export const GET = withErrorHandler(async () => {
         });
       }
       return acc;
-    }, new Map<string, { id: string; title: string; description: string; image: string }>()),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ).map((entry: any) => entry[1]);
+    }, new Map<string, OrganizerData>()),
+  ) as [string, OrganizerData][];
 
-  return NextResponse.json({ categories, popularEvents, organizers });
+  const organizerList = organizers.map(([, organizer]) => organizer);
+
+  return NextResponse.json({ categories, popularEvents, organizers: organizerList });
 });
 
 

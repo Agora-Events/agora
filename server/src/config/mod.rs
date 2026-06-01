@@ -73,6 +73,9 @@ pub struct Config {
 
     /// Public base URL for uploaded files.
     pub s3_public_url: String,
+
+    /// Base URL for the application (e.g., https://agora.events).
+    pub base_url: String,
 }
 
 impl Config {
@@ -108,6 +111,7 @@ impl Config {
         let s3_secret_access_key = env::var("S3_SECRET_ACCESS_KEY").unwrap_or_default();
         let s3_endpoint_url = env::var("S3_ENDPOINT_URL").ok();
         let s3_public_url = env::var("S3_PUBLIC_URL").unwrap_or_default();
+        let base_url = env::var("BASE_URL").unwrap_or_else(|_| "https://agora.events".to_string());
 
         Ok(Self {
             database_url,
@@ -123,6 +127,7 @@ impl Config {
             s3_secret_access_key,
             s3_endpoint_url,
             s3_public_url,
+            base_url,
         })
     }
 

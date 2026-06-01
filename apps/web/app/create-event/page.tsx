@@ -2,18 +2,44 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Home, ExternalLink } from "@/components/ui/icons";
 import { toast } from "sonner";
+import { useIsMounted } from "@/hooks/useIsMounted";
+import { z } from "zod";
+
+const createEventSchema = z.object({
+  title: z.string().trim().min(1, "Event title is required"),
+  startDate: z.string().min(1, "Start date is required"),
+  startTime: z.string().min(1, "Start time is required"),
+  endDate: z.string().optional(),
+  endTime: z.string().optional(),
+  location: z.string().trim().min(1, "Location is required"),
+  description: z.string().optional(),
+  capacity: z
+    .string()
+    .optional()
+    .refine((value) => !value || Number.parseInt(value, 10) > 0, {
+      message: "Capacity must be greater than 0",
+    }),
+  price: z
+    .string()
+    .trim()
+    .min(1, "Price is required (put 0 for free)")
+    .refine((value) => Number.parseFloat(value) >= 0, {
+      message: "Price cannot be negative",
+    }),
+  visibility: z.enum(["Public", "Private"]),
+});
+
+type CreateEventInput = z.infer<typeof createEventSchema>;
 
 export default function CreateEventPage() {
+  const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [createdEventId, setCreatedEventId] = useState<string | null>(null);
+  const isMounted = useIsMounted();
 
   // Form State
   const [formData, setFormData] = useState({
@@ -32,6 +58,11 @@ export default function CreateEventPage() {
   // Error State
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const getStartsAt = (data: CreateEventInput) => {
+    const startsAt = new Date(`${data.startDate}T${data.startTime}`);
+    return startsAt.toISOString();
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -45,43 +76,44 @@ export default function CreateEventPage() {
     }
   };
 
-  const validate = () => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.title.trim()) newErrors.title = "Event title is required";
-    if (!formData.startDate) newErrors.startDate = "Start date is required";
-    if (!formData.startTime) newErrors.startTime = "Start time is required";
-    if (!formData.location.trim()) newErrors.location = "Location is required";
-    if (!formData.price.trim()) newErrors.price = "Price is required (put 0 for free)";
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) {
+    const parsed = createEventSchema.safeParse(formData);
+
+    if (!parsed.success) {
+      const nextErrors: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === "string" && !nextErrors[field]) {
+          nextErrors[field] = issue.message;
+        }
+      }
+
+      setErrors(nextErrors);
       toast.error("Please fill in all required fields");
       return;
     }
 
+    setErrors({});
     setIsSubmitting(true);
     try {
+      const values = parsed.data;
       const response = await fetch("/api/events", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          title: formData.title,
-          startsAt: `${formData.startDate}T${formData.startTime}:00.000Z`,
-          location: formData.location,
+          title: values.title,
+          startsAt: getStartsAt(values),
+          location: values.location,
           category: "Tech", // Default category
           organizerName: "Stellar Community", // Mocked
           organizerWallet: "GD...MOCK_WALLET", // Mocked
-          description: formData.description,
-          ticketPrice: parseFloat(formData.price) || 0,
-          totalTickets: parseInt(formData.capacity) || 100,
-          followersOnly: formData.visibility === "Private",
+          description: values.description,
+          ticketPrice: Number.parseFloat(values.price) || 0,
+          totalTickets: values.capacity ? Number.parseInt(values.capacity, 10) : 100,
+          followersOnly: values.visibility === "Private",
         }),
       });
 
@@ -91,58 +123,16 @@ export default function CreateEventPage() {
         throw new Error(data.error || "Failed to create event");
       }
 
-      setCreatedEventId(data.event.id);
-      setIsSuccess(true);
       toast.success("Event created successfully!");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      toast.error(error.message || "Something went wrong");
+      router.push(`/events/${data.event.id}`);
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Something went wrong";
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  if (isSuccess) {
-    return (
-      <main className="flex flex-col min-h-screen bg-base">
-        <Navbar />
-        <div className="flex-1 flex items-center justify-center p-6">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="w-full max-w-[600px] bg-white rounded-[40px] p-10 lg:p-16 border border-black/5 shadow-2xl flex flex-col items-center text-center gap-8"
-          >
-            <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center text-green-600">
-              <CheckCircle2 size={56} />
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <h1 className="text-[40px] lg:text-[48px] font-bold text-black font-heading leading-tight italic">
-                Your event has been created!
-              </h1>
-              <p className="text-xl text-black/60 font-medium">
-                Awesome! Your event is now live and ready for registrations.
-              </p>
-            </div>
-
-            <div className="flex flex-col w-full gap-4 mt-4">
-              <Link href={`/events/${createdEventId?.replace("evt_", "")}`} className="w-full">
-                <Button variant="primary" className="w-full h-16 rounded-full text-xl">
-                  View Event
-                  <ExternalLink size={24} />
-                </Button>
-              </Link>
-              <Link href="/home" className="w-full text-black/60 font-bold text-lg flex items-center justify-center gap-2 hover:text-black transition-colors">
-                <Home size={20} />
-                <span>Back to Dashboard</span>
-              </Link>
-            </div>
-          </motion.div>
-        </div>
-        <Footer />
-      </main>
-    );
-  }
 
   return (
     <main className="flex flex-col min-h-screen bg-base">
@@ -258,12 +248,32 @@ export default function CreateEventPage() {
 
               <div className="flex-1 bg-white/50 backdrop-blur-sm border-[1.5px] border-black/3 rounded-[16px] p-4 px-5 flex items-center justify-between shadow-sm min-w-[200px]">
                 <div className="flex flex-col gap-0 justify-center h-full">
-                  <span className="text-[15px] font-medium text-black leading-[18px]">
-                    GMT+00:00
-                  </span>
-                  <span className="text-[15px] text-black/50 leading-[20px] -mt-[2px]">
-                    UTC
-                  </span>
+                  {isMounted ? (
+                    <>
+                      <span className="text-[15px] font-medium text-black leading-[18px]">
+                        {(() => {
+                          const offsetMinutes = -new Date().getTimezoneOffset();
+                          const sign = offsetMinutes >= 0 ? "+" : "-";
+                          const absMinutes = Math.abs(offsetMinutes);
+                          const hours = String(Math.floor(absMinutes / 60)).padStart(2, "0");
+                          const mins = String(absMinutes % 60).padStart(2, "0");
+                          return `GMT${sign}${hours}:${mins}`;
+                        })()}
+                      </span>
+                      <span className="text-[15px] text-black/50 leading-[20px] -mt-[2px]">
+                        {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[15px] font-medium text-black leading-[18px] invisible">
+                        GMT+00:00
+                      </span>
+                      <span className="text-[15px] text-black/50 leading-[20px] -mt-[2px] invisible">
+                        UTC
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className="w-[49px] h-[49px] bg-base rounded-[120px] flex items-center justify-center shrink-0">
                   <Image

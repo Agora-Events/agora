@@ -7,15 +7,18 @@ export function NavLink({
   icon,
   text,
   isActive,
+  ariaLabel,
 }: {
   href: string;
   icon: string;
   text: string;
   isActive: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <Link
       href={href}
+      aria-label={ariaLabel}
       className={`flex items-center gap-1 text-[15px] font-medium transition-colors ${
         isActive ? "text-accent" : "text-black hover:opacity-80"
       }`}

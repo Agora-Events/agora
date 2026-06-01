@@ -18,6 +18,10 @@ pub enum ProSubscriptionEvent {
     SubscriptionExpired,
     /// Pro monthly price updated
     PriceUpdated,
+    /// Organizer added to the pro members list
+    ProMemberAdded,
+    /// Organizer removed from the pro members list
+    ProMemberRemoved,
 }
 
 /// Emitted when the contract is initialized
@@ -68,5 +72,21 @@ pub struct PriceUpdatedEvent {
     pub old_price: i128,
     pub new_price: i128,
     pub updated_by: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when an organizer is added to the pro members list
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProMemberAddedEvent {
+    pub organizer: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when an organizer is removed from the pro members list
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProMemberRemovedEvent {
+    pub organizer: Address,
     pub timestamp: u64,
 }

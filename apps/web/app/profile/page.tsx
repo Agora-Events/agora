@@ -140,9 +140,10 @@ function OrganizerProfileSection({ profile }: { profile: OrganizerProfile | null
 function ProfileContent() {
   const searchParams = useSearchParams();
   const isEmpty = searchParams.get("empty") === "1";
+  const profileAddress = searchParams.get("address") ?? "me";
   const [profile, setProfile] = useState<OrganizerProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [_loading, setLoading] = useState(true);
+  const [_error, setError] = useState<string | null>(null);
 
   const hostedEvents = isEmpty ? [] : HOSTED_EVENTS;
   const attendedEvents = isEmpty ? [] : ATTENDED_EVENTS;
@@ -171,7 +172,7 @@ function ProfileContent() {
     <div className="flex-1 w-full max-w-6xl mx-auto px-4 py-10">
       <div className="flex flex-col md:flex-row gap-8 items-start">
         <div className="w-full md:w-[28%] md:sticky md:top-24">
-          <ProfileSidebar />
+          <ProfileSidebar address={profileAddress} />
         </div>
 
         <div className="flex-1 flex flex-col gap-6">

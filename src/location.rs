@@ -1,4 +1,5 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[soroban_sdk::contracttype]
 pub struct Location {
     pub lat: i32,
     pub long: i32,

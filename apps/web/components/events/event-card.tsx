@@ -2,11 +2,12 @@ import Image from "next/image";
 import Link from "next/link";
 
 /**
- * SOLUTION FOR ISSUE #449:
+ * SOLUTION FOR ISSUE #449 & #711:
  * 1. Fluid Width: Changed `max-w-147.5` to `w-full sm:max-w-147.5`.
  * 2. Scaling: Responsive image container using `w-[40%] sm:w-auto`.
  * 3. Shadow Management: Reduced shadow depth on mobile to prevent clipping.
  * 4. Text Handling: Added `min-w-0` and `break-words` to ensure long titles don't push the container width.
+ * 5. Lazy Loading (#711): Added loading="lazy" to non-hero card event thumbnails to optimize LCP.
  */
 
 type EventCardProps = {
@@ -34,11 +35,6 @@ export function EventCard({
 
   return (
     <Link href={`/events/${id}`} className="block w-full">
-      {/* Container Fix: 
-          - w-full ensures it doesn't overflow 375px.
-          - sm:max-w-147.5 preserves original desktop size.
-          - Shadow reduced from -9 to -6 on mobile to avoid viewport bleeding.
-      */}
       <div className="w-full sm:max-w-147.5 shadow-[-6px_6px_0_rgba(0,0,0,1)] sm:shadow-[-9px_9px_0_rgba(0,0,0,1)] flex flex-col bg-surface pb-4.75 sm:pl-12.5 pl-4 pt-5 sm:pt-9.75 rounded-xl sm:pr-5 pr-3.75 transition-transform hover:scale-[1.02] overflow-hidden">
         <div className="flex gap-4.75">
           {/* Left Side: Image & Mobile Actions */}
@@ -49,6 +45,7 @@ export function EventCard({
               height={112}
               alt={title}
               className="object-cover w-full h-auto rounded-lg"
+              loading="lazy"
             />
             
             {/* Price Label (Mobile Only) */}
@@ -65,6 +62,7 @@ export function EventCard({
                 height={18}
                 alt="arrow right"
                 className="object-contain"
+                loading="lazy"
               />
             </div>
           </div>
@@ -100,6 +98,7 @@ export function EventCard({
                   width={16}
                   height={16}
                   className="object-contain flex-shrink-0"
+                  loading="lazy"
                 />
                 <span className="font-normal text-[11px] sm:text-[12px]/7.5 line-clamp-1">
                   {location}
@@ -118,6 +117,7 @@ export function EventCard({
             height={24}
             alt="arrow-right icon"
             className="object-cover"
+            loading="lazy"
           />
         </div>
       </div>

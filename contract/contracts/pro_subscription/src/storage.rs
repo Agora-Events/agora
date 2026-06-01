@@ -9,16 +9,14 @@ const INSTANCE_BUMP_AMOUNT: u32 = DAY_IN_LEDGERS * 60; // 60 days
 // ── Admin & Configuration ──────────────────────────────────────────────────
 
 pub fn get_admin(env: &Env) -> Option<Address> {
-    env.storage()
-        .instance()
-        .get(&DataKey::Admin)
+    env.storage().instance().get(&DataKey::Admin)
 }
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
     env.storage()
         .instance()
-        .bump(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 pub fn is_initialized(env: &Env) -> bool {
@@ -34,13 +32,11 @@ pub fn set_initialized(env: &Env, initialized: bool) {
         .set(&DataKey::Initialized, &initialized);
     env.storage()
         .instance()
-        .bump(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 pub fn get_platform_wallet(env: &Env) -> Option<Address> {
-    env.storage()
-        .instance()
-        .get(&DataKey::PlatformWallet)
+    env.storage().instance().get(&DataKey::PlatformWallet)
 }
 
 pub fn set_platform_wallet(env: &Env, wallet: &Address) {
@@ -49,22 +45,21 @@ pub fn set_platform_wallet(env: &Env, wallet: &Address) {
         .set(&DataKey::PlatformWallet, wallet);
     env.storage()
         .instance()
-        .bump(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 pub fn get_payment_token(env: &Env) -> Option<Address> {
-    env.storage()
-        .instance()
-        .get(&DataKey::PaymentToken)
+    env.storage().instance().get(&DataKey::PaymentToken)
 }
 
 pub fn set_payment_token(env: &Env, token: &Address) {
+    env.storage().instance().set(&DataKey::PaymentToken, token);
     env.storage()
         .instance()
         .set(&DataKey::PaymentToken, token);
     env.storage()
         .instance()
-        .bump(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 pub fn get_pro_monthly_price(env: &Env) -> i128 {
@@ -80,7 +75,7 @@ pub fn set_pro_monthly_price(env: &Env, price: i128) {
         .set(&DataKey::ProMonthlyPrice, &price);
     env.storage()
         .instance()
-        .bump(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 // ── Subscription Management ────────────────────────────────────────────────
@@ -95,9 +90,10 @@ pub fn set_subscription(env: &Env, subscription: &Subscription) {
     env.storage().persistent().set(&key, subscription);
     env.storage()
         .persistent()
-        .bump(&key, INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        .extend_ttl(&key, INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
+#[allow(dead_code)]
 pub fn remove_subscription(env: &Env, organizer: &Address) {
     let key = DataKey::Subscription(organizer.clone());
     env.storage().persistent().remove(&key);
@@ -119,7 +115,7 @@ pub fn add_to_pro_members_list(env: &Env, organizer: &Address) {
         env.storage()
             .persistent()
             .set(&DataKey::ProMembersList, &list);
-        env.storage().persistent().bump(
+        env.storage().persistent().extend_ttl(
             &DataKey::ProMembersList,
             INSTANCE_LIFETIME_THRESHOLD,
             INSTANCE_BUMP_AMOUNT,
@@ -134,7 +130,7 @@ pub fn remove_from_pro_members_list(env: &Env, organizer: &Address) {
         env.storage()
             .persistent()
             .set(&DataKey::ProMembersList, &list);
-        env.storage().persistent().bump(
+        env.storage().persistent().extend_ttl(
             &DataKey::ProMembersList,
             INSTANCE_LIFETIME_THRESHOLD,
             INSTANCE_BUMP_AMOUNT,
@@ -154,7 +150,7 @@ pub fn increment_total_pro_subscriptions(env: &Env) {
     env.storage()
         .persistent()
         .set(&DataKey::TotalProSubscriptions, &count);
-    env.storage().persistent().bump(
+    env.storage().persistent().extend_ttl(
         &DataKey::TotalProSubscriptions,
         INSTANCE_LIFETIME_THRESHOLD,
         INSTANCE_BUMP_AMOUNT,
@@ -166,7 +162,7 @@ pub fn decrement_total_pro_subscriptions(env: &Env) {
     env.storage()
         .persistent()
         .set(&DataKey::TotalProSubscriptions, &count);
-    env.storage().persistent().bump(
+    env.storage().persistent().extend_ttl(
         &DataKey::TotalProSubscriptions,
         INSTANCE_LIFETIME_THRESHOLD,
         INSTANCE_BUMP_AMOUNT,

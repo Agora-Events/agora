@@ -3,12 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { withErrorHandler } from "@/lib/api-handler";
 import { throwApiError } from "@/lib/api-errors";
 
-type Params = {
-  params: Promise<{ id: string }>;
-};
-
-export const GET = withErrorHandler(async (_request: NextRequest, { params }: Params) => {
-  const { id } = await params;
+export const GET = withErrorHandler(async (_request: NextRequest, { params }) => {
+  const resolvedParams = await params;
+  const id = resolvedParams.id as string;
   const event = await prisma.event.findUnique({
     where: { id },
   });

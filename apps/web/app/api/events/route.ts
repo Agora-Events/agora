@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { type Prisma } from "@prisma/client";
 import { getAuthFromRequest } from "@/lib/auth";
 import { withErrorHandler } from "@/lib/api-handler";
 import { throwApiError } from "@/lib/api-errors";
@@ -23,8 +24,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
       throwApiError("Unauthorized", 401);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const whereClause: any = { hostEmail: auth.email };
+    const whereClause: Prisma.EventWhereInput = { hostEmail: auth.email };
     if (tab === "upcoming" || tab === "hosting") {
       whereClause.startsAt = { gte: now };
     } else {

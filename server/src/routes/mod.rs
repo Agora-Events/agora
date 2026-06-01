@@ -38,14 +38,16 @@ use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories},
     events::{
-        get_checkin_stats, get_event, get_sold_out_status, list_events, search_events,
-        submit_event_rating, toggle_event_flag, EventState,
+        export_attendees_csv, get_checkin_stats, get_event, get_event_organizer,
+        get_event_share_link, get_event_social_proof, get_ratings_summary,
+        list_events, search_events, submit_event_rating, toggle_event_flag,
+        EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
     leaderboard::get_leaderboard,
     monitoring::{monitoring_dashboard, MonitoringState},
-    profile::{get_my_profile, get_profile_by_address, upsert_profile},
+    profile::{get_my_profile, get_profile_by_address, upsert_profile, get_organizer_stats},
     qr_payload::{generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
@@ -80,6 +82,7 @@ pub async fn create_routes(pool: PgPool, _config: Config, redis: RedisCache) -> 
     let event_state = EventState {
         pool: pool.clone(),
         redis: redis.clone(),
+        base_url: config.base_url.clone(),
     };
 
     let monitoring_state = MonitoringState {
@@ -106,6 +109,7 @@ pub async fn create_routes(pool: PgPool, _config: Config, redis: RedisCache) -> 
     // Organizer profile routes (Issue #486)
     let profile_routes = Router::new()
         .route("/", get(get_my_profile).put(upsert_profile))
+        .route("/:address/stats", get(get_organizer_stats))
         .route("/:address", get(get_profile_by_address))
         .with_state(pool.clone());
 
@@ -131,11 +135,16 @@ pub async fn create_routes(pool: PgPool, _config: Config, redis: RedisCache) -> 
     // Event routes with Redis caching
     let event_routes = Router::new()
         .route("/", get(list_events))
+        .route("/count", get(get_event_counts))
         .route("/search", get(search_events))
         .route("/:id", get(get_event))
         .route("/:id/rate", post(submit_event_rating))
         .route("/:id/check-in-stats", get(get_checkin_stats))
-        .route("/:id/is-sold-out", get(get_sold_out_status))
+        .route("/:id/ratings/summary", get(get_ratings_summary))
+        .route("/:id/organizer", get(get_event_organizer))
+        .route("/:id/export-attendees", get(export_attendees_csv))
+        .route("/:id/share-link", get(get_event_share_link))
+        .route("/:id/social-proof", get(get_event_social_proof))
         .with_state(event_state);
 
     // Category routes

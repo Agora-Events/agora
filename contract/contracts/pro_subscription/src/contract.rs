@@ -3,22 +3,28 @@ use soroban_sdk::{contract, contractimpl, token, Address, Env};
 use crate::{
     error::ProSubscriptionError,
     events::{
-        InitializationEvent, PriceUpdatedEvent, ProSubscriptionEvent, SubscriptionCancelledEvent,
-        SubscriptionCreatedEvent, SubscriptionRenewedEvent,
+        InitializationEvent, PriceUpdatedEvent, ProMemberAddedEvent, ProMemberRemovedEvent,
+        ProSubscriptionEvent, SubscriptionCancelledEvent, SubscriptionCreatedEvent,
+        SubscriptionRenewedEvent,
     },
     storage::{
         add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin,
         get_payment_token, get_platform_wallet, get_pro_members_list, get_pro_monthly_price,
         get_subscription, get_total_pro_subscriptions, increment_total_pro_subscriptions,
-        is_initialized, remove_from_pro_members_list, remove_subscription, set_admin,
+        is_initialized, remove_from_pro_members_list, set_admin,
         set_initialized, set_payment_token, set_platform_wallet, set_pro_monthly_price,
         set_subscription,
+    },
+    types::{Subscription, SubscriptionTier, SECONDS_PER_MONTH},
+        add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin, get_payment_token,
+        get_platform_wallet, get_pro_members_list, get_pro_monthly_price, get_subscription,
+        get_total_pro_subscriptions, increment_total_pro_subscriptions, is_initialized,
+        remove_from_pro_members_list, set_admin, set_initialized, set_payment_token,
+        set_platform_wallet, set_pro_monthly_price, set_subscription,
     },
     types::{Subscription, SubscriptionTier},
     validation::validate_address,
 };
-
-const SECONDS_PER_MONTH: u64 = 30 * 24 * 60 * 60; // 30 days
 
 fn require_admin(env: &Env) -> Result<Address, ProSubscriptionError> {
     let admin = get_admin(env).ok_or(ProSubscriptionError::NotInitialized)?;
@@ -128,6 +134,14 @@ impl ProSubscriptionContract {
         increment_total_pro_subscriptions(&env);
 
         env.events().publish(
+            (ProSubscriptionEvent::ProMemberAdded,),
+            ProMemberAddedEvent {
+                organizer: organizer.clone(),
+                timestamp: current_time,
+            },
+        );
+
+        env.events().publish(
             (ProSubscriptionEvent::SubscriptionCreated,),
             SubscriptionCreatedEvent {
                 organizer,
@@ -174,7 +188,7 @@ impl ProSubscriptionContract {
         token_client.transfer(&organizer, &platform_wallet, &total_amount);
 
         let current_time = env.ledger().timestamp();
-        
+
         // If subscription is expired, start from now; otherwise extend from current expiry
         let base_time = if subscription.expires_at < current_time {
             current_time
@@ -194,9 +208,17 @@ impl ProSubscriptionContract {
             .ok_or(ProSubscriptionError::ArithmeticError)?;
 
         set_subscription(&env, &subscription);
-        
+
         // Ensure they're in the pro members list
         add_to_pro_members_list(&env, &organizer);
+
+        env.events().publish(
+            (ProSubscriptionEvent::ProMemberAdded,),
+            ProMemberAddedEvent {
+                organizer: organizer.clone(),
+                timestamp: current_time,
+            },
+        );
 
         env.events().publish(
             (ProSubscriptionEvent::SubscriptionRenewed,),
@@ -212,10 +234,7 @@ impl ProSubscriptionContract {
     }
 
     /// Cancel a subscription (admin only)
-    pub fn cancel_subscription(
-        env: Env,
-        organizer: Address,
-    ) -> Result<(), ProSubscriptionError> {
+    pub fn cancel_subscription(env: Env, organizer: Address) -> Result<(), ProSubscriptionError> {
         let admin = require_admin(&env)?;
 
         let mut subscription =
@@ -225,6 +244,14 @@ impl ProSubscriptionContract {
         set_subscription(&env, &subscription);
         remove_from_pro_members_list(&env, &organizer);
         decrement_total_pro_subscriptions(&env);
+
+        env.events().publish(
+            (ProSubscriptionEvent::ProMemberRemoved,),
+            ProMemberRemovedEvent {
+                organizer: organizer.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         env.events().publish(
             (ProSubscriptionEvent::SubscriptionCancelled,),
@@ -252,9 +279,43 @@ impl ProSubscriptionContract {
         get_subscription(&env, &organizer)
     }
 
+    /// Get subscription expiry timestamp for an organizer
+    pub fn get_subscription_expiry(env: Env, organizer: Address) -> Option<u64> {
+        get_subscription(&env, &organizer).map(|s| s.expires_at)
+    }
+
     /// Get all active pro members
     pub fn get_pro_members(env: Env) -> soroban_sdk::Vec<Address> {
         get_pro_members_list(&env)
+    }
+
+    /// Get count of pro members in the members list
+    pub fn get_pro_members_count(env: Env) -> u32 {
+        get_pro_members_list(&env).len()
+    }
+
+    /// Register a Basic (free) subscription for an organizer
+    pub fn register_basic(env: Env, organizer: Address) -> Result<(), ProSubscriptionError> {
+        if !is_initialized(&env) {
+            return Err(ProSubscriptionError::NotInitialized);
+        }
+        organizer.require_auth();
+        if let Some(existing) = get_subscription(&env, &organizer) {
+            if existing.tier == SubscriptionTier::Pro && existing.is_active {
+                return Err(ProSubscriptionError::SubscriptionAlreadyActive);
+            }
+        }
+        let subscription = Subscription {
+            organizer: organizer.clone(),
+            tier: SubscriptionTier::Basic,
+            started_at: env.ledger().timestamp(),
+            expires_at: 0,
+            is_active: true,
+            amount_paid: 0,
+            payment_token: get_payment_token(&env).unwrap_or(env.current_contract_address()),
+        };
+        set_subscription(&env, &subscription);
+        Ok(())
     }
 
     /// Get total count of active pro subscriptions
@@ -296,6 +357,11 @@ impl ProSubscriptionContract {
         get_admin(&env)
     }
 
+    /// Check whether the contract has been initialized
+    pub fn is_initialized(env: Env) -> bool {
+        is_initialized(&env)
+    }
+
     /// Update the admin address (admin only)
     pub fn update_admin(env: Env, new_admin: Address) -> Result<(), ProSubscriptionError> {
         require_admin(&env)?;
@@ -309,8 +375,30 @@ impl ProSubscriptionContract {
         get_platform_wallet(&env)
     }
 
+    /// Update the platform wallet address (admin only)
+    pub fn update_platform_wallet(
+        env: Env,
+        new_wallet: Address,
+    ) -> Result<(), ProSubscriptionError> {
+        require_admin(&env)?;
+        validate_address(&env, &new_wallet)?;
+        set_platform_wallet(&env, &new_wallet);
+        Ok(())
+    }
+
     /// Get the payment token address
     pub fn get_payment_token(env: Env) -> Option<Address> {
         get_payment_token(&env)
+    }
+
+    /// Update the accepted payment token (admin only)
+    pub fn update_payment_token(
+        env: Env,
+        new_token: Address,
+    ) -> Result<(), ProSubscriptionError> {
+        require_admin(&env)?;
+        validate_address(&env, &new_token)?;
+        set_payment_token(&env, &new_token);
+        Ok(())
     }
 }

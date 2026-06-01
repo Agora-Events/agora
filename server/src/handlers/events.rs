@@ -11,7 +11,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -42,6 +42,10 @@ pub struct SearchParams {
     pub date_from: Option<DateTime<Utc>>,
     /// Events starting before this date
     pub date_to: Option<DateTime<Utc>>,
+    /// Filter by location (partial match, case-insensitive)
+    pub location: Option<String>,
+    /// Filter by ticket tier name (partial match, case-insensitive)
+    pub ticket_type: Option<String>,
     /// Page number (default: 1)
     #[serde(default = "default_page")]
     pub page: u32,
@@ -61,11 +65,15 @@ fn default_page_size() -> u32 {
 /// Cache TTL for event details (5 minutes)
 const EVENT_CACHE_TTL: Duration = Duration::from_secs(300);
 
+/// Cache TTL for social proof (60 seconds)
+const SOCIAL_PROOF_CACHE_TTL: Duration = Duration::from_secs(60);
+
 /// Application state for event handlers
 #[derive(Clone)]
 pub struct EventState {
     pub pool: PgPool,
     pub redis: RedisCache,
+    pub base_url: String,
 }
 
 /// Event detail response that includes the organizer's public profile (Issue #486).
@@ -83,6 +91,9 @@ pub struct EventFilters {
     /// Filter by organizer ID
     pub organizer_id: Option<Uuid>,
 
+    /// Filter by organizer wallet address (Stellar public key)
+    pub organizer_wallet: Option<String>,
+
     /// Filter by location (partial match)
     pub location: Option<String>,
 
@@ -94,6 +105,115 @@ pub struct EventFilters {
 
     /// Search in title and description
     pub search: Option<String>,
+
+    /// Minimum tickets available (total_tickets - minted_tickets) >= N
+    pub min_tickets_available: Option<i64>,
+
+    /// Filter by free events (true = ticket_price = 0, false = ticket_price > 0)
+    pub is_free: Option<bool>,
+}
+
+/// Build WHERE clause and return (where_clause, param_count)
+fn build_event_where_clause(filters: &EventFilters, cursor: Option<&EventCursor>) -> (String, usize) {
+    let mut where_clauses = Vec::new();
+    let mut param_count = 0;
+
+    // Only show upcoming (not ended) events
+    where_clauses.push("end_time > NOW()".to_string());
+
+    // Always exclude flagged events from public listings
+    where_clauses.push("is_flagged = FALSE".to_string());
+
+    if filters.organizer_id.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("organizer_id = ${}", param_count));
+    }
+
+    if filters.organizer_wallet.is_some() {
+        param_count += 1;
+        where_clauses.push(format!(
+            "organizer_id = (SELECT id FROM organizers WHERE wallet_address = ${})",
+            param_count
+        ));
+    }
+
+    if filters.location.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("location ILIKE ${}", param_count));
+    }
+
+    if filters.start_after.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("start_time >= ${}", param_count));
+    }
+
+    if filters.start_before.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("start_time <= ${}", param_count));
+    }
+
+    if filters.search.is_some() {
+        param_count += 1;
+        where_clauses.push(format!(
+            "(title ILIKE ${0} OR description ILIKE ${0})",
+            param_count
+        ));
+    }
+
+    if let Some(is_free) = filters.is_free {
+        if is_free {
+            where_clauses.push(
+                "NOT EXISTS (SELECT 1 FROM ticket_tiers tt WHERE tt.event_id = events.id AND tt.price > 0.0)".to_string(),
+            );
+        } else {
+            where_clauses.push(
+                "EXISTS (SELECT 1 FROM ticket_tiers tt WHERE tt.event_id = events.id AND tt.price > 0.0)".to_string(),
+            );
+        }
+    }
+
+    if let Some(min_tickets) = filters.min_tickets_available {
+        param_count += 1;
+        where_clauses.push(format!("(total_tickets - minted_tickets) >= ${}", param_count));
+    }
+
+    // Cursor condition: (start_time, id) > (cursor.start_time, cursor.id)
+    if cursor.is_some() {
+        param_count += 1;
+        let st = param_count;
+        param_count += 1;
+        let id = param_count;
+        where_clauses.push(format!(
+            "(start_time > ${st} OR (start_time = ${st} AND id > ${id}))",
+            st = st,
+            id = id
+        ));
+    }
+
+    let where_clause = format!("WHERE {}", where_clauses.join(" AND "));
+    (where_clause, param_count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_where_clause_includes_min_tickets_available() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: Some(10),
+            is_free: None,
+        };
+
+        let (where_clause, _) = build_event_where_clause(&filters, None);
+        assert!(where_clause.contains("(total_tickets - minted_tickets) >= $1"), "where_clause was: {}", where_clause);
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +243,7 @@ pub struct SubmitEventRatingResponse {
 /// - `start_after` (optional): Filter events starting after date
 /// - `start_before` (optional): Filter events starting before date
 /// - `search` (optional): Search in title and description
+/// - `is_free` (optional): Filter by free events (true = ticket_price = 0, false = ticket_price > 0)
 ///
 /// # Response
 /// Returns a cursor-paginated list of upcoming events with metadata
@@ -146,57 +267,9 @@ pub async fn list_events(
     };
 
     // Build the WHERE clause dynamically based on filters
-    let mut where_clauses = Vec::new();
-    let mut param_count = 0;
+    let (where_clause, mut param_count) = build_event_where_clause(&filters, cursor.as_ref());
 
-    // Only show upcoming (not ended) events
-    where_clauses.push("end_time > NOW()".to_string());
 
-    // Always exclude flagged events from public listings
-    where_clauses.push("is_flagged = FALSE".to_string());
-
-    if filters.organizer_id.is_some() {
-        param_count += 1;
-        where_clauses.push(format!("organizer_id = ${}", param_count));
-    }
-
-    if filters.location.is_some() {
-        param_count += 1;
-        where_clauses.push(format!("location ILIKE ${}", param_count));
-    }
-
-    if filters.start_after.is_some() {
-        param_count += 1;
-        where_clauses.push(format!("start_time >= ${}", param_count));
-    }
-
-    if filters.start_before.is_some() {
-        param_count += 1;
-        where_clauses.push(format!("start_time <= ${}", param_count));
-    }
-
-    if filters.search.is_some() {
-        param_count += 1;
-        where_clauses.push(format!(
-            "(title ILIKE ${0} OR description ILIKE ${0})",
-            param_count
-        ));
-    }
-
-    // Cursor condition: (start_time, id) > (cursor.start_time, cursor.id)
-    if cursor.is_some() {
-        param_count += 1;
-        let st = param_count;
-        param_count += 1;
-        let id = param_count;
-        where_clauses.push(format!(
-            "(start_time > ${st} OR (start_time = ${st} AND id > ${id}))",
-            st = st,
-            id = id
-        ));
-    }
-
-    let where_clause = format!("WHERE {}", where_clauses.join(" AND "));
 
     // Fetch items (limit + 1 to detect has_more)
     let items_query = format!(
@@ -210,6 +283,9 @@ pub async fn list_events(
     if let Some(organizer_id) = filters.organizer_id {
         items_query_builder = items_query_builder.bind(organizer_id);
     }
+    if let Some(ref organizer_wallet) = filters.organizer_wallet {
+        items_query_builder = items_query_builder.bind(organizer_wallet.clone());
+    }
     if let Some(ref location) = filters.location {
         items_query_builder = items_query_builder.bind(format!("%{}%", location));
     }
@@ -221,6 +297,9 @@ pub async fn list_events(
     }
     if let Some(ref search) = filters.search {
         items_query_builder = items_query_builder.bind(format!("%{}%", search));
+    }
+    if let Some(min_tickets) = filters.min_tickets_available {
+        items_query_builder = items_query_builder.bind(min_tickets);
     }
     if let Some(ref c) = cursor {
         items_query_builder = items_query_builder.bind(c.start_time);
@@ -348,6 +427,85 @@ pub async fn get_event(
     success(detail, "Event retrieved successfully").into_response()
 }
 
+/// Request body for creating a new event
+#[derive(Debug, Deserialize)]
+pub struct CreateEventRequest {
+    pub organizer_id: Uuid,
+    pub title: String,
+    pub description: Option<String>,
+    pub location: String,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
+}
+
+/// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
+///
+/// # Endpoint
+/// POST `/api/v1/events`
+pub async fn create_event(
+    State(mut state): State<EventState>,
+    Json(payload): Json<CreateEventRequest>,
+) -> Response {
+    let event = match sqlx::query_as::<_, Event>(
+        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *",
+    )
+    .bind(payload.organizer_id)
+    .bind(&payload.title)
+    .bind(&payload.description)
+    .bind(&payload.location)
+    .bind(payload.start_time)
+    .bind(payload.end_time)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::error!("Failed to create event: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Cache warm-up: pre-populate event:detail:{id} so the first GET hits cache.
+    let organizer_profile = match sqlx::query_scalar::<_, Option<String>>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(event.organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(Some(wallet))) => {
+            match sqlx::query_as::<_, OrganizerProfile>(
+                "SELECT * FROM organizer_profiles WHERE address = $1",
+            )
+            .bind(&wallet)
+            .fetch_optional(&state.pool)
+            .await
+            {
+                Ok(profile) => profile,
+                Err(e) => {
+                    tracing::warn!("Cache warm-up: failed to fetch organizer profile: {:?}", e);
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+
+    let detail = EventDetail {
+        event: event.clone(),
+        organizer_profile,
+    };
+
+    let cache_key = format!("event:detail:{}", event.id);
+    if let Err(e) = state.redis.set(&cache_key, &detail, EVENT_CACHE_TTL).await {
+        tracing::warn!("Cache warm-up failed for event {}: {:?}", event.id, e);
+    }
+
+    success(event, "Event created successfully").into_response()
+}
+
 /// Record a star rating for an event.
 ///
 /// # Endpoint
@@ -384,6 +542,24 @@ pub async fn submit_event_rating(
     };
 
     let (ticket_status, ticket_event_id) = ticket;
+
+    let event_exists =
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(exists) => exists,
+            Err(e) => {
+                tracing::error!("Failed to check event existence for rating: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
 
     if ticket_event_id != event_id {
         return AppError::Forbidden("Ticket does not belong to this event".to_string())
@@ -445,10 +621,14 @@ pub async fn submit_event_rating(
     )
     .bind(event_id)
     .bind(payload.rating)
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await
     {
-        Ok(event) => event,
+        Ok(Some(event)) => event,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
         Err(e) => {
             tracing::error!("Failed to update event rating aggregates: {:?}", e);
             return AppError::DatabaseError(e).into_response();
@@ -479,6 +659,7 @@ pub async fn submit_event_rating(
 /// - `category_id` (optional): Filter by category UUID
 /// - `min_price` (optional): Minimum ticket price in cents
 /// - `max_price` (optional): Maximum ticket price in cents
+/// - `location` (optional): Filter by location (partial match, case-insensitive)
 /// - `date_from` (optional): Events starting after this date
 /// - `date_to` (optional): Events starting before this date
 /// - `page` (optional): Page number (default: 1)
@@ -540,6 +721,20 @@ pub async fn search_events(
         ""
     };
 
+    // Filter by ticket type (requires join with ticket_tiers)
+    let ticket_type_join = if params.ticket_type.is_some() {
+        "INNER JOIN ticket_tiers tt ON e.id = tt.event_id"
+    } else {
+        ""
+    };
+
+    // Combine joins - if both price and ticket_type need ticket_tiers, use one join
+    let ticket_tiers_join = if !price_join.is_empty() || !ticket_type_join.is_empty() {
+        "INNER JOIN ticket_tiers tt ON e.id = tt.event_id"
+    } else {
+        ""
+    };
+
     if params.min_price.is_some() {
         param_count += 1;
         where_clauses.push(format!("tt.price >= ${}", param_count));
@@ -548,6 +743,18 @@ pub async fn search_events(
     if params.max_price.is_some() {
         param_count += 1;
         where_clauses.push(format!("tt.price <= ${}", param_count));
+    }
+
+    // Filter by ticket type (partial match on tier name)
+    if params.ticket_type.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("tt.name ILIKE ${}", param_count));
+    }
+
+    // Filter by location (partial match)
+    if params.location.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("e.location ILIKE ${}", param_count));
     }
 
     // Filter by date range
@@ -566,7 +773,7 @@ pub async fn search_events(
     // Count total items with DISTINCT to handle joins
     let count_query = format!(
         "SELECT COUNT(DISTINCT e.id) FROM events e {} {} WHERE {}",
-        category_join, price_join, where_clause
+        category_join, ticket_tiers_join, where_clause
     );
 
     let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
@@ -584,6 +791,12 @@ pub async fn search_events(
     if let Some(max_price) = params.max_price {
         let max_price_decimal = max_price as f64 / 100.0;
         count_query_builder = count_query_builder.bind(max_price_decimal);
+    }
+    if let Some(ref location) = params.location {
+        count_query_builder = count_query_builder.bind(format!("%{}%", location));
+    }
+    if let Some(ref ticket_type) = params.ticket_type {
+        count_query_builder = count_query_builder.bind(format!("%{}%", ticket_type));
     }
     if let Some(date_from) = params.date_from {
         count_query_builder = count_query_builder.bind(date_from);
@@ -604,7 +817,7 @@ pub async fn search_events(
     let items_query = format!(
         "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
         category_join,
-        price_join,
+        ticket_tiers_join,
         where_clause,
         param_count + 1,
         param_count + 2
@@ -625,6 +838,12 @@ pub async fn search_events(
     if let Some(max_price) = params.max_price {
         let max_price_decimal = max_price as f64 / 100.0;
         items_query_builder = items_query_builder.bind(max_price_decimal);
+    }
+    if let Some(ref location) = params.location {
+        items_query_builder = items_query_builder.bind(format!("%{}%", location));
+    }
+    if let Some(ref ticket_type) = params.ticket_type {
+        items_query_builder = items_query_builder.bind(format!("%{}%", ticket_type));
     }
     if let Some(date_from) = params.date_from {
         items_query_builder = items_query_builder.bind(date_from);
@@ -704,6 +923,260 @@ pub async fn toggle_event_flag(
     .into_response()
 }
 
+/// Revenue summary response for an event
+#[derive(Debug, Serialize)]
+pub struct EventRevenueResponse {
+    pub total_revenue_usd: f64,
+    pub tickets_sold: i64,
+    pub average_ticket_price: f64,
+}
+
+/// Share link response for an event
+#[derive(Debug, Serialize)]
+pub struct EventShareLinkResponse {
+    pub url: String,
+    pub title: String,
+    pub description: String,
+}
+
+/// Social proof response for an event
+#[derive(Debug, Serialize)]
+pub struct EventSocialProofResponse {
+    pub recent_purchases: i64,
+    pub average_rating: f32,
+    pub waitlist_count: i64,
+    pub tickets_remaining: i64,
+}
+
+/// GET /api/v1/events/:id/share-link
+///
+/// Returns a canonical share URL for an event along with the event's title
+/// and a truncated description (max 160 characters). Returns 404 for non-existent events.
+pub async fn get_event_share_link(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    let event = match sqlx::query_as::<_, Event>(
+        "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(event)) => event,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch event: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Construct canonical URL
+    let url = format!("{}/events/{}", state.base_url, event_id);
+
+    // Truncate description to 160 characters
+    let description = event
+        .description
+        .unwrap_or_else(|| String::new())
+        .chars()
+        .take(160)
+        .collect();
+
+    let response = EventShareLinkResponse {
+        url,
+        title: event.title,
+        description,
+    };
+
+    success(response, "Share link retrieved successfully").into_response()
+}
+
+/// GET /api/v1/events/:id/social-proof
+///
+/// Returns social proof signals for an event: recent purchases (last 24 hours),
+/// average rating, waitlist count, and tickets remaining.
+/// Response is cached for 60 seconds. Returns 404 for non-existent events.
+pub async fn get_event_social_proof(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    let cache_key = format!("event:social_proof:{}", event_id);
+
+    // Try to get from cache first
+    match state.redis.get::<EventSocialProofResponse>(&cache_key).await {
+        Ok(Some(proof)) => {
+            tracing::debug!("Cache hit for social proof of event {}", event_id);
+            return success(proof, "Social proof retrieved successfully (cached)").into_response();
+        }
+        Ok(None) => {
+            tracing::debug!("Cache miss for social proof of event {}", event_id);
+        }
+        Err(e) => {
+            tracing::warn!("Redis error, falling back to database: {:?}", e);
+        }
+    }
+
+    // Check if event exists
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    // Run queries in parallel using tokio::join!
+    let (recent_purchases, rating_data, waitlist_count, tickets_remaining) = tokio::join!(
+        // Recent purchases in last 24 hours
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM tickets WHERE event_id = $1 AND created_at > NOW() - INTERVAL '24 hours'",
+            )
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0)
+        },
+        // Average rating from events table
+        async {
+            sqlx::query_as::<_, (i64, i32)>(
+                "SELECT sum_of_ratings, count_of_ratings FROM events WHERE id = $1",
+            )
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        },
+        // Waitlist count
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM waitlist_entries WHERE event_id = $1",
+            )
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0)
+        },
+        // Tickets remaining (total_tickets - minted_tickets)
+        async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT total_tickets - minted_tickets FROM events WHERE id = $1",
+            )
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0)
+        }
+    );
+
+    let average_rating = match rating_data {
+        Ok((sum, count)) => {
+            if count > 0 {
+                sum as f32 / count as f32
+            } else {
+                0.0
+            }
+        }
+        Err(_) => 0.0,
+    };
+
+    let response = EventSocialProofResponse {
+        recent_purchases,
+        average_rating,
+        waitlist_count,
+        tickets_remaining,
+    };
+
+    // Store in cache for 60 seconds
+    if let Err(e) = state.redis.set(&cache_key, &response, SOCIAL_PROOF_CACHE_TTL).await {
+        tracing::warn!("Failed to cache social proof for event {}: {:?}", event_id, e);
+    }
+
+    success(response, "Social proof retrieved successfully").into_response()
+}
+
+/// GET /api/v1/events/:id/revenue
+///
+/// Returns revenue statistics for an event: total revenue, tickets sold,
+/// and average ticket price. Returns zeros for events with no tickets sold.
+/// Returns 404 for non-existent events.
+pub async fn get_event_revenue(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // 404 if event doesn't exist
+    let exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    let row = match sqlx::query(
+        r#"
+        SELECT
+            COALESCE(SUM(tt.price * t.quantity), 0.0) AS total_revenue,
+            COUNT(t.id) AS tickets_sold
+        FROM tickets t
+        JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+        WHERE tt.event_id = $1
+        "#,
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            tracing::error!("Failed to fetch revenue stats: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let total_revenue: f64 = row.try_get::<f64, _>("total_revenue").unwrap_or(0.0);
+    let tickets_sold: i64 = row.try_get::<i64, _>("tickets_sold").unwrap_or(0);
+    let average_ticket_price = if tickets_sold > 0 {
+        total_revenue / tickets_sold as f64
+    } else {
+        0.0
+    };
+
+    success(
+        EventRevenueResponse {
+            total_revenue_usd: total_revenue,
+            tickets_sold,
+            average_ticket_price,
+        },
+        "Revenue stats retrieved",
+    )
+    .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -713,47 +1186,239 @@ mod tests {
         // Test that filters can be deserialized from query params
         let filters = EventFilters {
             organizer_id: Some(Uuid::new_v4()),
+            organizer_wallet: Some("GABC123".to_string()),
             location: Some("New York".to_string()),
             start_after: None,
             start_before: None,
             search: Some("concert".to_string()),
+            is_free: None,
         };
 
         assert!(filters.organizer_id.is_some());
+        assert_eq!(filters.organizer_wallet.as_deref(), Some("GABC123"));
         assert_eq!(filters.location.unwrap(), "New York");
     }
 
     #[test]
-    fn test_sold_out_status_when_minted_equals_total() {
-        let status = SoldOutStatus {
-            is_sold_out: 500 >= 500,
-            minted: 500,
-            total: 500,
+    fn test_organizer_wallet_filter() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: Some("GBXXX".to_string()),
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            is_free: None,
         };
-        assert!(status.is_sold_out);
-        assert_eq!(status.minted, 500);
-        assert_eq!(status.total, 500);
+        assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
     }
 
     #[test]
-    fn test_sold_out_status_when_not_sold_out() {
-        let status = SoldOutStatus {
-            is_sold_out: 100 >= 500,
-            minted: 100,
-            total: 500,
+    fn test_is_free_filter() {
+        let filters_free = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            is_free: Some(true),
         };
-        assert!(!status.is_sold_out);
+        assert_eq!(filters_free.is_free, Some(true));
+
+        let filters_paid = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            is_free: Some(false),
+        };
+        assert_eq!(filters_paid.is_free, Some(false));
+
+        let filters_none = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            is_free: None,
+        };
+        assert_eq!(filters_none.is_free, None);
     }
 
     #[test]
-    fn test_sold_out_status_when_minted_exceeds_total() {
-        // Edge case: minted > total (e.g. after a refund reversal)
-        let status = SoldOutStatus {
-            is_sold_out: 501 >= 500,
-            minted: 501,
-            total: 500,
+    fn test_ratings_summary_distribution_zero_filled() {
+        let mut distribution = std::collections::HashMap::new();
+        for star in 1i16..=5 {
+            distribution.insert(star.to_string(), 0i64);
+        }
+        // Simulate two ratings: one 4-star, one 5-star
+        distribution.insert("4".to_string(), 1i64);
+        distribution.insert("5".to_string(), 1i64);
+
+        assert_eq!(distribution["1"], 0);
+        assert_eq!(distribution["2"], 0);
+        assert_eq!(distribution["3"], 0);
+        assert_eq!(distribution["4"], 1);
+        assert_eq!(distribution["5"], 1);
+    }
+
+    #[test]
+    fn test_ratings_summary_average_no_ratings() {
+        let total = 0i64;
+        let average = if total > 0 { 1.0f64 } else { 0.0f64 };
+        assert_eq!(average, 0.0);
+    }
+
+    #[test]
+    fn test_description_truncation() {
+        let long_description = "This is a very long description that should be truncated to exactly 160 characters to ensure it fits within the limit for social media sharing and other use cases where space is limited.";
+        let truncated: String = long_description.chars().take(160).collect();
+        assert!(truncated.len() <= 160);
+        assert_eq!(truncated.len(), 160);
+    }
+
+    #[test]
+    fn test_description_truncation_short() {
+        let short_description = "Short description";
+        let truncated: String = short_description.chars().take(160).collect();
+        assert_eq!(truncated, "Short description");
+    }
+
+    #[test]
+    fn test_description_truncation_empty() {
+        let empty_description = "";
+        let truncated: String = empty_description.chars().take(160).collect();
+        assert_eq!(truncated, "");
+    }
+
+    #[test]
+    fn test_social_proof_response_serialization() {
+        let response = EventSocialProofResponse {
+            recent_purchases: 12,
+            average_rating: 4.5,
+            waitlist_count: 8,
+            tickets_remaining: 43,
         };
-        assert!(status.is_sold_out);
+
+        assert_eq!(response.recent_purchases, 12);
+        assert_eq!(response.average_rating, 4.5);
+        assert_eq!(response.waitlist_count, 8);
+        assert_eq!(response.tickets_remaining, 43);
+    }
+
+    #[test]
+    fn test_social_proof_zero_values() {
+        let response = EventSocialProofResponse {
+            recent_purchases: 0,
+            average_rating: 0.0,
+            waitlist_count: 0,
+            tickets_remaining: 0,
+        };
+
+        assert_eq!(response.recent_purchases, 0);
+        assert_eq!(response.average_rating, 0.0);
+        assert_eq!(response.waitlist_count, 0);
+        assert_eq!(response.tickets_remaining, 0);
+    }
+
+    #[test]
+    fn test_search_params_ticket_type() {
+        let params = SearchParams {
+            q: None,
+            category_id: None,
+            category_ids: None,
+            min_price: None,
+            max_price: None,
+            date_from: None,
+            date_to: None,
+            location: None,
+            ticket_type: Some("VIP".to_string()),
+            page: 1,
+            page_size: 20,
+        };
+
+        assert_eq!(params.ticket_type, Some("VIP".to_string()));
+    }
+
+    #[test]
+    fn test_search_params_ticket_type_none() {
+        let params = SearchParams {
+            q: None,
+            category_id: None,
+            category_ids: None,
+            min_price: None,
+            max_price: None,
+            date_from: None,
+            date_to: None,
+            location: None,
+            ticket_type: None,
+            page: 1,
+            page_size: 20,
+        };
+
+        assert!(params.ticket_type.is_none());
+    }
+
+    #[test]
+    fn test_ratings_summary_average_computed() {
+        // 1×4 + 1×5 = 9 / 2 = 4.5
+        let rows: Vec<(i16, i64)> = vec![(4, 1), (5, 1)];
+        let total: i64 = rows.iter().map(|(_, c)| c).sum();
+        let weighted: i64 = rows.iter().map(|(r, c)| *r as i64 * c).sum();
+        let average = weighted as f64 / total as f64;
+        assert_eq!(average, 4.5);
+    }
+
+    #[test]
+    fn test_search_params_location() {
+        let params = SearchParams {
+            q: None,
+            category_id: None,
+            category_ids: None,
+            min_price: None,
+            max_price: None,
+            date_from: None,
+            date_to: None,
+            location: Some("Lagos".to_string()),
+            page: 1,
+            page_size: 20,
+        };
+        assert_eq!(params.location.as_deref(), Some("Lagos"));
+    }
+
+    #[test]
+    fn test_export_attendees_csv_format() {
+        // Test CSV header format
+        let header = "owner_wallet,buyer_wallet,quantity,created_at\n";
+        assert!(header.contains("owner_wallet"));
+        assert!(header.contains("buyer_wallet"));
+        assert!(header.contains("quantity"));
+        assert!(header.contains("created_at"));
+    }
+
+    #[test]
+    fn test_csv_row_format() {
+        // Test that a CSV row can be formatted correctly
+        let owner = "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+        let buyer = "GYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY";
+        let quantity = 2;
+        let created_at = chrono::Utc::now();
+        
+        let row = format!(
+            "{},{},{},{}\n",
+            owner,
+            buyer,
+            quantity,
+            created_at.to_rfc3339()
+        );
+        
+        assert!(row.contains(owner));
+        assert!(row.contains(buyer));
+        assert!(row.contains("2"));
     }
 }
 
@@ -764,73 +1429,151 @@ pub struct CheckInStats {
     pub remaining: i64,
 }
 
-/// Cache TTL for sold-out status (60 seconds)
-const SOLD_OUT_CACHE_TTL: Duration = Duration::from_secs(60);
-
-/// Response body for the is-sold-out endpoint
+/// Response body for the ratings summary endpoint
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SoldOutStatus {
-    pub is_sold_out: bool,
-    pub minted: i32,
-    pub total: i32,
+pub struct RatingsSummary {
+    pub average: f64,
+    pub total: i64,
+    pub distribution: std::collections::HashMap<String, i64>,
 }
 
-/// GET /api/v1/events/:id/is-sold-out
+/// GET /api/v1/events/:id/ratings/summary
 ///
-/// Returns whether an event is sold out by comparing `minted_tickets` to
-/// `total_tickets`. Result is cached in Redis for 60 seconds.
-pub async fn get_sold_out_status(
+/// Returns the star-rating distribution for an event. Result is cached for 5 minutes.
+pub async fn get_ratings_summary(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    let cache_key = format!("event:sold_out:{}", event_id);
+    let cache_key = format!("event:ratings_summary:{}", event_id);
 
-    match state.redis.get::<SoldOutStatus>(&cache_key).await {
-        Ok(Some(status)) => {
-            return success(status, "Sold-out status retrieved (cached)").into_response()
+    match state.redis.get::<RatingsSummary>(&cache_key).await {
+        Ok(Some(summary)) => {
+            return success(summary, "Ratings summary retrieved (cached)").into_response()
         }
         Ok(None) => {}
-        Err(e) => tracing::warn!("Redis error for sold-out cache: {:?}", e),
+        Err(e) => tracing::warn!("Redis error for ratings summary cache: {:?}", e),
     }
 
-    let row = match sqlx::query_as::<_, (i32, i32)>(
-        "SELECT minted_tickets, total_tickets FROM events WHERE id = $1",
+    // 404 if event doesn't exist
+    let exists =
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("Failed to check event existence: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+    if !exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    let rows = match sqlx::query_as::<_, (i16, i64)>(
+        "SELECT rating, COUNT(*) FROM event_ratings \
+         WHERE event_id = $1 GROUP BY rating ORDER BY rating",
     )
     .bind(event_id)
-    .fetch_optional(&state.pool)
+    .fetch_all(&state.pool)
     .await
     {
-        Ok(Some(row)) => row,
-        Ok(None) => {
-            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
-                .into_response();
-        }
+        Ok(rows) => rows,
         Err(e) => {
-            tracing::error!("Failed to fetch event sold-out status: {:?}", e);
+            tracing::error!("Failed to fetch ratings: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
-    let (minted, total) = row;
-    let status = SoldOutStatus {
-        is_sold_out: minted >= total,
-        minted,
-        total,
+    let mut distribution = std::collections::HashMap::new();
+    for star in 1i16..=5 {
+        distribution.insert(star.to_string(), 0i64);
+    }
+    for (rating, count) in &rows {
+        distribution.insert(rating.to_string(), *count);
+    }
+
+    let total: i64 = rows.iter().map(|(_, c)| c).sum();
+    let weighted: i64 = rows.iter().map(|(r, c)| *r as i64 * c).sum();
+    let average = if total > 0 {
+        weighted as f64 / total as f64
+    } else {
+        0.0
     };
 
-    if let Err(e) = state
-        .redis
-        .set(&cache_key, &status, SOLD_OUT_CACHE_TTL)
-        .await
-    {
+    let summary = RatingsSummary {
+        average,
+        total,
+        distribution,
+    };
+
+    if let Err(e) = state.redis.set(&cache_key, &summary, EVENT_CACHE_TTL).await {
         tracing::warn!(
-            "Failed to cache sold-out status for event {}: {:?}",
+            "Failed to cache ratings summary for event {}: {:?}",
             event_id,
             e
         );
     }
 
-    success(status, "Sold-out status retrieved").into_response()
+    success(summary, "Ratings summary retrieved").into_response()
+}
+
+const EVENT_COUNT_CACHE_KEY: &str = "events:count";
+const EVENT_COUNT_CACHE_TTL: Duration = Duration::from_secs(600);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EventCounts {
+    pub total: i64,
+    pub upcoming: i64,
+}
+
+/// GET /api/v1/events/count
+///
+/// Returns the total and upcoming event counts, excluding flagged events.
+/// Result is cached in Redis for 10 minutes.
+pub async fn get_event_counts(State(mut state): State<EventState>) -> Response {
+    match state.redis.get::<EventCounts>(EVENT_COUNT_CACHE_KEY).await {
+        Ok(Some(counts)) => return success(counts, "Event counts retrieved (cached)").into_response(),
+        Ok(None) => {}
+        Err(e) => tracing::warn!("Redis error for event counts cache: {:?}", e),
+    }
+
+    let total = match sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM events WHERE is_flagged = FALSE",
+    )
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::error!("Failed to count events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let upcoming = match sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM events WHERE end_time > NOW() AND is_flagged = FALSE",
+    )
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::error!("Failed to count upcoming events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let counts = EventCounts { total, upcoming };
+
+    if let Err(e) = state.redis.set(EVENT_COUNT_CACHE_KEY, &counts, EVENT_COUNT_CACHE_TTL).await {
+        tracing::warn!("Failed to cache event counts: {:?}", e);
+    }
+
+    success(counts, "Event counts retrieved").into_response()
 }
 
 /// GET /api/v1/events/:id/check-in-stats
@@ -838,7 +1581,7 @@ pub async fn get_checkin_stats(
     State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    let row = sqlx::query!(
+    let row = sqlx::query(
         r#"
         SELECT
             COUNT(*) FILTER (WHERE status = 'used') AS checked_in,
@@ -846,15 +1589,15 @@ pub async fn get_checkin_stats(
         FROM tickets
         WHERE event_id = $1
         "#,
-        event_id
     )
+    .bind(event_id)
     .fetch_optional(&state.pool)
     .await;
 
     match row {
         Ok(Some(r)) => {
-            let checked_in = r.checked_in.unwrap_or(0);
-            let total_sold = r.total_sold.unwrap_or(0);
+            let checked_in: i64 = r.try_get("checked_in").unwrap_or(0);
+            let total_sold: i64 = r.try_get("total_sold").unwrap_or(0);
             success(
                 CheckInStats {
                     checked_in,
@@ -869,3 +1612,158 @@ pub async fn get_checkin_stats(
         Err(e) => AppError::InternalServerError(e.to_string()).into_response(),
     }
 }
+
+/// GET /api/v1/events/:id/organizer
+///
+/// Returns the organizer profile for the event's organizer wallet.
+/// This is a lightweight endpoint for clients that only need organizer info.
+pub async fn get_event_organizer(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // First, verify the event exists and get the organizer_id
+    let organizer_id = match sqlx::query_scalar::<_, Uuid>(
+        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch event organizer_id: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Fetch the organizer's wallet address
+    let wallet_address = match sqlx::query_scalar::<_, String>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(wallet)) => wallet,
+        Ok(None) => {
+            return AppError::NotFound(format!(
+                "Organizer profile not found for event '{}'",
+                event_id
+            ))
+            .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch organizer wallet: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Fetch the organizer profile
+    let profile = match sqlx::query_as::<_, OrganizerProfile>(
+        "SELECT * FROM organizer_profiles WHERE address = $1",
+    )
+    .bind(&wallet_address)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(profile)) => profile,
+        Ok(None) => {
+            return AppError::NotFound(format!(
+                "Organizer profile not found for event '{}'",
+                event_id
+            ))
+            .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch organizer profile: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    success(profile, "Organizer profile retrieved successfully").into_response()
+}
+
+/// GET /api/v1/events/:id/export-attendees
+///
+/// Exports all attendees for an event as a CSV file.
+/// Returns owner_wallet, buyer_wallet, quantity, created_at for all tickets.
+pub async fn export_attendees_csv(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    // Verify the event exists
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(exists) => exists,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    // Fetch all tickets for the event
+    let tickets = match sqlx::query_as::<_, (String, String, i32, chrono::DateTime<Utc>)>(
+        r#"
+        SELECT 
+            t.owner_wallet,
+            t.buyer_wallet,
+            t.quantity,
+            t.created_at
+        FROM tickets t
+        JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+        WHERE tt.event_id = $1
+        ORDER BY t.created_at ASC
+        "#,
+    )
+    .bind(event_id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(tickets) => tickets,
+        Err(e) => {
+            tracing::error!("Failed to fetch tickets for CSV export: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Build CSV string manually
+    let mut csv = String::from("owner_wallet,buyer_wallet,quantity,created_at\n");
+    for (owner_wallet, buyer_wallet, quantity, created_at) in tickets {
+        csv.push_str(&format!(
+            "{},{},{},{}\n",
+            owner_wallet,
+            buyer_wallet,
+            quantity,
+            created_at.to_rfc3339()
+        ));
+    }
+
+    // Return CSV with appropriate headers
+    (
+        axum::http::StatusCode::OK,
+        [
+            ("Content-Type", "text/csv"),
+            (
+                "Content-Disposition",
+                &format!("attachment; filename=\"attendees-{}.csv\"", event_id),
+            ),
+        ],
+        csv,
+    )
+        .into_response()
+}
+

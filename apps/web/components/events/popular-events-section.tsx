@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { motion, Transition } from "framer-motion";
 import Image from "next/image";
 import { EventCard } from "./event-card";
+import { EventCardSkeleton } from "./event-card-skeleton";
 import { Button } from "../ui/button";
 import { FilterSidebar, FilterState } from "./filter-sidebar";
 import { fetchPopularEvents, type DiscoverEvent } from "@/utils/api";
@@ -229,17 +230,20 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
         </motion.div>
 
         <motion.div
-          className="grid min-[900px]:grid-cols-2 gap-8 place-content-center "
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 place-content-center "
           variants={container}
           initial="hidden"
           animate="show"
         >
           {isLoading &&
             Array.from({ length: 4 }).map((_, index) => (
-              <div
+              <motion.div
                 key={`event-skeleton-${index}`}
-                className="h-56 w-full animate-pulse rounded-xl border border-black/20 bg-black/10"
-              />
+                variants={item}
+                className="flex"
+              >
+                <EventCardSkeleton />
+              </motion.div>
             ))}
           {!isLoading &&
             filteredEvents.map((event) => (

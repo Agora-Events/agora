@@ -1,8 +1,11 @@
 use soroban_sdk::{contracttype, Address};
 
+pub const SECONDS_PER_MONTH: u64 = 30 * 24 * 60 * 60; // 30 days
+
 /// Subscription plan tiers
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum SubscriptionTier {
     /// Basic tier - no benefits

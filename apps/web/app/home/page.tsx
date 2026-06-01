@@ -538,7 +538,7 @@ function GridEventCard({ event }: { event: GridEvent }) {
   );
 }
 
-// My Events Section Content
+// My Events Section Content - Enhanced with Hosting empty state
 function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
   let events: TimelineEvent[] = [];
 
@@ -555,6 +555,49 @@ function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
   }
 
   if (events.length === 0) {
+    // Different empty states based on active tab
+    if (activeTab === "hosting") {
+      // Hosting Empty State - High-fidelity design with illustrations
+      return (
+        <div className="w-full max-w-121.5 bg-surface h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10">
+          {/* Illustration Container */}
+          <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
+            <Image
+              src={EmptyStateBg}
+              alt="Empty State Background"
+              width={224}
+              height={224}
+              className="object-cover w-full h-full rounded-4xl"
+            />
+
+            {/* Megaphone Icon Overlay */}
+            <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-black/7 -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
+              <Image
+                src="/icons/megaphone.svg"
+                alt="Start Hosting"
+                width={64}
+                height={64}
+                className="object-contain w-full h-full"
+              />
+            </div>
+          </div>
+
+          {/* CTA Section */}
+          <div className="flex flex-col items-center gap-4">
+            <p className="text-xl font-medium leading-5.5 text-center text-ink-deep/36">
+              You haven't created any events yet
+            </p>
+            <Link href="/create-event">
+              <Button variant="dark" className="rounded-full">
+                Start Hosting
+              </Button>
+            </Link>
+          </div>
+        </div>
+      );
+    }
+
+    // Generic empty state for other tabs
     return (
       <div className="w-full max-w-121.5 bg-surface h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10 text-ink-deep/36">
         <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
