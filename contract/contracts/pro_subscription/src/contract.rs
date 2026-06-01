@@ -365,4 +365,15 @@ impl ProSubscriptionContract {
     pub fn get_payment_token(env: Env) -> Option<Address> {
         get_payment_token(&env)
     }
+
+    /// Update the accepted payment token (admin only)
+    pub fn update_payment_token(
+        env: Env,
+        new_token: Address,
+    ) -> Result<(), ProSubscriptionError> {
+        require_admin(&env)?;
+        validate_address(&env, &new_token)?;
+        set_payment_token(&env, &new_token);
+        Ok(())
+    }
 }

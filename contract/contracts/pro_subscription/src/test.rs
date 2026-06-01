@@ -427,3 +427,37 @@ fn test_get_payment_token() {
     let result = client.get_payment_token();
     assert_eq!(result, Some(usdc));
 }
+
+#[test]
+fn test_update_payment_token_success() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let new_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    client.update_payment_token(&new_token);
+
+    assert_eq!(client.get_payment_token(), Some(new_token));
+}
+
+#[test]
+#[should_panic]
+fn test_update_payment_token_unauthorized() {
+    let (env, client, contract_id, _admin, _platform_wallet, _usdc) = setup_without_auth_mock();
+    let non_admin = Address::generate(&env);
+    let new_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "update_payment_token",
+            args: (&new_token,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.update_payment_token(&new_token);
+}
