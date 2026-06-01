@@ -614,3 +614,65 @@ fn test_total_subscriptions_no_double_count() {
     // Counter must still be 1, not 2
     assert_eq!(client.get_total_pro_subscriptions(), 1u32);
 }
+
+// ── Issue #632: cancel_subscription coverage ─────────────────────────────────
+
+#[test]
+fn test_cancel_subscription_success() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Confirm active before cancel
+    assert!(client.is_pro_member(&organizer));
+
+    client.cancel_subscription(&organizer);
+
+    // is_pro_member must return false after cancellation
+    assert!(!client.is_pro_member(&organizer));
+
+    // Subscription record should exist but be inactive
+    let sub = client.get_subscription(&organizer).unwrap();
+    assert!(!sub.is_active);
+}
+
+#[test]
+fn test_cancel_subscription_not_found() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let never_subscribed = Address::generate(&env);
+
+    let res = client.try_cancel_subscription(&never_subscribed);
+    assert_eq!(res, Err(Ok(ProSubscriptionError::SubscriptionNotFound)));
+}
+
+#[test]
+#[should_panic]
+fn test_cancel_subscription_unauthorized() {
+    let (env, client, contract_id, _admin, _platform_wallet, usdc) = setup_without_auth_mock();
+    let non_admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let monthly_price = 1000i128;
+
+    // Subscribe the organizer first (mock all auths just for setup)
+    env.mock_all_auths();
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Now attempt cancel as a non-admin — should panic
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "cancel_subscription",
+            args: (&organizer,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.cancel_subscription(&organizer);
+}
