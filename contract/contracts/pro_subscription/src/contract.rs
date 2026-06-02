@@ -3,8 +3,9 @@ use soroban_sdk::{contract, contractimpl, token, Address, Env};
 use crate::{
     error::ProSubscriptionError,
     events::{
-        InitializationEvent, PriceUpdatedEvent, ProSubscriptionEvent, SubscriptionCancelledEvent,
-        SubscriptionCreatedEvent, SubscriptionRenewedEvent,
+        InitializationEvent, PriceUpdatedEvent, ProMemberAddedEvent, ProMemberRemovedEvent,
+        ProSubscriptionEvent, SubscriptionCancelledEvent, SubscriptionCreatedEvent,
+        SubscriptionRenewedEvent,
     },
     storage::{
         add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin,
@@ -133,6 +134,14 @@ impl ProSubscriptionContract {
         increment_total_pro_subscriptions(&env);
 
         env.events().publish(
+            (ProSubscriptionEvent::ProMemberAdded,),
+            ProMemberAddedEvent {
+                organizer: organizer.clone(),
+                timestamp: current_time,
+            },
+        );
+
+        env.events().publish(
             (ProSubscriptionEvent::SubscriptionCreated,),
             SubscriptionCreatedEvent {
                 organizer,
@@ -204,6 +213,14 @@ impl ProSubscriptionContract {
         add_to_pro_members_list(&env, &organizer);
 
         env.events().publish(
+            (ProSubscriptionEvent::ProMemberAdded,),
+            ProMemberAddedEvent {
+                organizer: organizer.clone(),
+                timestamp: current_time,
+            },
+        );
+
+        env.events().publish(
             (ProSubscriptionEvent::SubscriptionRenewed,),
             SubscriptionRenewedEvent {
                 organizer,
@@ -227,6 +244,14 @@ impl ProSubscriptionContract {
         set_subscription(&env, &subscription);
         remove_from_pro_members_list(&env, &organizer);
         decrement_total_pro_subscriptions(&env);
+
+        env.events().publish(
+            (ProSubscriptionEvent::ProMemberRemoved,),
+            ProMemberRemovedEvent {
+                organizer: organizer.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         env.events().publish(
             (ProSubscriptionEvent::SubscriptionCancelled,),
@@ -364,5 +389,16 @@ impl ProSubscriptionContract {
     /// Get the payment token address
     pub fn get_payment_token(env: Env) -> Option<Address> {
         get_payment_token(&env)
+    }
+
+    /// Update the accepted payment token (admin only)
+    pub fn update_payment_token(
+        env: Env,
+        new_token: Address,
+    ) -> Result<(), ProSubscriptionError> {
+        require_admin(&env)?;
+        validate_address(&env, &new_token)?;
+        set_payment_token(&env, &new_token);
+        Ok(())
     }
 }

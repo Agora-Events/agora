@@ -9,7 +9,11 @@ export function useIsMounted(): boolean {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    setIsMounted(true);
+    const timer = window.setTimeout(() => {
+      setIsMounted(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   return isMounted;

@@ -4,12 +4,7 @@ import { useState, FormEvent } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-
-function validateEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
+import { authSchema } from "@/lib/validation";
 export default function AuthPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -19,13 +14,9 @@ export default function AuthPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
-    if (!email) {
-      setError("Email is required");
-      return;
-    }
-
-    if (!validateEmail(email)) {
-      setError("Enter a valid email");
+    const result = authSchema.safeParse({ email });
+    if (!result.success) {
+      setError(result.error.issues[0].message);
       return;
     }
 
@@ -105,10 +96,10 @@ export default function AuthPage() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full bg-white border-2 border-black rounded-full px-4 py-2 mb-4 outline-none"
+className="w-full bg-white border-2 border-black rounded-full px-4 py-2 mb-4 outline-none"
           />
 
-          {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
+          {error && <p className="text-xs text-red-500 mb-3 mt-1">{error}</p>}
 
           <Button
             type="submit"
@@ -123,6 +114,7 @@ export default function AuthPage() {
               font-medium
               flex items-center justify-center gap-2
               mb-4
+              mt-3
               border-2 border-black
               shadow-[0_4px_0_#000]
               active:translate-y-[2px]

@@ -427,3 +427,252 @@ fn test_get_payment_token() {
     let result = client.get_payment_token();
     assert_eq!(result, Some(usdc));
 }
+
+#[test]
+fn test_update_payment_token_success() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let new_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    client.update_payment_token(&new_token);
+
+    assert_eq!(client.get_payment_token(), Some(new_token));
+}
+
+#[test]
+#[should_panic]
+fn test_update_payment_token_unauthorized() {
+    let (env, client, contract_id, _admin, _platform_wallet, _usdc) = setup_without_auth_mock();
+    let non_admin = Address::generate(&env);
+    let new_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "update_payment_token",
+            args: (&new_token,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.update_payment_token(&new_token);
+}
+
+// ── Pro member list events ────────────────────────────────────────────────────
+
+#[test]
+fn test_pro_member_added_event_on_subscribe() {
+    use crate::events::{ProMemberAddedEvent, ProSubscriptionEvent};
+    use soroban_sdk::IntoVal;
+
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Find the ProMemberAdded event among all emitted events
+    let events = env.events().all();
+    let member_added = events.iter().find(|(_, topics, _)| {
+        let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+        topic == ProSubscriptionEvent::ProMemberAdded
+    });
+
+    assert!(member_added.is_some(), "ProMemberAdded event not emitted");
+    let (_, _, data) = member_added.unwrap();
+    let payload: ProMemberAddedEvent = data.into_val(&env);
+    assert_eq!(payload.organizer, organizer);
+}
+
+#[test]
+fn test_pro_member_added_event_on_renew() {
+    use crate::events::{ProMemberAddedEvent, ProSubscriptionEvent};
+    use soroban_sdk::IntoVal;
+
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1000i128;
+
+    // Initial subscription
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Renewal
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.renew_subscription(&organizer, &1u32);
+
+    // The last ProMemberAdded event should correspond to the renewal
+    let events = env.events().all();
+    let member_added_events: soroban_sdk::Vec<_> = events
+        .iter()
+        .filter(|(_, topics, _)| {
+            let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+            topic == ProSubscriptionEvent::ProMemberAdded
+        })
+        .collect();
+
+    // One from subscribe, one from renew
+    assert_eq!(member_added_events.len(), 2);
+    let (_, _, data) = member_added_events.last().unwrap();
+    let payload: ProMemberAddedEvent = data.into_val(&env);
+    assert_eq!(payload.organizer, organizer);
+}
+
+#[test]
+fn test_pro_member_removed_event_on_cancel() {
+    use crate::events::{ProMemberRemovedEvent, ProSubscriptionEvent};
+    use soroban_sdk::IntoVal;
+
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    client.cancel_subscription(&organizer);
+
+    let events = env.events().all();
+    let member_removed = events.iter().find(|(_, topics, _)| {
+        let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+        topic == ProSubscriptionEvent::ProMemberRemoved
+    });
+
+    assert!(member_removed.is_some(), "ProMemberRemoved event not emitted");
+    let (_, _, data) = member_removed.unwrap();
+    let payload: ProMemberRemovedEvent = data.into_val(&env);
+    assert_eq!(payload.organizer, organizer);
+}
+
+// ── Issue #640: get_total_pro_subscriptions accounting ───────────────────────
+
+#[test]
+fn test_total_subscriptions_increments_on_subscribe() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let monthly_price = 1000i128;
+
+    let org1 = Address::generate(&env);
+    let org2 = Address::generate(&env);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&org1, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&org1, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&org1, &1u32);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&org2, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&org2, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&org2, &1u32);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 2u32);
+}
+
+#[test]
+fn test_total_subscriptions_decrements_on_cancel() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let monthly_price = 1000i128;
+    let organizer = Address::generate(&env);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    client.cancel_subscription(&organizer);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 0u32);
+}
+
+#[test]
+fn test_total_subscriptions_no_double_count() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let monthly_price = 1000i128;
+    let organizer = Address::generate(&env);
+
+    // First subscription — succeeds
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Second subscription while still active — must fail
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    let res = client.try_subscribe_pro(&organizer, &1u32);
+    assert_eq!(res, Err(Ok(ProSubscriptionError::SubscriptionAlreadyActive)));
+
+    // Counter must still be 1, not 2
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+}
+
+// ── Issue #632: cancel_subscription coverage ─────────────────────────────────
+
+#[test]
+fn test_cancel_subscription_success() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Confirm active before cancel
+    assert!(client.is_pro_member(&organizer));
+
+    client.cancel_subscription(&organizer);
+
+    // is_pro_member must return false after cancellation
+    assert!(!client.is_pro_member(&organizer));
+
+    // Subscription record should exist but be inactive
+    let sub = client.get_subscription(&organizer).unwrap();
+    assert!(!sub.is_active);
+}
+
+#[test]
+fn test_cancel_subscription_not_found() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let never_subscribed = Address::generate(&env);
+
+    let res = client.try_cancel_subscription(&never_subscribed);
+    assert_eq!(res, Err(Ok(ProSubscriptionError::SubscriptionNotFound)));
+}
+
+#[test]
+#[should_panic]
+fn test_cancel_subscription_unauthorized() {
+    let (env, client, contract_id, _admin, _platform_wallet, usdc) = setup_without_auth_mock();
+    let non_admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let monthly_price = 1000i128;
+
+    // Subscribe the organizer first (mock all auths just for setup)
+    env.mock_all_auths();
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Now attempt cancel as a non-admin — should panic
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "cancel_subscription",
+            args: (&organizer,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.cancel_subscription(&organizer);
+}

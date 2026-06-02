@@ -7,6 +7,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { createEventSchema, CreateEventInput } from "@/lib/validation";
 import { useIsMounted } from "@/hooks/useIsMounted";
 import { z } from "zod";
 
@@ -22,6 +23,7 @@ const eventSchema = z.object({
   capacity: z.string().optional(),
   visibility: z.enum(["Public", "Private"]),
 });
+
 
 export default function CreateEventPage() {
   const router = useRouter();
@@ -57,6 +59,11 @@ export default function CreateEventPage() {
   // Error State
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const getStartsAt = (data: CreateEventInput) => {
+    const startsAt = new Date(`${data.startDate}T${data.startTime}`);
+    return startsAt.toISOString();
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -86,8 +93,10 @@ export default function CreateEventPage() {
     }
     setErrors({});
 
+    setErrors({});
     setIsSubmitting(true);
     try {
+      const values = parsed.data;
       const response = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -203,6 +212,12 @@ export default function CreateEventPage() {
                     />
                   </div>
                 </div>
+
+                {(errors.startDate || errors.startTime) && (
+                  <span className="text-red-500 text-xs font-bold mt-1 ml-10">
+                    {errors.startDate || errors.startTime}
+                  </span>
+                )}
 
                 <div className="flex items-center mt-[18px]">
                   <div className="w-[10px] h-[10px] rounded-[10px] border border-dark-deep/50 bg-transparent shrink-0 relative z-10 ml-3" />
@@ -425,27 +440,29 @@ export default function CreateEventPage() {
               {errors.price && <span className="text-red-500 text-sm font-bold absolute bottom-2 left-6">{errors.price}</span>}
             </div>
 
-            <div className="flex justify-end gap-4 mt-6 mr-4">
+<div className="flex justify-end gap-4 mt-6 mr-4">
               <Button
                 type="button"
                 variant="secondary"
                 className="w-[212px] h-[50px] rounded-[32px]"
-                onClick={() => setFormData({
-                  title: "",
-                  startDate: "",
-                  startTime: "",
-                  endDate: "",
-                  endTime: "",
-                  location: "",
-                  description: "",
-                  capacity: "",
-                  price: "",
-                  visibility: "Public",
-                })}
+                onClick={() => {
+                  setFormData({
+                    title: "",
+                    startDate: "",
+                    startTime: "",
+                    endDate: "",
+                    endTime: "",
+                    location: "",
+                    description: "",
+                    capacity: "",
+                    price: "",
+                    visibility: "Public",
+                  });
+                  setErrors({});
+                }}
               >
                 Clear Event
               </Button>
-
               <Button
                 type="submit"
                 variant="primary"
@@ -463,10 +480,9 @@ export default function CreateEventPage() {
                 )}
               </Button>
             </div>
-          </div>
+            </div>
         </div>
       </form>
-
       <Footer />
     </main>
   );

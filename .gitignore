@@ -12,3 +12,6 @@ contract/target
 
 # Contract test snapshots
 **/test_snapshots/
+
+# PR description drafts
+pr-*.md
