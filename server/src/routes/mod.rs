@@ -47,7 +47,7 @@ use crate::handlers::{
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
     leaderboard::get_leaderboard,
     monitoring::{monitoring_dashboard, MonitoringState},
-    profile::{get_my_profile, get_profile_by_address, upsert_profile},
+    profile::{get_my_profile, get_profile_by_address, upsert_profile, get_organizer_stats},
     qr_payload::{generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
@@ -109,6 +109,7 @@ pub async fn create_routes(pool: PgPool, _config: Config, redis: RedisCache) -> 
     // Organizer profile routes (Issue #486)
     let profile_routes = Router::new()
         .route("/", get(get_my_profile).put(upsert_profile))
+        .route("/:address/stats", get(get_organizer_stats))
         .route("/:address", get(get_profile_by_address))
         .with_state(pool.clone());
 

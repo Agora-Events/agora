@@ -2,19 +2,18 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Home, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import { createEventSchema, CreateEventInput } from "@/lib/validation";
 import { useIsMounted } from "@/hooks/useIsMounted";
 
+
 export default function CreateEventPage() {
+  const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [createdEventId, setCreatedEventId] = useState<string | null>(null);
   const isMounted = useIsMounted();
 
   // Form State
@@ -34,6 +33,11 @@ export default function CreateEventPage() {
   // Error State
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const getStartsAt = (data: CreateEventInput) => {
+    const startsAt = new Date(`${data.startDate}T${data.startTime}`);
+    return startsAt.toISOString();
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -47,43 +51,44 @@ export default function CreateEventPage() {
     }
   };
 
-  const validate = () => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.title.trim()) newErrors.title = "Event title is required";
-    if (!formData.startDate) newErrors.startDate = "Start date is required";
-    if (!formData.startTime) newErrors.startTime = "Start time is required";
-    if (!formData.location.trim()) newErrors.location = "Location is required";
-    if (!formData.price.trim()) newErrors.price = "Price is required (put 0 for free)";
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) {
+    const parsed = createEventSchema.safeParse(formData);
+
+    if (!parsed.success) {
+      const nextErrors: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === "string" && !nextErrors[field]) {
+          nextErrors[field] = issue.message;
+        }
+      }
+
+      setErrors(nextErrors);
       toast.error("Please fill in all required fields");
       return;
     }
 
+    setErrors({});
     setIsSubmitting(true);
     try {
+      const values = parsed.data;
       const response = await fetch("/api/events", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          title: formData.title,
-          startsAt: `${formData.startDate}T${formData.startTime}:00.000Z`,
-          location: formData.location,
+          title: values.title,
+          startsAt: getStartsAt(values),
+          location: values.location,
           category: "Tech", // Default category
           organizerName: "Stellar Community", // Mocked
           organizerWallet: "GD...MOCK_WALLET", // Mocked
-          description: formData.description,
-          ticketPrice: parseFloat(formData.price) || 0,
-          totalTickets: parseInt(formData.capacity) || 100,
-          followersOnly: formData.visibility === "Private",
+          description: values.description,
+          ticketPrice: Number.parseFloat(values.price) || 0,
+          totalTickets: values.capacity ? Number.parseInt(values.capacity, 10) : 100,
+          followersOnly: values.visibility === "Private",
         }),
       });
 
@@ -93,9 +98,8 @@ export default function CreateEventPage() {
         throw new Error(data.error || "Failed to create event");
       }
 
-      setCreatedEventId(data.event.id);
-      setIsSuccess(true);
       toast.success("Event created successfully!");
+      router.push(`/events/${data.event.id}`);
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : "Something went wrong";
@@ -104,48 +108,6 @@ export default function CreateEventPage() {
       setIsSubmitting(false);
     }
   };
-
-  if (isSuccess) {
-    return (
-      <main className="flex flex-col min-h-screen bg-base">
-        <Navbar />
-        <div className="flex-1 flex items-center justify-center p-6">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="w-full max-w-[600px] bg-white rounded-[40px] p-10 lg:p-16 border border-black/5 shadow-2xl flex flex-col items-center text-center gap-8"
-          >
-            <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center text-green-600">
-              <CheckCircle2 size={56} />
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <h1 className="text-[40px] lg:text-[48px] font-bold text-black font-heading leading-tight italic">
-                Your event has been created!
-              </h1>
-              <p className="text-xl text-black/60 font-medium">
-                Awesome! Your event is now live and ready for registrations.
-              </p>
-            </div>
-
-            <div className="flex flex-col w-full gap-4 mt-4">
-              <Link href={`/events/${createdEventId?.replace("evt_", "")}`} className="w-full">
-                <Button variant="primary" className="w-full h-16 rounded-full text-xl">
-                  View Event
-                  <ExternalLink size={24} />
-                </Button>
-              </Link>
-              <Link href="/home" className="w-full text-black/60 font-bold text-lg flex items-center justify-center gap-2 hover:text-black transition-colors">
-                <Home size={20} />
-                <span>Back to Dashboard</span>
-              </Link>
-            </div>
-          </motion.div>
-        </div>
-        <Footer />
-      </main>
-    );
-  }
 
   return (
     <main className="flex flex-col min-h-screen bg-base">
@@ -233,6 +195,12 @@ export default function CreateEventPage() {
                     />
                   </div>
                 </div>
+
+                {(errors.startDate || errors.startTime) && (
+                  <span className="text-red-500 text-xs font-bold mt-1 ml-10">
+                    {errors.startDate || errors.startTime}
+                  </span>
+                )}
 
                 <div className="flex items-center mt-[18px]">
                   <div className="w-[10px] h-[10px] rounded-[10px] border border-dark-deep/50 bg-transparent shrink-0 relative z-10 ml-3" />
@@ -455,27 +423,29 @@ export default function CreateEventPage() {
               {errors.price && <span className="text-red-500 text-sm font-bold absolute bottom-2 left-6">{errors.price}</span>}
             </div>
 
-            <div className="flex justify-end gap-4 mt-6 mr-4">
+<div className="flex justify-end gap-4 mt-6 mr-4">
               <Button
                 type="button"
                 variant="secondary"
                 className="w-[212px] h-[50px] rounded-[32px]"
-                onClick={() => setFormData({
-                  title: "",
-                  startDate: "",
-                  startTime: "",
-                  endDate: "",
-                  endTime: "",
-                  location: "",
-                  description: "",
-                  capacity: "",
-                  price: "",
-                  visibility: "Public",
-                })}
+                onClick={() => {
+                  setFormData({
+                    title: "",
+                    startDate: "",
+                    startTime: "",
+                    endDate: "",
+                    endTime: "",
+                    location: "",
+                    description: "",
+                    capacity: "",
+                    price: "",
+                    visibility: "Public",
+                  });
+                  setErrors({});
+                }}
               >
                 Clear Event
               </Button>
-
               <Button
                 type="submit"
                 variant="primary"
@@ -493,10 +463,9 @@ export default function CreateEventPage() {
                 )}
               </Button>
             </div>
-          </div>
+            </div>
         </div>
       </form>
-
       <Footer />
     </main>
   );
