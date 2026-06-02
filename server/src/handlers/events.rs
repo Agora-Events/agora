@@ -106,61 +106,15 @@ pub struct EventFilters {
     /// Search in title and description
     pub search: Option<String>,
 
+    /// Minimum tickets available (total_tickets - minted_tickets) >= N
+    pub min_tickets_available: Option<i64>,
+
     /// Filter by free events (true = ticket_price = 0, false = ticket_price > 0)
     pub is_free: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct SubmitEventRatingRequest {
-    pub ticket_id: Uuid,
-    pub rating: i16,
-    pub review: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SubmitEventRatingResponse {
-    pub sum_of_ratings: i64,
-    pub count_of_ratings: i32,
-    pub average_rating: f32,
-}
-
-/// List upcoming events with cursor-based pagination and optional filters.
-///
-/// # Endpoint
-/// GET `/api/v1/events`
-///
-/// # Query Parameters
-/// - `limit` (optional): Items per page (default: 20, max: 100)
-/// - `cursor` (optional): Opaque cursor for the next page
-/// - `organizer_id` (optional): Filter by organizer
-/// - `location` (optional): Filter by location (partial match)
-/// - `start_after` (optional): Filter events starting after date
-/// - `start_before` (optional): Filter events starting before date
-/// - `search` (optional): Search in title and description
-/// - `is_free` (optional): Filter by free events (true = ticket_price = 0, false = ticket_price > 0)
-///
-/// # Response
-/// Returns a cursor-paginated list of upcoming events with metadata
-pub async fn list_events(
-    State(state): State<EventState>,
-    Query(pagination): Query<CursorParams>,
-    Query(filters): Query<EventFilters>,
-) -> Response {
-    let validated = pagination.validate();
-
-    // Decode cursor if provided
-    let cursor = match validated.cursor {
-        Some(ref c) => match decode_cursor::<EventCursor>(c) {
-            Ok(c) => Some(c),
-            Err(e) => {
-                tracing::warn!("Invalid cursor provided: {}", e);
-                return AppError::ValidationError(format!("Invalid cursor: {}", e)).into_response();
-            }
-        },
-        None => None,
-    };
-
-    // Build the WHERE clause dynamically based on filters
+/// Build WHERE clause and return (where_clause, param_count)
+fn build_event_where_clause(filters: &EventFilters, cursor: Option<&EventCursor>) -> (String, usize) {
     let mut where_clauses = Vec::new();
     let mut param_count = 0;
 
@@ -218,6 +172,11 @@ pub async fn list_events(
         }
     }
 
+    if let Some(min_tickets) = filters.min_tickets_available {
+        param_count += 1;
+        where_clauses.push(format!("(total_tickets - minted_tickets) >= ${}", param_count));
+    }
+
     // Cursor condition: (start_time, id) > (cursor.start_time, cursor.id)
     if cursor.is_some() {
         param_count += 1;
@@ -232,6 +191,85 @@ pub async fn list_events(
     }
 
     let where_clause = format!("WHERE {}", where_clauses.join(" AND "));
+    (where_clause, param_count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_where_clause_includes_min_tickets_available() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: Some(10),
+            is_free: None,
+        };
+
+        let (where_clause, _) = build_event_where_clause(&filters, None);
+        assert!(where_clause.contains("(total_tickets - minted_tickets) >= $1"), "where_clause was: {}", where_clause);
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SubmitEventRatingRequest {
+    pub ticket_id: Uuid,
+    pub rating: i16,
+    pub review: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SubmitEventRatingResponse {
+    pub sum_of_ratings: i64,
+    pub count_of_ratings: i32,
+    pub average_rating: f32,
+}
+
+/// List upcoming events with cursor-based pagination and optional filters.
+///
+/// # Endpoint
+/// GET `/api/v1/events`
+///
+/// # Query Parameters
+/// - `limit` (optional): Items per page (default: 20, max: 100)
+/// - `cursor` (optional): Opaque cursor for the next page
+/// - `organizer_id` (optional): Filter by organizer
+/// - `location` (optional): Filter by location (partial match)
+/// - `start_after` (optional): Filter events starting after date
+/// - `start_before` (optional): Filter events starting before date
+/// - `search` (optional): Search in title and description
+/// - `is_free` (optional): Filter by free events (true = ticket_price = 0, false = ticket_price > 0)
+///
+/// # Response
+/// Returns a cursor-paginated list of upcoming events with metadata
+pub async fn list_events(
+    State(state): State<EventState>,
+    Query(pagination): Query<CursorParams>,
+    Query(filters): Query<EventFilters>,
+) -> Response {
+    let validated = pagination.validate();
+
+    // Decode cursor if provided
+    let cursor = match validated.cursor {
+        Some(ref c) => match decode_cursor::<EventCursor>(c) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::warn!("Invalid cursor provided: {}", e);
+                return AppError::ValidationError(format!("Invalid cursor: {}", e)).into_response();
+            }
+        },
+        None => None,
+    };
+
+    // Build the WHERE clause dynamically based on filters
+    let (where_clause, mut param_count) = build_event_where_clause(&filters, cursor.as_ref());
+
+
 
     // Fetch items (limit + 1 to detect has_more)
     let items_query = format!(
@@ -259,6 +297,9 @@ pub async fn list_events(
     }
     if let Some(ref search) = filters.search {
         items_query_builder = items_query_builder.bind(format!("%{}%", search));
+    }
+    if let Some(min_tickets) = filters.min_tickets_available {
+        items_query_builder = items_query_builder.bind(min_tickets);
     }
     if let Some(ref c) = cursor {
         items_query_builder = items_query_builder.bind(c.start_time);
@@ -502,6 +543,24 @@ pub async fn submit_event_rating(
 
     let (ticket_status, ticket_event_id) = ticket;
 
+    let event_exists =
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(exists) => exists,
+            Err(e) => {
+                tracing::error!("Failed to check event existence for rating: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
     if ticket_event_id != event_id {
         return AppError::Forbidden("Ticket does not belong to this event".to_string())
             .into_response();
@@ -562,10 +621,14 @@ pub async fn submit_event_rating(
     )
     .bind(event_id)
     .bind(payload.rating)
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await
     {
-        Ok(event) => event,
+        Ok(Some(event)) => event,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
         Err(e) => {
             tracing::error!("Failed to update event rating aggregates: {:?}", e);
             return AppError::DatabaseError(e).into_response();

@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Sub-components
 import { GuestNav } from "./navbar/guest-nav";
@@ -27,6 +27,8 @@ export function Navbar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoggedIn] = useState(true);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // Lock body scroll when menu is open
   useEffect(() => {
@@ -38,6 +40,49 @@ export function Navbar() {
     return () => {
       document.body.style.overflow = "unset";
     };
+  }, [isOpen]);
+
+  // Escape key closes menu; focus trap inside panel
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsOpen(false);
+        triggerRef.current?.focus();
+        return;
+      }
+      if (e.key === "Tab" && menuRef.current) {
+        const focusable = Array.from(
+          menuRef.current.querySelectorAll<HTMLElement>(
+            'a, button, [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => !el.hasAttribute("disabled"));
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    // Auto-focus first focusable element
+    const firstFocusable = menuRef.current?.querySelector<HTMLElement>(
+      'a, button, [tabindex]:not([tabindex="-1"])'
+    );
+    firstFocusable?.focus();
+
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen]);
 
   const toggleMenu = () => setIsOpen(!isOpen);
@@ -85,10 +130,13 @@ export function Navbar() {
 
         <div className="flex items-center lg:hidden">
           <button
+            ref={triggerRef}
             type="button"
             onClick={toggleMenu}
             className="z-50 flex flex-col justify-center items-center w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-black/10 hover:bg-white/20 transition-colors"
             aria-label="Toggle Menu"
+            aria-expanded={isOpen}
+            aria-controls="mobile-menu"
           >
             <div className="w-6 h-6 flex flex-col justify-center gap-[5px]">
               <motion.span
@@ -120,6 +168,11 @@ export function Navbar() {
             />
 
             <motion.div
+              ref={menuRef}
+              id="mobile-menu"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Mobile navigation"
               variants={menuVariants}
               initial="closed"
               animate="open"

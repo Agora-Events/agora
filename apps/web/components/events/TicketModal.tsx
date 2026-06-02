@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2, Gift } from "lucide-react";
+import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2, Gift } from "@/components/ui/icons";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 
