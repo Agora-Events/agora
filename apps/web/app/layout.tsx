@@ -1,3 +1,7 @@
+// Toast notifications are powered by Sonner. The <Toaster /> below mounts the
+// single global toast portal for the whole app. Trigger toasts from any client
+// component with `import { toast } from "sonner"` then `toast.success(...)` /
+// `toast.error(...)`. Do not add additional <Toaster /> instances.
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
@@ -47,7 +51,7 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <LoadingBar />
         </Suspense>
-        <Toaster position="top-right" richColors />
+        <Toaster position="bottom-right" richColors />
         {children}
         <CookieBanner />
       </body>

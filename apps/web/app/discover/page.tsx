@@ -7,17 +7,14 @@ import { PopularEventsSection } from "@/components/events/popular-events-section
 import { OrganizerComponent } from "@/components/events/organizer-component";
 import { Footer } from "@/components/layout/footer";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
+import { toast } from "sonner";
 
 export default function DiscoverPage() {
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [selectedOrganizer, setSelectedOrganizer] = useState<string | null>(null);
   const [allOrganizers, setAllOrganizers] = useState<DiscoverOrganizer[]>([]);
 
-  const showErrorToast = (message: string) => {
-    setToastMessage(message);
-    window.setTimeout(() => setToastMessage(null), 3500);
-  };
+  const showErrorToast = (message: string) => toast.error(message);
 
   // Load all organizers for filtering
   useEffect(() => {
@@ -36,11 +33,6 @@ export default function DiscoverPage() {
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
-      {toastMessage && (
-        <div className="fixed top-4 right-4 z-[60] rounded-lg bg-black px-4 py-3 text-sm text-white shadow-lg">
-          {toastMessage}
-        </div>
-      )}
       <div className="p-10 pl-45 hidden lg:block bg-base">
         <div className="flex justify-start items-center gap-4 p-5 pb-10">
           <h1 className="font-semibold md:text-4xl pl-3">Explore events</h1>
