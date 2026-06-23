@@ -150,6 +150,13 @@ pub struct EventCursor {
     pub id: uuid::Uuid,
 }
 
+/// Cursor structure for past event listings ordered by (end_time DESC, id DESC).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PastEventCursor {
+    pub end_time: chrono::DateTime<chrono::Utc>,
+    pub id: uuid::Uuid,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,6 +204,20 @@ mod tests {
         let decoded: EventCursor = decode_cursor(&encoded).unwrap();
 
         assert_eq!(cursor.start_time, decoded.start_time);
+        assert_eq!(cursor.id, decoded.id);
+    }
+
+    #[test]
+    fn test_encode_decode_past_event_cursor() {
+        let cursor = PastEventCursor {
+            end_time: Utc::now(),
+            id: Uuid::new_v4(),
+        };
+
+        let encoded = encode_cursor(&cursor).unwrap();
+        let decoded: PastEventCursor = decode_cursor(&encoded).unwrap();
+
+        assert_eq!(cursor.end_time, decoded.end_time);
         assert_eq!(cursor.id, decoded.id);
     }
 

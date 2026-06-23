@@ -19,7 +19,7 @@ use crate::cache::RedisCache;
 use crate::models::event::Event;
 use crate::models::organizer_profile::OrganizerProfile;
 use crate::utils::cursor_pagination::{
-    decode_cursor, encode_cursor, CursorParams, CursorResponse, EventCursor,
+    decode_cursor, encode_cursor, CursorParams, CursorResponse, EventCursor, PastEventCursor,
 };
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
@@ -200,6 +200,46 @@ fn build_event_where_clause(
     (where_clause, param_count)
 }
 
+/// Query parameters for filtering past events.
+#[derive(Debug, Deserialize)]
+pub struct PastEventFilters {
+    /// Filter by organizer wallet address (Stellar public key)
+    pub organizer_wallet: Option<String>,
+}
+
+fn build_past_event_where_clause(
+    filters: &PastEventFilters,
+    cursor: Option<&PastEventCursor>,
+) -> (String, usize) {
+    let mut where_clauses = vec![
+        "end_time <= NOW()".to_string(),
+        "is_flagged = FALSE".to_string(),
+    ];
+    let mut param_count = 0;
+
+    if filters.organizer_wallet.is_some() {
+        param_count += 1;
+        where_clauses.push(format!(
+            "organizer_id = (SELECT id FROM organizers WHERE wallet_address = ${})",
+            param_count
+        ));
+    }
+
+    if cursor.is_some() {
+        param_count += 1;
+        let end_time = param_count;
+        param_count += 1;
+        let id = param_count;
+        where_clauses.push(format!(
+            "(end_time < ${end_time} OR (end_time = ${end_time} AND id < ${id}))",
+            end_time = end_time,
+            id = id
+        ));
+    }
+
+    (format!("WHERE {}", where_clauses.join(" AND ")), param_count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,6 +297,37 @@ mod tests {
             is_free: None,
         };
         assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
+    }
+
+    #[test]
+    fn test_past_event_where_clause_default() {
+        let filters = PastEventFilters {
+            organizer_wallet: None,
+        };
+
+        let (where_clause, param_count) = build_past_event_where_clause(&filters, None);
+
+        assert_eq!(param_count, 0);
+        assert!(where_clause.contains("end_time <= NOW()"));
+        assert!(where_clause.contains("is_flagged = FALSE"));
+    }
+
+    #[test]
+    fn test_past_event_where_clause_with_filter_and_cursor() {
+        let filters = PastEventFilters {
+            organizer_wallet: Some("GBXXX".to_string()),
+        };
+        let cursor = PastEventCursor {
+            end_time: Utc::now(),
+            id: Uuid::new_v4(),
+        };
+
+        let (where_clause, param_count) =
+            build_past_event_where_clause(&filters, Some(&cursor));
+
+        assert_eq!(param_count, 3);
+        assert!(where_clause.contains("wallet_address = $1"));
+        assert!(where_clause.contains("(end_time < $2 OR (end_time = $2 AND id < $3))"));
     }
 
     #[test]
@@ -372,6 +443,18 @@ mod tests {
         assert_eq!(response.average_rating, 0.0);
         assert_eq!(response.waitlist_count, 0);
         assert_eq!(response.tickets_remaining, 0);
+    }
+
+    #[test]
+    fn test_attendee_count_response_serialization() {
+        let response = AttendeeCountResponse {
+            count: 142,
+            total_tickets: 500,
+        };
+
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["count"], 142);
+        assert_eq!(json["total_tickets"], 500);
     }
 
     #[test]
@@ -592,6 +675,84 @@ pub async fn list_events(
 
     let response = CursorResponse::new(items, &validated, next_cursor);
     success(response, "Events retrieved successfully").into_response()
+}
+
+/// List completed events with cursor-based pagination and optional filters.
+///
+/// # Endpoint
+/// GET `/api/v1/events/past`
+pub async fn list_past_events(
+    State(state): State<EventState>,
+    Query(pagination): Query<CursorParams>,
+    Query(filters): Query<PastEventFilters>,
+) -> Response {
+    let validated = pagination.validate();
+
+    let cursor = match validated.cursor {
+        Some(ref c) => match decode_cursor::<PastEventCursor>(c) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::warn!("Invalid past events cursor provided: {}", e);
+                return AppError::ValidationError(format!("Invalid cursor: {}", e)).into_response();
+            }
+        },
+        None => None,
+    };
+
+    let (where_clause, param_count) = build_past_event_where_clause(&filters, cursor.as_ref());
+    let items_query = format!(
+        "SELECT * FROM events {} ORDER BY end_time DESC, id DESC LIMIT ${}",
+        where_clause,
+        param_count + 1
+    );
+
+    let mut items_query_builder = sqlx::query_as::<_, Event>(&items_query);
+
+    if let Some(ref organizer_wallet) = filters.organizer_wallet {
+        items_query_builder = items_query_builder.bind(organizer_wallet.clone());
+    }
+    if let Some(ref c) = cursor {
+        items_query_builder = items_query_builder.bind(c.end_time);
+        items_query_builder = items_query_builder.bind(c.id);
+    }
+
+    items_query_builder = items_query_builder.bind(validated.query_limit());
+
+    let mut items = match items_query_builder.fetch_all(&state.pool).await {
+        Ok(events) => events,
+        Err(e) => {
+            tracing::error!("Failed to fetch past events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let has_more = items.len() > validated.page_size();
+    let next_cursor = if has_more {
+        let last = items.pop().unwrap();
+        match last.end_time {
+            Some(end_time) => match encode_cursor(&PastEventCursor {
+                end_time,
+                id: last.id,
+            }) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    tracing::error!("Failed to encode past events cursor: {:?}", e);
+                    return AppError::InternalServerError("Failed to encode cursor".to_string())
+                        .into_response();
+                }
+            },
+            None => {
+                tracing::error!("Past event query returned event without end_time");
+                return AppError::InternalServerError("Failed to encode cursor".to_string())
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+
+    let response = CursorResponse::new(items, &validated, next_cursor);
+    success(response, "Past events retrieved successfully").into_response()
 }
 
 /// Get a single event by ID
@@ -1202,6 +1363,13 @@ pub struct EventSocialProofResponse {
     pub tickets_remaining: i64,
 }
 
+/// Attendee count response for an event.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AttendeeCountResponse {
+    pub count: i64,
+    pub total_tickets: i64,
+}
+
 /// GET /api/v1/events/:id/share-link
 ///
 /// Returns a canonical share URL for an event along with the event's title
@@ -1371,6 +1539,41 @@ pub async fn get_event_social_proof(
     }
 
     success(response, "Social proof retrieved successfully").into_response()
+}
+
+/// GET /api/v1/events/:id/attendees/count
+///
+/// Returns the number of minted tickets and total ticket capacity for an event.
+pub async fn get_attendee_count(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    let row = match sqlx::query_as::<_, (i64, i64)>(
+        "SELECT minted_tickets, total_tickets FROM events WHERE id = $1",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch attendee count: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    success(
+        AttendeeCountResponse {
+            count: row.0,
+            total_tickets: row.1,
+        },
+        "Attendee count retrieved successfully",
+    )
+    .into_response()
 }
 
 /// GET /api/v1/events/:id/revenue

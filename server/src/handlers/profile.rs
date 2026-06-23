@@ -13,7 +13,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, QueryBuilder};
 
 use crate::handlers::auth::extract_auth;
 use crate::models::organizer_profile::{OrganizerProfile, UpsertProfileRequest};
@@ -21,7 +21,8 @@ use crate::utils::error::AppError;
 use crate::utils::response::success;
 
 use once_cell::sync::Lazy;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -52,6 +53,79 @@ fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
         }
     }
     Ok(())
+}
+
+fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
+    if req.display_name.is_none()
+        && req.bio.is_none()
+        && req.avatar_url.is_none()
+        && req.socials.is_none()
+    {
+        return Err(AppError::ValidationError(
+            "At least one profile field is required".to_string(),
+        ));
+    }
+
+    if let Some(ref display_name) = req.display_name {
+        if display_name.trim().is_empty() {
+            return Err(AppError::ValidationError(
+                "display_name cannot be empty".to_string(),
+            ));
+        }
+        if display_name.len() > MAX_DISPLAY_NAME {
+            return Err(AppError::ValidationError(format!(
+                "display_name must be at most {MAX_DISPLAY_NAME} characters"
+            )));
+        }
+    }
+
+    if let Some(ref bio) = req.bio {
+        if bio.len() > MAX_BIO {
+            return Err(AppError::ValidationError(format!(
+                "bio must be at most {MAX_BIO} characters"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Payload accepted by `PATCH /api/v1/profile`.
+#[derive(Debug, Deserialize)]
+pub struct PatchProfileRequest {
+    #[serde(alias = "displayName")]
+    pub display_name: Option<String>,
+    pub bio: Option<String>,
+    #[serde(alias = "avatarUrl")]
+    pub avatar_url: Option<String>,
+    pub socials: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OrganizerProfileResponse {
+    #[serde(flatten)]
+    pub profile: OrganizerProfile,
+    pub total_events: i64,
+}
+
+static PROFILE_CACHE: Lazy<Mutex<HashMap<String, (Instant, OrganizerProfileResponse)>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+const PROFILE_CACHE_TTL: Duration = Duration::from_secs(300);
+
+fn invalidate_profile_cache(address: &str) {
+    let mut cache = PROFILE_CACHE.lock().unwrap();
+    cache.remove(address);
+}
+
+fn organizer_total_events_query() -> &'static str {
+    r#"
+    SELECT COUNT(*)
+    FROM events e
+    JOIN organizers o ON e.organizer_id = o.id
+    WHERE o.wallet_address = $1
+      AND e.is_flagged = FALSE
+    "#
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +184,71 @@ pub async fn upsert_profile(
         }
     };
 
+    invalidate_profile_cache(&address);
+
+    success(profile, "Profile updated successfully").into_response()
+}
+
+/// `PATCH /api/v1/profile`
+///
+/// Partially updates the authenticated organizer's profile.
+pub async fn patch_profile(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Json(payload): Json<PatchProfileRequest>,
+) -> Response {
+    let address = match extract_auth(&headers) {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+
+    if let Err(e) = validate_patch(&payload) {
+        return e.into_response();
+    }
+
+    let mut builder: QueryBuilder<Postgres> = QueryBuilder::new("UPDATE organizer_profiles SET ");
+    {
+        let mut separated = builder.separated(", ");
+
+        if let Some(ref display_name) = payload.display_name {
+            separated
+                .push("display_name = ")
+                .push_bind(display_name.trim().to_string());
+        }
+        if let Some(ref bio) = payload.bio {
+            separated.push("bio = ").push_bind(bio);
+        }
+        if let Some(ref avatar_url) = payload.avatar_url {
+            separated.push("avatar_url = ").push_bind(avatar_url);
+        }
+        if let Some(ref socials) = payload.socials {
+            separated.push("socials = ").push_bind(socials);
+        }
+
+        separated.push("updated_at = NOW()");
+    }
+    builder.push(" WHERE address = ");
+    builder.push_bind(&address);
+    builder.push(" RETURNING *");
+
+    let profile = match builder
+        .build_query_as::<OrganizerProfile>()
+        .fetch_optional(&pool)
+        .await
+    {
+        Ok(Some(profile)) => profile,
+        Ok(None) => {
+            return AppError::NotFound(format!("No profile found for address '{address}'"))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to patch organizer profile: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    invalidate_profile_cache(&address);
+
     success(profile, "Profile updated successfully").into_response()
 }
 
@@ -137,6 +276,15 @@ pub async fn get_profile_by_address(
 }
 
 async fn fetch_profile_by_address(pool: &PgPool, address: &str) -> Response {
+    {
+        let cache = PROFILE_CACHE.lock().unwrap();
+        if let Some((expiry, profile)) = cache.get(address) {
+            if Instant::now() < *expiry {
+                return success(profile.clone(), "Profile retrieved successfully").into_response();
+            }
+        }
+    }
+
     match sqlx::query_as::<_, OrganizerProfile>(
         "SELECT * FROM organizer_profiles WHERE address = $1",
     )
@@ -144,7 +292,34 @@ async fn fetch_profile_by_address(pool: &PgPool, address: &str) -> Response {
     .fetch_optional(pool)
     .await
     {
-        Ok(Some(profile)) => success(profile, "Profile retrieved successfully").into_response(),
+        Ok(Some(profile)) => {
+            let total_events: i64 = match sqlx::query_scalar(organizer_total_events_query())
+                .bind(address)
+                .fetch_one(pool)
+                .await
+            {
+                Ok(count) => count,
+                Err(e) => {
+                    tracing::error!("Failed to count organizer events: {:?}", e);
+                    return AppError::DatabaseError(e).into_response();
+                }
+            };
+
+            let response = OrganizerProfileResponse {
+                profile,
+                total_events,
+            };
+
+            {
+                let mut cache = PROFILE_CACHE.lock().unwrap();
+                cache.insert(
+                    address.to_string(),
+                    (Instant::now() + PROFILE_CACHE_TTL, response.clone()),
+                );
+            }
+
+            success(response, "Profile retrieved successfully").into_response()
+        }
         Ok(None) => {
             AppError::NotFound(format!("No profile found for address '{address}'")).into_response()
         }
@@ -192,7 +367,7 @@ pub async fn get_organizer_stats(
 
     // total events
     let total_events: i64 =
-        match sqlx::query_scalar("SELECT COUNT(*) FROM events WHERE organizer_wallet = $1")
+        match sqlx::query_scalar(organizer_total_events_query())
             .bind(&address)
             .fetch_one(&pool)
             .await
@@ -206,7 +381,13 @@ pub async fn get_organizer_stats(
 
     // total tickets sold
     let total_tickets_sold: i64 = match sqlx::query_scalar(
-        "SELECT COALESCE(SUM(minted_tickets), 0) FROM events WHERE organizer_wallet = $1",
+        r#"
+        SELECT COALESCE(SUM(e.minted_tickets), 0)
+        FROM events e
+        JOIN organizers o ON e.organizer_id = o.id
+        WHERE o.wallet_address = $1
+          AND e.is_flagged = FALSE
+        "#,
     )
     .bind(&address)
     .fetch_one(&pool)
@@ -221,7 +402,14 @@ pub async fn get_organizer_stats(
 
     // average event rating
     let average_event_rating: f64 = match sqlx::query_scalar(
-        "SELECT COALESCE(AVG(CAST(sum_of_ratings AS FLOAT) / NULLIF(count_of_ratings, 0)), 0) FROM events WHERE organizer_wallet = $1 AND count_of_ratings > 0",
+        r#"
+        SELECT COALESCE(AVG(CAST(e.sum_of_ratings AS FLOAT) / NULLIF(e.count_of_ratings, 0)), 0)
+        FROM events e
+        JOIN organizers o ON e.organizer_id = o.id
+        WHERE o.wallet_address = $1
+          AND e.is_flagged = FALSE
+          AND e.count_of_ratings > 0
+        "#,
     )
     .bind(&address)
     .fetch_one(&pool)
@@ -328,6 +516,89 @@ mod tests {
             socials: json!({}),
         };
         assert!(validate_upsert(&req).is_ok());
+    }
+
+    #[test]
+    fn test_validate_patch_allows_partial_bio_update() {
+        let req = PatchProfileRequest {
+            display_name: None,
+            bio: Some("Updated bio".to_string()),
+            avatar_url: None,
+            socials: None,
+        };
+
+        assert!(validate_patch(&req).is_ok());
+    }
+
+    #[test]
+    fn test_validate_patch_rejects_empty_payload() {
+        let req = PatchProfileRequest {
+            display_name: None,
+            bio: None,
+            avatar_url: None,
+            socials: None,
+        };
+
+        let err = validate_patch(&req).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_validate_patch_rejects_empty_display_name() {
+        let req = PatchProfileRequest {
+            display_name: Some("   ".to_string()),
+            bio: None,
+            avatar_url: None,
+            socials: None,
+        };
+
+        let err = validate_patch(&req).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_validate_patch_accepts_camel_case_aliases() {
+        let req: PatchProfileRequest = serde_json::from_value(json!({
+            "displayName": "Agora",
+            "avatarUrl": "https://example.com/avatar.png"
+        }))
+        .unwrap();
+
+        assert_eq!(req.display_name.as_deref(), Some("Agora"));
+        assert_eq!(
+            req.avatar_url.as_deref(),
+            Some("https://example.com/avatar.png")
+        );
+    }
+
+    #[test]
+    fn test_profile_response_includes_total_events() {
+        let now = chrono::Utc::now();
+        let response = OrganizerProfileResponse {
+            profile: OrganizerProfile {
+                address: "GABC".to_string(),
+                display_name: "Agora".to_string(),
+                bio: None,
+                avatar_url: None,
+                socials: json!({}),
+                created_at: now,
+                updated_at: now,
+            },
+            total_events: 3,
+        };
+
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["address"], "GABC");
+        assert_eq!(json["total_events"], 3);
+    }
+
+    #[test]
+    fn test_organizer_total_events_query_excludes_flagged_events() {
+        let query = organizer_total_events_query();
+
+        assert!(query.contains("JOIN organizers"));
+        assert!(query.contains("wallet_address = $1"));
+        assert!(query.contains("is_flagged = FALSE"));
     }
 
     #[tokio::test]
