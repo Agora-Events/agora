@@ -86,7 +86,7 @@ pub struct EventDetail {
 }
 
 /// Query parameters for filtering events
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct EventFilters {
     /// Filter by organizer ID
     pub organizer_id: Option<Uuid>,
@@ -119,6 +119,9 @@ pub struct EventFilters {
     /// Filter events starting on or before this date (YYYY-MM-DD, treated as midnight UTC).
     /// Takes precedence over `start_before` when both are supplied.
     pub end_date: Option<String>,
+
+    /// Filter to return only followers-only events (Issue #ForYou)
+    pub followers_only: Option<bool>,
 }
 
 /// Build WHERE clause and return (where_clause, param_count)
@@ -204,6 +207,10 @@ fn build_event_where_clause(
         where_clauses.push(format!("start_time <= ${}", param_count));
     }
 
+    if let Some(true) = filters.followers_only {
+        where_clauses.push("followers_only = TRUE".to_string());
+    }
+
     // Cursor condition: (start_time, id) > (cursor.start_time, cursor.id)
     if cursor.is_some() {
         param_count += 1;
@@ -238,6 +245,7 @@ mod tests {
             is_free: None,
             start_date: None,
             end_date: None,
+            followers_only: None,
         };
 
         let (where_clause, _) = build_event_where_clause(&filters, None);
@@ -262,6 +270,7 @@ mod tests {
             is_free: None,
             start_date: None,
             end_date: None,
+            followers_only: None,
         };
 
         assert!(filters.organizer_id.is_some());
@@ -282,6 +291,7 @@ mod tests {
             is_free: None,
             start_date: None,
             end_date: None,
+            followers_only: None,
         };
         assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
     }
@@ -299,6 +309,7 @@ mod tests {
             is_free: Some(true),
             start_date: None,
             end_date: None,
+            followers_only: None,
         };
         assert_eq!(filters_free.is_free, Some(true));
 
@@ -313,6 +324,7 @@ mod tests {
             is_free: Some(false),
             start_date: None,
             end_date: None,
+            followers_only: None,
         };
         assert_eq!(filters_paid.is_free, Some(false));
 
@@ -327,6 +339,7 @@ mod tests {
             is_free: None,
             start_date: None,
             end_date: None,
+            followers_only: None,
         };
         assert_eq!(filters_none.is_free, None);
     }
@@ -344,6 +357,7 @@ mod tests {
             is_free: None,
             start_date: Some("2026-06-15".to_string()),
             end_date: None,
+            followers_only: None,
         };
         let (where_clause, _) = build_event_where_clause(&filters, None);
         assert!(
@@ -366,11 +380,35 @@ mod tests {
             is_free: None,
             start_date: None,
             end_date: Some("2026-06-20".to_string()),
+            followers_only: None,
         };
         let (where_clause, _) = build_event_where_clause(&filters, None);
         assert!(
             where_clause.contains("start_time <="),
             "Expected start_time <= clause, got: {}",
+            where_clause
+        );
+    }
+
+    #[test]
+    fn test_followers_only_filter() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: None,
+            is_free: None,
+            start_date: None,
+            end_date: None,
+            followers_only: Some(true),
+        };
+        let (where_clause, _) = build_event_where_clause(&filters, None);
+        assert!(
+            where_clause.contains("followers_only = TRUE"),
+            "Expected where_clause to contain followers_only = TRUE, got: {}",
             where_clause
         );
     }
@@ -649,9 +687,8 @@ pub async fn list_events(
     if let Some(ref date_str) = filters.start_date {
         match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
             Ok(date) => {
-                let dt: DateTime<Utc> = Utc.from_utc_datetime(
-                    &date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()),
-                );
+                let dt: DateTime<Utc> = Utc
+                    .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
                 items_query_builder = items_query_builder.bind(dt);
             }
             Err(_) => {
@@ -668,9 +705,8 @@ pub async fn list_events(
     if let Some(ref date_str) = filters.end_date {
         match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
             Ok(date) => {
-                let dt: DateTime<Utc> = Utc.from_utc_datetime(
-                    &date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()),
-                );
+                let dt: DateTime<Utc> = Utc
+                    .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
                 items_query_builder = items_query_builder.bind(dt);
             }
             Err(_) => {
@@ -836,10 +872,8 @@ pub async fn create_event(
             && url.len() > "https://".len()
             && !url["https://".len()..].starts_with('/');
         if !is_valid {
-            return AppError::ValidationError(
-                "image_url must be a valid HTTPS URL".to_string(),
-            )
-            .into_response();
+            return AppError::ValidationError("image_url must be a valid HTTPS URL".to_string())
+                .into_response();
         }
     }
 
@@ -1599,6 +1633,7 @@ fn test_event_filters_deserialization() {
         is_free: None,
         start_date: None,
         end_date: None,
+        followers_only: None,
     };
 
     assert!(filters.organizer_id.is_some());
@@ -1619,6 +1654,7 @@ fn test_organizer_wallet_filter() {
         is_free: None,
         start_date: None,
         end_date: None,
+        followers_only: None,
     };
     assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
 }
@@ -1636,6 +1672,7 @@ fn test_is_free_filter() {
         is_free: Some(true),
         start_date: None,
         end_date: None,
+        followers_only: None,
     };
     assert_eq!(filters_free.is_free, Some(true));
 
@@ -1650,6 +1687,7 @@ fn test_is_free_filter() {
         is_free: Some(false),
         start_date: None,
         end_date: None,
+        followers_only: None,
     };
     assert_eq!(filters_paid.is_free, Some(false));
 
@@ -1664,6 +1702,7 @@ fn test_is_free_filter() {
         is_free: None,
         start_date: None,
         end_date: None,
+        followers_only: None,
     };
     assert_eq!(filters_none.is_free, None);
 }
@@ -2246,19 +2285,18 @@ pub async fn list_event_tickets(
     let validated = pagination.validate();
 
     // Count total tickets for pagination metadata.
-    let total = match sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM tickets WHERE event_id = $1",
-    )
-    .bind(event_id)
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::error!("Failed to count event tickets: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
-        }
-    };
+    let total =
+        match sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM tickets WHERE event_id = $1")
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::error!("Failed to count event tickets: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
 
     let items = match sqlx::query_as::<_, EventTicket>(
         r#"
@@ -2290,6 +2328,111 @@ pub async fn list_event_tickets(
 
     let response = PaginatedResponse::new(items, validated, total);
     success(response, "Tickets retrieved successfully").into_response()
+}
+
+/// GET `/api/v1/events/categories/:category_id`
+///
+/// Returns a cursor-paginated list of upcoming events in the given category.
+pub async fn list_events_by_category(
+    State(state): State<EventState>,
+    axum::extract::Path(category_id): axum::extract::Path<Uuid>,
+    Query(pagination): Query<CursorParams>,
+) -> Response {
+    // Verify category exists
+    let category_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM categories WHERE id = $1)",
+    )
+    .bind(category_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(exists) => exists,
+        Err(e) => {
+            tracing::error!("Failed to check category existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !category_exists {
+        return AppError::NotFound(format!("Category with id '{}' not found", category_id))
+            .into_response();
+    }
+
+    let validated = pagination.validate();
+
+    // Decode cursor if provided
+    let cursor = match validated.cursor {
+        Some(ref c) => match decode_cursor::<EventCursor>(c) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::warn!("Invalid cursor provided: {}", e);
+                return AppError::ValidationError(format!("Invalid cursor: {}", e)).into_response();
+            }
+        },
+        None => None,
+    };
+
+    // Construct query dynamically based on cursor existence
+    let items_query = if cursor.is_some() {
+        "SELECT e.* FROM events e \
+         INNER JOIN event_categories ec ON e.id = ec.event_id \
+         WHERE ec.category_id = $1 \
+           AND e.end_time > NOW() \
+           AND e.is_flagged = FALSE \
+           AND (e.start_time > $3 OR (e.start_time = $3 AND e.id > $4)) \
+         ORDER BY e.start_time ASC, e.id ASC \
+         LIMIT $2"
+            .to_string()
+    } else {
+        "SELECT e.* FROM events e \
+         INNER JOIN event_categories ec ON e.id = ec.event_id \
+         WHERE ec.category_id = $1 \
+           AND e.end_time > NOW() \
+           AND e.is_flagged = FALSE \
+         ORDER BY e.start_time ASC, e.id ASC \
+         LIMIT $2"
+            .to_string()
+    };
+
+    // Query items (query limit is page_size + 1 to detect has_more)
+    let mut items_query_builder = sqlx::query_as::<_, Event>(&items_query)
+        .bind(category_id)
+        .bind(validated.query_limit());
+
+    if let Some(ref c) = cursor {
+        items_query_builder = items_query_builder.bind(c.start_time).bind(c.id);
+    }
+
+    let mut items = match items_query_builder.fetch_all(&state.pool).await {
+        Ok(events) => events,
+        Err(e) => {
+            tracing::error!("Failed to fetch events by category: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Determine if there are more pages
+    let has_more = items.len() > validated.page_size();
+    let next_cursor = if has_more {
+        // Remove the extra item used for detection
+        let last = items.pop().unwrap();
+        match encode_cursor(&EventCursor {
+            start_time: last.start_time,
+            id: last.id,
+        }) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::error!("Failed to encode cursor: {:?}", e);
+                return AppError::InternalServerError("Failed to encode cursor".to_string())
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+
+    let response = CursorResponse::new(items, &validated, next_cursor);
+    success(response, "Events in category retrieved successfully").into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -2354,4 +2497,15 @@ fn test_event_ticket_struct_fields() {
     assert_eq!(ticket.quantity, 1);
     assert_eq!(ticket.buyer_wallet.as_deref(), Some("GBUYER123"));
     assert!(ticket.stellar_id.is_some());
+}
+
+#[test]
+fn test_list_events_by_category_params() {
+    let params = CursorParams {
+        limit: 15,
+        cursor: Some("test-cursor-token".to_string()),
+    };
+    let validated = params.validate();
+    assert_eq!(validated.page_size(), 15);
+    assert_eq!(validated.cursor.as_deref(), Some("test-cursor-token"));
 }

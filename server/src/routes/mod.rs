@@ -23,7 +23,7 @@ use axum::{
     middleware,
     response::IntoResponse,
     response::Response,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use sqlx::PgPool;
@@ -40,14 +40,17 @@ use crate::handlers::{
     events::{
         export_attendees_csv, get_checkin_stats, get_event, get_event_counts, get_event_organizer,
         get_event_share_link, get_event_social_proof, get_ratings_summary, list_event_tickets,
-        list_events, search_events, submit_event_rating, toggle_event_flag, EventState,
+        list_events, list_events_by_category, search_events, submit_event_rating,
+        toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
     leaderboard::get_leaderboard,
     monitoring::{monitoring_dashboard, MonitoringState},
     profile::{get_my_profile, get_organizer_stats, get_profile_by_address, upsert_profile},
-    qr_payload::{generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
+    qr_payload::{
+        delete_qr_payload, generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload,
+    },
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
@@ -130,6 +133,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/verify", post(verify_qr_payload))
         .route("/mark-used/:id", post(mark_qr_used))
         .route("/list", get(list_qr_payloads))
+        .route("/:id", delete(delete_qr_payload))
         .with_state(pool.clone());
 
     // Event routes with Redis caching
@@ -146,6 +150,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/:id/share-link", get(get_event_share_link))
         .route("/:id/social-proof", get(get_event_social_proof))
         .route("/:id/tickets", get(list_event_tickets))
+        .route("/categories/:category_id", get(list_events_by_category))
         .with_state(event_state);
 
     // Category routes

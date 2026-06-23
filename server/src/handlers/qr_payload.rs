@@ -495,6 +495,30 @@ pub struct QrPayloadListItem {
     pub used_at: Option<DateTime<Utc>>,
 }
 
+/// DELETE `/api/v1/qr/:id`
+///
+/// Deletes the QR payload with the given ID.
+pub async fn delete_qr_payload(
+    State(pool): State<PgPool>,
+    axum::extract::Path(qr_id): axum::extract::Path<Uuid>,
+) -> Response {
+    let id_str = qr_id.to_string();
+    match sqlx::query_scalar::<_, String>("DELETE FROM qr_payloads WHERE id = $1 RETURNING id")
+        .bind(&id_str)
+        .fetch_optional(&pool)
+        .await
+    {
+        Ok(Some(_)) => (axum::http::StatusCode::NO_CONTENT).into_response(),
+        Ok(None) => {
+            AppError::NotFound(format!("QR payload with id '{}' not found", qr_id)).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to delete QR payload: {:?}", e);
+            AppError::DatabaseError(e).into_response()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -527,5 +551,13 @@ mod tests {
         let signature = signing_key.sign(message);
 
         assert!(verifying_key.verify(message, &signature).is_ok());
+    }
+
+    #[test]
+    fn test_delete_qr_payload_id_parsing() {
+        let test_uuid = Uuid::new_v4();
+        let uuid_str = test_uuid.to_string();
+        let parsed = Uuid::parse_str(&uuid_str).unwrap();
+        assert_eq!(test_uuid, parsed);
     }
 }

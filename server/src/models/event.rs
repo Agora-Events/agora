@@ -41,7 +41,6 @@ pub struct Event {
     pub image_url: Option<String>,
 }
 
-
 impl Event {
     /// Returns the average star rating for the event if any ratings exist.
     pub fn average_rating(&self) -> Option<f32> {
