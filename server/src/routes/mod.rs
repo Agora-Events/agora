@@ -38,10 +38,10 @@ use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories},
     events::{
-        export_attendees_csv, get_checkin_stats, get_event, get_event_counts, get_event_organizer,
-        get_event_share_link, get_event_social_proof, get_ratings_summary, list_event_tickets,
-        list_events, list_events_by_category, search_events, submit_event_rating,
-        toggle_event_flag, EventState,
+        export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
+        get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
+        list_event_tickets, list_events, list_events_by_category, list_featured_events,
+        list_past_events, search_events, submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
@@ -50,7 +50,7 @@ use crate::handlers::{
     profile::{
         get_my_profile, get_organizer_stats, get_profile_by_address, patch_profile, upsert_profile,
     },
-    qr_payload::{delete_qr_payload, generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
+    qr_payload::{delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads, mark_qr_used, verify_qr_payload},
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
@@ -140,6 +140,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     let event_routes = Router::new()
         .route("/", get(list_events))
         .route("/count", get(get_event_counts))
+        .route("/featured", get(list_featured_events))
         .route("/past", get(list_past_events))
         .route("/search", get(search_events))
         .route("/:id", get(get_event))
@@ -154,6 +155,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/:id/tickets", get(list_event_tickets))
         .route("/categories/:category_id", get(list_events_by_category))
         .with_state(event_state);
+
+    // QR-code routes scoped to an event (uses bare PgPool state)
+    let event_qr_routes = Router::new()
+        .route("/:id/qr-codes", get(list_event_qr_codes))
+        .with_state(pool.clone());
 
     // Category routes
     let category_routes = Router::new()
@@ -198,6 +204,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
 
     let public_api_routes = Router::new()
         .nest("/events", event_routes)
+        .nest("/events", event_qr_routes)
         .nest("/categories", category_routes)
         .nest("/auth", auth_routes)
         .nest("/profile", profile_routes)

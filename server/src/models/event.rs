@@ -39,6 +39,10 @@ pub struct Event {
     pub updated_at: DateTime<Utc>,
     /// Optional HTTPS URL for the event's banner/cover image.
     pub image_url: Option<String>,
+    /// Contact email for the event host/organizer.
+    pub host_email: Option<String>,
+    /// Whether this event is featured on the home page.
+    pub is_featured: bool,
 }
 
 impl Event {
