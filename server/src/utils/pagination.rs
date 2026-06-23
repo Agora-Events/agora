@@ -80,7 +80,7 @@ impl ValidatedPagination {
 }
 
 /// Pagination metadata included in responses
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PaginationMeta {
     /// Current page number (1-indexed)
     pub page: u32,
@@ -102,7 +102,7 @@ pub struct PaginationMeta {
 }
 
 /// Standard paginated response wrapper
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PaginatedResponse<T> {
     /// The data items for this page
     pub items: Vec<T>,

@@ -15,8 +15,9 @@ use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
+use axum::http::HeaderValue;
 use crate::cache::RedisCache;
-use crate::models::event::Event;
+use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
 use crate::utils::cursor_pagination::{
     decode_cursor, encode_cursor, CursorParams, CursorResponse, EventCursor, PastEventCursor,
@@ -735,6 +736,41 @@ pub async fn list_events(
     // Build the WHERE clause dynamically based on filters
     let (where_clause, param_count) = build_event_where_clause(&filters, cursor.as_ref());
 
+    // Count total matching events (no cursor so the number reflects the full filter set).
+    let (count_where, count_param_count) = build_event_where_clause(&filters, None);
+    let count_query = format!("SELECT COUNT(*) FROM events {}", count_where);
+    let mut count_builder = sqlx::query_scalar::<_, i64>(&count_query);
+    if let Some(organizer_id) = filters.organizer_id {
+        count_builder = count_builder.bind(organizer_id);
+    }
+    if let Some(ref w) = filters.organizer_wallet {
+        count_builder = count_builder.bind(w.clone());
+    }
+    if let Some(ref l) = filters.location {
+        count_builder = count_builder.bind(format!("%{}%", l));
+    }
+    if let Some(start_after) = filters.start_after {
+        count_builder = count_builder.bind(start_after);
+    }
+    if let Some(start_before) = filters.start_before {
+        count_builder = count_builder.bind(start_before);
+    }
+    if let Some(ref s) = filters.search {
+        count_builder = count_builder.bind(format!("%{}%", s));
+    }
+    if let Some(min_tickets) = filters.min_tickets_available {
+        count_builder = count_builder.bind(min_tickets);
+    }
+    let _ = count_param_count; // used only to drive param numbering above
+
+    let total_count: i64 = match count_builder.fetch_one(&state.pool).await {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!("Failed to fetch total count for list_events: {:?}", e);
+            0
+        }
+    };
+
     // Fetch items (limit + 1 to detect has_more)
     let items_query = format!(
         "SELECT * FROM events {} ORDER BY start_time ASC, id ASC LIMIT ${}",
@@ -837,8 +873,14 @@ pub async fn list_events(
         None
     };
 
+    populate_is_free(&mut items, &state.pool).await;
+
     let response = CursorResponse::new(items, &validated, next_cursor);
-    success(response, "Events retrieved successfully").into_response()
+    let mut resp = success(response, "Events retrieved successfully").into_response();
+    if let Ok(v) = HeaderValue::from_str(&total_count.to_string()) {
+        resp.headers_mut().insert("X-Total-Count", v);
+    }
+    resp
 }
 
 /// List completed events with cursor-based pagination and optional filters.
@@ -1004,6 +1046,77 @@ pub async fn get_event(
     }
 
     success(detail, "Event retrieved successfully").into_response()
+}
+
+/// Query parameters for `GET /api/v1/events/:id/similar`.
+#[derive(Debug, Deserialize)]
+pub struct SimilarEventsParams {
+    /// Maximum number of similar events to return (1–10, default 4).
+    pub limit: Option<u32>,
+}
+
+/// Return up to `limit` upcoming events that share a category or location with event `:id`.
+///
+/// # Endpoint
+/// GET `/api/v1/events/:id/similar`
+pub async fn list_similar_events(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Query(params): Query<SimilarEventsParams>,
+) -> Response {
+    // Clamp limit to 1–10, default 4.
+    let limit = params.limit.unwrap_or(4).clamp(1, 10) as i64;
+
+    // Fetch the source event to get its location (category via join below).
+    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1")
+        .bind(event_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(Some(e)) => e,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event '{}' not found", event_id)).into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch source event: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // Find events in the same category (via event_categories join) OR same location,
+    // excluding the source event itself.
+    let mut events = match sqlx::query_as::<_, Event>(
+        r"
+        SELECT DISTINCT e.* FROM events e
+        LEFT JOIN event_categories ec ON ec.event_id = e.id
+        WHERE e.id != $1
+          AND (e.end_time IS NULL OR e.end_time > NOW())
+          AND e.is_flagged = FALSE
+          AND (
+              ec.category_id IN (
+                  SELECT category_id FROM event_categories WHERE event_id = $1
+              )
+              OR e.location ILIKE $2
+          )
+        ORDER BY e.start_time ASC
+        LIMIT $3
+        ",
+    )
+    .bind(event_id)
+    .bind(format!("%{}%", source.location))
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch similar events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    populate_is_free(&mut events, &state.pool).await;
+    success(events, "Similar events retrieved successfully").into_response()
 }
 
 /// Request body for creating a new event
@@ -1260,8 +1373,10 @@ pub async fn submit_event_rating(
 ///
 /// # Response
 /// Returns a paginated list of events matching the search criteria
+const SEARCH_CACHE_TTL: Duration = Duration::from_secs(120);
+
 pub async fn search_events(
-    State(state): State<EventState>,
+    State(mut state): State<EventState>,
     Query(params): Query<SearchParams>,
 ) -> Response {
     let pagination = PaginationParams {
@@ -1269,6 +1384,30 @@ pub async fn search_events(
         page_size: params.page_size,
     };
     let validated_pagination = pagination.validate();
+
+    // Deterministic cache key from all search parameters (issue #592).
+    let cache_key = format!(
+        "search:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        params.q.as_deref().unwrap_or(""),
+        params.category_id.map(|id| id.to_string()).unwrap_or_default(),
+        params.category_ids.as_deref().unwrap_or(""),
+        params.min_price.unwrap_or(0),
+        params.max_price.unwrap_or(0),
+        params.date_from.map(|d| d.timestamp()).unwrap_or(0),
+        params.date_to.map(|d| d.timestamp()).unwrap_or(0),
+        validated_pagination.page,
+        validated_pagination.page_size,
+    );
+
+    // Try cache first; fall through to DB on miss or Redis error.
+    match state.redis.get::<PaginatedResponse<Event>>(&cache_key).await {
+        Ok(Some(cached)) => {
+            tracing::debug!("Cache hit for search key: {}", cache_key);
+            return success(cached, "Search results retrieved successfully (cached)").into_response();
+        }
+        Ok(None) => {}
+        Err(e) => tracing::warn!("Redis error during search cache lookup, falling back: {:?}", e),
+    }
 
     // Build dynamic WHERE clause using WHERE 1=1 pattern
     let mut where_clauses = vec!["1=1".to_string()];
@@ -1449,7 +1588,7 @@ pub async fn search_events(
         .bind(validated_pagination.limit())
         .bind(validated_pagination.offset());
 
-    let items = match items_query_builder.fetch_all(&state.pool).await {
+    let mut items = match items_query_builder.fetch_all(&state.pool).await {
         Ok(events) => events,
         Err(e) => {
             tracing::error!("Failed to fetch search results: {:?}", e);
@@ -1457,7 +1596,15 @@ pub async fn search_events(
         }
     };
 
+    populate_is_free(&mut items, &state.pool).await;
+
     let response = PaginatedResponse::new(items, validated_pagination, total);
+
+    // Cache the result for 2 minutes; failures are non-fatal.
+    if let Err(e) = state.redis.set(&cache_key, &response, SEARCH_CACHE_TTL).await {
+        tracing::warn!("Failed to cache search results: {:?}", e);
+    }
+
     success(response, "Search results retrieved successfully").into_response()
 }
 
@@ -2711,4 +2858,53 @@ fn test_list_events_by_category_params() {
     let validated = params.validate();
     assert_eq!(validated.page_size(), 15);
     assert_eq!(validated.cursor.as_deref(), Some("test-cursor-token"));
+}
+
+#[cfg(test)]
+mod similar_events_tests {
+    use super::*;
+
+    #[test]
+    fn test_similar_limit_default() {
+        let params = SimilarEventsParams { limit: None };
+        let clamped = params.limit.unwrap_or(4).clamp(1, 10);
+        assert_eq!(clamped, 4);
+    }
+
+    #[test]
+    fn test_similar_limit_clamped_high() {
+        let params = SimilarEventsParams { limit: Some(50) };
+        let clamped = params.limit.unwrap_or(4).clamp(1, 10);
+        assert_eq!(clamped, 10);
+    }
+
+    #[test]
+    fn test_similar_limit_clamped_low() {
+        let params = SimilarEventsParams { limit: Some(0) };
+        let clamped = params.limit.unwrap_or(4).clamp(1, 10);
+        assert_eq!(clamped, 1);
+    }
+}
+
+#[cfg(test)]
+mod search_cache_tests {
+    use super::*;
+
+    #[test]
+    fn test_search_cache_key_is_deterministic() {
+        let key1 = format!(
+            "search:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "music", "", "", 0i64, 0i64, 0i64, 0i64, 1u32, 20u32
+        );
+        let key2 = format!(
+            "search:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "music", "", "", 0i64, 0i64, 0i64, 0i64, 1u32, 20u32
+        );
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_search_cache_ttl_is_2_minutes() {
+        assert_eq!(SEARCH_CACHE_TTL.as_secs(), 120);
+    }
 }
