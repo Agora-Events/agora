@@ -37,7 +37,10 @@ pub struct Event {
     pub created_at: DateTime<Utc>,
     /// Timestamp of the last update to this record. Managed by a DB trigger.
     pub updated_at: DateTime<Utc>,
+    /// Optional HTTPS URL for the event's banner/cover image.
+    pub image_url: Option<String>,
 }
+
 
 impl Event {
     /// Returns the average star rating for the event if any ratings exist.

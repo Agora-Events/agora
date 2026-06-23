@@ -9,7 +9,7 @@ use axum::{
     response::Response,
     Json,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use std::time::Duration;
@@ -111,6 +111,14 @@ pub struct EventFilters {
 
     /// Filter by free events (true = ticket_price = 0, false = ticket_price > 0)
     pub is_free: Option<bool>,
+
+    /// Filter events starting on or after this date (YYYY-MM-DD, treated as midnight UTC).
+    /// Takes precedence over `start_after` when both are supplied.
+    pub start_date: Option<String>,
+
+    /// Filter events starting on or before this date (YYYY-MM-DD, treated as midnight UTC).
+    /// Takes precedence over `start_before` when both are supplied.
+    pub end_date: Option<String>,
 }
 
 /// Build WHERE clause and return (where_clause, param_count)
@@ -183,6 +191,19 @@ fn build_event_where_clause(
         ));
     }
 
+    // start_date / end_date: date-only filters (treated as midnight UTC).
+    // They are wired the same way as start_after / start_before; the actual
+    // DateTime binding happens in the handler after parsing.
+    if filters.start_date.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("start_time >= ${}", param_count));
+    }
+
+    if filters.end_date.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("start_time <= ${}", param_count));
+    }
+
     // Cursor condition: (start_time, id) > (cursor.start_time, cursor.id)
     if cursor.is_some() {
         param_count += 1;
@@ -215,6 +236,8 @@ mod tests {
             search: None,
             min_tickets_available: Some(10),
             is_free: None,
+            start_date: None,
+            end_date: None,
         };
 
         let (where_clause, _) = build_event_where_clause(&filters, None);
@@ -237,6 +260,8 @@ mod tests {
             search: Some("concert".to_string()),
             min_tickets_available: None,
             is_free: None,
+            start_date: None,
+            end_date: None,
         };
 
         assert!(filters.organizer_id.is_some());
@@ -255,6 +280,8 @@ mod tests {
             search: None,
             min_tickets_available: None,
             is_free: None,
+            start_date: None,
+            end_date: None,
         };
         assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
     }
@@ -270,6 +297,8 @@ mod tests {
             search: None,
             min_tickets_available: None,
             is_free: Some(true),
+            start_date: None,
+            end_date: None,
         };
         assert_eq!(filters_free.is_free, Some(true));
 
@@ -282,6 +311,8 @@ mod tests {
             search: None,
             min_tickets_available: None,
             is_free: Some(false),
+            start_date: None,
+            end_date: None,
         };
         assert_eq!(filters_paid.is_free, Some(false));
 
@@ -294,8 +325,66 @@ mod tests {
             search: None,
             min_tickets_available: None,
             is_free: None,
+            start_date: None,
+            end_date: None,
         };
         assert_eq!(filters_none.is_free, None);
+    }
+
+    #[test]
+    fn test_start_date_filter_generates_where_clause() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: None,
+            is_free: None,
+            start_date: Some("2026-06-15".to_string()),
+            end_date: None,
+        };
+        let (where_clause, _) = build_event_where_clause(&filters, None);
+        assert!(
+            where_clause.contains("start_time >="),
+            "Expected start_time >= clause, got: {}",
+            where_clause
+        );
+    }
+
+    #[test]
+    fn test_end_date_filter_generates_where_clause() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: None,
+            is_free: None,
+            start_date: None,
+            end_date: Some("2026-06-20".to_string()),
+        };
+        let (where_clause, _) = build_event_where_clause(&filters, None);
+        assert!(
+            where_clause.contains("start_time <="),
+            "Expected start_time <= clause, got: {}",
+            where_clause
+        );
+    }
+
+    #[test]
+    fn test_start_date_parsing_valid() {
+        let result = NaiveDate::parse_from_str("2026-06-15", "%Y-%m-%d");
+        assert!(result.is_ok(), "Expected valid date parse");
+    }
+
+    #[test]
+    fn test_start_date_parsing_invalid() {
+        let result = NaiveDate::parse_from_str("not-a-date", "%Y-%m-%d");
+        assert!(result.is_err(), "Expected parse error for invalid date");
     }
 
     #[test]
@@ -555,6 +644,45 @@ pub async fn list_events(
     if let Some(min_tickets) = filters.min_tickets_available {
         items_query_builder = items_query_builder.bind(min_tickets);
     }
+
+    // Parse and bind start_date (YYYY-MM-DD → midnight UTC).
+    if let Some(ref date_str) = filters.start_date {
+        match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            Ok(date) => {
+                let dt: DateTime<Utc> = Utc.from_utc_datetime(
+                    &date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()),
+                );
+                items_query_builder = items_query_builder.bind(dt);
+            }
+            Err(_) => {
+                return AppError::ValidationError(format!(
+                    "start_date '{}' is not a valid date — expected YYYY-MM-DD",
+                    date_str
+                ))
+                .into_response();
+            }
+        }
+    }
+
+    // Parse and bind end_date (YYYY-MM-DD → midnight UTC).
+    if let Some(ref date_str) = filters.end_date {
+        match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            Ok(date) => {
+                let dt: DateTime<Utc> = Utc.from_utc_datetime(
+                    &date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()),
+                );
+                items_query_builder = items_query_builder.bind(dt);
+            }
+            Err(_) => {
+                return AppError::ValidationError(format!(
+                    "end_date '{}' is not a valid date — expected YYYY-MM-DD",
+                    date_str
+                ))
+                .into_response();
+            }
+        }
+    }
+
     if let Some(ref c) = cursor {
         items_query_builder = items_query_builder.bind(c.start_time);
         items_query_builder = items_query_builder.bind(c.id);
@@ -690,6 +818,8 @@ pub struct CreateEventRequest {
     pub location: String,
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
+    /// Optional HTTPS URL for the event's banner/cover image.
+    pub image_url: Option<String>,
 }
 
 /// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
@@ -700,9 +830,22 @@ pub async fn create_event(
     State(mut state): State<EventState>,
     Json(payload): Json<CreateEventRequest>,
 ) -> Response {
+    // Validate image_url: must start with https:// and have a non-empty host.
+    if let Some(ref url) = payload.image_url {
+        let is_valid = url.starts_with("https://")
+            && url.len() > "https://".len()
+            && !url["https://".len()..].starts_with('/');
+        if !is_valid {
+            return AppError::ValidationError(
+                "image_url must be a valid HTTPS URL".to_string(),
+            )
+            .into_response();
+        }
+    }
+
     let event = match sqlx::query_as::<_, Event>(
-        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time, image_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *",
     )
     .bind(payload.organizer_id)
@@ -711,6 +854,7 @@ pub async fn create_event(
     .bind(&payload.location)
     .bind(payload.start_time)
     .bind(payload.end_time)
+    .bind(&payload.image_url)
     .fetch_one(&state.pool)
     .await
     {
@@ -1453,6 +1597,8 @@ fn test_event_filters_deserialization() {
         search: Some("concert".to_string()),
         min_tickets_available: None,
         is_free: None,
+        start_date: None,
+        end_date: None,
     };
 
     assert!(filters.organizer_id.is_some());
@@ -1471,6 +1617,8 @@ fn test_organizer_wallet_filter() {
         search: None,
         min_tickets_available: None,
         is_free: None,
+        start_date: None,
+        end_date: None,
     };
     assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
 }
@@ -1486,6 +1634,8 @@ fn test_is_free_filter() {
         search: None,
         min_tickets_available: None,
         is_free: Some(true),
+        start_date: None,
+        end_date: None,
     };
     assert_eq!(filters_free.is_free, Some(true));
 
@@ -1498,6 +1648,8 @@ fn test_is_free_filter() {
         search: None,
         min_tickets_available: None,
         is_free: Some(false),
+        start_date: None,
+        end_date: None,
     };
     assert_eq!(filters_paid.is_free, Some(false));
 
@@ -1510,6 +1662,8 @@ fn test_is_free_filter() {
         search: None,
         min_tickets_available: None,
         is_free: None,
+        start_date: None,
+        end_date: None,
     };
     assert_eq!(filters_none.is_free, None);
 }
@@ -2034,4 +2188,170 @@ pub async fn export_attendees_csv(
         csv,
     )
         .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Issue: List tickets for an event
+// ---------------------------------------------------------------------------
+
+/// A single ticket row returned by the list_event_tickets endpoint.
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct EventTicket {
+    pub id: Uuid,
+    pub buyer_wallet: Option<String>,
+    pub owner_wallet: Option<String>,
+    /// Quantity included for schema compatibility. Defaults to 1 for
+    /// on-chain synced tickets where quantity is not stored separately.
+    pub quantity: i32,
+    pub created_at: chrono::DateTime<Utc>,
+    /// On-chain Stellar ticket ID for independent verification.
+    pub stellar_id: Option<String>,
+}
+
+/// GET /api/v1/events/:id/tickets
+///
+/// Returns a paginated list of tickets purchased for the given event.
+/// Useful for organiser check-in management and reporting.
+///
+/// # Query Parameters
+/// - `page` (optional, default 1)
+/// - `page_size` (optional, default 20, max 100)
+///
+/// # Response
+/// Returns a `PaginatedResponse<EventTicket>`.
+pub async fn list_event_tickets(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Query(pagination): Query<PaginationParams>,
+) -> Response {
+    // 404 if event does not exist.
+    let event_exists =
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("Failed to check event existence for tickets: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    let validated = pagination.validate();
+
+    // Count total tickets for pagination metadata.
+    let total = match sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM tickets WHERE event_id = $1",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::error!("Failed to count event tickets: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let items = match sqlx::query_as::<_, EventTicket>(
+        r#"
+        SELECT
+            id,
+            buyer_wallet,
+            owner_wallet,
+            1::int4          AS quantity,
+            created_at,
+            stellar_id
+        FROM tickets
+        WHERE event_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+        "#,
+    )
+    .bind(event_id)
+    .bind(validated.limit())
+    .bind(validated.offset())
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch event tickets: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let response = PaginatedResponse::new(items, validated, total);
+    success(response, "Tickets retrieved successfully").into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for list_event_tickets and image_url validation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_image_url_valid_https() {
+    let url = "https://example.com/image.jpg";
+    let is_valid = url.starts_with("https://")
+        && url.len() > "https://".len()
+        && !url["https://".len()..].starts_with('/');
+    assert!(is_valid);
+}
+
+#[test]
+fn test_image_url_http_rejected() {
+    let url = "http://example.com/image.jpg";
+    let is_valid = url.starts_with("https://")
+        && url.len() > "https://".len()
+        && !url["https://".len()..].starts_with('/');
+    assert!(!is_valid);
+}
+
+#[test]
+fn test_image_url_javascript_rejected() {
+    let url = "javascript:alert(1)";
+    let is_valid = url.starts_with("https://")
+        && url.len() > "https://".len()
+        && !url["https://".len()..].starts_with('/');
+    assert!(!is_valid);
+}
+
+#[test]
+fn test_image_url_empty_host_rejected() {
+    let url = "https://";
+    let is_valid = url.starts_with("https://")
+        && url.len() > "https://".len()
+        && !url["https://".len()..].starts_with('/');
+    assert!(!is_valid);
+}
+
+#[test]
+fn test_image_url_relative_path_rejected() {
+    let url = "https:///path/to/image.jpg";
+    let is_valid = url.starts_with("https://")
+        && url.len() > "https://".len()
+        && !url["https://".len()..].starts_with('/');
+    assert!(!is_valid);
+}
+
+#[test]
+fn test_event_ticket_struct_fields() {
+    let ticket = EventTicket {
+        id: Uuid::new_v4(),
+        buyer_wallet: Some("GBUYER123".to_string()),
+        owner_wallet: Some("GOWNER456".to_string()),
+        quantity: 1,
+        created_at: chrono::Utc::now(),
+        stellar_id: Some("stellar-tx-abc".to_string()),
+    };
+    assert_eq!(ticket.quantity, 1);
+    assert_eq!(ticket.buyer_wallet.as_deref(), Some("GBUYER123"));
+    assert!(ticket.stellar_id.is_some());
 }

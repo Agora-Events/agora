@@ -39,8 +39,8 @@ use crate::handlers::{
     categories::{get_category, list_categories},
     events::{
         export_attendees_csv, get_checkin_stats, get_event, get_event_counts, get_event_organizer,
-        get_event_share_link, get_event_social_proof, get_ratings_summary, list_events,
-        search_events, submit_event_rating, toggle_event_flag, EventState,
+        get_event_share_link, get_event_social_proof, get_ratings_summary, list_event_tickets,
+        list_events, search_events, submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
@@ -53,6 +53,7 @@ use crate::handlers::{
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
 use crate::middleware::audit::audit_layer;
+use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
 use crate::middleware::rate_limit::GovernorRateLimitLayer;
 use crate::middleware::request_id_tracing::trace_request_id;
 use crate::utils::rate_limit::RateLimitLayer;
@@ -144,6 +145,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/:id/export-attendees", get(export_attendees_csv))
         .route("/:id/share-link", get(get_event_share_link))
         .route("/:id/social-proof", get(get_event_social_proof))
+        .route("/:id/tickets", get(list_event_tickets))
         .with_state(event_state);
 
     // Category routes
@@ -151,6 +153,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/", get(list_categories))
         .route("/:id", get(get_category))
         .with_state(pool.clone());
+
+    let monitoring_auth_state = MonitoringAuthState {
+        token: config.monitoring_token.clone(),
+    };
 
     let sensitive_routes = Router::new()
         .route("/health", get(health_check))
@@ -161,6 +167,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .merge(
             Router::new()
                 .route("/monitoring/dashboard", get(monitoring_dashboard))
+                .route_layer(middleware::from_fn_with_state(
+                    monitoring_auth_state,
+                    require_monitoring_token,
+                ))
                 .with_state(monitoring_state),
         )
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
