@@ -8,6 +8,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
+
+use crate::utils::db_timer::log_if_slow;
 use sqlx::PgPool;
 
 use crate::utils::error::AppError;
@@ -76,10 +78,13 @@ pub async fn get_leaderboard(
         "#
     );
 
-    match sqlx::query_as::<_, LeaderboardEntry>(&query)
+    let start = std::time::Instant::now();
+    let result = sqlx::query_as::<_, LeaderboardEntry>(&query)
         .fetch_all(&pool)
-        .await
-    {
+        .await;
+    log_if_slow("get_leaderboard", start.elapsed());
+
+    match result {
         Ok(entries) => success(entries, "Leaderboard retrieved successfully").into_response(),
         Err(e) => {
             tracing::error!("Failed to fetch leaderboard: {:?}", e);

@@ -22,6 +22,7 @@ use crate::models::organizer_profile::OrganizerProfile;
 use crate::utils::cursor_pagination::{
     decode_cursor, encode_cursor, CursorParams, CursorResponse, EventCursor, PastEventCursor,
 };
+use crate::utils::db_timer::log_if_slow;
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
@@ -845,6 +846,7 @@ pub async fn list_events(
 
     items_query_builder = items_query_builder.bind(validated.query_limit());
 
+    let start = std::time::Instant::now();
     let mut items = match items_query_builder.fetch_all(&state.pool).await {
         Ok(events) => events,
         Err(e) => {
@@ -852,6 +854,7 @@ pub async fn list_events(
             return AppError::DatabaseError(e).into_response();
         }
     };
+    log_if_slow("list_events", start.elapsed());
 
     // Determine if there are more pages
     let has_more = items.len() > validated.page_size();
@@ -924,6 +927,7 @@ pub async fn list_past_events(
 
     items_query_builder = items_query_builder.bind(validated.query_limit());
 
+    let start = std::time::Instant::now();
     let mut items = match items_query_builder.fetch_all(&state.pool).await {
         Ok(events) => events,
         Err(e) => {
@@ -931,6 +935,7 @@ pub async fn list_past_events(
             return AppError::DatabaseError(e).into_response();
         }
     };
+    log_if_slow("list_past_events", start.elapsed());
 
     let has_more = items.len() > validated.page_size();
     let next_cursor = if has_more {
@@ -1130,6 +1135,20 @@ pub struct CreateEventRequest {
     pub end_time: Option<DateTime<Utc>>,
     /// Optional HTTPS URL for the event's banner/cover image.
     pub image_url: Option<String>,
+    /// Optional contact email for the event host.
+    pub host_email: Option<String>,
+}
+
+/// Returns true when the string is a plausibly valid email address.
+fn is_valid_email(email: &str) -> bool {
+    let mut parts = email.splitn(2, '@');
+    let local = parts.next().unwrap_or("");
+    let domain = parts.next().unwrap_or("");
+    !local.is_empty()
+        && !domain.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
 }
 
 /// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
@@ -1151,9 +1170,19 @@ pub async fn create_event(
         }
     }
 
+    // Validate host_email format when provided.
+    if let Some(ref email) = payload.host_email {
+        if !is_valid_email(email) {
+            return AppError::ValidationError(
+                "host_email must be a valid email address".to_string(),
+            )
+            .into_response();
+        }
+    }
+
     let event = match sqlx::query_as::<_, Event>(
-        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time, image_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time, image_url, host_email)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *",
     )
     .bind(payload.organizer_id)
@@ -1163,6 +1192,7 @@ pub async fn create_event(
     .bind(payload.start_time)
     .bind(payload.end_time)
     .bind(&payload.image_url)
+    .bind(&payload.host_email)
     .fetch_one(&state.pool)
     .await
     {
@@ -1595,6 +1625,7 @@ pub async fn search_events(
             return AppError::DatabaseError(e).into_response();
         }
     };
+    log_if_slow("search_events", start.elapsed());
 
     populate_is_free(&mut items, &state.pool).await;
 

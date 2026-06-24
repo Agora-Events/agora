@@ -10,7 +10,7 @@
 //! ## Cryptography
 //! Uses Ed25519 digital signatures for payload signing and verification.
 
-use axum::{extract::Query, extract::State, response::IntoResponse, response::Response, Json};
+use axum::{extract::Path, extract::Query, extract::State, response::IntoResponse, response::Response, Json};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
@@ -517,6 +517,92 @@ pub async fn delete_qr_payload(
             AppError::DatabaseError(e).into_response()
         }
     }
+}
+
+/// Metadata returned per QR code in the per-event listing.
+/// Raw signature and public key are intentionally excluded.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct EventQrCodeItem {
+    pub id: String,
+    pub event_id: Option<Uuid>,
+    pub ticket_id: Option<Uuid>,
+    /// Alias for `is_used` to match the issue spec's `used` field name.
+    #[sqlx(rename = "is_used")]
+    pub used: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+/// List QR codes for a specific event (paginated).
+///
+/// # Endpoint
+/// GET `/api/v1/events/:id/qr-codes`
+///
+/// Returns only metadata (id, event_id, ticket_id, used, created_at).
+/// The raw QR payload, signature, and public key are never exposed.
+pub async fn list_event_qr_codes(
+    State(pool): State<PgPool>,
+    Path(event_id): Path<Uuid>,
+    Query(pagination): Query<PaginationParams>,
+) -> Response {
+    // Verify the event exists first.
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(exists) => exists,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event '{}' not found", event_id)).into_response();
+    }
+
+    let validated = pagination.validate();
+
+    let total = match sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM qr_payloads WHERE event_id = $1",
+    )
+    .bind(event_id)
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::error!("Failed to count QR codes for event: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let items = match sqlx::query_as::<_, EventQrCodeItem>(
+        r"
+        SELECT id, event_id, ticket_id, is_used, created_at
+        FROM qr_payloads
+        WHERE event_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+        ",
+    )
+    .bind(event_id)
+    .bind(validated.limit())
+    .bind(validated.offset())
+    .fetch_all(&pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch QR codes for event: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let response = PaginatedResponse::new(items, validated, total);
+    success(response, "QR codes retrieved successfully").into_response()
 }
 
 #[cfg(test)]
