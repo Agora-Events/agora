@@ -6,6 +6,7 @@ import Image from "next/image";
 import { EventCard } from "./event-card";
 import { EventCardSkeleton } from "./event-card-skeleton";
 import { Button } from "../ui/button";
+import { EmptyState } from "../ui/empty-state";
 import { FilterSidebar, FilterState } from "./filter-sidebar";
 import { fetchPopularEvents, type DiscoverEvent } from "@/utils/api";
 
@@ -266,22 +267,21 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
             ))}
 
           {!isLoading && filteredEvents.length === 0 && (
-            <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-16 h-16 mb-4 rounded-full bg-black/5 flex items-center justify-center">
-                <Image
-                  src="/icons/search.svg"
-                  width={32}
-                  height={32}
-                  alt="search icon"
-                  className="opacity-40"
-                />
-              </div>
-              <h4 className="text-[20px] font-semibold text-black mb-2">
-                No data available
-              </h4>
-              <p className="text-[15px] text-black/60 max-w-sm">
-                We couldn&apos;t load events for this section. Please try again later.
-              </p>
+            <div className="col-span-full">
+              <EmptyState
+                icon={
+                  <Image
+                    src="/icons/search.svg"
+                    width={32}
+                    height={32}
+                    alt="search"
+                    className="opacity-60"
+                  />
+                }
+                title="No events found"
+                description="Try adjusting your search or filters to find what you're looking for."
+                action={{ label: "Clear Search", onClick: () => setSearch("") }}
+              />
             </div>
           )}
         </motion.div>

@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { BaseNav, type NavItem } from "./base-nav";
 
 const USER_NAV_ITEMS: NavItem[] = [
@@ -32,6 +34,50 @@ const USER_NAV_ITEMS: NavItem[] = [
   },
 ];
 
+interface Notification {
+  id: string;
+  message: string;
+  time: string;
+  read: boolean;
+}
+
+function NotificationsPanel({ notifications }: { notifications: Notification[] }) {
+  return (
+    <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-2xl border border-border-warm shadow-[-4px_4px_0_rgba(0,0,0,1)] overflow-hidden z-50">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border-warm">
+        <h3 className="font-semibold text-ink-deep text-sm">Notifications</h3>
+        {notifications.length > 0 && (
+          <span className="text-xs text-muted-text">{notifications.length} new</span>
+        )}
+      </div>
+
+      {notifications.length > 0 ? (
+        <ul className="divide-y divide-border-warm max-h-72 overflow-y-auto">
+          {notifications.map((n) => (
+            <li key={n.id} className={`px-5 py-3 ${n.read ? "opacity-60" : ""}`}>
+              <p className="text-sm text-ink-deep">{n.message}</p>
+              <p className="text-xs text-muted-text mt-0.5">{n.time}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState
+          icon={
+            <Image
+              src="/icons/notification.svg"
+              width={32}
+              height={32}
+              alt="no notifications"
+            />
+          }
+          title="No notifications"
+          description="You're all caught up! Check back later for updates on events you follow."
+        />
+      )}
+    </div>
+  );
+}
+
 const userCta = (
   <Link href="/create-event">
     <Button
@@ -51,45 +97,60 @@ const userCta = (
   </Link>
 );
 
-const userEndSlot = (
-  <>
-    <Link href="#">
-      <Button
-        backgroundColor="bg-white"
-        className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
-        textColor="text-black"
-        shadowColor="rgba(0,0,0,1)"
-      >
-        <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
-        <Image
-          src="/icons/notification.svg"
-          alt="Notifications"
-          width={24}
-          height={24}
-          className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-        />
-      </Button>
-    </Link>
-    <Link href="/profile">
-      <Button
-        backgroundColor="bg-white"
-        className="relative w-[55.22px] h-[53px] px-0! py-0"
-        textColor="text-black"
-        shadowColor="rgba(0,0,0,1)"
-      >
-        <div className="size-[49px] rounded-full">
+function UserEndSlot() {
+  const [isOpen, setIsOpen] = useState(false);
+  // Empty notifications list — triggers the EmptyState
+  const notifications: Notification[] = [];
+
+  return (
+    <>
+      <div className="relative">
+        <Button
+          backgroundColor="bg-white"
+          className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
+          textColor="text-black"
+          shadowColor="rgba(0,0,0,1)"
+          onClick={() => setIsOpen((prev) => !prev)}
+          aria-label="Toggle notifications"
+          aria-expanded={isOpen}
+          aria-haspopup="true"
+        >
+          {notifications.length > 0 && (
+            <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
+          )}
           <Image
-            src="/images/pfp.png"
-            alt="Profile"
-            width={49}
-            height={49}
+            src="/icons/notification.svg"
+            alt="Notifications"
+            width={24}
+            height={24}
             className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
           />
-        </div>
-      </Button>
-    </Link>
-  </>
-);
+        </Button>
+
+        {isOpen && <NotificationsPanel notifications={notifications} />}
+      </div>
+
+      <Link href="/profile">
+        <Button
+          backgroundColor="bg-white"
+          className="relative w-[55.22px] h-[53px] px-0! py-0"
+          textColor="text-black"
+          shadowColor="rgba(0,0,0,1)"
+        >
+          <div className="size-[49px] rounded-full">
+            <Image
+              src="/images/pfp.png"
+              alt="Profile"
+              width={49}
+              height={49}
+              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+            />
+          </div>
+        </Button>
+      </Link>
+    </>
+  );
+}
 
 export function UserNav({ pathname }: { pathname: string }) {
   return (
@@ -98,7 +159,7 @@ export function UserNav({ pathname }: { pathname: string }) {
       isAuthenticated={true}
       navItems={USER_NAV_ITEMS}
       ctaSlot={userCta}
-      endSlot={userEndSlot}
+      endSlot={<UserEndSlot />}
     />
   );
 }
