@@ -58,8 +58,19 @@ export default function CreateEventPage() {
     description: "",
     capacity: "",
     price: "",
+    imageUrl: "",
     visibility: "Public" as "Public" | "Private",
   });
+  const [imageError, setImageError] = useState(false);
+
+  const isValidUrl = (url: string) => {
+    try {
+      new URL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   // Error State
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -385,6 +396,60 @@ export default function CreateEventPage() {
               </div>
             </div>
 
+            <div className="bg-white/50 backdrop-blur-sm border-[1.5px] border-black/3 rounded-[16px] p-6 flex flex-col justify-center relative shadow-sm min-h-[120px] mt-2">
+              <label className="text-[15px] font-semibold text-ink-alt absolute top-3 left-6 leading-[66px]">
+                Cover Image URL
+              </label>
+              <div className="flex items-center justify-between w-full mt-[50px] gap-4">
+                <input
+                  type="url"
+                  name="imageUrl"
+                  value={formData.imageUrl}
+                  onChange={(e) => {
+                    handleChange(e);
+                    setImageError(false);
+                  }}
+                  placeholder="https://example.com/image.jpg"
+                  className="text-[19px] font-semibold placeholder:text-muted-text/30 text-muted-text outline-none flex-1 bg-transparent"
+                />
+                <div className="w-[49px] h-[49px] rounded-[120px] bg-base flex items-center justify-center shrink-0">
+                  <Image
+                    src="/icons/camera.svg"
+                    width={24}
+                    height={24}
+                    alt="Image URL"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {formData.imageUrl && isValidUrl(formData.imageUrl) && (
+              <div className="rounded-[16px] overflow-hidden border-[1.5px] border-black/3 shadow-sm mt-2 aspect-video relative bg-subtle/30">
+                {imageError ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-text">
+                    <Image
+                      src="/icons/camera.svg"
+                      width={32}
+                      height={32}
+                      alt=""
+                      className="opacity-30"
+                    />
+                    <span className="text-[15px] font-semibold opacity-50">
+                      Failed to load image
+                    </span>
+                  </div>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={formData.imageUrl}
+                    alt="Event cover preview"
+                    className="w-full h-full object-cover"
+                    onError={() => setImageError(true)}
+                  />
+                )}
+              </div>
+            )}
+
             <h2 className="text-[19px] font-bold mt-4 text-ink-alt leading-[66px] h-[30px] flex items-center">
               Event Options
             </h2>
@@ -511,9 +576,11 @@ export default function CreateEventPage() {
                     description: "",
                     capacity: "",
                     price: "",
+                    imageUrl: "",
                     visibility: "Public",
                   });
                   setErrors({});
+                  setImageError(false);
                 }}
               >
                 Clear Event
