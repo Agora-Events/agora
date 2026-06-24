@@ -4,6 +4,7 @@ import { useState, FormEvent } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
 import { authSchema } from "@/lib/validation";
 export default function AuthPage() {
   const [email, setEmail] = useState("");
@@ -88,18 +89,14 @@ export default function AuthPage() {
         </p>
 
         <form onSubmit={handleSubmit} className="w-full">
-          <label className="text-sm font-medium block mb-2 text-black">
-            Email
-          </label>
-
-          <input
+          <FormField
+            label="Email"
+            name="email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-className="w-full bg-white border-2 border-black rounded-full px-4 py-2 mb-4 outline-none"
+            error={error}
           />
-
-          {error && <p className="text-xs text-red-500 mb-3 mt-1">{error}</p>}
 
           <Button
             type="submit"
