@@ -28,6 +28,7 @@ use axum::{
 };
 use sqlx::PgPool;
 use std::time::Duration;
+use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::cache::RedisCache;
 use crate::config::{
@@ -230,6 +231,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/ws", ws_routes)
         .nest("/qr", qr_routes)
         .merge(rates_route)
+        .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(GovernorRateLimitLayer::new(100, Duration::from_secs(60)));
 
     let api_routes = Router::new()
@@ -464,5 +466,27 @@ mod tests {
                 StatusCode::TOO_MANY_REQUESTS
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_body_size_limit_rejects_oversized_requests() {
+        use axum::body::Body;
+        use tower::ServiceExt;
+        use tower_http::limit::RequestBodyLimitLayer;
+
+        let limit: usize = 1024;
+        let router = Router::new()
+            .route("/test", post(|| async { "ok" }))
+            .layer(RequestBodyLimitLayer::new(limit));
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/test")
+            .header("content-length", "2048")
+            .body(Body::empty())
+            .unwrap();
+
+        let status = router.oneshot(req).await.unwrap().status();
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
     }
 }
