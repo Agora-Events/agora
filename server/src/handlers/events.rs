@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use axum::http::HeaderValue;
 use crate::cache::RedisCache;
+use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
 use crate::utils::cursor_pagination::{
@@ -1651,23 +1652,28 @@ pub async fn toggle_event_flag(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    // Fetch current flag status
-    let current_flagged =
-        match sqlx::query_scalar::<_, bool>("SELECT is_flagged FROM events WHERE id = $1")
-            .bind(event_id)
-            .fetch_optional(&state.pool)
-            .await
-        {
-            Ok(Some(flagged)) => flagged,
-            Ok(None) => {
-                return AppError::NotFound(format!("Event with id '{}' not found", event_id))
-                    .into_response();
-            }
-            Err(e) => {
-                tracing::error!("Failed to fetch event flag status: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    // Fetch current flag status and the affected event's organizer wallet so the
+    // audit log can record who was impacted by the moderation action (Issue #586).
+    let (current_flagged, organizer_wallet) = match sqlx::query_as::<_, (bool, Option<String>)>(
+        "SELECT e.is_flagged, o.wallet_address
+         FROM events e
+         LEFT JOIN organizers o ON o.id = e.organizer_id
+         WHERE e.id = $1",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch event flag status: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     // Toggle the flag
     let new_flagged = !current_flagged;
@@ -1687,11 +1693,20 @@ pub async fn toggle_event_flag(
         tracing::warn!("Failed to invalidate cache for event {}: {:?}", event_id, e);
     }
 
-    success(
+    let mut response = success(
         serde_json::json!({ "is_flagged": new_flagged }),
         "Event flag toggled successfully",
     )
-    .into_response()
+    .into_response();
+
+    // Attach the organizer wallet so the audit middleware records it in metadata.
+    if let Some(wallet) = organizer_wallet {
+        response.extensions_mut().insert(AuditMetadata(
+            serde_json::json!({ "organizer_wallet": wallet }),
+        ));
+    }
+
+    response
 }
 
 /// Revenue summary response for an event
