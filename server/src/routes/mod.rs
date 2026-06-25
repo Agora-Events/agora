@@ -46,7 +46,7 @@ use crate::handlers::{
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
-    leaderboard::get_leaderboard,
+    leaderboard::{get_leaderboard, LeaderboardState},
     monitoring::{monitoring_dashboard, MonitoringState},
     profile::{
         get_my_profile, get_organizer_stats, get_profile_by_address, patch_profile, upsert_profile,
@@ -191,13 +191,18 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         )
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
 
+    let leaderboard_state = LeaderboardState {
+        pool: pool.clone(),
+        redis: redis.clone(),
+    };
+
     // General endpoints — relaxed rate limit
     let general_routes = Router::new()
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
         .route("/leaderboard", get(get_leaderboard))
-        .with_state(pool)
+        .with_state(leaderboard_state)
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
     // Public API routes with tower-governor rate limiting
