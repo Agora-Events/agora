@@ -498,7 +498,7 @@ fn test_postpone_event_grace_period_in_past() {
     env.ledger().with_mut(|li| li.timestamp = 1_000);
     let grace_period_end = 500u64;
 
-    let result = client.try_postpone_event(&event_id, &grace_period_end);
+    let result = client.try_postpone_event(&event_id, &1500u64, &grace_period_end);
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidGracePeriodEnd)));
 }
 
@@ -544,7 +544,7 @@ fn test_postpone_cancelled_event() {
     env.ledger().with_mut(|li| li.timestamp = 1_000);
     let grace_period_end = 2_000u64;
 
-    let result = client.try_postpone_event(&event_id, &grace_period_end);
+    let result = client.try_postpone_event(&event_id, &1500u64, &grace_period_end);
     assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 }
 
@@ -2481,7 +2481,7 @@ fn test_postpone_event_sets_grace_period() {
     env.ledger().with_mut(|li| li.timestamp = 1_000);
     let grace_period_end = 2_000u64;
 
-    client.postpone_event(&event_id, &grace_period_end);
+    client.postpone_event(&event_id, &1500u64, &grace_period_end);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert!(event_info.is_postponed);
@@ -4280,4 +4280,194 @@ fn test_get_events_by_category_returns_correct_events() {
     assert_eq!(cat1_events.len(), 2);
     assert!(cat1_events.contains(String::from_str(&env, "event1_cat1")));
     assert!(cat1_events.contains(String::from_str(&env, "event2_cat1")));
+}
+
+// ── Issue #899: postpone_event must validate new_start_time is in the future ──
+
+#[test]
+fn test_postpone_event_past_start_time_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_past_start");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: Address::generate(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    env.ledger().with_mut(|li| li.timestamp = 2_000);
+    // new_start_time in the past → InvalidDeadline
+    let result = client.try_postpone_event(&event_id, &500u64, &3_000u64);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidDeadline)));
+}
+
+// ── Issue #901: set_staking_config emits StakingTokenUpdated and MinStakeAmountUpdated ──
+
+#[test]
+fn test_set_staking_config_emits_events() {
+    use soroban_sdk::testutils::Events;
+
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let staking_token = Address::generate(&env);
+    client.set_staking_config(&staking_token, &1_000_000i128).unwrap();
+
+    let all_events = env.events().all();
+    // Find StakingTokenUpdated and MinStakeAmountUpdated in the emitted events
+    let staking_token_event = all_events.iter().any(|(topics, _)| {
+        topics.get(0) == Some(soroban_sdk::Val::from(crate::topics::AgoraEvent::StakingTokenUpdated))
+    });
+    let min_stake_event = all_events.iter().any(|(topics, _)| {
+        topics.get(0) == Some(soroban_sdk::Val::from(crate::topics::AgoraEvent::MinStakeAmountUpdated))
+    });
+    assert!(staking_token_event, "StakingTokenUpdated event not emitted");
+    assert!(min_stake_event, "MinStakeAmountUpdated event not emitted");
+}
+
+// ── Issue #895: set_platform_fee requires approved multisig proposal when threshold > 1 ──
+
+#[test]
+fn test_set_platform_fee_single_admin_no_proposal_needed() {
+    // threshold == 1: direct call still works
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    // threshold is 1 after initialize → should succeed without proposal
+    client.set_platform_fee(&300);
+    assert_eq!(client.get_platform_fee(), 300);
+}
+
+#[test]
+fn test_set_platform_fee_multisig_no_proposal_fails() {
+    // threshold > 1: calling set_platform_fee without an approved proposal returns MultisigError
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // Add a second admin and raise threshold to 2
+    let pid = client.propose_add_admin(&admin1, &admin2, &0u64);
+    client.approve_proposal(&admin1, &pid);
+    client.execute_proposal(&admin1, &pid);
+
+    let pid2 = client.propose_set_threshold(&admin1, &2u32, &0u64);
+    client.approve_proposal(&admin1, &pid2);
+    client.approve_proposal(&admin2, &pid2);
+    client.execute_proposal(&admin1, &pid2);
+
+    // Now threshold == 2: set_platform_fee without a proposal should fail
+    let result = client.try_set_platform_fee(&300);
+    assert_eq!(result, Err(Ok(EventRegistryError::MultisigError)));
+}
+
+#[test]
+fn test_set_platform_fee_multisig_with_approved_proposal_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // Raise to 2-of-2 multisig
+    let pid = client.propose_add_admin(&admin1, &admin2, &0u64);
+    client.approve_proposal(&admin1, &pid);
+    client.execute_proposal(&admin1, &pid);
+    let pid2 = client.propose_set_threshold(&admin1, &2u32, &0u64);
+    client.approve_proposal(&admin1, &pid2);
+    client.approve_proposal(&admin2, &pid2);
+    client.execute_proposal(&admin1, &pid2);
+
+    // Create and fully approve a SetPlatformFee proposal
+    let fee_pid = client.propose_parameter_change(
+        &admin1,
+        &crate::types::ParameterChange::SetPlatformFee(300),
+        &0u64,
+    );
+    client.approve_proposal(&admin1, &fee_pid);
+    client.approve_proposal(&admin2, &fee_pid);
+
+    // Now set_platform_fee should succeed using the approved proposal
+    client.set_platform_fee(&300);
+    assert_eq!(client.get_platform_fee(), 300);
+}
+
+// ── Issue #897: propose_add_admin rejects duplicate admins at proposal creation ──
+
+#[test]
+fn test_propose_add_admin_duplicate_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Trying to propose admin (who is already an admin) should fail immediately
+    let result = client.try_propose_add_admin(&admin, &admin, &0u64);
+    assert_eq!(result, Err(Ok(EventRegistryError::AdminAlreadyExists)));
+}
+
+#[test]
+fn test_propose_add_admin_new_address_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Proposing a brand-new address should succeed
+    let pid = client.propose_add_admin(&admin, &new_admin, &0u64);
+    let proposal = client.get_proposal(&pid).unwrap();
+    assert!(!proposal.executed);
+    assert_eq!(proposal.change, crate::types::ParameterChange::AddAdmin(new_admin));
 }

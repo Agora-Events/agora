@@ -5,9 +5,10 @@ use crate::events::{
     EventArchivedEvent, EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
     EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
     GoalMetEvent, InitializationEvent, InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent,
-    MetadataUpdatedEvent, OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent,
-    RegistryUpgradedEvent, ScannerAuthorizedEvent, ScannerRevokedEvent, StakerRewardsClaimedEvent,
-    StakerRewardsDistributedEvent,
+    MetadataUpdatedEvent, MinStakeAmountUpdatedEvent, OrganizerBlacklistedEvent,
+    OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent, ScannerAuthorizedEvent,
+    ScannerRevokedEvent, StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
+    StakingTokenUpdatedEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
@@ -490,6 +491,38 @@ impl EventRegistry {
             return Err(EventRegistryError::InvalidFeePercent);
         }
 
+        // When threshold > 1 (multi-sig), a pre-approved SetPlatformFee proposal is required.
+        let config =
+            storage::get_multisig_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+        if config.threshold > 1 {
+            // Find an approved, unexpired, unexecuted SetPlatformFee proposal matching new_fee_percent
+            let active = storage::get_active_proposals(&env);
+            let mut approved_proposal_id: Option<u64> = None;
+            let now = env.ledger().timestamp();
+            for pid in active.iter() {
+                if let Some(p) = storage::get_proposal(&env, pid) {
+                    if p.executed || p.cancelled || now > p.expires_at {
+                        continue;
+                    }
+                    if let types::ParameterChange::SetPlatformFee(fee) = &p.change {
+                        if *fee == new_fee_percent
+                            && p.approvals.len() >= config.threshold
+                        {
+                            approved_proposal_id = Some(pid);
+                            break;
+                        }
+                    }
+                }
+            }
+            let proposal_id =
+                approved_proposal_id.ok_or(EventRegistryError::MultisigError)?;
+            // Mark the proposal as executed
+            let mut proposal = storage::get_proposal(&env, proposal_id).unwrap();
+            proposal.executed = true;
+            storage::set_proposal(&env, &proposal);
+            storage::remove_active_proposal(&env, proposal_id);
+        }
+
         storage::set_platform_fee(&env, new_fee_percent);
 
         // Emit fee update event using contract event type
@@ -917,6 +950,7 @@ impl EventRegistry {
     pub fn postpone_event(
         env: Env,
         event_id: String,
+        new_start_time: u64,
         grace_period_end: u64,
     ) -> Result<(), EventRegistryError> {
         let mut event_info =
@@ -926,10 +960,14 @@ impl EventRegistry {
         auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
         let now = env.ledger().timestamp();
+        if new_start_time <= now {
+            return Err(EventRegistryError::InvalidDeadline);
+        }
         if grace_period_end <= now {
             return Err(EventRegistryError::InvalidGracePeriodEnd);
         }
 
+        event_info.start_time = new_start_time;
         event_info.is_postponed = true;
         event_info.grace_period_end = grace_period_end;
         storage::update_event(&env, event_info.clone());
@@ -939,6 +977,7 @@ impl EventRegistry {
             EventPostponedEvent {
                 event_id,
                 organizer_address: event_info.organizer_address,
+                new_start_time,
                 grace_period_end,
                 timestamp: now,
             },
@@ -1019,14 +1058,36 @@ impl EventRegistry {
         token: Address,
         min_amount: i128,
     ) -> Result<(), EventRegistryError> {
-        let _admin = auth::require_admin(&env)?;
+        let admin = auth::require_admin(&env)?;
 
         if min_amount <= 0 {
             return Err(EventRegistryError::InvalidStakeAmount);
         }
 
+        let old_token = storage::get_staking_token(&env);
+        let old_amount = storage::get_min_stake_amount(&env);
+
         storage::set_staking_token(&env, &token);
         storage::set_min_stake_amount(&env, min_amount);
+
+        env.events().publish(
+            (AgoraEvent::StakingTokenUpdated,),
+            StakingTokenUpdatedEvent {
+                old_token,
+                new_token: token,
+                admin: admin.clone(),
+            },
+        );
+
+        env.events().publish(
+            (AgoraEvent::MinStakeAmountUpdated,),
+            MinStakeAmountUpdatedEvent {
+                old_amount,
+                new_amount: min_amount,
+                admin,
+            },
+        );
+
         Ok(())
     }
 
