@@ -42,8 +42,8 @@ use crate::handlers::{
         export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
         get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
         list_event_tickets, list_events, list_events_by_category, list_past_events,
-        list_similar_events, list_ticket_tiers, search_events, submit_event_rating,
-        toggle_event_flag, EventState,
+        list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
+        submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
@@ -155,6 +155,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/count", get(get_event_counts))
         .route("/featured", get(list_featured_events))
         .route("/past", get(list_past_events))
+        .route("/upcoming", get(list_upcoming_events))
         .route("/search", get(search_events))
         .route("/:id", get(get_event))
         .route("/:id/attendees/count", get(get_attendee_count))

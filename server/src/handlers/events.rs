@@ -587,6 +587,18 @@ mod tests {
     }
 
     #[test]
+    fn test_upcoming_limit_clamping() {
+        // Default when absent.
+        assert_eq!(None::<u32>.unwrap_or(5).clamp(1, 20), 5);
+        // Values above the max are clamped to 20.
+        assert_eq!(Some(100u32).unwrap_or(5).clamp(1, 20), 20);
+        // Zero is clamped up to the minimum of 1.
+        assert_eq!(Some(0u32).unwrap_or(5).clamp(1, 20), 1);
+        // In-range values pass through.
+        assert_eq!(Some(10u32).unwrap_or(5).clamp(1, 20), 10);
+    }
+
+    #[test]
     fn test_search_params_ticket_type() {
         let params = SearchParams {
             q: None,
@@ -884,6 +896,48 @@ pub async fn list_events(
         resp.headers_mut().insert("X-Total-Count", v);
     }
     resp
+}
+
+/// Query parameters for `GET /api/v1/events/upcoming`.
+#[derive(Debug, Deserialize)]
+pub struct UpcomingParams {
+    /// Number of events to return (clamped to 1–20, default 5).
+    pub limit: Option<u32>,
+}
+
+/// List the next upcoming events ordered by `start_time ASC`.
+///
+/// A simplified feed for home pages and the mobile app — no cursor contract,
+/// just a single `limit` parameter.
+///
+/// # Endpoint
+/// GET `/api/v1/events/upcoming`
+///
+/// # Query Parameters
+/// - `limit` (optional): Number of events to return (1–20, default 5)
+pub async fn list_upcoming_events(
+    State(state): State<EventState>,
+    Query(params): Query<UpcomingParams>,
+) -> Response {
+    // Clamp limit to 1–20, defaulting to 5.
+    let limit = params.limit.unwrap_or(5).clamp(1, 20) as i64;
+
+    let mut events = match sqlx::query_as::<_, Event>(
+        "SELECT * FROM events WHERE end_time > NOW() AND is_flagged = FALSE ORDER BY start_time ASC LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(events) => events,
+        Err(e) => {
+            tracing::error!("Failed to fetch upcoming events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    populate_is_free(&mut events, &state.pool).await;
+    success(events, "Upcoming events retrieved successfully").into_response()
 }
 
 /// List completed events with cursor-based pagination and optional filters.
