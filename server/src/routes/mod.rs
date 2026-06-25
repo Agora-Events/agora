@@ -50,6 +50,7 @@ use crate::handlers::{
     monitoring::{monitoring_dashboard, MonitoringState},
     profile::{
         get_my_profile, get_organizer_stats, get_profile_by_address, patch_profile, upsert_profile,
+        ProfileState,
     },
     qr_payload::{delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads, mark_qr_used, verify_qr_payload},
     rates::{get_rates, RatesState},
@@ -110,12 +111,22 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/logout", post(logout))
         .with_state(pool.clone());
 
+    let profile_state = ProfileState {
+        pool: pool.clone(),
+        redis: redis.clone(),
+    };
+
     // Organizer profile routes (Issue #486)
+    // Routes that use Redis caching use ProfileState; stats route keeps PgPool.
     let profile_routes = Router::new()
         .route("/", get(get_my_profile).put(upsert_profile).patch(patch_profile))
-        .route("/:address/stats", get(get_organizer_stats))
         .route("/:address", get(get_profile_by_address))
-        .with_state(pool.clone());
+        .with_state(profile_state)
+        .merge(
+            Router::new()
+                .route("/:address/stats", get(get_organizer_stats))
+                .with_state(pool.clone()),
+        );
 
     // Admin sub-router — every request is recorded in audit_logs.
     let admin_routes = Router::new()

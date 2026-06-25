@@ -14,7 +14,9 @@ use axum::{
     Json,
 };
 use sqlx::{PgPool, Postgres, QueryBuilder};
+use std::time::Duration;
 
+use crate::cache::RedisCache;
 use crate::handlers::auth::extract_auth;
 use crate::models::organizer_profile::{OrganizerProfile, UpsertProfileRequest};
 use crate::utils::error::AppError;
@@ -25,7 +27,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Instant;
+
+const PROFILE_CACHE_TTL: Duration = Duration::from_secs(600);
+
+/// Application state for profile handlers that use Redis caching.
+#[derive(Clone)]
+pub struct ProfileState {
+    pub pool: PgPool,
+    pub redis: RedisCache,
+}
 
 // ---------------------------------------------------------------------------
 // Validation helpers
@@ -101,21 +112,11 @@ pub struct PatchProfileRequest {
     pub socials: Option<Value>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizerProfileResponse {
     #[serde(flatten)]
     pub profile: OrganizerProfile,
     pub total_events: i64,
-}
-
-static PROFILE_CACHE: Lazy<Mutex<HashMap<String, (Instant, OrganizerProfileResponse)>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-
-const PROFILE_CACHE_TTL: Duration = Duration::from_secs(300);
-
-fn invalidate_profile_cache(address: &str) {
-    let mut cache = PROFILE_CACHE.lock().unwrap();
-    cache.remove(address);
 }
 
 fn organizer_total_events_query() -> &'static str {
@@ -141,7 +142,7 @@ fn organizer_total_events_query() -> &'static str {
 /// - `display_name`: required, max 50 chars
 /// - `bio`: optional, max 500 chars
 pub async fn upsert_profile(
-    State(pool): State<PgPool>,
+    State(mut state): State<ProfileState>,
     headers: HeaderMap,
     Json(payload): Json<UpsertProfileRequest>,
 ) -> Response {
@@ -174,7 +175,7 @@ pub async fn upsert_profile(
     .bind(payload.bio.as_deref())
     .bind(payload.avatar_url.as_deref())
     .bind(&payload.socials)
-    .fetch_one(&pool)
+    .fetch_one(&state.pool)
     .await
     {
         Ok(p) => p,
@@ -184,7 +185,10 @@ pub async fn upsert_profile(
         }
     };
 
-    invalidate_profile_cache(&address);
+    let cache_key = format!("profile:{address}");
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate profile cache for {address}: {:?}", e);
+    }
 
     success(profile, "Profile updated successfully").into_response()
 }
@@ -193,7 +197,7 @@ pub async fn upsert_profile(
 ///
 /// Partially updates the authenticated organizer's profile.
 pub async fn patch_profile(
-    State(pool): State<PgPool>,
+    State(mut state): State<ProfileState>,
     headers: HeaderMap,
     Json(payload): Json<PatchProfileRequest>,
 ) -> Response {
@@ -233,7 +237,7 @@ pub async fn patch_profile(
 
     let profile = match builder
         .build_query_as::<OrganizerProfile>()
-        .fetch_optional(&pool)
+        .fetch_optional(&state.pool)
         .await
     {
         Ok(Some(profile)) => profile,
@@ -247,7 +251,10 @@ pub async fn patch_profile(
         }
     };
 
-    invalidate_profile_cache(&address);
+    let cache_key = format!("profile:{address}");
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate profile cache for {address}: {:?}", e);
+    }
 
     success(profile, "Profile updated successfully").into_response()
 }
@@ -256,33 +263,30 @@ pub async fn patch_profile(
 ///
 /// Returns the authenticated organizer's own profile.
 /// Returns 404 if no profile has been created yet.
-pub async fn get_my_profile(State(pool): State<PgPool>, headers: HeaderMap) -> Response {
+pub async fn get_my_profile(State(mut state): State<ProfileState>, headers: HeaderMap) -> Response {
     let address = match extract_auth(&headers) {
         Ok(a) => a,
         Err(e) => return e.into_response(),
     };
 
-    fetch_profile_by_address(&pool, &address).await
+    fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
 }
 
 /// `GET /api/v1/profile/:address`
 ///
 /// Returns any organizer's public profile by their Stellar wallet address.
 pub async fn get_profile_by_address(
-    State(pool): State<PgPool>,
+    State(mut state): State<ProfileState>,
     Path(address): Path<String>,
 ) -> Response {
-    fetch_profile_by_address(&pool, &address).await
+    fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
 }
 
-async fn fetch_profile_by_address(pool: &PgPool, address: &str) -> Response {
-    {
-        let cache = PROFILE_CACHE.lock().unwrap();
-        if let Some((expiry, profile)) = cache.get(address) {
-            if Instant::now() < *expiry {
-                return success(profile.clone(), "Profile retrieved successfully").into_response();
-            }
-        }
+async fn fetch_profile_by_address(pool: &PgPool, redis: &mut RedisCache, address: &str) -> Response {
+    let cache_key = format!("profile:{address}");
+
+    if let Ok(Some(cached)) = redis.get::<OrganizerProfileResponse>(&cache_key).await {
+        return success(cached, "Profile retrieved successfully").into_response();
     }
 
     match sqlx::query_as::<_, OrganizerProfile>(
@@ -310,12 +314,8 @@ async fn fetch_profile_by_address(pool: &PgPool, address: &str) -> Response {
                 total_events,
             };
 
-            {
-                let mut cache = PROFILE_CACHE.lock().unwrap();
-                cache.insert(
-                    address.to_string(),
-                    (Instant::now() + PROFILE_CACHE_TTL, response.clone()),
-                );
+            if let Err(e) = redis.set(&cache_key, &response, PROFILE_CACHE_TTL).await {
+                tracing::warn!("Failed to cache profile for {address}: {:?}", e);
             }
 
             success(response, "Profile retrieved successfully").into_response()
@@ -590,6 +590,40 @@ mod tests {
         let json = serde_json::to_value(response).unwrap();
         assert_eq!(json["address"], "GABC");
         assert_eq!(json["total_events"], 3);
+    }
+
+    #[test]
+    fn test_profile_cache_key_format() {
+        let address = "GTEST123WALLETADDRESS";
+        let key = format!("profile:{address}");
+        assert_eq!(key, "profile:GTEST123WALLETADDRESS");
+        assert!(key.starts_with("profile:"));
+    }
+
+    #[test]
+    fn test_profile_cache_ttl_is_10_minutes() {
+        assert_eq!(PROFILE_CACHE_TTL.as_secs(), 600);
+    }
+
+    #[test]
+    fn test_organizer_profile_response_deserializes() {
+        let now = chrono::Utc::now();
+        let response = OrganizerProfileResponse {
+            profile: OrganizerProfile {
+                address: "GABC".to_string(),
+                display_name: "Agora".to_string(),
+                bio: None,
+                avatar_url: None,
+                socials: json!({}),
+                created_at: now,
+                updated_at: now,
+            },
+            total_events: 5,
+        };
+        let json_str = serde_json::to_string(&response).unwrap();
+        let decoded: OrganizerProfileResponse = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(decoded.profile.address, "GABC");
+        assert_eq!(decoded.total_events, 5);
     }
 
     #[test]
