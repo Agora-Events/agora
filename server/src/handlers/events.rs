@@ -2816,9 +2816,87 @@ pub async fn list_events_by_category(
     success(response, "Events in category retrieved successfully").into_response()
 }
 
+/// Response shape for a single ticket tier.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct TicketTierResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub price: rust_decimal::Decimal,
+    pub quantity: i32,
+    pub sold: i32,
+}
+
+/// GET `/api/v1/events/:id/ticket-tiers`
+///
+/// Returns all ticket tiers for the given event ordered by price ascending.
+/// Returns 404 if the event does not exist.
+pub async fn list_ticket_tiers(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+) -> Response {
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{event_id}' not found"))
+            .into_response();
+    }
+
+    match sqlx::query_as::<_, TicketTierResponse>(
+        r#"
+        SELECT
+            id,
+            name,
+            price,
+            total_quantity    AS quantity,
+            (total_quantity - available_quantity) AS sold
+        FROM ticket_tiers
+        WHERE event_id = $1
+        ORDER BY price ASC
+        "#,
+    )
+    .bind(event_id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(tiers) => success(tiers, "Ticket tiers retrieved successfully").into_response(),
+        Err(e) => {
+            tracing::error!("Failed to fetch ticket tiers: {:?}", e);
+            AppError::DatabaseError(e).into_response()
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests for list_event_tickets and image_url validation
 // ---------------------------------------------------------------------------
+
+#[test]
+fn test_ticket_tier_response_serialization() {
+    use rust_decimal::Decimal;
+    let tier = TicketTierResponse {
+        id: Uuid::new_v4(),
+        name: "General".to_string(),
+        price: Decimal::new(2500, 2),
+        quantity: 500,
+        sold: 120,
+    };
+    let json = serde_json::to_value(&tier).unwrap();
+    assert_eq!(json["name"], "General");
+    assert_eq!(json["quantity"], 500);
+    assert_eq!(json["sold"], 120);
+}
 
 #[test]
 fn test_image_url_valid_https() {
