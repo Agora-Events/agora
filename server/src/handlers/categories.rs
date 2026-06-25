@@ -9,12 +9,25 @@ use axum::{
 };
 use serde::Deserialize;
 use sqlx::PgPool;
+use std::time::Duration;
 use uuid::Uuid;
 
+use crate::cache::RedisCache;
 use crate::models::category::Category;
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
+
+/// TTL for cached category listings. Categories are effectively static, so a
+/// long TTL (1 hour) sharply reduces database load under traffic (Issue #583).
+const CATEGORIES_CACHE_TTL: Duration = Duration::from_secs(3600);
+
+/// Application state for category handlers: database pool + Redis cache.
+#[derive(Clone)]
+pub struct CategoryState {
+    pub pool: PgPool,
+    pub redis: RedisCache,
+}
 
 /// Query parameters for filtering categories
 #[derive(Debug, Deserialize)]
@@ -24,6 +37,13 @@ pub struct CategoryFilters {
 
     /// Search in name and description
     pub search: Option<String>,
+}
+
+/// Build the deterministic Redis cache key for a category listing. Prefixed
+/// with `categories:all` and discriminated by filters + pagination so distinct
+/// queries don't collide.
+fn categories_cache_key(parent_id: &str, search: &str, page: u32, page_size: u32) -> String {
+    format!("categories:all:{}:{}:{}:{}", parent_id, search, page, page_size)
 }
 
 /// List all categories with pagination and optional filters
@@ -40,11 +60,28 @@ pub struct CategoryFilters {
 /// # Response
 /// Returns a paginated list of categories with metadata
 pub async fn list_categories(
-    State(pool): State<PgPool>,
+    State(mut state): State<CategoryState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<CategoryFilters>,
 ) -> Response {
     let validated_pagination = pagination.validate();
+
+    // Attempt to serve from cache first; a Redis miss or error falls through
+    // to the database without failing the request.
+    let cache_key = categories_cache_key(
+        filters.parent_id.as_deref().unwrap_or(""),
+        filters.search.as_deref().unwrap_or(""),
+        validated_pagination.page,
+        validated_pagination.page_size,
+    );
+    match state.redis.get::<PaginatedResponse<Category>>(&cache_key).await {
+        Ok(Some(cached)) => {
+            tracing::debug!("Cache hit for categories key: {}", cache_key);
+            return success(cached, "Categories retrieved successfully (cached)").into_response();
+        }
+        Ok(None) => {}
+        Err(e) => tracing::warn!("Redis error during categories lookup, falling back: {:?}", e),
+    }
 
     // Build the WHERE clause dynamically
     let mut where_clauses = Vec::new();
@@ -98,7 +135,7 @@ pub async fn list_categories(
         count_query_builder = count_query_builder.bind(format!("%{}%", search));
     }
 
-    let total = match count_query_builder.fetch_one(&pool).await {
+    let total = match count_query_builder.fetch_one(&state.pool).await {
         Ok(count) => count,
         Err(e) => {
             tracing::error!("Failed to count categories: {:?}", e);
@@ -127,7 +164,7 @@ pub async fn list_categories(
         .bind(validated_pagination.limit())
         .bind(validated_pagination.offset());
 
-    let items = match items_query_builder.fetch_all(&pool).await {
+    let items = match items_query_builder.fetch_all(&state.pool).await {
         Ok(categories) => categories,
         Err(e) => {
             tracing::error!("Failed to fetch categories: {:?}", e);
@@ -136,6 +173,16 @@ pub async fn list_categories(
     };
 
     let response = PaginatedResponse::new(items, validated_pagination, total);
+
+    // Store in cache for an hour; a Redis failure is non-fatal.
+    if let Err(e) = state
+        .redis
+        .set(&cache_key, &response, CATEGORIES_CACHE_TTL)
+        .await
+    {
+        tracing::warn!("Failed to cache categories: {:?}", e);
+    }
+
     success(response, "Categories retrieved successfully").into_response()
 }
 
@@ -164,4 +211,25 @@ pub async fn get_category(
     };
 
     success(category, "Category retrieved successfully").into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_categories_cache_key_is_deterministic() {
+        let a = categories_cache_key("", "", 1, 20);
+        let b = categories_cache_key("", "", 1, 20);
+        assert_eq!(a, b);
+        assert_eq!(a, "categories:all:::1:20");
+    }
+
+    #[test]
+    fn test_categories_cache_key_varies_with_filters() {
+        let unfiltered = categories_cache_key("", "", 1, 20);
+        let filtered = categories_cache_key("null", "music", 2, 20);
+        assert_ne!(unfiltered, filtered);
+        assert_eq!(filtered, "categories:all:null:music:2:20");
+    }
 }
