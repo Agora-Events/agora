@@ -108,6 +108,15 @@ fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
     Ok(())
 }
 
+fn validate_profile_deletion(active_upcoming_events: i64) -> Result<(), AppError> {
+    if active_upcoming_events > 0 {
+        return Err(AppError::Conflict(
+            "Organizer account cannot be deleted while active upcoming events exist. Cancel or end all events first.".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Payload accepted by `PATCH /api/v1/profile`.
 #[derive(Debug, Deserialize)]
 pub struct PatchProfileRequest {
@@ -264,6 +273,59 @@ pub async fn patch_profile(
     }
 
     success(profile, "Profile updated successfully").into_response()
+}
+
+/// `DELETE /api/v1/profile`
+///
+/// Deletes the authenticated organizer's profile if there are no active upcoming events.
+pub async fn delete_profile(
+    State(mut state): State<ProfileState>,
+    headers: HeaderMap,
+) -> Response {
+    let address = match extract_auth(&headers) {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+
+    let active_events: i64 = match sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM events e
+        INNER JOIN organizers o ON e.organizer_id = o.id
+        WHERE o.wallet_address = $1
+          AND e.start_time > NOW()
+        "#,
+    )
+    .bind(&address)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::error!("Failed to count active events for profile delete: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if let Err(e) = validate_profile_deletion(active_events) {
+        return e.into_response();
+    }
+
+    if let Err(e) = sqlx::query("DELETE FROM organizer_profiles WHERE address = $1")
+        .bind(&address)
+        .execute(&state.pool)
+        .await
+    {
+        tracing::error!("Failed to delete organizer profile: {:?}", e);
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    let cache_key = format!("profile:{address}");
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate profile cache for {address}: {:?}", e);
+    }
+
+    success(serde_json::json!({}), "Profile deleted successfully").into_response()
 }
 
 /// `GET /api/v1/profile`
@@ -639,6 +701,17 @@ mod tests {
 
         let err = validate_patch(&req).unwrap_err();
         assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_validate_profile_deletion_allows_when_no_active_events() {
+        assert!(validate_profile_deletion(0).is_ok());
+    }
+
+    #[test]
+    fn test_validate_profile_deletion_rejects_when_active_events_exist() {
+        let err = validate_profile_deletion(2).unwrap_err();
+        assert!(matches!(err, AppError::Conflict(_)));
     }
 
     #[test]
