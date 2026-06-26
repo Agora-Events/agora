@@ -1430,6 +1430,24 @@ pub async fn list_similar_events(
     success(events, "Similar events retrieved successfully").into_response()
 }
 
+/// Maximum allowed length for an event title.
+pub const MAX_EVENT_TITLE_LENGTH: usize = 200;
+
+/// Validates an event title for create/update requests.
+pub fn validate_event_title(title: &str) -> Result<(), String> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return Err("title must not be empty".to_string());
+    }
+    if title.chars().count() > MAX_EVENT_TITLE_LENGTH {
+        return Err(format!(
+            "title must not exceed {} characters",
+            MAX_EVENT_TITLE_LENGTH
+        ));
+    }
+    Ok(())
+}
+
 /// Request body for creating a new event
 #[derive(Debug, Deserialize)]
 pub struct CreateEventRequest {
@@ -1484,6 +1502,10 @@ pub async fn create_event(
             )
             .into_response();
         }
+    }
+
+    if let Err(message) = validate_event_title(&payload.title) {
+        return AppError::ValidationError(message).into_response();
     }
 
     let event = match sqlx::query_as::<_, Event>(
@@ -3230,6 +3252,31 @@ fn test_ticket_tier_response_serialization() {
     assert_eq!(json["name"], "General");
     assert_eq!(json["quantity"], 500);
     assert_eq!(json["sold"], 120);
+}
+
+#[test]
+fn test_validate_event_title_accepts_max_length() {
+    let title = "a".repeat(MAX_EVENT_TITLE_LENGTH);
+    assert!(validate_event_title(&title).is_ok());
+}
+
+#[test]
+fn test_validate_event_title_rejects_empty() {
+    let err = validate_event_title("").unwrap_err();
+    assert!(err.contains("empty"));
+}
+
+#[test]
+fn test_validate_event_title_rejects_whitespace_only() {
+    let err = validate_event_title("   ").unwrap_err();
+    assert!(err.contains("empty"));
+}
+
+#[test]
+fn test_validate_event_title_rejects_too_long() {
+    let title = "a".repeat(MAX_EVENT_TITLE_LENGTH + 1);
+    let err = validate_event_title(&title).unwrap_err();
+    assert!(err.contains("200"));
 }
 
 #[test]

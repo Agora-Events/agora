@@ -1,7 +1,7 @@
 use crate::error::EventRegistryError;
 use crate::types::{EventInfo, EventRegistrationArgs, EventStatus, TicketTier};
 use crate::{storage, EventRegistry, EventRegistryClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, Map, String, Vec};
+use soroban_sdk::{testutils::Address as _, testutils::Ledger, Address, Env, Map, String, Vec};
 
 fn setup(env: &Env) -> (EventRegistryClient<'static>, Address, Address) {
     let contract_id = env.register(EventRegistry, ());
@@ -309,4 +309,91 @@ fn test_set_global_promo_unauthorized() {
     let (client, _admin, _contract_id) = setup(&env);
 
     client.set_global_promo(&1000, &(env.ledger().timestamp() + 100));
+}
+
+fn event_args_with_end_time(
+    env: &Env,
+    event_id: &str,
+    organizer: &Address,
+    end_time: u64,
+) -> EventRegistrationArgs {
+    let mut args = event_args(env, event_id, organizer);
+    args.end_time = end_time;
+    args
+}
+
+#[test]
+fn test_distribute_staker_rewards_zero_amount_rejects() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _contract_id) = setup(&env);
+
+    let organizer = Address::generate(&env);
+    let stake_amount = 1000_0000000i128;
+    let token_id = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&organizer, &stake_amount);
+
+    client.set_staking_config(&token_id, &stake_amount);
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    token_client.approve(&organizer, &client.address, &stake_amount, &99999);
+    client.stake_collateral(&organizer, &stake_amount);
+
+    let result = client.try_distribute_staker_rewards(&admin, &0i128);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidRewardAmount)));
+}
+
+#[test]
+fn test_set_feedback_cid_before_event_ends_rejects() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "feedback_early_event");
+    let end_time = env.ledger().timestamp() + 3600;
+
+    client.register_event(&event_args_with_end_time(
+        &env,
+        "feedback_early_event",
+        &organizer,
+        end_time,
+    ));
+
+    let feedback_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let result = client.try_set_feedback_cid(&event_id, &feedback_cid);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotEnded)));
+}
+
+#[test]
+fn test_set_feedback_cid_after_event_ends_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "feedback_late_event");
+    let end_time = env.ledger().timestamp() + 100;
+
+    client.register_event(&event_args_with_end_time(
+        &env,
+        "feedback_late_event",
+        &organizer,
+        end_time,
+    ));
+
+    env.ledger().with_mut(|li| li.timestamp = end_time + 1);
+
+    let feedback_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    client.set_feedback_cid(&event_id, &feedback_cid);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.feedback_cid, Some(feedback_cid));
 }

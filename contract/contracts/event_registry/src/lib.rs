@@ -3,12 +3,12 @@
 use crate::events::{
     AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, CustomFeeSetEvent,
     EventArchivedEvent, EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
-    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
-    GoalMetEvent, InitializationEvent, InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent,
-    MetadataUpdatedEvent, MinStakeAmountUpdatedEvent, OrganizerBlacklistedEvent,
-    OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent, ScannerAuthorizedEvent,
-    ScannerRevokedEvent, StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
-    StakingTokenUpdatedEvent,
+    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, FeedbackCidSetEvent,
+    GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent, InventoryIncrementedEvent,
+    LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent, MinStakeAmountUpdatedEvent,
+    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
+    ScannerAuthorizedEvent, ScannerRevokedEvent, StakerRewardsClaimedEvent,
+    StakerRewardsDistributedEvent, StakingTokenUpdatedEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
@@ -468,10 +468,50 @@ impl EventRegistry {
         }
     }
 
+    /// Sets the post-event feedback IPFS CID. Only callable by the organizer after end_time.
+    pub fn set_feedback_cid(
+        env: Env,
+        event_id: String,
+        feedback_cid: String,
+    ) -> Result<(), EventRegistryError> {
+        match storage::get_event(&env, event_id.clone()) {
+            Some(mut event_info) => {
+                auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
+
+                require_event_ended(&env, &event_info)?;
+
+                validate_metadata_cid(&env, &feedback_cid)?;
+
+                if event_info.feedback_cid.as_ref() == Some(&feedback_cid) {
+                    return Ok(());
+                }
+
+                event_info.feedback_cid = Some(feedback_cid.clone());
+                storage::update_event(&env, event_info.clone());
+
+                env.events().publish(
+                    (AgoraEvent::FeedbackCidSet,),
+                    FeedbackCidSetEvent {
+                        event_id,
+                        feedback_cid,
+                        updated_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                Ok(())
+            }
+            None => Err(EventRegistryError::EventNotFound),
+        }
+    }
+
     /// Stores or updates an event (legacy function for backward compatibility).
     pub fn store_event(env: Env, event_info: EventInfo) {
         // Require authorization to ensure only the organizer can store/update their event directly
         auth::require_organizer(&env, &event_info.event_id, &event_info.organizer_address).unwrap();
+        if event_info.feedback_cid.is_some() {
+            require_event_ended(&env, &event_info).unwrap();
+        }
         storage::store_event(&env, event_info);
     }
 
@@ -1753,6 +1793,14 @@ fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryErr
         return Err(EventRegistryError::InvalidMetadataCid);
     }
 
+    Ok(())
+}
+
+fn require_event_ended(env: &Env, event_info: &EventInfo) -> Result<(), EventRegistryError> {
+    let now = env.ledger().timestamp();
+    if event_info.end_time == 0 || now <= event_info.end_time {
+        return Err(EventRegistryError::EventNotEnded);
+    }
     Ok(())
 }
 
