@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, Transition } from "framer-motion";
 import Image from "next/image";
 import { EventCard } from "./event-card";
@@ -49,9 +49,11 @@ const DEFAULT_FILTERS: FilterState = {
 type PopularEventsSectionProps = {
   activeCategory?: string;
   onError: (message: string) => void;
+  /** Called whenever the filtered event count changes, so parent can show EmptyState */
+  onEventsChange?: (count: number) => void;
 };
 
-export function PopularEventsSection({ activeCategory, onError }: PopularEventsSectionProps) {
+export function PopularEventsSection({ activeCategory, onError, onEventsChange }: PopularEventsSectionProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -169,6 +171,18 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
 
     return result;
   }, [search, filters, events, activeCategory]);
+
+  // Notify parent whenever the visible count changes
+  const prevCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isLoading && onEventsChange) {
+      const count = filteredEvents.length;
+      if (prevCountRef.current !== count) {
+        prevCountRef.current = count;
+        onEventsChange(count);
+      }
+    }
+  }, [filteredEvents.length, isLoading, onEventsChange]);
 
   const widthVariants = {
     focused: { width: "12rem" },

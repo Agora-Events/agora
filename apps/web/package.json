@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:ci": "vitest run --coverage --thresholds.coverageMap=80"
+    "test:ci": "vitest run --coverage --thresholds.coverageMap=80",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
+    "chromatic": "chromatic --exit-zero-on-changes"
   },
   "dependencies": {
     "@prisma/client": "^7.8.0",
@@ -48,6 +51,13 @@
     "prisma": "^7.8.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@storybook/nextjs": "^8.6.12",
+    "@storybook/react": "^8.6.12",
+    "@storybook/addon-essentials": "^8.6.12",
+    "@storybook/addon-interactions": "^8.6.12",
+    "@storybook/blocks": "^8.6.12",
+    "storybook": "^8.6.12",
+    "chromatic": "^11.28.0"
   }
 }

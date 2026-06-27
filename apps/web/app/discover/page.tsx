@@ -6,6 +6,7 @@ import { CategorySection } from "@/components/events/category-section";
 import { PopularEventsSection } from "@/components/events/popular-events-section";
 import { OrganizerComponent } from "@/components/events/organizer-component";
 import { Footer } from "@/components/layout/footer";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 
 export default function DiscoverPage() {
@@ -13,6 +14,7 @@ export default function DiscoverPage() {
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [selectedOrganizer, setSelectedOrganizer] = useState<string | null>(null);
   const [allOrganizers, setAllOrganizers] = useState<DiscoverOrganizer[]>([]);
+  const [hasEvents, setHasEvents] = useState<boolean>(true);
 
   const showErrorToast = (message: string) => {
     setToastMessage(message);
@@ -53,8 +55,19 @@ export default function DiscoverPage() {
       />
       <PopularEventsSection 
         activeCategory={activeCategory} 
-        onError={showErrorToast} 
+        onError={showErrorToast}
+        onEventsChange={(count) => setHasEvents(count > 0)}
       />
+      {!hasEvents && (
+        <div className="px-4 lg:px-10 py-8">
+          <EmptyState
+            title="No events found"
+            message="There are no events matching your current filters. Try a different category or be the first to create one!"
+            ctaLabel="Create an Event"
+            ctaLink="/events/create"
+          />
+        </div>
+      )}
       <div className="p-10 pl-45 hidden lg:block bg-base">
         <div className="flex justify-start items-center gap-4 p-5 pb-10">
           <h2 className="font-semibold md:text-2xl pl-3">Filter by organizer</h2>

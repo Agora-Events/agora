@@ -1860,6 +1860,9 @@ fn suspend_organizer_events(
 #[cfg(test)]
 mod issue_tests;
 
+#[cfg(test)]
+mod test_global_promo;
+
 // The legacy monolithic test modules are stale against the current contract API.
 // Keep default `cargo test -p event-registry` focused on compilable coverage.
 
