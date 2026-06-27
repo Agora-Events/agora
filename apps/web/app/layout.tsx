@@ -51,14 +51,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" dir="ltr">
       <body className={`${inter.variable} antialiased`}>
         <Suspense fallback={null}>
           <LoadingBar />
         </Suspense>
         <Toaster position="bottom-right" richColors />
         {children}
-        <CookieBanner />
       </body>
     </html>
   );
