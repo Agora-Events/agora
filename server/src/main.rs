@@ -46,6 +46,9 @@ async fn main() {
     tracing::info!("Configuration: REDIS_URL={}", config.redis_url);
     // Note: DATABASE_URL is strictly excluded from logging for security reasons.
 
+    // Validate that JWT_SECRET is set before binding
+    let _ = agora_server::handlers::auth::jwt_secret();
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&config.database_url)
@@ -79,6 +82,31 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("🚀 Server running at http://localhost:{}", config.port);
     tracing::info!("Request IDs will be set via '{REQUEST_ID_HEADER}' header");
+
+    // Spawn periodic background task to clean up old nonces (Issue #823)
+    let cleanup_pool = pool.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15 * 60)); // 15 minutes
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic cleanup of jwt_nonces...");
+            match sqlx::query(
+                "DELETE FROM jwt_nonces WHERE expires_at < NOW() OR (used = TRUE AND created_at < NOW() - INTERVAL '7 days')"
+            )
+            .execute(&cleanup_pool)
+            .await
+            {
+                Ok(result) => {
+                    if result.rows_affected() > 0 {
+                        tracing::info!("Cleaned up {} expired/used nonces.", result.rows_affected());
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to clean up jwt_nonces: {:?}", e);
+                }
+            }
+        }
+    });
 
     let listener = TcpListener::bind(addr)
         .await

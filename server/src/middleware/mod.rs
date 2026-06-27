@@ -1,3 +1,4 @@
+pub mod admin_auth;
 pub mod audit;
 pub mod content_type;
 pub mod monitoring_auth;

@@ -133,6 +133,7 @@ mod tests {
     fn test_is_free_defaults_false() {
         // When sqlx skips the field, the default is false.
         let event = Event {
+            is_featured: false,
             id: Uuid::new_v4(),
             organizer_id: Uuid::new_v4(),
             title: "Test".into(),
@@ -155,6 +156,7 @@ mod tests {
     #[test]
     fn test_is_free_serializes() {
         let mut event = Event {
+            is_featured: false,
             id: Uuid::new_v4(),
             organizer_id: Uuid::new_v4(),
             title: "Free Concert".into(),
@@ -179,6 +181,7 @@ mod tests {
     #[test]
     fn test_average_rating_none_when_no_ratings() {
         let event = Event {
+            is_featured: false,
             id: Uuid::new_v4(),
             organizer_id: Uuid::new_v4(),
             title: "T".into(),
@@ -201,6 +204,7 @@ mod tests {
     #[test]
     fn test_average_rating_serialized_when_ratings_exist() {
         let event = Event {
+            is_featured: false,
             id: Uuid::new_v4(),
             organizer_id: Uuid::new_v4(),
             title: "Rated".into(),
@@ -227,6 +231,7 @@ mod tests {
         let created = Utc.with_ymd_and_hms(2026, 5, 1, 10, 0, 0).unwrap();
         let updated = Utc.with_ymd_and_hms(2026, 5, 20, 14, 30, 0).unwrap();
         let event = Event {
+            is_featured: false,
             id: Uuid::new_v4(),
             organizer_id: Uuid::new_v4(),
             title: "T".into(),
@@ -251,6 +256,7 @@ mod tests {
     #[test]
     fn test_average_rating_serialized_null_when_no_ratings() {
         let event = Event {
+            is_featured: false,
             id: Uuid::new_v4(),
             organizer_id: Uuid::new_v4(),
             title: "Unrated".into(),
