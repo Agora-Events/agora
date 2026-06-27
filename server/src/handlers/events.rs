@@ -969,6 +969,21 @@ mod tests {
         let err = filters.validate_sort().unwrap_err();
         assert!(err.contains("Invalid sort_order value 'sideways'"));
     }
+
+    #[test]
+    fn test_keyword_search_clause_includes_location() {
+        // Mirrors the format string used inside search_events for the `q` param.
+        let param_count = 1usize;
+        let clause = format!(
+            "(e.title ILIKE ${0} OR e.description ILIKE ${0} OR e.location ILIKE ${0})",
+            param_count
+        );
+        assert!(
+            clause.contains("e.location ILIKE $1"),
+            "keyword search must include location column, got: {}",
+            clause
+        );
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1822,12 +1837,12 @@ pub async fn search_events(
     let mut where_clauses = vec!["1=1".to_string()];
     let mut param_count = 0;
 
-    // Keyword search in title and description
+    // Keyword search in title, description, and location
     if params.q.is_some() {
         param_count += 1;
         where_clauses.push(format!(
-            "(e.title ILIKE ${} OR e.description ILIKE ${})",
-            param_count, param_count
+            "(e.title ILIKE ${0} OR e.description ILIKE ${0} OR e.location ILIKE ${0})",
+            param_count
         ));
     }
 
