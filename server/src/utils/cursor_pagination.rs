@@ -153,6 +153,9 @@ pub struct EventCursor {
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     pub minted_tickets: Option<i64>,
+    /// Sort key for `count_of_ratings`-based ordering ("popular" sort).
+    #[serde(default)]
+    pub count_of_ratings: Option<i64>,
 }
 
 /// Cursor structure for past event listings ordered by (end_time DESC, id DESC).
@@ -205,6 +208,7 @@ mod tests {
             id: Uuid::new_v4(),
             created_at: Some(Utc::now()),
             minted_tickets: Some(42),
+            count_of_ratings: Some(10),
         };
 
         let encoded = encode_cursor(&cursor).unwrap();
@@ -214,6 +218,7 @@ mod tests {
         assert_eq!(cursor.id, decoded.id);
         assert_eq!(cursor.created_at, decoded.created_at);
         assert_eq!(cursor.minted_tickets, decoded.minted_tickets);
+        assert_eq!(cursor.count_of_ratings, decoded.count_of_ratings);
     }
 
     #[test]
@@ -243,6 +248,7 @@ mod tests {
             id: Uuid::new_v4(),
             created_at: None,
             minted_tickets: None,
+            count_of_ratings: None,
         };
         let encoded = encode_cursor(&cursor).unwrap();
         let truncated = &encoded[..encoded.len() / 2];

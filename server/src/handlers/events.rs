@@ -145,6 +145,10 @@ pub struct EventFilters {
 
     /// Sort direction: `asc` (default) or `desc`
     pub sort_order: Option<String>,
+
+    /// Simple sort parameter: `newest` (start_time DESC) or `popular` (count_of_ratings DESC).
+    /// Takes precedence over `sort_by`/`sort_order` when provided.
+    pub sort: Option<String>,
 }
 
 /// Supported sort fields for event listings.
@@ -153,6 +157,8 @@ pub enum EventSortBy {
     StartTime,
     CreatedAt,
     Popularity,
+    /// Sort by review count (alias of "popular" but exposes the underlying column).
+    CountOfRatings,
 }
 
 impl EventSortBy {
@@ -161,8 +167,9 @@ impl EventSortBy {
             "start_time" => Ok(Self::StartTime),
             "created_at" => Ok(Self::CreatedAt),
             "popularity" => Ok(Self::Popularity),
+            "count_of_ratings" => Ok(Self::CountOfRatings),
             other => Err(format!(
-                "Invalid sort_by value '{}'. Supported values: start_time, created_at, popularity",
+                "Invalid sort_by value '{}'. Supported values: start_time, created_at, popularity, count_of_ratings",
                 other
             )),
         }
@@ -205,7 +212,32 @@ pub struct ValidatedEventSort {
 
 impl EventFilters {
     /// Validate `sort_by` and `sort_order`, applying defaults when omitted.
+    /// The `sort` field takes precedence when provided.
     pub fn validate_sort(&self) -> Result<ValidatedEventSort, String> {
+        // Simple `sort` param takes precedence over the legacy `sort_by`/`sort_order` pair.
+        if let Some(ref sort) = self.sort {
+            match sort.as_str() {
+                "newest" => {
+                    return Ok(ValidatedEventSort {
+                        sort_by: EventSortBy::StartTime,
+                        sort_order: SortOrder::Desc,
+                    });
+                }
+                "popular" => {
+                    return Ok(ValidatedEventSort {
+                        sort_by: EventSortBy::CountOfRatings,
+                        sort_order: SortOrder::Desc,
+                    });
+                }
+                other => {
+                    return Err(format!(
+                        "Invalid sort value '{}'. Supported values: newest, popular",
+                        other
+                    ));
+                }
+            }
+        }
+
         let sort_by = match self.sort_by.as_deref() {
             Some(value) => EventSortBy::parse(value)?,
             None => EventSortBy::StartTime,
@@ -223,13 +255,14 @@ impl EventFilters {
 
 /// Build the ORDER BY clause for event listings.
 fn build_event_order_by_clause(sort: &ValidatedEventSort) -> String {
-    let column = match sort.sort_by {
-        EventSortBy::StartTime => "start_time",
-        EventSortBy::CreatedAt => "created_at",
-        EventSortBy::Popularity => "minted_tickets",
+    let (column, tiebreaker_direction) = match sort.sort_by {
+        EventSortBy::StartTime => ("start_time", sort.sort_order.sql()),
+        EventSortBy::CreatedAt => ("created_at", sort.sort_order.sql()),
+        EventSortBy::Popularity => ("minted_tickets", sort.sort_order.sql()),
+        EventSortBy::CountOfRatings => ("count_of_ratings", "ASC"),
     };
     let direction = sort.sort_order.sql();
-    format!("ORDER BY {column} {direction}, id {direction}")
+    format!("ORDER BY {column} {direction}, id {tiebreaker_direction}")
 }
 
 /// Build WHERE clause and return (where_clause, param_count)
@@ -342,6 +375,8 @@ fn build_event_where_clause(
             (EventSortBy::CreatedAt, SortOrder::Desc) => ("created_at", "<", "<"),
             (EventSortBy::Popularity, SortOrder::Asc) => ("minted_tickets", ">", ">"),
             (EventSortBy::Popularity, SortOrder::Desc) => ("minted_tickets", "<", "<"),
+            (EventSortBy::CountOfRatings, SortOrder::Asc) => ("count_of_ratings", ">", ">"),
+            (EventSortBy::CountOfRatings, SortOrder::Desc) => ("count_of_ratings", "<", "<"),
         };
 
         where_clauses.push(format!(
@@ -1265,17 +1300,17 @@ pub async fn list_events(
                 };
                 items_query_builder = items_query_builder.bind(created_at).bind(c.id);
             }
-            EventSortBy::Popularity => {
-                let minted_tickets = match c.minted_tickets {
+            EventSortBy::Popularity | EventSortBy::CountOfRatings => {
+                let sort_key = match c.minted_tickets {
                     Some(value) => value,
                     None => {
                         return AppError::ValidationError(
-                            "Cursor is missing minted_tickets for popularity sort".to_string(),
+                            "Cursor is missing minted_tickets for popularity/count_of_ratings sort".to_string(),
                         )
                         .into_response();
                     }
                 };
-                items_query_builder = items_query_builder.bind(minted_tickets).bind(c.id);
+                items_query_builder = items_query_builder.bind(sort_key).bind(c.id);
             }
         }
     }
@@ -1302,6 +1337,7 @@ pub async fn list_events(
             id: last.id,
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
+            count_of_ratings: Some(last.count_of_ratings as i64),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -3521,6 +3557,7 @@ pub async fn list_events_by_category(
             id: last.id,
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
+            count_of_ratings: Some(last.count_of_ratings as i64),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
