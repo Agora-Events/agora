@@ -626,6 +626,14 @@ mod tests {
     }
 
     #[test]
+    fn test_submit_rating_cache_key_format() {
+        let event_id = Uuid::new_v4();
+        let cache_key = format!("event:detail:{}", event_id);
+        assert!(cache_key.starts_with("event:detail:"));
+        assert!(cache_key.contains(&event_id.to_string()));
+    }
+
+    #[test]
     fn test_event_rating_item_fields() {
         let item = EventRatingItem {
             rating: 4,
@@ -1574,7 +1582,7 @@ pub async fn create_event(
 /// # Endpoint
 /// POST `/api/v1/events/:id/rate`
 pub async fn submit_event_rating(
-    State(state): State<EventState>,
+    State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
     Json(payload): Json<SubmitEventRatingRequest>,
 ) -> Response {
@@ -1701,6 +1709,15 @@ pub async fn submit_event_rating(
     if let Err(e) = tx.commit().await {
         tracing::error!("Failed to commit rating transaction: {:?}", e);
         return AppError::DatabaseError(e).into_response();
+    }
+
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!(
+            "Failed to invalidate event detail cache after rating for {}: {:?}",
+            event_id,
+            e
+        );
     }
 
     let response = SubmitEventRatingResponse {
