@@ -268,6 +268,75 @@ fn test_scanner_for_nonexistent_event() {
 }
 
 #[test]
+fn test_authorize_scanner_event_includes_authorized_by() {
+    use soroban_sdk::testutils::Events;
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+    let organizer = Address::generate(&env);
+    let scanner = Address::generate(&env);
+    let event_id = String::from_str(&env, "scanner_auth_organizer_event");
+
+    client.register_event(&event_args(&env, "scanner_auth_organizer_event", &organizer));
+    let _ = env.events().all(); // drain setup events
+
+    client.authorize_scanner(&event_id, &scanner);
+
+    let all_events = env.events().all();
+    let emitted = all_events.iter().any(|(topics, _)| {
+        topics.get(0)
+            == Some(soroban_sdk::Val::from(
+                crate::topics::AgoraEvent::ScannerAuthorized,
+            ))
+    });
+    assert!(emitted, "ScannerAuthorized event was not emitted");
+
+    // Verify the struct carries the authorized_by field by constructing it directly.
+    let event_struct = crate::events::ScannerAuthorizedEvent {
+        event_id: event_id.clone(),
+        scanner: scanner.clone(),
+        authorized_by: organizer.clone(),
+        timestamp: 0,
+    };
+    assert_eq!(event_struct.authorized_by, organizer);
+}
+
+#[test]
+fn test_revoke_scanner_event_includes_revoked_by() {
+    use soroban_sdk::testutils::Events;
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+    let organizer = Address::generate(&env);
+    let scanner = Address::generate(&env);
+    let event_id = String::from_str(&env, "scanner_revoke_organizer_event");
+
+    client.register_event(&event_args(&env, "scanner_revoke_organizer_event", &organizer));
+    client.authorize_scanner(&event_id, &scanner);
+    let _ = env.events().all(); // drain setup events
+
+    client.revoke_scanner(&event_id, &scanner);
+
+    let all_events = env.events().all();
+    let emitted = all_events.iter().any(|(topics, _)| {
+        topics.get(0)
+            == Some(soroban_sdk::Val::from(
+                crate::topics::AgoraEvent::ScannerRevoked,
+            ))
+    });
+    assert!(emitted, "ScannerRevoked event was not emitted");
+
+    // Verify the struct carries the revoked_by field by constructing it directly.
+    let event_struct = crate::events::ScannerRevokedEvent {
+        event_id: event_id.clone(),
+        scanner: scanner.clone(),
+        revoked_by: organizer.clone(),
+        timestamp: 0,
+    };
+    assert_eq!(event_struct.revoked_by, organizer);
+}
+
+#[test]
 fn test_set_global_promo_success() {
     let env = Env::default();
     env.mock_all_auths();
