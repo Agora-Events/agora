@@ -10,6 +10,7 @@ import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { CookieBanner } from "@/components/layout/cookie-banner";
+import { ErrorBoundary } from "@/components/layout/error-boundary";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -42,6 +43,7 @@ export const metadata: Metadata = {
 
 import { Suspense } from "react";
 import LoadingBar from "@/components/ui/loading-bar";
+import { ThemeProvider } from "@/components/providers/theme-context";
 
 export default function RootLayout({
   children,
