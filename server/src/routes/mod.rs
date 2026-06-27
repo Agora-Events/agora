@@ -62,7 +62,7 @@ use crate::handlers::{
 use crate::middleware::audit::audit_layer;
 use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
 use crate::middleware::rate_limit::GovernorRateLimitLayer;
-use crate::middleware::request_id_tracing::trace_request_id;
+use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
 use crate::utils::rate_limit::RateLimitLayer;
 
 /// Sensitive routes that hit the database or expose internal state.
@@ -265,6 +265,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .layer(create_security_headers_layer())
         .layer(create_cors_layer())
         .layer(middleware::from_fn(trace_request_id))
+        .layer(middleware::from_fn(propagate_request_id))
         .layer(propagate_request_id_layer())
         .layer(set_request_id_layer())
 }
