@@ -512,17 +512,14 @@ impl EventRegistry {
                         continue;
                     }
                     if let types::ParameterChange::SetPlatformFee(fee) = &p.change {
-                        if *fee == new_fee_percent
-                            && p.approvals.len() >= config.threshold
-                        {
+                        if *fee == new_fee_percent && p.approvals.len() >= config.threshold {
                             approved_proposal_id = Some(pid);
                             break;
                         }
                     }
                 }
             }
-            let proposal_id =
-                approved_proposal_id.ok_or(EventRegistryError::MultisigError)?;
+            let proposal_id = approved_proposal_id.ok_or(EventRegistryError::MultisigError)?;
             // Mark the proposal as executed
             let mut proposal = storage::get_proposal(&env, proposal_id).unwrap();
             proposal.executed = true;

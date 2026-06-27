@@ -20,9 +20,9 @@ enum DatabaseErrorCategory {
 impl DatabaseErrorCategory {
     fn from_sqlx(err: &sqlx::Error) -> Self {
         match err {
-            sqlx::Error::Io(_)
-            | sqlx::Error::PoolClosed
-            | sqlx::Error::PoolTimedOut => Self::Connection,
+            sqlx::Error::Io(_) | sqlx::Error::PoolClosed | sqlx::Error::PoolTimedOut => {
+                Self::Connection
+            }
             sqlx::Error::Database(db_err) => {
                 if db_err.is_unique_violation() {
                     Self::UniqueViolation
@@ -392,7 +392,10 @@ mod tests {
             json["error"]["message"],
             "Database service is temporarily unavailable"
         );
-        assert!(!json["error"]["message"].as_str().unwrap().contains("timeout"));
+        assert!(!json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("timeout"));
     }
 
     #[tokio::test]
@@ -403,9 +406,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_into_response_unique_violation_returns_409() {
-        let resp =
-            AppError::DatabaseError(mock_db_error(MockDbErrorKind::UniqueViolation))
-                .into_response();
+        let resp = AppError::DatabaseError(mock_db_error(MockDbErrorKind::UniqueViolation))
+            .into_response();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         let json = body_json(resp).await;
         assert_eq!(json["error"]["code"], "UNIQUE_VIOLATION");
@@ -417,9 +419,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_into_response_foreign_key_violation_returns_409() {
-        let resp =
-            AppError::DatabaseError(mock_db_error(MockDbErrorKind::ForeignKeyViolation))
-                .into_response();
+        let resp = AppError::DatabaseError(mock_db_error(MockDbErrorKind::ForeignKeyViolation))
+            .into_response();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         let json = body_json(resp).await;
         assert_eq!(json["error"]["code"], "FOREIGN_KEY_VIOLATION");
@@ -544,18 +545,14 @@ mod tests {
             self
         }
 
-        fn into_error(
-            self: Box<Self>,
-        ) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
             self
         }
 
         fn kind(&self) -> sqlx::error::ErrorKind {
             match self.kind {
                 MockDbErrorKind::UniqueViolation => sqlx::error::ErrorKind::UniqueViolation,
-                MockDbErrorKind::ForeignKeyViolation => {
-                    sqlx::error::ErrorKind::ForeignKeyViolation
-                }
+                MockDbErrorKind::ForeignKeyViolation => sqlx::error::ErrorKind::ForeignKeyViolation,
             }
         }
     }

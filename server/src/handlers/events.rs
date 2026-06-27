@@ -15,7 +15,6 @@ use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
-use axum::http::HeaderValue;
 use crate::cache::RedisCache;
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
@@ -27,6 +26,7 @@ use crate::utils::db_timer::log_if_slow;
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
+use axum::http::HeaderValue;
 
 /// Query parameters for searching events with filters
 #[derive(Debug, Deserialize)]
@@ -376,7 +376,10 @@ fn build_past_event_where_clause(
         ));
     }
 
-    (format!("WHERE {}", where_clauses.join(" AND ")), param_count)
+    (
+        format!("WHERE {}", where_clauses.join(" AND ")),
+        param_count,
+    )
 }
 
 #[cfg(test)]
@@ -476,8 +479,7 @@ mod tests {
             id: Uuid::new_v4(),
         };
 
-        let (where_clause, param_count) =
-            build_past_event_where_clause(&filters, Some(&cursor));
+        let (where_clause, param_count) = build_past_event_where_clause(&filters, Some(&cursor));
 
         assert_eq!(param_count, 3);
         assert!(where_clause.contains("wallet_address = $1"));
@@ -716,13 +718,13 @@ mod tests {
     #[test]
     fn test_upcoming_limit_clamping() {
         // Default when absent.
-        assert_eq!(None::<u32>.unwrap_or(5).clamp(1, 20), 5);
+        assert_eq!(5u32.clamp(1, 20), 5);
         // Values above the max are clamped to 20.
-        assert_eq!(Some(100u32).unwrap_or(5).clamp(1, 20), 20);
+        assert_eq!(100u32.clamp(1, 20), 20);
         // Zero is clamped up to the minimum of 1.
-        assert_eq!(Some(0u32).unwrap_or(5).clamp(1, 20), 1);
+        assert_eq!(0u32.clamp(1, 20), 1);
         // In-range values pass through.
-        assert_eq!(Some(10u32).unwrap_or(5).clamp(1, 20), 10);
+        assert_eq!(10u32.clamp(1, 20), 10);
     }
 
     #[test]
@@ -1002,7 +1004,9 @@ pub async fn list_events(
     let order_by = build_event_order_by_clause(&sort);
     let items_query = format!(
         "SELECT * FROM events {} {} LIMIT ${}",
-        where_clause, order_by, param_count + 1
+        where_clause,
+        order_by,
+        param_count + 1
     );
 
     let mut items_query_builder = sqlx::query_as::<_, Event>(&items_query);
@@ -1144,9 +1148,7 @@ pub async fn list_events(
 /// GET `/api/v1/events/featured`
 ///
 /// Placeholder route registered for the featured-events migration; full handler pending.
-pub async fn list_featured_events(
-    State(_state): State<EventState>,
-) -> Response {
+pub async fn list_featured_events(State(_state): State<EventState>) -> Response {
     AppError::NotFound("Featured events are not yet available".to_string()).into_response()
 }
 
@@ -1371,7 +1373,7 @@ pub struct SimilarEventsParams {
 /// # Endpoint
 /// GET `/api/v1/events/:id/similar`
 pub async fn list_similar_events(
-    State(mut state): State<EventState>,
+    State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
     Query(params): Query<SimilarEventsParams>,
 ) -> Response {
@@ -1731,7 +1733,6 @@ pub async fn search_events(
     State(mut state): State<EventState>,
     Query(params): Query<SearchParams>,
 ) -> Response {
-    let start = std::time::Instant::now();
     let pagination = PaginationParams {
         page: params.page,
         page_size: params.page_size,
@@ -1742,7 +1743,10 @@ pub async fn search_events(
     let cache_key = format!(
         "search:{}:{}:{}:{}:{}:{}:{}:{}:{}",
         params.q.as_deref().unwrap_or(""),
-        params.category_id.map(|id| id.to_string()).unwrap_or_default(),
+        params
+            .category_id
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
         params.category_ids.as_deref().unwrap_or(""),
         params.min_price.unwrap_or(0),
         params.max_price.unwrap_or(0),
@@ -1753,13 +1757,21 @@ pub async fn search_events(
     );
 
     // Try cache first; fall through to DB on miss or Redis error.
-    match state.redis.get::<PaginatedResponse<Event>>(&cache_key).await {
+    match state
+        .redis
+        .get::<PaginatedResponse<Event>>(&cache_key)
+        .await
+    {
         Ok(Some(cached)) => {
             tracing::debug!("Cache hit for search key: {}", cache_key);
-            return success(cached, "Search results retrieved successfully (cached)").into_response();
+            return success(cached, "Search results retrieved successfully (cached)")
+                .into_response();
         }
         Ok(None) => {}
-        Err(e) => tracing::warn!("Redis error during search cache lookup, falling back: {:?}", e),
+        Err(e) => tracing::warn!(
+            "Redis error during search cache lookup, falling back: {:?}",
+            e
+        ),
     }
 
     // Build dynamic WHERE clause using WHERE 1=1 pattern
@@ -1956,7 +1968,11 @@ pub async fn search_events(
     let response = PaginatedResponse::new(items, validated_pagination, total);
 
     // Cache the result for 2 minutes; failures are non-fatal.
-    if let Err(e) = state.redis.set(&cache_key, &response, SEARCH_CACHE_TTL).await {
+    if let Err(e) = state
+        .redis
+        .set(&cache_key, &response, SEARCH_CACHE_TTL)
+        .await
+    {
         tracing::warn!("Failed to cache search results: {:?}", e);
     }
 
@@ -3184,23 +3200,21 @@ pub async fn list_ticket_tiers(
     State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    let event_exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
-    )
-    .bind(event_id)
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Failed to check event existence: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
-        }
-    };
+    let event_exists =
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("Failed to check event existence: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
 
     if !event_exists {
-        return AppError::NotFound(format!("Event with id '{event_id}' not found"))
-            .into_response();
+        return AppError::NotFound(format!("Event with id '{event_id}' not found")).into_response();
     }
 
     match sqlx::query_as::<_, TicketTierResponse>(

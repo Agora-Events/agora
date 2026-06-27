@@ -41,8 +41,7 @@ use crate::handlers::{
     events::{
         export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
         get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
-        list_event_tickets, list_events, list_events_by_category, list_featured_events,
-        list_past_events,
+        list_event_tickets, list_events, list_events_by_category, list_past_events,
         list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
         submit_event_rating, toggle_event_flag, EventState,
     },
@@ -54,7 +53,10 @@ use crate::handlers::{
         delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
         list_my_transactions, patch_profile, upsert_profile, ProfileState,
     },
-    qr_payload::{delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads, mark_qr_used, verify_qr_payload},
+    qr_payload::{
+        delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads,
+        mark_qr_used, verify_qr_payload,
+    },
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
@@ -121,7 +123,13 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // Organizer profile routes (Issue #486)
     // Routes that use Redis caching use ProfileState; stats route keeps PgPool.
     let profile_routes = Router::new()
-        .route("/", get(get_my_profile).put(upsert_profile).patch(patch_profile).delete(delete_profile))
+        .route(
+            "/",
+            get(get_my_profile)
+                .put(upsert_profile)
+                .patch(patch_profile)
+                .delete(delete_profile),
+        )
         .route("/transactions", get(list_my_transactions))
         .route("/:address", get(get_profile_by_address))
         .with_state(profile_state)

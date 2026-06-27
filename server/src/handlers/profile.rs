@@ -283,21 +283,16 @@ pub async fn get_my_profile(State(mut state): State<ProfileState>, headers: Head
 ///
 /// Deletes the authenticated organizer's profile row from `organizer_profiles`.
 /// Returns 204 No Content on success, 404 if no profile exists.
-pub async fn delete_profile(
-    State(mut state): State<ProfileState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn delete_profile(State(mut state): State<ProfileState>, headers: HeaderMap) -> Response {
     let address = match extract_auth(&headers) {
         Ok(a) => a,
         Err(e) => return e.into_response(),
     };
 
-    let result = match sqlx::query(
-        "DELETE FROM organizer_profiles WHERE address = $1",
-    )
-    .bind(&address)
-    .execute(&state.pool)
-    .await
+    let result = match sqlx::query("DELETE FROM organizer_profiles WHERE address = $1")
+        .bind(&address)
+        .execute(&state.pool)
+        .await
     {
         Ok(r) => r,
         Err(e) => {
@@ -407,7 +402,11 @@ pub async fn get_profile_by_address(
     fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
 }
 
-async fn fetch_profile_by_address(pool: &PgPool, redis: &mut RedisCache, address: &str) -> Response {
+async fn fetch_profile_by_address(
+    pool: &PgPool,
+    redis: &mut RedisCache,
+    address: &str,
+) -> Response {
     let cache_key = format!("profile:{address}");
 
     if let Ok(Some(cached)) = redis.get::<OrganizerProfileResponse>(&cache_key).await {
@@ -491,18 +490,17 @@ pub async fn get_organizer_stats(
     }
 
     // total events
-    let total_events: i64 =
-        match sqlx::query_scalar(organizer_total_events_query())
-            .bind(&address)
-            .fetch_one(&pool)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("Failed to query total_events: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    let total_events: i64 = match sqlx::query_scalar(organizer_total_events_query())
+        .bind(&address)
+        .fetch_one(&pool)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to query total_events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     // total tickets sold
     let total_tickets_sold: i64 = match sqlx::query_scalar(
