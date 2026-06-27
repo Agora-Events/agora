@@ -1445,6 +1445,27 @@ pub struct CreateEventRequest {
     pub host_email: Option<String>,
 }
 
+const MAX_IMAGE_URL_LEN: usize = 2048;
+
+/// Validates that an image URL is a safe, well-formed HTTPS URL no longer than 2048 characters.
+/// Rejects data URIs, javascript URIs, HTTP URLs, and empty hosts.
+fn validate_image_url(url: &str) -> Result<(), AppError> {
+    if url.len() > MAX_IMAGE_URL_LEN {
+        return Err(AppError::ValidationError(format!(
+            "image_url must not exceed {MAX_IMAGE_URL_LEN} characters"
+        )));
+    }
+    let is_valid = url.starts_with("https://")
+        && url.len() > "https://".len()
+        && !url["https://".len()..].starts_with('/');
+    if !is_valid {
+        return Err(AppError::ValidationError(
+            "image_url must be a valid HTTPS URL".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Returns true when the string is a plausibly valid email address.
 fn is_valid_email(email: &str) -> bool {
     let mut parts = email.splitn(2, '@');
@@ -1465,14 +1486,9 @@ pub async fn create_event(
     State(mut state): State<EventState>,
     Json(payload): Json<CreateEventRequest>,
 ) -> Response {
-    // Validate image_url: must start with https:// and have a non-empty host.
     if let Some(ref url) = payload.image_url {
-        let is_valid = url.starts_with("https://")
-            && url.len() > "https://".len()
-            && !url["https://".len()..].starts_with('/');
-        if !is_valid {
-            return AppError::ValidationError("image_url must be a valid HTTPS URL".to_string())
-                .into_response();
+        if let Err(e) = validate_image_url(url) {
+            return e.into_response();
         }
     }
 
@@ -3234,47 +3250,46 @@ fn test_ticket_tier_response_serialization() {
 
 #[test]
 fn test_image_url_valid_https() {
-    let url = "https://example.com/image.jpg";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(is_valid);
+    assert!(validate_image_url("https://example.com/image.jpg").is_ok());
 }
 
 #[test]
 fn test_image_url_http_rejected() {
-    let url = "http://example.com/image.jpg";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(!is_valid);
+    assert!(validate_image_url("http://example.com/image.jpg").is_err());
 }
 
 #[test]
 fn test_image_url_javascript_rejected() {
-    let url = "javascript:alert(1)";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(!is_valid);
+    assert!(validate_image_url("javascript:alert(1)").is_err());
+}
+
+#[test]
+fn test_image_url_data_uri_rejected() {
+    assert!(validate_image_url("data:image/png;base64,abc123").is_err());
 }
 
 #[test]
 fn test_image_url_empty_host_rejected() {
-    let url = "https://";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(!is_valid);
+    assert!(validate_image_url("https://").is_err());
 }
 
 #[test]
 fn test_image_url_relative_path_rejected() {
-    let url = "https:///path/to/image.jpg";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(!is_valid);
+    assert!(validate_image_url("https:///path/to/image.jpg").is_err());
+}
+
+#[test]
+fn test_image_url_exceeds_max_length_rejected() {
+    let url = format!("https://example.com/{}", "a".repeat(MAX_IMAGE_URL_LEN));
+    assert!(validate_image_url(&url).is_err());
+}
+
+#[test]
+fn test_image_url_exactly_max_length_accepted() {
+    let prefix = "https://example.com/";
+    let url = format!("{}{}", prefix, "a".repeat(MAX_IMAGE_URL_LEN - prefix.len()));
+    assert_eq!(url.len(), MAX_IMAGE_URL_LEN);
+    assert!(validate_image_url(&url).is_ok());
 }
 
 #[test]
