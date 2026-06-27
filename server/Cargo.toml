@@ -66,6 +66,9 @@ aws-config = "1.5"
 # Lazy static initialization
 once_cell = "1.19"
 
+# Prometheus metrics
+prometheus = { version = "0.13", features = ["process"] }
+
 # Currency conversion HTTP client already covered by reqwest above
 
 # Testing

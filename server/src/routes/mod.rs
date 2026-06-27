@@ -35,6 +35,7 @@ use crate::config::{
     create_cors_layer, create_security_headers_layer, propagate_request_id_layer,
     set_request_id_layer, Config,
 };
+use crate::metrics::{metrics_handler, track_metrics};
 use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories, CategoryState},
@@ -268,9 +269,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/.well-known/assetlinks.json", get(serve_assetlinks));
 
     Router::new()
+        .route("/metrics", get(metrics_handler))
         .nest("/api/v1", api_routes)
         .nest("/api/v1/admin", admin_routes)
         .merge(deep_link_routes)
+        .layer(middleware::from_fn(track_metrics))
         .layer(create_security_headers_layer())
         .layer(create_cors_layer())
         .layer(middleware::from_fn(trace_request_id))
