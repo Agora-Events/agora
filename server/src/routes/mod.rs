@@ -60,6 +60,7 @@ use crate::handlers::{
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
 use crate::middleware::audit::audit_layer;
+use crate::middleware::content_type::require_json_content_type;
 use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
 use crate::middleware::rate_limit::GovernorRateLimitLayer;
 use crate::middleware::request_id_tracing::trace_request_id;
@@ -244,6 +245,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/ws", ws_routes)
         .nest("/qr", qr_routes)
         .merge(rates_route)
+        .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(GovernorRateLimitLayer::new(100, Duration::from_secs(60)));
 
