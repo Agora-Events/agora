@@ -1,4 +1,27 @@
 services:
+  server:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    container_name: agora_server
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgres://user:password@postgres:5432/agora
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/api/v1/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   postgres:
     image: postgres:latest
     container_name: agora_postgres
@@ -12,6 +35,17 @@ services:
       - agora_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U user -d agora"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: agora_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

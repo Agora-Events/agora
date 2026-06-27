@@ -23,7 +23,7 @@ use axum::{
     middleware,
     response::IntoResponse,
     response::Response,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use sqlx::PgPool;
@@ -44,7 +44,7 @@ use crate::handlers::{
         list_event_ratings, list_event_tickets, list_events, list_events_by_category,
         list_featured_events, list_past_events,
         list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
-        submit_event_rating, toggle_event_flag, EventState,
+        set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
@@ -54,7 +54,6 @@ use crate::handlers::{
         get_my_profile, get_organizer_stats, get_profile_by_address, list_events_by_organizer,
         list_my_transactions, patch_profile, upsert_profile, ProfileState,
     },
-    qr_payload::{delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads, mark_qr_used, verify_qr_payload},
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
@@ -122,7 +121,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // Organizer profile routes (Issue #486)
     // Routes that use Redis caching use ProfileState; stats route keeps PgPool.
     let profile_routes = Router::new()
-        .route("/", get(get_my_profile).put(upsert_profile).patch(patch_profile))
+        .route("/", get(get_my_profile).put(upsert_profile).patch(patch_profile).delete(delete_profile))
         .route("/transactions", get(list_my_transactions))
         .route("/:address", get(get_profile_by_address))
         .route("/:address/events", get(list_events_by_organizer))
@@ -133,9 +132,15 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
                 .with_state(pool.clone()),
         );
 
-    // Admin sub-router — every request is recorded in audit_logs.
+    // Admin sub-router — every request is recorded in audit_logs and requires admin auth.
+    let admin_auth_state = AdminAuthState {
+        token: config.admin_token.clone(),
+    };
+
     let admin_routes = Router::new()
         .route("/events/:id/toggle-flag", post(toggle_event_flag))
+        .route("/events/:id/feature", patch(set_event_featured))
+        .route_layer(middleware::from_fn_with_state(admin_auth_state, require_admin_token))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
         .with_state(event_state.clone());
 

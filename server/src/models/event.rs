@@ -29,6 +29,8 @@ pub struct Event {
     pub end_time: Option<DateTime<Utc>>,
     /// Whether the event is flagged for moderation.
     pub is_flagged: bool,
+    /// Whether this event has been marked as featured by an admin.
+    pub is_featured: bool,
     /// Accumulated total of all star ratings for this event.
     pub sum_of_ratings: i64,
     /// Total number of ratings submitted for this event.
@@ -79,6 +81,7 @@ impl Serialize for Event {
         state.serialize_field("start_time", &self.start_time)?;
         state.serialize_field("end_time", &self.end_time)?;
         state.serialize_field("is_flagged", &self.is_flagged)?;
+        state.serialize_field("is_featured", &self.is_featured)?;
         state.serialize_field("sum_of_ratings", &self.sum_of_ratings)?;
         state.serialize_field("count_of_ratings", &self.count_of_ratings)?;
         state.serialize_field("created_at", &self.created_at)?;

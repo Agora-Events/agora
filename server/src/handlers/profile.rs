@@ -10,7 +10,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -109,6 +109,15 @@ fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
         }
     }
 
+    Ok(())
+}
+
+fn validate_profile_deletion(active_upcoming_events: i64) -> Result<(), AppError> {
+    if active_upcoming_events > 0 {
+        return Err(AppError::Conflict(
+            "Organizer account cannot be deleted while active upcoming events exist. Cancel or end all events first.".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -270,6 +279,59 @@ pub async fn patch_profile(
     success(profile, "Profile updated successfully").into_response()
 }
 
+/// `DELETE /api/v1/profile`
+///
+/// Deletes the authenticated organizer's profile if there are no active upcoming events.
+pub async fn delete_profile(
+    State(mut state): State<ProfileState>,
+    headers: HeaderMap,
+) -> Response {
+    let address = match extract_auth(&headers) {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+
+    let active_events: i64 = match sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM events e
+        INNER JOIN organizers o ON e.organizer_id = o.id
+        WHERE o.wallet_address = $1
+          AND e.start_time > NOW()
+        "#,
+    )
+    .bind(&address)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::error!("Failed to count active events for profile delete: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if let Err(e) = validate_profile_deletion(active_events) {
+        return e.into_response();
+    }
+
+    if let Err(e) = sqlx::query("DELETE FROM organizer_profiles WHERE address = $1")
+        .bind(&address)
+        .execute(&state.pool)
+        .await
+    {
+        tracing::error!("Failed to delete organizer profile: {:?}", e);
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    let cache_key = format!("profile:{address}");
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate profile cache for {address}: {:?}", e);
+    }
+
+    success(serde_json::json!({}), "Profile deleted successfully").into_response()
+}
+
 /// `GET /api/v1/profile`
 ///
 /// Returns the authenticated organizer's own profile.
@@ -281,6 +343,41 @@ pub async fn get_my_profile(State(mut state): State<ProfileState>, headers: Head
     };
 
     fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
+}
+
+/// `DELETE /api/v1/profile`
+///
+/// Deletes the authenticated organizer's profile row from `organizer_profiles`.
+/// Returns 204 No Content on success, 404 if no profile exists.
+pub async fn delete_profile(State(mut state): State<ProfileState>, headers: HeaderMap) -> Response {
+    let address = match extract_auth(&headers) {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+
+    let result = match sqlx::query("DELETE FROM organizer_profiles WHERE address = $1")
+        .bind(&address)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to delete organizer profile: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if result.rows_affected() == 0 {
+        return AppError::NotFound(format!("No profile found for address '{address}'"))
+            .into_response();
+    }
+
+    let cache_key = format!("profile:{address}");
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate profile cache for {address}: {:?}", e);
+    }
+
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// Summary of a payment transaction returned by `GET /api/v1/profile/transactions`.
@@ -371,7 +468,11 @@ pub async fn get_profile_by_address(
     fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
 }
 
-async fn fetch_profile_by_address(pool: &PgPool, redis: &mut RedisCache, address: &str) -> Response {
+async fn fetch_profile_by_address(
+    pool: &PgPool,
+    redis: &mut RedisCache,
+    address: &str,
+) -> Response {
     let cache_key = format!("profile:{address}");
 
     if let Ok(Some(cached)) = redis.get::<OrganizerProfileResponse>(&cache_key).await {
@@ -423,7 +524,7 @@ async fn fetch_profile_by_address(pool: &PgPool, redis: &mut RedisCache, address
 // Organizer stats endpoint
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, FromRow)]
 struct OrganizerStats {
     pub total_events: i64,
     pub total_tickets_sold: i64,
@@ -434,6 +535,20 @@ static STATS_CACHE: Lazy<Mutex<HashMap<String, (Instant, OrganizerStats)>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 const STATS_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
+
+fn organizer_stats_query() -> &'static str {
+    r#"
+    SELECT
+        COUNT(*) AS total_events,
+        COALESCE(SUM(e.minted_tickets), 0) AS total_tickets_sold,
+        COALESCE(AVG(CAST(e.sum_of_ratings AS FLOAT) / NULLIF(e.count_of_ratings, 0)), 0)
+            AS average_event_rating
+    FROM events e
+    JOIN organizers o ON e.organizer_id = o.id
+    WHERE o.wallet_address = $1
+      AND e.is_flagged = FALSE
+    "#
+}
 
 /// `GET /api/v1/profile/:address/stats`
 ///
@@ -454,67 +569,16 @@ pub async fn get_organizer_stats(
         }
     }
 
-    // total events
-    let total_events: i64 =
-        match sqlx::query_scalar(organizer_total_events_query())
-            .bind(&address)
-            .fetch_one(&pool)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("Failed to query total_events: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
-
-    // total tickets sold
-    let total_tickets_sold: i64 = match sqlx::query_scalar(
-        r#"
-        SELECT COALESCE(SUM(e.minted_tickets), 0)
-        FROM events e
-        JOIN organizers o ON e.organizer_id = o.id
-        WHERE o.wallet_address = $1
-          AND e.is_flagged = FALSE
-        "#,
-    )
-    .bind(&address)
-    .fetch_one(&pool)
-    .await
+    let stats: OrganizerStats = match sqlx::query_as(organizer_stats_query())
+        .bind(&address)
+        .fetch_one(&pool)
+        .await
     {
         Ok(v) => v,
         Err(e) => {
-            tracing::error!("Failed to query total_tickets_sold: {:?}", e);
+            tracing::error!("Failed to query organizer stats: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
-    };
-
-    // average event rating
-    let average_event_rating: f64 = match sqlx::query_scalar(
-        r#"
-        SELECT COALESCE(AVG(CAST(e.sum_of_ratings AS FLOAT) / NULLIF(e.count_of_ratings, 0)), 0)
-        FROM events e
-        JOIN organizers o ON e.organizer_id = o.id
-        WHERE o.wallet_address = $1
-          AND e.is_flagged = FALSE
-          AND e.count_of_ratings > 0
-        "#,
-    )
-    .bind(&address)
-    .fetch_one(&pool)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Failed to query average_event_rating: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
-        }
-    };
-
-    let stats = OrganizerStats {
-        total_events,
-        total_tickets_sold,
-        average_event_rating,
     };
 
     // store in cache
@@ -728,6 +792,17 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_profile_deletion_allows_when_no_active_events() {
+        assert!(validate_profile_deletion(0).is_ok());
+    }
+
+    #[test]
+    fn test_validate_profile_deletion_rejects_when_active_events_exist() {
+        let err = validate_profile_deletion(2).unwrap_err();
+        assert!(matches!(err, AppError::Conflict(_)));
+    }
+
+    #[test]
     fn test_validate_patch_accepts_camel_case_aliases() {
         let req: PatchProfileRequest = serde_json::from_value(json!({
             "displayName": "Agora",
@@ -761,6 +836,14 @@ mod tests {
         let json = serde_json::to_value(response).unwrap();
         assert_eq!(json["address"], "GABC");
         assert_eq!(json["total_events"], 3);
+    }
+
+    #[test]
+    fn test_delete_profile_cache_key_matches_upsert_key() {
+        let address = "GDELETE123WALLETADDRESS";
+        let key = format!("profile:{address}");
+        assert_eq!(key, "profile:GDELETE123WALLETADDRESS");
+        assert!(key.starts_with("profile:"));
     }
 
     #[test]
@@ -804,6 +887,19 @@ mod tests {
         assert!(query.contains("JOIN organizers"));
         assert!(query.contains("wallet_address = $1"));
         assert!(query.contains("is_flagged = FALSE"));
+    }
+
+    #[test]
+    fn test_organizer_stats_query_combines_aggregates() {
+        let query = organizer_stats_query();
+
+        assert_eq!(query.matches("SELECT").count(), 1);
+        assert!(query.contains("COUNT(*) AS total_events"));
+        assert!(query.contains("COALESCE(SUM(e.minted_tickets), 0) AS total_tickets_sold"));
+        assert!(query.contains("AVG(CAST(e.sum_of_ratings AS FLOAT) / NULLIF(e.count_of_ratings, 0))"));
+        assert!(query.contains("JOIN organizers"));
+        assert!(query.contains("o.wallet_address = $1"));
+        assert!(query.contains("e.is_flagged = FALSE"));
     }
 
     #[tokio::test]
