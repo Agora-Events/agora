@@ -199,12 +199,12 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_decode_event_cursor() {
+    fn test_encode_decode_event_cursor_roundtrip() {
         let cursor = EventCursor {
             start_time: Utc::now(),
             id: Uuid::new_v4(),
-            created_at: None,
-            minted_tickets: None,
+            created_at: Some(Utc::now()),
+            minted_tickets: Some(42),
         };
 
         let encoded = encode_cursor(&cursor).unwrap();
@@ -212,10 +212,12 @@ mod tests {
 
         assert_eq!(cursor.start_time, decoded.start_time);
         assert_eq!(cursor.id, decoded.id);
+        assert_eq!(cursor.created_at, decoded.created_at);
+        assert_eq!(cursor.minted_tickets, decoded.minted_tickets);
     }
 
     #[test]
-    fn test_encode_decode_past_event_cursor() {
+    fn test_encode_decode_past_event_cursor_roundtrip() {
         let cursor = PastEventCursor {
             end_time: Utc::now(),
             id: Uuid::new_v4(),
@@ -230,7 +232,21 @@ mod tests {
 
     #[test]
     fn test_decode_invalid_base64() {
-        let result: Result<EventCursor, _> = decode_cursor("!!!");
+        let result: Result<EventCursor, _> = decode_cursor("!!!not-valid-base64!!!");
+        assert!(matches!(result, Err(CursorError::Decode(_))));
+    }
+
+    #[test]
+    fn test_decode_truncated_base64() {
+        let cursor = EventCursor {
+            start_time: Utc::now(),
+            id: Uuid::new_v4(),
+            created_at: None,
+            minted_tickets: None,
+        };
+        let encoded = encode_cursor(&cursor).unwrap();
+        let truncated = &encoded[..encoded.len() / 2];
+        let result: Result<EventCursor, _> = decode_cursor(truncated);
         assert!(result.is_err());
     }
 

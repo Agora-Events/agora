@@ -10,7 +10,9 @@
 //! ## Cryptography
 //! Uses Ed25519 digital signatures for payload signing and verification.
 
-use axum::{extract::Path, extract::Query, extract::State, response::IntoResponse, response::Response, Json};
+use axum::{
+    extract::Path, extract::Query, extract::State, response::IntoResponse, response::Response, Json,
+};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
@@ -545,19 +547,18 @@ pub async fn list_event_qr_codes(
     Query(pagination): Query<PaginationParams>,
 ) -> Response {
     // Verify the event exists first.
-    let event_exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
-    )
-    .bind(event_id)
-    .fetch_one(&pool)
-    .await
-    {
-        Ok(exists) => exists,
-        Err(e) => {
-            tracing::error!("Failed to check event existence: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
-        }
-    };
+    let event_exists =
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(event_id)
+            .fetch_one(&pool)
+            .await
+        {
+            Ok(exists) => exists,
+            Err(e) => {
+                tracing::error!("Failed to check event existence: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
 
     if !event_exists {
         return AppError::NotFound(format!("Event '{}' not found", event_id)).into_response();
@@ -565,19 +566,18 @@ pub async fn list_event_qr_codes(
 
     let validated = pagination.validate();
 
-    let total = match sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM qr_payloads WHERE event_id = $1",
-    )
-    .bind(event_id)
-    .fetch_one(&pool)
-    .await
-    {
-        Ok(count) => count,
-        Err(e) => {
-            tracing::error!("Failed to count QR codes for event: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
-        }
-    };
+    let total =
+        match sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM qr_payloads WHERE event_id = $1")
+            .bind(event_id)
+            .fetch_one(&pool)
+            .await
+        {
+            Ok(count) => count,
+            Err(e) => {
+                tracing::error!("Failed to count QR codes for event: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
 
     let items = match sqlx::query_as::<_, EventQrCodeItem>(
         r"

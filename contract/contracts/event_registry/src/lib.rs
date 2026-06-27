@@ -3,12 +3,12 @@
 use crate::events::{
     AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, CustomFeeSetEvent,
     EventArchivedEvent, EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
-    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
-    GoalMetEvent, InitializationEvent, InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent,
-    MetadataUpdatedEvent, MinStakeAmountUpdatedEvent, OrganizerBlacklistedEvent,
-    OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent, ScannerAuthorizedEvent,
-    ScannerRevokedEvent, StakerRewardsClaimedEvent, StakerRewardsDistributedEvent,
-    StakingTokenUpdatedEvent,
+    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, FeedbackCidSetEvent,
+    GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent, InventoryIncrementedEvent,
+    LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent, MinStakeAmountUpdatedEvent,
+    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, RegistryUpgradedEvent,
+    ScannerAuthorizedEvent, ScannerRevokedEvent, StakerRewardsClaimedEvent,
+    StakerRewardsDistributedEvent, StakingTokenUpdatedEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
@@ -468,10 +468,50 @@ impl EventRegistry {
         }
     }
 
+    /// Sets the post-event feedback IPFS CID. Only callable by the organizer after end_time.
+    pub fn set_feedback_cid(
+        env: Env,
+        event_id: String,
+        feedback_cid: String,
+    ) -> Result<(), EventRegistryError> {
+        match storage::get_event(&env, event_id.clone()) {
+            Some(mut event_info) => {
+                auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
+
+                require_event_ended(&env, &event_info)?;
+
+                validate_metadata_cid(&env, &feedback_cid)?;
+
+                if event_info.feedback_cid.as_ref() == Some(&feedback_cid) {
+                    return Ok(());
+                }
+
+                event_info.feedback_cid = Some(feedback_cid.clone());
+                storage::update_event(&env, event_info.clone());
+
+                env.events().publish(
+                    (AgoraEvent::FeedbackCidSet,),
+                    FeedbackCidSetEvent {
+                        event_id,
+                        feedback_cid,
+                        updated_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                Ok(())
+            }
+            None => Err(EventRegistryError::EventNotFound),
+        }
+    }
+
     /// Stores or updates an event (legacy function for backward compatibility).
     pub fn store_event(env: Env, event_info: EventInfo) {
         // Require authorization to ensure only the organizer can store/update their event directly
         auth::require_organizer(&env, &event_info.event_id, &event_info.organizer_address).unwrap();
+        if event_info.feedback_cid.is_some() {
+            require_event_ended(&env, &event_info).unwrap();
+        }
         storage::store_event(&env, event_info);
     }
 
@@ -512,17 +552,14 @@ impl EventRegistry {
                         continue;
                     }
                     if let types::ParameterChange::SetPlatformFee(fee) = &p.change {
-                        if *fee == new_fee_percent
-                            && p.approvals.len() >= config.threshold
-                        {
+                        if *fee == new_fee_percent && p.approvals.len() >= config.threshold {
                             approved_proposal_id = Some(pid);
                             break;
                         }
                     }
                 }
             }
-            let proposal_id =
-                approved_proposal_id.ok_or(EventRegistryError::MultisigError)?;
+            let proposal_id = approved_proposal_id.ok_or(EventRegistryError::MultisigError)?;
             // Mark the proposal as executed
             let mut proposal = storage::get_proposal(&env, proposal_id).unwrap();
             proposal.executed = true;
@@ -946,6 +983,16 @@ impl EventRegistry {
         storage::get_global_promo_bps(&env)
     }
 
+    /// Returns the active global promotional discount and expiry timestamp.
+    pub fn get_global_promo(env: Env) -> Option<(u32, u64)> {
+        let expiry = storage::get_promo_expiry(&env);
+        if expiry <= env.ledger().timestamp() {
+            return None;
+        }
+
+        Some((storage::get_global_promo_bps(&env), expiry))
+    }
+
     /// Returns the expiry timestamp for the current global promo.
     pub fn get_promo_expiry(env: Env) -> u64 {
         storage::get_promo_expiry(&env)
@@ -1330,12 +1377,14 @@ impl EventRegistry {
     /// * `guest` - Guest wallet address
     /// * `tickets_purchased` - Number of tickets purchased in this transaction
     /// * `amount_spent` - Amount spent in this transaction (in token stroops)
+    /// * `loyalty_multiplier` - Tier multiplier for loyalty points; 0 is treated as 1x
     pub fn update_loyalty_score(
         env: Env,
         caller: Address,
         guest: Address,
         tickets_purchased: u32,
         amount_spent: i128,
+        loyalty_multiplier: u32,
     ) -> Result<(), EventRegistryError> {
         caller.require_auth();
 
@@ -1365,8 +1414,15 @@ impl EventRegistry {
             last_updated: 0,
         });
 
-        // Award 10 points per ticket purchased
-        let points_earned = (tickets_purchased as u64).saturating_mul(10);
+        // Award 10 base points per ticket, adjusted by the tier multiplier.
+        let effective_multiplier = if loyalty_multiplier == 0 {
+            1
+        } else {
+            loyalty_multiplier
+        } as u64;
+        let points_earned = (tickets_purchased as u64)
+            .saturating_mul(10)
+            .saturating_mul(effective_multiplier);
         profile.loyalty_score = profile.loyalty_score.saturating_add(points_earned);
         profile.total_tickets_purchased = profile
             .total_tickets_purchased
@@ -1753,6 +1809,14 @@ fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryErr
         return Err(EventRegistryError::InvalidMetadataCid);
     }
 
+    Ok(())
+}
+
+fn require_event_ended(env: &Env, event_info: &EventInfo) -> Result<(), EventRegistryError> {
+    let now = env.ledger().timestamp();
+    if event_info.end_time == 0 || now <= event_info.end_time {
+        return Err(EventRegistryError::EventNotEnded);
+    }
     Ok(())
 }
 

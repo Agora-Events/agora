@@ -43,7 +43,10 @@ pub struct CategoryFilters {
 /// with `categories:all` and discriminated by filters + pagination so distinct
 /// queries don't collide.
 fn categories_cache_key(parent_id: &str, search: &str, page: u32, page_size: u32) -> String {
-    format!("categories:all:{}:{}:{}:{}", parent_id, search, page, page_size)
+    format!(
+        "categories:all:{}:{}:{}:{}",
+        parent_id, search, page, page_size
+    )
 }
 
 /// List all categories with pagination and optional filters
@@ -74,13 +77,20 @@ pub async fn list_categories(
         validated_pagination.page,
         validated_pagination.page_size,
     );
-    match state.redis.get::<PaginatedResponse<Category>>(&cache_key).await {
+    match state
+        .redis
+        .get::<PaginatedResponse<Category>>(&cache_key)
+        .await
+    {
         Ok(Some(cached)) => {
             tracing::debug!("Cache hit for categories key: {}", cache_key);
             return success(cached, "Categories retrieved successfully (cached)").into_response();
         }
         Ok(None) => {}
-        Err(e) => tracing::warn!("Redis error during categories lookup, falling back: {:?}", e),
+        Err(e) => tracing::warn!(
+            "Redis error during categories lookup, falling back: {:?}",
+            e
+        ),
     }
 
     // Build the WHERE clause dynamically

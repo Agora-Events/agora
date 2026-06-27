@@ -11,11 +11,11 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
-use axum::http::HeaderValue;
 use crate::cache::RedisCache;
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
@@ -27,6 +27,7 @@ use crate::utils::db_timer::log_if_slow;
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
+use axum::http::HeaderValue;
 
 /// Query parameters for searching events with filters
 #[derive(Debug, Deserialize)]
@@ -132,6 +133,9 @@ pub struct EventFilters {
     /// Filter events starting on or before this date (YYYY-MM-DD, treated as midnight UTC).
     /// Takes precedence over `start_before` when both are supplied.
     pub end_date: Option<String>,
+
+    /// Filter events that have been marked featured.
+    pub is_featured: Option<bool>,
 
     /// Filter to return only followers-only events (Issue #ForYou)
     pub followers_only: Option<bool>,
@@ -316,6 +320,14 @@ fn build_event_where_clause(
         where_clauses.push("followers_only = TRUE".to_string());
     }
 
+    if let Some(is_featured) = filters.is_featured {
+        if is_featured {
+            where_clauses.push("is_featured = TRUE".to_string());
+        } else {
+            where_clauses.push("is_featured = FALSE".to_string());
+        }
+    }
+
     // Cursor condition for keyset pagination on the active sort column.
     if cursor.is_some() {
         param_count += 1;
@@ -386,7 +398,10 @@ fn build_past_event_where_clause(
         ));
     }
 
-    (format!("WHERE {}", where_clauses.join(" AND ")), param_count)
+    (
+        format!("WHERE {}", where_clauses.join(" AND ")),
+        param_count,
+    )
 }
 
 #[cfg(test)]
@@ -486,8 +501,7 @@ mod tests {
             id: Uuid::new_v4(),
         };
 
-        let (where_clause, param_count) =
-            build_past_event_where_clause(&filters, Some(&cursor));
+        let (where_clause, param_count) = build_past_event_where_clause(&filters, Some(&cursor));
 
         assert_eq!(param_count, 3);
         assert!(where_clause.contains("wallet_address = $1"));
@@ -636,6 +650,35 @@ mod tests {
     }
 
     #[test]
+    fn test_submit_rating_cache_key_format() {
+        let event_id = Uuid::new_v4();
+        let cache_key = format!("event:detail:{}", event_id);
+        assert!(cache_key.starts_with("event:detail:"));
+        assert!(cache_key.contains(&event_id.to_string()));
+    }
+
+    #[test]
+    fn test_event_rating_item_fields() {
+        let item = EventRatingItem {
+            rating: 4,
+            review: Some("Great event!".to_string()),
+            created_at: Utc::now(),
+        };
+        assert_eq!(item.rating, 4);
+        assert_eq!(item.review.as_deref(), Some("Great event!"));
+    }
+
+    #[test]
+    fn test_event_rating_item_no_review() {
+        let item = EventRatingItem {
+            rating: 3,
+            review: None,
+            created_at: Utc::now(),
+        };
+        assert!(item.review.is_none());
+    }
+
+    #[test]
     fn test_ratings_summary_distribution_zero_filled() {
         let mut distribution = std::collections::HashMap::new();
         for star in 1i16..=5 {
@@ -726,13 +769,13 @@ mod tests {
     #[test]
     fn test_upcoming_limit_clamping() {
         // Default when absent.
-        assert_eq!(None::<u32>.unwrap_or(5).clamp(1, 20), 5);
+        assert_eq!(5u32.clamp(1, 20), 5);
         // Values above the max are clamped to 20.
-        assert_eq!(Some(100u32).unwrap_or(5).clamp(1, 20), 20);
+        assert_eq!(100u32.clamp(1, 20), 20);
         // Zero is clamped up to the minimum of 1.
-        assert_eq!(Some(0u32).unwrap_or(5).clamp(1, 20), 1);
+        assert_eq!(0u32.clamp(1, 20), 1);
         // In-range values pass through.
-        assert_eq!(Some(10u32).unwrap_or(5).clamp(1, 20), 10);
+        assert_eq!(10u32.clamp(1, 20), 10);
     }
 
     #[test]
@@ -915,6 +958,47 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_event_location_accepts_valid_location() {
+        assert!(validate_event_location("Amsterdam").is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_location_rejects_empty_location() {
+        let err = validate_event_location("   ").unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_validate_event_location_rejects_too_long_location() {
+        let err = validate_event_location(&"A".repeat(MAX_LOCATION_LENGTH + 1)).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_build_event_where_clause_includes_is_featured() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: None,
+            is_free: None,
+            start_date: None,
+            end_date: None,
+            followers_only: None,
+            is_featured: Some(true),
+            sort_by: None,
+            sort_order: None,
+        };
+
+        let sort = filters.validate_sort().unwrap();
+        let (where_clause, _) = build_event_where_clause(&filters, &sort, None);
+        assert!(where_clause.contains("is_featured = TRUE"));
+    }
+
+    #[test]
     fn test_build_event_order_by_popularity_desc() {
         let sort = ValidatedEventSort {
             sort_by: EventSortBy::Popularity,
@@ -1071,6 +1155,20 @@ pub async fn list_events(
     if let Some(min_tickets) = filters.min_tickets_available {
         count_builder = count_builder.bind(min_tickets);
     }
+    if let Some(ref date_str) = filters.start_date {
+        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            let dt: DateTime<Utc> = Utc
+                .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+            count_builder = count_builder.bind(dt);
+        }
+    }
+    if let Some(ref date_str) = filters.end_date {
+        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            let dt: DateTime<Utc> = Utc
+                .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+            count_builder = count_builder.bind(dt);
+        }
+    }
     let _ = count_param_count; // used only to drive param numbering above
 
     let total_count: i64 = match count_builder.fetch_one(&state.pool).await {
@@ -1085,7 +1183,9 @@ pub async fn list_events(
     let order_by = build_event_order_by_clause(&sort);
     let items_query = format!(
         "SELECT * FROM events {} {} LIMIT ${}",
-        where_clause, order_by, param_count + 1
+        where_clause,
+        order_by,
+        param_count + 1
     );
 
     let mut items_query_builder = sqlx::query_as::<_, Event>(&items_query);
@@ -1227,9 +1327,7 @@ pub async fn list_events(
 /// GET `/api/v1/events/featured`
 ///
 /// Placeholder route registered for the featured-events migration; full handler pending.
-pub async fn list_featured_events(
-    State(_state): State<EventState>,
-) -> Response {
+pub async fn list_featured_events(State(_state): State<EventState>) -> Response {
     AppError::NotFound("Featured events are not yet available".to_string()).into_response()
 }
 
@@ -1454,7 +1552,7 @@ pub struct SimilarEventsParams {
 /// # Endpoint
 /// GET `/api/v1/events/:id/similar`
 pub async fn list_similar_events(
-    State(mut state): State<EventState>,
+    State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
     Query(params): Query<SimilarEventsParams>,
 ) -> Response {
@@ -1513,6 +1611,24 @@ pub async fn list_similar_events(
     success(events, "Similar events retrieved successfully").into_response()
 }
 
+/// Maximum allowed length for an event title.
+pub const MAX_EVENT_TITLE_LENGTH: usize = 200;
+
+/// Validates an event title for create/update requests.
+pub fn validate_event_title(title: &str) -> Result<(), String> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return Err("title must not be empty".to_string());
+    }
+    if title.chars().count() > MAX_EVENT_TITLE_LENGTH {
+        return Err(format!(
+            "title must not exceed {} characters",
+            MAX_EVENT_TITLE_LENGTH
+        ));
+    }
+    Ok(())
+}
+
 /// Request body for creating a new event
 #[derive(Debug, Deserialize)]
 pub struct CreateEventRequest {
@@ -1528,6 +1644,27 @@ pub struct CreateEventRequest {
     pub host_email: Option<String>,
 }
 
+const MAX_IMAGE_URL_LEN: usize = 2048;
+
+/// Validates that an image URL is a safe, well-formed HTTPS URL no longer than 2048 characters.
+/// Rejects data URIs, javascript URIs, HTTP URLs, and empty hosts.
+fn validate_image_url(url: &str) -> Result<(), AppError> {
+    if url.len() > MAX_IMAGE_URL_LEN {
+        return Err(AppError::ValidationError(format!(
+            "image_url must not exceed {MAX_IMAGE_URL_LEN} characters"
+        )));
+    }
+    let is_valid = url.starts_with("https://")
+        && url.len() > "https://".len()
+        && !url["https://".len()..].starts_with('/');
+    if !is_valid {
+        return Err(AppError::ValidationError(
+            "image_url must be a valid HTTPS URL".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Returns true when the string is a plausibly valid email address.
 fn is_valid_email(email: &str) -> bool {
     let mut parts = email.splitn(2, '@');
@@ -1540,6 +1677,22 @@ fn is_valid_email(email: &str) -> bool {
         && !domain.ends_with('.')
 }
 
+const MAX_LOCATION_LENGTH: usize = 500;
+
+fn validate_event_location(location: &str) -> Result<(), AppError> {
+    if location.trim().is_empty() {
+        return Err(AppError::ValidationError(
+            "location is required".to_string(),
+        ));
+    }
+    if location.chars().count() > MAX_LOCATION_LENGTH {
+        return Err(AppError::ValidationError(format!(
+            "location must be at most {MAX_LOCATION_LENGTH} characters"
+        )));
+    }
+    Ok(())
+}
+
 /// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
 ///
 /// # Endpoint
@@ -1548,15 +1701,14 @@ pub async fn create_event(
     State(mut state): State<EventState>,
     Json(payload): Json<CreateEventRequest>,
 ) -> Response {
-    // Validate image_url: must start with https:// and have a non-empty host.
     if let Some(ref url) = payload.image_url {
-        let is_valid = url.starts_with("https://")
-            && url.len() > "https://".len()
-            && !url["https://".len()..].starts_with('/');
-        if !is_valid {
-            return AppError::ValidationError("image_url must be a valid HTTPS URL".to_string())
-                .into_response();
+        if let Err(e) = validate_image_url(url) {
+            return e.into_response();
         }
+    }
+
+    if let Err(e) = validate_event_location(&payload.location) {
+        return e.into_response();
     }
 
     // Validate host_email format when provided.
@@ -1567,6 +1719,10 @@ pub async fn create_event(
             )
             .into_response();
         }
+    }
+
+    if let Err(message) = validate_event_title(&payload.title) {
+        return AppError::ValidationError(message).into_response();
     }
 
     let event = match sqlx::query_as::<_, Event>(
@@ -1636,7 +1792,7 @@ pub async fn create_event(
 /// # Endpoint
 /// POST `/api/v1/events/:id/rate`
 pub async fn submit_event_rating(
-    State(state): State<EventState>,
+    State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
     Json(payload): Json<SubmitEventRatingRequest>,
 ) -> Response {
@@ -1765,6 +1921,15 @@ pub async fn submit_event_rating(
         return AppError::DatabaseError(e).into_response();
     }
 
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!(
+            "Failed to invalidate event detail cache after rating for {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
     let response = SubmitEventRatingResponse {
         sum_of_ratings: updated_event.sum_of_ratings,
         count_of_ratings: updated_event.count_of_ratings,
@@ -1813,7 +1978,10 @@ pub async fn search_events(
     let cache_key = format!(
         "search:{}:{}:{}:{}:{}:{}:{}:{}:{}",
         params.q.as_deref().unwrap_or(""),
-        params.category_id.map(|id| id.to_string()).unwrap_or_default(),
+        params
+            .category_id
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
         params.category_ids.as_deref().unwrap_or(""),
         params.min_price.unwrap_or(0),
         params.max_price.unwrap_or(0),
@@ -1824,13 +1992,21 @@ pub async fn search_events(
     );
 
     // Try cache first; fall through to DB on miss or Redis error.
-    match state.redis.get::<PaginatedResponse<Event>>(&cache_key).await {
+    match state
+        .redis
+        .get::<PaginatedResponse<Event>>(&cache_key)
+        .await
+    {
         Ok(Some(cached)) => {
             tracing::debug!("Cache hit for search key: {}", cache_key);
-            return success(cached, "Search results retrieved successfully (cached)").into_response();
+            return success(cached, "Search results retrieved successfully (cached)")
+                .into_response();
         }
         Ok(None) => {}
-        Err(e) => tracing::warn!("Redis error during search cache lookup, falling back: {:?}", e),
+        Err(e) => tracing::warn!(
+            "Redis error during search cache lookup, falling back: {:?}",
+            e
+        ),
     }
 
     // Build dynamic WHERE clause using WHERE 1=1 pattern
@@ -2027,7 +2203,11 @@ pub async fn search_events(
     let response = PaginatedResponse::new(items, validated_pagination, total);
 
     // Cache the result for 2 minutes; failures are non-fatal.
-    if let Err(e) = state.redis.set(&cache_key, &response, SEARCH_CACHE_TTL).await {
+    if let Err(e) = state
+        .redis
+        .set(&cache_key, &response, SEARCH_CACHE_TTL)
+        .await
+    {
         tracing::warn!("Failed to cache search results: {:?}", e);
     }
 
@@ -2088,17 +2268,63 @@ pub async fn toggle_event_flag(
     }
 
     let mut response = success(
-        serde_json::json!({ "is_flagged": new_flagged }),
+        json!({ "is_flagged": new_flagged }),
         "Event flag toggled successfully",
     )
     .into_response();
 
     // Attach the organizer wallet so the audit middleware records it in metadata.
     if let Some(wallet) = organizer_wallet {
-        response.extensions_mut().insert(AuditMetadata(
-            serde_json::json!({ "organizer_wallet": wallet }),
-        ));
+        response.extensions_mut().insert(AuditMetadata(json!({ "organizer_wallet": wallet })));
     }
+
+    response
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetEventFeaturedRequest {
+    pub featured: bool,
+}
+
+/// Set or clear the featured flag for an event (admin only).
+///
+/// PATCH `/api/v1/admin/events/:id/feature`
+pub async fn set_event_featured(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Json(payload): Json<SetEventFeaturedRequest>,
+) -> Response {
+    let updated = match sqlx::query_as::<_, (bool,)>(
+        "UPDATE events SET is_featured = $1 WHERE id = $2 RETURNING is_featured",
+    )
+    .bind(payload.featured)
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(row) => row.0,
+        Err(sqlx::Error::RowNotFound) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to update event featured flag: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate cache for featured update on event {}: {:?}", event_id, e);
+    }
+
+    let mut response = success(
+        json!({ "is_featured": updated }),
+        "Event featured flag updated successfully",
+    )
+    .into_response();
+
+    response.extensions_mut().insert(AuditMetadata(json!({ "featured": updated })));
 
     response
 }
@@ -2695,6 +2921,80 @@ pub struct RatingsSummary {
     pub distribution: std::collections::HashMap<String, i64>,
 }
 
+/// A single rating item returned by the list ratings endpoint (ticket ID omitted for privacy).
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct EventRatingItem {
+    pub rating: i16,
+    pub review: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// GET /api/v1/events/:id/ratings
+///
+/// Returns a paginated list of ratings for the given event.
+/// Ticket IDs are not included in the response to preserve attendee privacy.
+/// Returns 404 if the event does not exist.
+pub async fn list_event_ratings(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Query(pagination): Query<PaginationParams>,
+) -> Response {
+    let exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence for ratings: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !exists {
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    let validated = pagination.validate();
+
+    let total = match sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM event_ratings WHERE event_id = $1",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::error!("Failed to count event ratings: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let items = match sqlx::query_as::<_, EventRatingItem>(
+        "SELECT rating, review, created_at FROM event_ratings \
+         WHERE event_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+    )
+    .bind(event_id)
+    .bind(validated.limit())
+    .bind(validated.offset())
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch event ratings: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let response = PaginatedResponse::new(items, validated, total);
+    success(response, "Ratings retrieved successfully").into_response()
+}
+
 /// GET /api/v1/events/:id/ratings/summary
 ///
 /// Returns the star-rating distribution for an event. Result is cached for 5 minutes.
@@ -3255,23 +3555,21 @@ pub async fn list_ticket_tiers(
     State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    let event_exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
-    )
-    .bind(event_id)
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Failed to check event existence: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
-        }
-    };
+    let event_exists =
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(event_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("Failed to check event existence: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
 
     if !event_exists {
-        return AppError::NotFound(format!("Event with id '{event_id}' not found"))
-            .into_response();
+        return AppError::NotFound(format!("Event with id '{event_id}' not found")).into_response();
     }
 
     match sqlx::query_as::<_, TicketTierResponse>(
@@ -3320,48 +3618,72 @@ fn test_ticket_tier_response_serialization() {
 }
 
 #[test]
+fn test_validate_event_title_accepts_max_length() {
+    let title = "a".repeat(MAX_EVENT_TITLE_LENGTH);
+    assert!(validate_event_title(&title).is_ok());
+}
+
+#[test]
+fn test_validate_event_title_rejects_empty() {
+    let err = validate_event_title("").unwrap_err();
+    assert!(err.contains("empty"));
+}
+
+#[test]
+fn test_validate_event_title_rejects_whitespace_only() {
+    let err = validate_event_title("   ").unwrap_err();
+    assert!(err.contains("empty"));
+}
+
+#[test]
+fn test_validate_event_title_rejects_too_long() {
+    let title = "a".repeat(MAX_EVENT_TITLE_LENGTH + 1);
+    let err = validate_event_title(&title).unwrap_err();
+    assert!(err.contains("200"));
+}
+
+#[test]
 fn test_image_url_valid_https() {
-    let url = "https://example.com/image.jpg";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(is_valid);
+    assert!(validate_image_url("https://example.com/image.jpg").is_ok());
 }
 
 #[test]
 fn test_image_url_http_rejected() {
-    let url = "http://example.com/image.jpg";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(!is_valid);
+    assert!(validate_image_url("http://example.com/image.jpg").is_err());
 }
 
 #[test]
 fn test_image_url_javascript_rejected() {
-    let url = "javascript:alert(1)";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(!is_valid);
+    assert!(validate_image_url("javascript:alert(1)").is_err());
+}
+
+#[test]
+fn test_image_url_data_uri_rejected() {
+    assert!(validate_image_url("data:image/png;base64,abc123").is_err());
 }
 
 #[test]
 fn test_image_url_empty_host_rejected() {
-    let url = "https://";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(!is_valid);
+    assert!(validate_image_url("https://").is_err());
 }
 
 #[test]
 fn test_image_url_relative_path_rejected() {
-    let url = "https:///path/to/image.jpg";
-    let is_valid = url.starts_with("https://")
-        && url.len() > "https://".len()
-        && !url["https://".len()..].starts_with('/');
-    assert!(!is_valid);
+    assert!(validate_image_url("https:///path/to/image.jpg").is_err());
+}
+
+#[test]
+fn test_image_url_exceeds_max_length_rejected() {
+    let url = format!("https://example.com/{}", "a".repeat(MAX_IMAGE_URL_LEN));
+    assert!(validate_image_url(&url).is_err());
+}
+
+#[test]
+fn test_image_url_exactly_max_length_accepted() {
+    let prefix = "https://example.com/";
+    let url = format!("{}{}", prefix, "a".repeat(MAX_IMAGE_URL_LEN - prefix.len()));
+    assert_eq!(url.len(), MAX_IMAGE_URL_LEN);
+    assert!(validate_image_url(&url).is_ok());
 }
 
 #[test]

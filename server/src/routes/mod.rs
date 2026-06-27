@@ -23,7 +23,7 @@ use axum::{
     middleware,
     response::IntoResponse,
     response::Response,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use sqlx::PgPool;
@@ -41,25 +41,25 @@ use crate::handlers::{
     events::{
         export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
         get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
-        list_event_tickets, list_events, list_events_by_category, list_featured_events,
-        list_past_events,
+        list_event_ratings, list_event_tickets, list_events, list_events_by_category,
+        list_featured_events, list_past_events,
         list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
-        submit_event_rating, toggle_event_flag, EventState,
+        set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
     leaderboard::{get_leaderboard, LeaderboardState},
     monitoring::{monitoring_dashboard, MonitoringState},
     profile::{
-        get_my_profile, get_organizer_stats, get_profile_by_address, list_my_transactions,
-        patch_profile, upsert_profile, ProfileState,
+        get_my_profile, get_organizer_stats, get_profile_by_address, list_events_by_organizer,
+        list_my_transactions, patch_profile, upsert_profile, ProfileState,
     },
-    qr_payload::{delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads, mark_qr_used, verify_qr_payload},
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
 use crate::middleware::audit::audit_layer;
+use crate::middleware::content_type::require_json_content_type;
 use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
 use crate::middleware::rate_limit::GovernorRateLimitLayer;
 use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
@@ -121,9 +121,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // Organizer profile routes (Issue #486)
     // Routes that use Redis caching use ProfileState; stats route keeps PgPool.
     let profile_routes = Router::new()
-        .route("/", get(get_my_profile).put(upsert_profile).patch(patch_profile))
+        .route("/", get(get_my_profile).put(upsert_profile).patch(patch_profile).delete(delete_profile))
         .route("/transactions", get(list_my_transactions))
         .route("/:address", get(get_profile_by_address))
+        .route("/:address/events", get(list_events_by_organizer))
         .with_state(profile_state)
         .merge(
             Router::new()
@@ -131,9 +132,15 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
                 .with_state(pool.clone()),
         );
 
-    // Admin sub-router — every request is recorded in audit_logs.
+    // Admin sub-router — every request is recorded in audit_logs and requires admin auth.
+    let admin_auth_state = AdminAuthState {
+        token: config.admin_token.clone(),
+    };
+
     let admin_routes = Router::new()
         .route("/events/:id/toggle-flag", post(toggle_event_flag))
+        .route("/events/:id/feature", patch(set_event_featured))
+        .route_layer(middleware::from_fn_with_state(admin_auth_state, require_admin_token))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
         .with_state(event_state.clone());
 
@@ -162,6 +169,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/:id/attendees/count", get(get_attendee_count))
         .route("/:id/rate", post(submit_event_rating))
         .route("/:id/check-in-stats", get(get_checkin_stats))
+        .route("/:id/ratings", get(list_event_ratings))
         .route("/:id/ratings/summary", get(get_ratings_summary))
         .route("/:id/organizer", get(get_event_organizer))
         .route("/:id/export-attendees", get(export_attendees_csv))
@@ -242,6 +250,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/ws", ws_routes)
         .nest("/qr", qr_routes)
         .merge(rates_route)
+        .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(GovernorRateLimitLayer::new(100, Duration::from_secs(60)));
 
