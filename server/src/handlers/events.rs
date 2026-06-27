@@ -65,6 +65,16 @@ fn default_page_size() -> u32 {
     20
 }
 
+impl SearchParams {
+    fn validate_page_size(&self) -> Result<(), String> {
+        if self.page_size == 0 || self.page_size > 100 {
+            Err("page_size must be between 1 and 100".to_string())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// Cache TTL for event details (5 minutes)
 const EVENT_CACHE_TTL: Duration = Duration::from_secs(300);
 
@@ -723,6 +733,64 @@ mod tests {
         assert_eq!(Some(0u32).unwrap_or(5).clamp(1, 20), 1);
         // In-range values pass through.
         assert_eq!(Some(10u32).unwrap_or(5).clamp(1, 20), 10);
+    }
+
+    #[test]
+    fn test_search_params_page_size_valid() {
+        for size in [1u32, 20, 50, 100] {
+            let params = SearchParams {
+                q: None,
+                category_id: None,
+                category_ids: None,
+                min_price: None,
+                max_price: None,
+                date_from: None,
+                date_to: None,
+                location: None,
+                ticket_type: None,
+                page: 1,
+                page_size: size,
+            };
+            assert!(params.validate_page_size().is_ok(), "page_size={} should be valid", size);
+        }
+    }
+
+    #[test]
+    fn test_search_params_page_size_zero_rejected() {
+        let params = SearchParams {
+            q: None,
+            category_id: None,
+            category_ids: None,
+            min_price: None,
+            max_price: None,
+            date_from: None,
+            date_to: None,
+            location: None,
+            ticket_type: None,
+            page: 1,
+            page_size: 0,
+        };
+        let err = params.validate_page_size().unwrap_err();
+        assert!(err.contains("page_size must be between 1 and 100"));
+    }
+
+    #[test]
+    fn test_search_params_page_size_above_max_rejected() {
+        let params = SearchParams {
+            q: None,
+            category_id: None,
+            category_ids: None,
+            min_price: None,
+            max_price: None,
+            date_from: None,
+            date_to: None,
+            location: None,
+            ticket_type: None,
+            page: 1,
+            page_size: 101,
+        };
+        let err = params.validate_page_size().unwrap_err();
+        assert!(err.contains("page_size must be between 1 and 100"));
     }
 
     #[test]
@@ -1715,6 +1783,10 @@ pub async fn search_events(
     State(mut state): State<EventState>,
     Query(params): Query<SearchParams>,
 ) -> Response {
+    if let Err(msg) = params.validate_page_size() {
+        return AppError::ValidationError(msg).into_response();
+    }
+
     let start = std::time::Instant::now();
     let pagination = PaginationParams {
         page: params.page,
