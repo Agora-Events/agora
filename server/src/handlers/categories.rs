@@ -223,6 +223,55 @@ pub async fn get_category(
     success(category, "Category retrieved successfully").into_response()
 }
 
+/// Canonical categories defined in the contract's Category enum.
+/// Used to validate database categories match the contract at startup.
+pub const CANONICAL_CATEGORIES: &[(u32, &str, &str)] = &[
+    (1, "Music", "Music events including concerts, festivals, and live performances"),
+    (2, "Sports", "Sports events including games, tournaments, and athletic competitions"),
+    (3, "Tech", "Technology events including conferences, hackathons, and meetups"),
+    (4, "Arts", "Arts events including exhibitions, galleries, and cultural shows"),
+    (5, "Food", "Food events including tastings, festivals, and cooking classes"),
+    (6, "Business", "Business events including networking, seminars, and trade shows"),
+    (7, "Health", "Health events including wellness workshops, fitness classes, and medical conferences"),
+    (8, "Education", "Education events including workshops, lectures, and training sessions"),
+    (9, "Community", "Community events including social gatherings, volunteering, and local meetups"),
+    (10, "Other", "Other events that do not fit into the above categories"),
+];
+
+/// Validates that the categories in the database match the contract's canonical list.
+/// Logs a warning if there is a mismatch. Should be called at server startup.
+pub async fn validate_categories_match_contract(pool: &PgPool) {
+    use sqlx::Row;
+    match sqlx::query("SELECT name, slug FROM categories ORDER BY created_at ASC")
+        .fetch_all(pool)
+        .await
+    {
+        Ok(rows) => {
+            let db_names: Vec<String> = rows.iter().map(|r| r.get::<String, _>("name")).collect();
+            let canonical_names: Vec<String> = CANONICAL_CATEGORIES
+                .iter()
+                .map(|(_, name, _)| name.to_string())
+                .collect();
+
+            if db_names == canonical_names {
+                tracing::info!("Database categories match the contract's canonical list ({} categories)", db_names.len());
+            } else {
+                tracing::warn!(
+                    "Database categories mismatch detected! DB has {:?}, contract expects {:?}",
+                    db_names,
+                    canonical_names
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Could not validate categories against contract: {:?}.                  This is normal if the categories table has not been seeded yet.",
+                e
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,5 +290,28 @@ mod tests {
         let filtered = categories_cache_key("null", "music", 2, 20);
         assert_ne!(unfiltered, filtered);
         assert_eq!(filtered, "categories:all:null:music:2:20");
+    }
+
+    #[test]
+    fn test_canonical_category_id_to_name_mapping() {
+        // Verify each canonical category has the correct ID-to-name mapping
+        // as defined in the contract's Category enum (Music=1, Sports=2, Tech=3,
+        // Arts=4, Food=5, Business=6, Health=7, Education=8, Community=9, Other=10)
+        let mapping: std::collections::HashMap<u32, &str> = CANONICAL_CATEGORIES
+            .iter()
+            .map(|(id, name, _)| (*id, *name))
+            .collect();
+
+        assert_eq!(mapping.get(&1), Some(&"Music"));
+        assert_eq!(mapping.get(&2), Some(&"Sports"));
+        assert_eq!(mapping.get(&3), Some(&"Tech"));
+        assert_eq!(mapping.get(&4), Some(&"Arts"));
+        assert_eq!(mapping.get(&5), Some(&"Food"));
+        assert_eq!(mapping.get(&6), Some(&"Business"));
+        assert_eq!(mapping.get(&7), Some(&"Health"));
+        assert_eq!(mapping.get(&8), Some(&"Education"));
+        assert_eq!(mapping.get(&9), Some(&"Community"));
+        assert_eq!(mapping.get(&10), Some(&"Other"));
+        assert_eq!(mapping.len(), 10);
     }
 }
