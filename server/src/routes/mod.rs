@@ -51,8 +51,8 @@ use crate::handlers::{
     leaderboard::{get_leaderboard, LeaderboardState},
     monitoring::{monitoring_dashboard, MonitoringState},
     profile::{
-        get_my_profile, get_organizer_stats, get_profile_by_address, list_my_transactions,
-        patch_profile, upsert_profile, ProfileState,
+        get_my_profile, get_organizer_stats, get_profile_by_address, list_events_by_organizer,
+        list_my_transactions, patch_profile, upsert_profile, ProfileState,
     },
     qr_payload::{delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads, mark_qr_used, verify_qr_payload},
     rates::{get_rates, RatesState},
@@ -124,6 +124,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/", get(get_my_profile).put(upsert_profile).patch(patch_profile))
         .route("/transactions", get(list_my_transactions))
         .route("/:address", get(get_profile_by_address))
+        .route("/:address/events", get(list_events_by_organizer))
         .with_state(profile_state)
         .merge(
             Router::new()

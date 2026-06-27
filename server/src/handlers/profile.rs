@@ -24,7 +24,11 @@ use uuid::Uuid;
 
 use crate::cache::RedisCache;
 use crate::handlers::auth::extract_auth;
+use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::{OrganizerProfile, UpsertProfileRequest};
+use crate::utils::cursor_pagination::{
+    decode_cursor, encode_cursor, CursorParams, CursorResponse, EventCursor,
+};
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
@@ -525,6 +529,88 @@ pub async fn get_organizer_stats(
     success(stats, "Organizer stats retrieved successfully").into_response()
 }
 
+/// `GET /api/v1/profile/:address/events`
+///
+/// Returns a cursor-paginated list of upcoming events created by the organizer
+/// identified by their Stellar wallet address. Returns an empty list (not 404)
+/// if the organizer has no upcoming events.
+pub async fn list_events_by_organizer(
+    State(state): State<ProfileState>,
+    Path(address): Path<String>,
+    Query(pagination): Query<CursorParams>,
+) -> Response {
+    let validated = pagination.validate();
+
+    let cursor = match validated.cursor {
+        Some(ref c) => match decode_cursor::<EventCursor>(c) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::warn!("Invalid cursor for list_events_by_organizer: {}", e);
+                return AppError::ValidationError(format!("Invalid cursor: {}", e)).into_response();
+            }
+        },
+        None => None,
+    };
+
+    let items_query = if cursor.is_some() {
+        "SELECT * FROM events \
+         WHERE organizer_id = (SELECT id FROM organizers WHERE wallet_address = $1) \
+           AND end_time > NOW() \
+           AND (start_time > $3 OR (start_time = $3 AND id > $4)) \
+         ORDER BY start_time ASC, id ASC \
+         LIMIT $2"
+            .to_string()
+    } else {
+        "SELECT * FROM events \
+         WHERE organizer_id = (SELECT id FROM organizers WHERE wallet_address = $1) \
+           AND end_time > NOW() \
+         ORDER BY start_time ASC, id ASC \
+         LIMIT $2"
+            .to_string()
+    };
+
+    let mut builder = sqlx::query_as::<_, Event>(&items_query)
+        .bind(&address)
+        .bind(validated.query_limit());
+
+    if let Some(ref c) = cursor {
+        builder = builder.bind(c.start_time).bind(c.id);
+    }
+
+    let mut items = match builder.fetch_all(&state.pool).await {
+        Ok(events) => events,
+        Err(e) => {
+            tracing::error!("Failed to fetch events for organizer {}: {:?}", address, e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let has_more = items.len() > validated.page_size();
+    let next_cursor = if has_more {
+        let last = items.pop().unwrap();
+        match encode_cursor(&EventCursor {
+            start_time: last.start_time,
+            id: last.id,
+            created_at: Some(last.created_at),
+            minted_tickets: Some(last.minted_tickets),
+        }) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::error!("Failed to encode cursor: {:?}", e);
+                return AppError::InternalServerError("Failed to encode cursor".to_string())
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+
+    populate_is_free(&mut items, &state.pool).await;
+
+    let response = CursorResponse::new(items, &validated, next_cursor);
+    success(response, "Organizer events retrieved successfully").into_response()
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -751,6 +837,28 @@ mod tests {
         assert_eq!(v["data"]["total_events"].as_i64().unwrap(), 2);
         assert_eq!(v["data"]["total_tickets_sold"].as_i64().unwrap(), 100);
         assert!((v["data"]["average_event_rating"].as_f64().unwrap() - 4.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_list_events_by_organizer_cursor_params() {
+        let params = CursorParams {
+            limit: 10,
+            cursor: None,
+        };
+        let validated = params.validate();
+        assert_eq!(validated.page_size(), 10);
+        assert_eq!(validated.query_limit(), 11);
+        assert!(validated.cursor.is_none());
+    }
+
+    #[test]
+    fn test_list_events_by_organizer_cursor_with_value() {
+        let params = CursorParams {
+            limit: 5,
+            cursor: Some("some-cursor-value".to_string()),
+        };
+        let validated = params.validate();
+        assert_eq!(validated.cursor.as_deref(), Some("some-cursor-value"));
     }
 
     #[test]
