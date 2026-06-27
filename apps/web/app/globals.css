@@ -57,3 +57,53 @@ select:focus-visible,
 #nprogress .peg {
   box-shadow: 0 0 10px #FDDA23, 0 0 5px #FDDA23 !important;
 }
+
+[data-theme="dark"] {
+  --color-accent: #f0d93a;
+  --color-accent-hover: #e0cc1e;
+  --color-accent-dark: #b89618;
+  --color-accent-muted: #4a4420;
+
+  --color-base: #0f1115;
+  --color-base-alt: #16181d;
+  --color-surface: #1c1f25;
+  --color-surface-alt: #252830;
+  --color-cream: #22252b;
+  --color-muted: #1a1d23;
+  --color-subtle: #2e3139;
+  --color-border-warm: #2e3139;
+  --color-sand: #8a8d94;
+
+  --color-ink: #f4f4f5;
+  --color-ink-soft: #d6d7dc;
+  --color-ink-alt: #cacbcf;
+  --color-ink-deep: #a8aab0;
+  --color-dark: #0a0d14;
+  --color-dark-alt: #1a1d28;
+  --color-dark-deep: #13161e;
+
+  --color-muted-text: #a1a4ab;
+  --color-error: #ff4d4f;
+  --color-success-light: #1f3d1a;
+}
+
+[data-theme="dark"] body {
+  background-color: var(--color-base);
+  color: var(--color-ink);
+}
+
+[data-theme="dark"] .bg-white {
+  background-color: var(--color-surface);
+}
+
+[data-theme="dark"] .bg-base {
+  background-color: var(--color-base);
+}
+
+[data-theme="dark"] .text-black {
+  color: var(--color-ink);
+}
+
+[data-theme="dark"] .border-black {
+  border-color: var(--color-subtle);
+}

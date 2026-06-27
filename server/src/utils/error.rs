@@ -60,6 +60,10 @@ pub enum AppError {
     #[error("Resource not found: {0}")]
     NotFound(String),
 
+    /// 409 – the request conflicts with the current state of the resource.
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
     /// Database failure — status code depends on the underlying sqlx error kind.
     #[error("Database error")]
     DatabaseError(#[from] sqlx::Error),
@@ -81,6 +85,7 @@ impl AppError {
             AppError::AuthError(_) => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {
                 DatabaseErrorCategory::Connection => StatusCode::SERVICE_UNAVAILABLE,
                 DatabaseErrorCategory::UniqueViolation
@@ -99,6 +104,7 @@ impl AppError {
             AppError::AuthError(_) => "AUTH_ERROR",
             AppError::Forbidden(_) => "FORBIDDEN",
             AppError::NotFound(_) => "NOT_FOUND",
+            AppError::Conflict(_) => "CONFLICT",
             AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {
                 DatabaseErrorCategory::Connection => "DATABASE_UNAVAILABLE",
                 DatabaseErrorCategory::UniqueViolation => "UNIQUE_VIOLATION",

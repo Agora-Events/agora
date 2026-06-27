@@ -986,6 +986,16 @@ impl EventRegistry {
         storage::get_global_promo_bps(&env)
     }
 
+    /// Returns the active global promotional discount and expiry timestamp.
+    pub fn get_global_promo(env: Env) -> Option<(u32, u64)> {
+        let expiry = storage::get_promo_expiry(&env);
+        if expiry <= env.ledger().timestamp() {
+            return None;
+        }
+
+        Some((storage::get_global_promo_bps(&env), expiry))
+    }
+
     /// Returns the expiry timestamp for the current global promo.
     pub fn get_promo_expiry(env: Env) -> u64 {
         storage::get_promo_expiry(&env)
@@ -1370,12 +1380,14 @@ impl EventRegistry {
     /// * `guest` - Guest wallet address
     /// * `tickets_purchased` - Number of tickets purchased in this transaction
     /// * `amount_spent` - Amount spent in this transaction (in token stroops)
+    /// * `loyalty_multiplier` - Tier multiplier for loyalty points; 0 is treated as 1x
     pub fn update_loyalty_score(
         env: Env,
         caller: Address,
         guest: Address,
         tickets_purchased: u32,
         amount_spent: i128,
+        loyalty_multiplier: u32,
     ) -> Result<(), EventRegistryError> {
         caller.require_auth();
 
@@ -1405,8 +1417,15 @@ impl EventRegistry {
             last_updated: 0,
         });
 
-        // Award 10 points per ticket purchased
-        let points_earned = (tickets_purchased as u64).saturating_mul(10);
+        // Award 10 base points per ticket, adjusted by the tier multiplier.
+        let effective_multiplier = if loyalty_multiplier == 0 {
+            1
+        } else {
+            loyalty_multiplier
+        } as u64;
+        let points_earned = (tickets_purchased as u64)
+            .saturating_mul(10)
+            .saturating_mul(effective_multiplier);
         profile.loyalty_score = profile.loyalty_score.saturating_add(points_earned);
         profile.total_tickets_purchased = profile
             .total_tickets_purchased

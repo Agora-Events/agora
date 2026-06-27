@@ -28,6 +28,20 @@ vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
+// Mock Overlay
+vi.mock("@/components/ui/overlay", () => ({
+  Overlay: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
+    isOpen ? <div data-testid="overlay" onClick={onClose} /> : null,
+}));
+
+// Mock CSS module
+vi.mock("./navbar/drawer.module.css", () => ({
+  default: {
+    drawer: "drawer",
+    drawerOpen: "drawer-open",
+  },
+}));
+
 describe("Navbar", () => {
   afterEach(() => {
     cleanup();

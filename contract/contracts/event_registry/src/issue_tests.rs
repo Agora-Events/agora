@@ -303,6 +303,62 @@ fn test_set_global_promo_expired() {
 }
 
 #[test]
+fn test_get_global_promo_returns_none_when_unset() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+
+    assert_eq!(client.get_global_promo(), None);
+}
+
+#[test]
+fn test_get_global_promo_returns_none_when_expired() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    client.set_global_promo(&500, &999);
+
+    assert_eq!(client.get_global_promo(), None);
+}
+
+#[test]
+fn test_get_global_promo_returns_active_discount() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    client.set_global_promo(&750, &2_000);
+
+    assert_eq!(client.get_global_promo(), Some((750, 2_000)));
+}
+
+#[test]
+fn test_update_loyalty_score_applies_tier_multiplier() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _contract_id) = setup(&env);
+
+    let standard_guest = Address::generate(&env);
+    let vip_guest = Address::generate(&env);
+    let zero_multiplier_guest = Address::generate(&env);
+
+    client.update_loyalty_score(&admin, &standard_guest, &1, &100i128, &1);
+    client.update_loyalty_score(&admin, &vip_guest, &1, &100i128, &2);
+    client.update_loyalty_score(&admin, &zero_multiplier_guest, &1, &100i128, &0);
+
+    let standard = client.get_guest_profile(&standard_guest).unwrap();
+    let vip = client.get_guest_profile(&vip_guest).unwrap();
+    let zero_multiplier = client.get_guest_profile(&zero_multiplier_guest).unwrap();
+
+    assert_eq!(standard.loyalty_score, 10);
+    assert_eq!(vip.loyalty_score, 20);
+    assert_eq!(zero_multiplier.loyalty_score, 10);
+}
+
+#[test]
 #[should_panic]
 fn test_set_global_promo_unauthorized() {
     let env = Env::default();
