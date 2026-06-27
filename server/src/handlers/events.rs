@@ -11,6 +11,7 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
@@ -122,6 +123,9 @@ pub struct EventFilters {
     /// Filter events starting on or before this date (YYYY-MM-DD, treated as midnight UTC).
     /// Takes precedence over `start_before` when both are supplied.
     pub end_date: Option<String>,
+
+    /// Filter events that have been marked featured.
+    pub is_featured: Option<bool>,
 
     /// Filter to return only followers-only events (Issue #ForYou)
     pub followers_only: Option<bool>,
@@ -304,6 +308,14 @@ fn build_event_where_clause(
 
     if let Some(true) = filters.followers_only {
         where_clauses.push("followers_only = TRUE".to_string());
+    }
+
+    if let Some(is_featured) = filters.is_featured {
+        if is_featured {
+            where_clauses.push("is_featured = TRUE".to_string());
+        } else {
+            where_clauses.push("is_featured = FALSE".to_string());
+        }
     }
 
     // Cursor condition for keyset pagination on the active sort column.
@@ -849,6 +861,47 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_event_location_accepts_valid_location() {
+        assert!(validate_event_location("Amsterdam").is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_location_rejects_empty_location() {
+        let err = validate_event_location("   ").unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_validate_event_location_rejects_too_long_location() {
+        let err = validate_event_location(&"A".repeat(MAX_LOCATION_LENGTH + 1)).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_build_event_where_clause_includes_is_featured() {
+        let filters = EventFilters {
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: None,
+            is_free: None,
+            start_date: None,
+            end_date: None,
+            followers_only: None,
+            is_featured: Some(true),
+            sort_by: None,
+            sort_order: None,
+        };
+
+        let sort = filters.validate_sort().unwrap();
+        let (where_clause, _) = build_event_where_clause(&filters, &sort, None);
+        assert!(where_clause.contains("is_featured = TRUE"));
+    }
+
+    #[test]
     fn test_build_event_order_by_popularity_desc() {
         let sort = ValidatedEventSort {
             sort_by: EventSortBy::Popularity,
@@ -989,6 +1042,20 @@ pub async fn list_events(
     }
     if let Some(min_tickets) = filters.min_tickets_available {
         count_builder = count_builder.bind(min_tickets);
+    }
+    if let Some(ref date_str) = filters.start_date {
+        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            let dt: DateTime<Utc> = Utc
+                .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+            count_builder = count_builder.bind(dt);
+        }
+    }
+    if let Some(ref date_str) = filters.end_date {
+        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            let dt: DateTime<Utc> = Utc
+                .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+            count_builder = count_builder.bind(dt);
+        }
     }
     let _ = count_param_count; // used only to drive param numbering above
 
@@ -1432,6 +1499,24 @@ pub async fn list_similar_events(
     success(events, "Similar events retrieved successfully").into_response()
 }
 
+/// Maximum allowed length for an event title.
+pub const MAX_EVENT_TITLE_LENGTH: usize = 200;
+
+/// Validates an event title for create/update requests.
+pub fn validate_event_title(title: &str) -> Result<(), String> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return Err("title must not be empty".to_string());
+    }
+    if title.chars().count() > MAX_EVENT_TITLE_LENGTH {
+        return Err(format!(
+            "title must not exceed {} characters",
+            MAX_EVENT_TITLE_LENGTH
+        ));
+    }
+    Ok(())
+}
+
 /// Request body for creating a new event
 #[derive(Debug, Deserialize)]
 pub struct CreateEventRequest {
@@ -1480,6 +1565,22 @@ fn is_valid_email(email: &str) -> bool {
         && !domain.ends_with('.')
 }
 
+const MAX_LOCATION_LENGTH: usize = 500;
+
+fn validate_event_location(location: &str) -> Result<(), AppError> {
+    if location.trim().is_empty() {
+        return Err(AppError::ValidationError(
+            "location is required".to_string(),
+        ));
+    }
+    if location.chars().count() > MAX_LOCATION_LENGTH {
+        return Err(AppError::ValidationError(format!(
+            "location must be at most {MAX_LOCATION_LENGTH} characters"
+        )));
+    }
+    Ok(())
+}
+
 /// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
 ///
 /// # Endpoint
@@ -1494,6 +1595,10 @@ pub async fn create_event(
         }
     }
 
+    if let Err(e) = validate_event_location(&payload.location) {
+        return e.into_response();
+    }
+
     // Validate host_email format when provided.
     if let Some(ref email) = payload.host_email {
         if !is_valid_email(email) {
@@ -1502,6 +1607,10 @@ pub async fn create_event(
             )
             .into_response();
         }
+    }
+
+    if let Err(message) = validate_event_title(&payload.title) {
+        return AppError::ValidationError(message).into_response();
     }
 
     let event = match sqlx::query_as::<_, Event>(
@@ -2033,17 +2142,63 @@ pub async fn toggle_event_flag(
     }
 
     let mut response = success(
-        serde_json::json!({ "is_flagged": new_flagged }),
+        json!({ "is_flagged": new_flagged }),
         "Event flag toggled successfully",
     )
     .into_response();
 
     // Attach the organizer wallet so the audit middleware records it in metadata.
     if let Some(wallet) = organizer_wallet {
-        response.extensions_mut().insert(AuditMetadata(
-            serde_json::json!({ "organizer_wallet": wallet }),
-        ));
+        response.extensions_mut().insert(AuditMetadata(json!({ "organizer_wallet": wallet })));
     }
+
+    response
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetEventFeaturedRequest {
+    pub featured: bool,
+}
+
+/// Set or clear the featured flag for an event (admin only).
+///
+/// PATCH `/api/v1/admin/events/:id/feature`
+pub async fn set_event_featured(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Json(payload): Json<SetEventFeaturedRequest>,
+) -> Response {
+    let updated = match sqlx::query_as::<_, (bool,)>(
+        "UPDATE events SET is_featured = $1 WHERE id = $2 RETURNING is_featured",
+    )
+    .bind(payload.featured)
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(row) => row.0,
+        Err(sqlx::Error::RowNotFound) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to update event featured flag: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate cache for featured update on event {}: {:?}", event_id, e);
+    }
+
+    let mut response = success(
+        json!({ "is_featured": updated }),
+        "Event featured flag updated successfully",
+    )
+    .into_response();
+
+    response.extensions_mut().insert(AuditMetadata(json!({ "featured": updated })));
 
     response
 }
@@ -3260,6 +3415,31 @@ fn test_ticket_tier_response_serialization() {
     assert_eq!(json["name"], "General");
     assert_eq!(json["quantity"], 500);
     assert_eq!(json["sold"], 120);
+}
+
+#[test]
+fn test_validate_event_title_accepts_max_length() {
+    let title = "a".repeat(MAX_EVENT_TITLE_LENGTH);
+    assert!(validate_event_title(&title).is_ok());
+}
+
+#[test]
+fn test_validate_event_title_rejects_empty() {
+    let err = validate_event_title("").unwrap_err();
+    assert!(err.contains("empty"));
+}
+
+#[test]
+fn test_validate_event_title_rejects_whitespace_only() {
+    let err = validate_event_title("   ").unwrap_err();
+    assert!(err.contains("empty"));
+}
+
+#[test]
+fn test_validate_event_title_rejects_too_long() {
+    let title = "a".repeat(MAX_EVENT_TITLE_LENGTH + 1);
+    let err = validate_event_title(&title).unwrap_err();
+    assert!(err.contains("200"));
 }
 
 #[test]
