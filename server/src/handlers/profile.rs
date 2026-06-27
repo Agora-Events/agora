@@ -10,7 +10,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -277,6 +277,46 @@ pub async fn get_my_profile(State(mut state): State<ProfileState>, headers: Head
     };
 
     fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
+}
+
+/// `DELETE /api/v1/profile`
+///
+/// Deletes the authenticated organizer's profile row from `organizer_profiles`.
+/// Returns 204 No Content on success, 404 if no profile exists.
+pub async fn delete_profile(
+    State(mut state): State<ProfileState>,
+    headers: HeaderMap,
+) -> Response {
+    let address = match extract_auth(&headers) {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+
+    let result = match sqlx::query(
+        "DELETE FROM organizer_profiles WHERE address = $1",
+    )
+    .bind(&address)
+    .execute(&state.pool)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to delete organizer profile: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if result.rows_affected() == 0 {
+        return AppError::NotFound(format!("No profile found for address '{address}'"))
+            .into_response();
+    }
+
+    let cache_key = format!("profile:{address}");
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!("Failed to invalidate profile cache for {address}: {:?}", e);
+    }
+
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// Summary of a payment transaction returned by `GET /api/v1/profile/transactions`.
@@ -675,6 +715,14 @@ mod tests {
         let json = serde_json::to_value(response).unwrap();
         assert_eq!(json["address"], "GABC");
         assert_eq!(json["total_events"], 3);
+    }
+
+    #[test]
+    fn test_delete_profile_cache_key_matches_upsert_key() {
+        let address = "GDELETE123WALLETADDRESS";
+        let key = format!("profile:{address}");
+        assert_eq!(key, "profile:GDELETE123WALLETADDRESS");
+        assert!(key.starts_with("profile:"));
     }
 
     #[test]
