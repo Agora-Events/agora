@@ -70,7 +70,7 @@ impl Serialize for Event {
     {
         use serde::ser::SerializeStruct;
 
-        let mut state = serializer.serialize_struct("Event", 16)?;
+        let mut state = serializer.serialize_struct("Event", 15)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("organizer_id", &self.organizer_id)?;
         state.serialize_field("title", &self.title)?;
@@ -216,6 +216,33 @@ mod tests {
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["average_rating"], 4.5);
+    }
+
+    #[test]
+    fn test_created_at_and_updated_at_serialized() {
+        use chrono::TimeZone;
+        let created = Utc.with_ymd_and_hms(2026, 5, 1, 10, 0, 0).unwrap();
+        let updated = Utc.with_ymd_and_hms(2026, 5, 20, 14, 30, 0).unwrap();
+        let event = Event {
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            title: "T".into(),
+            description: None,
+            location: "L".into(),
+            start_time: created,
+            end_time: None,
+            is_flagged: false,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: created,
+            updated_at: updated,
+            image_url: None,
+            is_free: false,
+            minted_tickets: 0,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert!(!json["created_at"].is_null(), "created_at must be present");
+        assert!(!json["updated_at"].is_null(), "updated_at must be present");
     }
 
     #[test]
