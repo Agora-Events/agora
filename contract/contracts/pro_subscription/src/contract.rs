@@ -8,21 +8,13 @@ use crate::{
         SubscriptionRenewedEvent,
     },
     storage::{
-        add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin,
-        get_payment_token, get_platform_wallet, get_pro_members_list, get_pro_monthly_price,
-        get_subscription, get_total_pro_subscriptions, increment_total_pro_subscriptions,
-        is_initialized, remove_from_pro_members_list, set_admin,
-        set_initialized, set_payment_token, set_platform_wallet, set_pro_monthly_price,
-        set_subscription,
-    },
-    types::{Subscription, SubscriptionTier, SECONDS_PER_MONTH},
         add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin, get_payment_token,
         get_platform_wallet, get_pro_members_list, get_pro_monthly_price, get_subscription,
         get_total_pro_subscriptions, increment_total_pro_subscriptions, is_initialized,
         remove_from_pro_members_list, set_admin, set_initialized, set_payment_token,
         set_platform_wallet, set_pro_monthly_price, set_subscription,
     },
-    types::{Subscription, SubscriptionTier},
+    types::{Subscription, SubscriptionTier, SECONDS_PER_MONTH},
     validation::validate_address,
 };
 
@@ -392,10 +384,7 @@ impl ProSubscriptionContract {
     }
 
     /// Update the accepted payment token (admin only)
-    pub fn update_payment_token(
-        env: Env,
-        new_token: Address,
-    ) -> Result<(), ProSubscriptionError> {
+    pub fn update_payment_token(env: Env, new_token: Address) -> Result<(), ProSubscriptionError> {
         require_admin(&env)?;
         validate_address(&env, &new_token)?;
         set_payment_token(&env, &new_token);

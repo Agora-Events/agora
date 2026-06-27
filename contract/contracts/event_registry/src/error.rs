@@ -49,12 +49,12 @@ pub enum EventRegistryError {
     StateError = 46,
     MultisigError = 47,
     ProposalAlreadyCancelled = 49,
-    InvalidTargetDeadline = 54,
     DeadlineAfterEndTime = 55,
     PerUserLimitExceeded = 60,
     InvalidDeadline = 61,
     InvalidCategoryId = 71,
     AlreadyOnWaitlist = 75,
+    TooManyTiers = 80,
 }
 
 impl core::fmt::Display for EventRegistryError {
@@ -182,7 +182,7 @@ impl core::fmt::Display for EventRegistryError {
             EventRegistryError::ProposalAlreadyCancelled => {
                 write!(f, "Proposal has already been cancelled")
             }
-            EventRegistryError::InvalidTargetDeadline | EventRegistryError::InvalidDeadline => {
+            EventRegistryError::InvalidDeadline => {
                 write!(f, "Target deadline must be in the future")
             }
             EventRegistryError::DeadlineAfterEndTime => {
@@ -199,6 +199,9 @@ impl core::fmt::Display for EventRegistryError {
             }
             EventRegistryError::AlreadyOnWaitlist => {
                 write!(f, "User is already on the waitlist for this event")
+            }
+            EventRegistryError::TooManyTiers => {
+                write!(f, "Event exceeds the maximum number of ticket tiers")
             }
         }
     }

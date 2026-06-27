@@ -2,7 +2,40 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 use thiserror::Error;
-use tracing::error;
+use tracing::{error, warn};
+
+/// Classification of sqlx database errors for HTTP mapping and logging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatabaseErrorCategory {
+    /// Connection or pool failures — alert-worthy infrastructure issues.
+    Connection,
+    /// Unique constraint violation.
+    UniqueViolation,
+    /// Foreign key constraint violation.
+    ForeignKeyViolation,
+    /// Other query-level failures.
+    Query,
+}
+
+impl DatabaseErrorCategory {
+    fn from_sqlx(err: &sqlx::Error) -> Self {
+        match err {
+            sqlx::Error::Io(_)
+            | sqlx::Error::PoolClosed
+            | sqlx::Error::PoolTimedOut => Self::Connection,
+            sqlx::Error::Database(db_err) => {
+                if db_err.is_unique_violation() {
+                    Self::UniqueViolation
+                } else if db_err.is_foreign_key_violation() {
+                    Self::ForeignKeyViolation
+                } else {
+                    Self::Query
+                }
+            }
+            _ => Self::Query,
+        }
+    }
+}
 
 /// Standardised application error enum.
 ///
@@ -27,7 +60,11 @@ pub enum AppError {
     #[error("Resource not found: {0}")]
     NotFound(String),
 
-    /// 500 – an sqlx query or connection failed.
+    /// 409 – the request conflicts with the current state of the resource.
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
+    /// Database failure — status code depends on the underlying sqlx error kind.
     #[error("Database error")]
     DatabaseError(#[from] sqlx::Error),
 
@@ -48,7 +85,13 @@ impl AppError {
             AppError::AuthError(_) => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
-            AppError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {
+                DatabaseErrorCategory::Connection => StatusCode::SERVICE_UNAVAILABLE,
+                DatabaseErrorCategory::UniqueViolation
+                | DatabaseErrorCategory::ForeignKeyViolation => StatusCode::CONFLICT,
+                DatabaseErrorCategory::Query => StatusCode::INTERNAL_SERVER_ERROR,
+            },
             AppError::ExternalServiceError(_) => StatusCode::SERVICE_UNAVAILABLE,
             AppError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -61,7 +104,13 @@ impl AppError {
             AppError::AuthError(_) => "AUTH_ERROR",
             AppError::Forbidden(_) => "FORBIDDEN",
             AppError::NotFound(_) => "NOT_FOUND",
-            AppError::DatabaseError(_) => "DATABASE_ERROR",
+            AppError::Conflict(_) => "CONFLICT",
+            AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {
+                DatabaseErrorCategory::Connection => "DATABASE_UNAVAILABLE",
+                DatabaseErrorCategory::UniqueViolation => "UNIQUE_VIOLATION",
+                DatabaseErrorCategory::ForeignKeyViolation => "FOREIGN_KEY_VIOLATION",
+                DatabaseErrorCategory::Query => "DATABASE_ERROR",
+            },
             AppError::ExternalServiceError(_) => "EXTERNAL_SERVICE_ERROR",
             AppError::InternalServerError(_) => "INTERNAL_SERVER_ERROR",
         }
@@ -78,7 +127,18 @@ impl AppError {
             | AppError::NotFound(msg)
             | AppError::ExternalServiceError(msg)
             | AppError::InternalServerError(msg) => msg.clone(),
-            AppError::DatabaseError(_) => "A database error occurred".to_string(),
+            AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {
+                DatabaseErrorCategory::Connection => {
+                    "Database service is temporarily unavailable".to_string()
+                }
+                DatabaseErrorCategory::UniqueViolation => {
+                    "A resource with this identifier already exists".to_string()
+                }
+                DatabaseErrorCategory::ForeignKeyViolation => {
+                    "The referenced resource does not exist".to_string()
+                }
+                DatabaseErrorCategory::Query => "A database error occurred".to_string(),
+            },
         }
     }
 }
@@ -104,9 +164,16 @@ impl IntoResponse for AppError {
 
         // Log *before* the message is moved into the JSON body.
         match &self {
-            AppError::DatabaseError(e) => {
-                error!(error = ?e, "Database error");
-            }
+            AppError::DatabaseError(e) => match DatabaseErrorCategory::from_sqlx(e) {
+                DatabaseErrorCategory::Connection => {
+                    error!(error = ?e, "Database connection error");
+                }
+                DatabaseErrorCategory::UniqueViolation
+                | DatabaseErrorCategory::ForeignKeyViolation
+                | DatabaseErrorCategory::Query => {
+                    warn!(error = ?e, "Database query error");
+                }
+            },
             _ => {
                 error!(error = ?self, code, message, "Application error");
             }
@@ -133,6 +200,7 @@ mod tests {
     use super::*;
     use axum::body::to_bytes;
     use axum::response::IntoResponse;
+    use sqlx::error::DatabaseError;
 
     // Helper: consume a Response and deserialise its JSON body.
     async fn body_json(resp: Response) -> serde_json::Value {
@@ -224,10 +292,38 @@ mod tests {
 
     #[test]
     fn test_public_message_database_hides_details() {
-        // DatabaseError must never expose raw SQL details.
-        let raw_sql_error = sqlx::Error::RowNotFound; // simplest sqlx variant that needs no DB
+        let raw_sql_error = sqlx::Error::RowNotFound;
         let err = AppError::DatabaseError(raw_sql_error);
         assert_eq!(err.public_message(), "A database error occurred");
+    }
+
+    #[test]
+    fn test_public_message_connection_error_is_generic() {
+        let err = AppError::DatabaseError(sqlx::Error::PoolTimedOut);
+        assert_eq!(
+            err.public_message(),
+            "Database service is temporarily unavailable"
+        );
+    }
+
+    #[test]
+    fn test_public_message_unique_violation_is_generic() {
+        let err = AppError::DatabaseError(mock_db_error(MockDbErrorKind::UniqueViolation));
+        assert_eq!(
+            err.public_message(),
+            "A resource with this identifier already exists"
+        );
+        assert!(!err.public_message().contains("duplicate"));
+    }
+
+    #[test]
+    fn test_public_message_foreign_key_violation_is_generic() {
+        let err = AppError::DatabaseError(mock_db_error(MockDbErrorKind::ForeignKeyViolation));
+        assert_eq!(
+            err.public_message(),
+            "The referenced resource does not exist"
+        );
+        assert!(!err.public_message().contains("foreign key"));
     }
 
     #[test]
@@ -290,6 +386,53 @@ mod tests {
     async fn test_into_response_database_error_status() {
         let resp = AppError::DatabaseError(sqlx::Error::RowNotFound).into_response();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn test_into_response_pool_timeout_returns_503() {
+        let resp = AppError::DatabaseError(sqlx::Error::PoolTimedOut).into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let json = body_json(resp).await;
+        assert_eq!(json["error"]["code"], "DATABASE_UNAVAILABLE");
+        assert_eq!(
+            json["error"]["message"],
+            "Database service is temporarily unavailable"
+        );
+        assert!(!json["error"]["message"].as_str().unwrap().contains("timeout"));
+    }
+
+    #[tokio::test]
+    async fn test_into_response_pool_closed_returns_503() {
+        let resp = AppError::DatabaseError(sqlx::Error::PoolClosed).into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn test_into_response_unique_violation_returns_409() {
+        let resp =
+            AppError::DatabaseError(mock_db_error(MockDbErrorKind::UniqueViolation))
+                .into_response();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let json = body_json(resp).await;
+        assert_eq!(json["error"]["code"], "UNIQUE_VIOLATION");
+        assert_eq!(
+            json["error"]["message"],
+            "A resource with this identifier already exists"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_into_response_foreign_key_violation_returns_409() {
+        let resp =
+            AppError::DatabaseError(mock_db_error(MockDbErrorKind::ForeignKeyViolation))
+                .into_response();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let json = body_json(resp).await;
+        assert_eq!(json["error"]["code"], "FOREIGN_KEY_VIOLATION");
+        assert_eq!(
+            json["error"]["message"],
+            "The referenced resource does not exist"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -368,8 +511,63 @@ mod tests {
         let resp = AppError::DatabaseError(sqlx::Error::RowNotFound).into_response();
         let json = body_json(resp).await;
         assert_eq!(json["error"]["code"], "DATABASE_ERROR");
-        // Raw SQL details must NOT appear in the public message.
         assert_eq!(json["error"]["message"], "A database error occurred");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test helpers
+    // -----------------------------------------------------------------------
+
+    #[derive(Debug, Copy, Clone)]
+    enum MockDbErrorKind {
+        UniqueViolation,
+        ForeignKeyViolation,
+    }
+
+    #[derive(Debug)]
+    struct MockDbError {
+        kind: MockDbErrorKind,
+    }
+
+    impl std::fmt::Display for MockDbError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock database error")
+        }
+    }
+
+    impl std::error::Error for MockDbError {}
+
+    impl DatabaseError for MockDbError {
+        fn message(&self) -> &str {
+            "duplicate key value violates unique constraint users_email_key"
+        }
+
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn into_error(
+            self: Box<Self>,
+        ) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            match self.kind {
+                MockDbErrorKind::UniqueViolation => sqlx::error::ErrorKind::UniqueViolation,
+                MockDbErrorKind::ForeignKeyViolation => {
+                    sqlx::error::ErrorKind::ForeignKeyViolation
+                }
+            }
+        }
+    }
+
+    fn mock_db_error(kind: MockDbErrorKind) -> sqlx::Error {
+        sqlx::Error::Database(Box::new(MockDbError { kind }))
     }
 
     // -----------------------------------------------------------------------

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
+import { ChatSidebar } from "@/components/layout/chat-sidebar";
 import CalendarIcon from "@/public/icons/calendar.svg";
 import HostingIcon from "@/public/icons/ticket-star.svg";
 import PastIcon from "@/public/icons/camera-smile-01.svg";
@@ -308,6 +309,7 @@ function SectionHeader<T extends string>({
   onTabChange,
   layoutId,
   hasNotifications = false,
+  onChatClick,
 }: {
   title: string;
   tabs: { id: T; label: string }[];
@@ -315,6 +317,7 @@ function SectionHeader<T extends string>({
   onTabChange: (tab: T) => void;
   layoutId: string;
   hasNotifications?: boolean;
+  onChatClick?: () => void;
 }) {
   return (
     <div className="flex flex-col  gap-3 sm:gap-8 mb-6 sm:mb-8">
@@ -329,7 +332,7 @@ function SectionHeader<T extends string>({
           layoutId={layoutId}
         />
         {hasNotifications && (
-          <Link href="#">
+          <button type="button" onClick={onChatClick} aria-label="Open messages">
             <div className="w-13.75 h-13.75 rounded-full bg-surface flex items-center justify-center  relative">
               <div className="absolute -top-1 right-1 rounded-full size-4.75 bg-error text-white flex items-center justify-center">
                 <p>1</p>
@@ -342,7 +345,7 @@ function SectionHeader<T extends string>({
                 className="object-contain w-6 h-6 mx-auto"
               />
             </div>
-          </Link>
+          </button>
         )}
       </div>
     </div>
@@ -673,6 +676,7 @@ function ForYouContent({ activeTab }: { activeTab: ForYouTab }) {
 export default function HomePage() {
   const [myEventsTab, setMyEventsTab] = useState<MyEventsTab>("upcoming");
   const [forYouTab, setForYouTab] = useState<ForYouTab>("discover");
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-base-alt">
@@ -688,7 +692,16 @@ export default function HomePage() {
             onTabChange={setMyEventsTab}
             layoutId="my-events-toggle"
             hasNotifications={true}
+            onChatClick={() => setIsChatOpen((prev) => !prev)}
           />
+
+          {/* Chat Sidebar (shown when toggled) */}
+          {isChatOpen && (
+            <div className="flex justify-end mb-4">
+              <ChatSidebar onNewChat={() => setIsChatOpen(false)} />
+            </div>
+          )}
+
           <MyEventsContent activeTab={myEventsTab} />
         </section>
 

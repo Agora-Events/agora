@@ -13,5 +13,9 @@ contract/target
 # Contract test snapshots
 **/test_snapshots/
 
+# NPM lockfiles are stale in this pnpm repo
+package-lock.json
+**/package-lock.json
+
 # PR description drafts
 pr-*.md

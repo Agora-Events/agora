@@ -1,5 +1,5 @@
 import CreateEventForm from "@/components/events/create-event-form";
-import { Camera } from "lucide-react";
+import { Camera } from "@/components/ui/icons";
 
 export default function CreateEventPage() {
   return (

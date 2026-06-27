@@ -17,13 +17,13 @@ pub fn require_organizer(
     event_id: &String,
     caller: &Address,
 ) -> Result<(), EventRegistryError> {
-    let event_info = storage::get_event(env, event_id.clone())
-        .ok_or(EventRegistryError::EventNotFound)?;
-    
+    let event_info =
+        storage::get_event(env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
     if &event_info.organizer_address != caller {
         return Err(EventRegistryError::Unauthorized);
     }
-    
+
     caller.require_auth();
     Ok(())
 }

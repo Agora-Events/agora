@@ -224,10 +224,34 @@ pub struct EventPostponedEvent {
     pub event_id: String,
     /// The wallet address of the event organizer.
     pub organizer_address: Address,
+    /// The new Unix timestamp when the event will start.
+    pub new_start_time: u64,
     /// The Unix timestamp when the refund grace period ends.
     pub grace_period_end: u64,
     /// The ledger timestamp when the postponement occurred.
     pub timestamp: u64,
+}
+
+/// Emitted when the staking token address is changed by an admin.
+///
+/// Published with topic `(AgoraEvent::StakingTokenUpdated,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StakingTokenUpdatedEvent {
+    pub old_token: Option<Address>,
+    pub new_token: Address,
+    pub admin: Address,
+}
+
+/// Emitted when the minimum stake amount is changed by an admin.
+///
+/// Published with topic `(AgoraEvent::MinStakeAmountUpdated,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MinStakeAmountUpdatedEvent {
+    pub old_amount: i128,
+    pub new_amount: i128,
+    pub admin: Address,
 }
 
 /// Emitted when a governance proposal is created by an admin.

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -11,6 +11,8 @@ import { useEffect, useRef, useState } from "react";
 import { GuestNav } from "./navbar/guest-nav";
 import { MobileNavLink } from "./navbar/mobile-nav-link";
 import { UserNav } from "./navbar/user-nav";
+import { Overlay } from "@/components/ui/overlay";
+import styles from "./navbar/drawer.module.css";
 
 /**
  * Main navigation bar component for the application
@@ -19,7 +21,8 @@ import { UserNav } from "./navbar/user-nav";
  * - Responsive design with mobile menu toggle
  * - Different navigation states for logged-in vs guest users
  * - Body scroll lock when mobile menu is open
- * - Animated mobile menu using Framer Motion
+ * - Animated mobile menu using CSS transitions via drawer.module.css
+ * - Semi-transparent overlay backdrop when drawer is open
  *
  * @returns React component that renders the main navigation bar
  */
@@ -57,7 +60,7 @@ export function Navbar() {
           menuRef.current.querySelectorAll<HTMLElement>(
             'a, button, [tabindex]:not([tabindex="-1"])'
           )
-        ).filter((el) => !el.hasAttribute("disabled"));
+        ).filter((el: HTMLElement) => !el.hasAttribute("disabled"));
         if (focusable.length === 0) return;
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -86,25 +89,6 @@ export function Navbar() {
   }, [isOpen]);
 
   const toggleMenu = () => setIsOpen(!isOpen);
-
-  const menuVariants = {
-    closed: {
-      x: "100%",
-      transition: {
-        type: "spring" as const,
-        stiffness: 400,
-        damping: 40,
-      },
-    },
-    open: {
-      x: "0%",
-      transition: {
-        type: "spring" as const,
-        stiffness: 400,
-        damping: 40,
-      },
-    },
-  };
 
   const linkVariants = {
     closed: { opacity: 0, y: 20 },
@@ -156,144 +140,124 @@ export function Navbar() {
         </div>
       </nav>
 
-      <AnimatePresence>
-        {isOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={toggleMenu}
-              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden"
-            />
+      {isOpen && <Overlay isOpen={isOpen} onClose={() => setIsOpen(false)} />}
 
-            <motion.div
-              ref={menuRef}
-              id="mobile-menu"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Mobile navigation"
-              variants={menuVariants}
-              initial="closed"
-              animate="open"
-              exit="closed"
-              className="fixed top-0 right-0 h-full w-[300px] bg-white z-50 shadow-2xl flex flex-col p-8 pt-24 lg:hidden"
-            >
-              <button
-                type="button"
-                onClick={toggleMenu}
-                className="absolute top-6 right-6 p-2 rounded-full hover:bg-gray-100 transition-colors"
-                aria-label="Close Menu"
-              >
-                <Image src="/icons/x.svg" width={24} height={24} alt="Close menu" className="object-contain" />
-              </button>
+      <div
+        ref={menuRef}
+        id="mobile-menu"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Mobile navigation"
+        className={`fixed top-0 right-0 h-full w-[300px] bg-white z-50 shadow-2xl flex flex-col p-8 pt-24 lg:hidden ${
+          isOpen ? styles.drawerOpen : styles.drawer
+        }`}
+      >
+        <button
+          type="button"
+          onClick={toggleMenu}
+          className="absolute top-6 right-6 p-2 rounded-full hover:bg-gray-100 transition-colors"
+          aria-label="Close Menu"
+        >
+          <Image src="/icons/x.svg" width={24} height={24} alt="Close menu" className="object-contain" />
+        </button>
 
-              <div className="flex flex-col gap-6">
-                {isLoggedIn ? (
-                  <>
-                    <MobileNavLink
-                      i={0}
-                      href="/home"
-                      icon="/icons/home.svg"
-                      text="Home"
-                      isActive={pathname === "/home"}
-                      onClose={() => setIsOpen(false)}
-                      ariaLabel="Home"
-                    />
-                    <MobileNavLink
-                      i={1}
-                      href="/discover"
-                      icon="/icons/earth-yellow.svg"
-                      text="Discover Events"
-                      isActive={
-                        pathname === "/discover" ||
-                        pathname.startsWith("/events")
-                      }
-                      onClose={() => setIsOpen(false)}
-                      ariaLabel="Discover Events"
-                    />
-                    <MobileNavLink
-                      i={2}
-                      href="/organizers"
-                      icon="/icons/user-group.svg"
-                      text="Organizers"
-                      isActive={pathname === "/organizers"}
-                      onClose={() => setIsOpen(false)}
-                      ariaLabel="Organizers"
-                    />
-                    <MobileNavLink
-                      i={3}
-                      href="/stellar"
-                      icon="/icons/stellar-xlm-logo 1.svg"
-                      text="Stellar Ecosystem"
-                      isActive={pathname === "/stellar"}
-                      onClose={() => setIsOpen(false)}
-                      ariaLabel="Stellar Ecosystem"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <MobileNavLink
-                      i={0}
-                      href="/discover"
-                      icon="/icons/earth.svg"
-                      text="Discover Events"
-                      isActive={
-                        pathname === "/discover" ||
-                        pathname.startsWith("/events")
-                      }
-                      onClose={() => setIsOpen(false)}
-                      ariaLabel="Discover Events"
-                    />
-                    <MobileNavLink
-                      i={1}
-                      href="/pricing"
-                      icon="/icons/dollar-circle.svg"
-                      text="Pricing"
-                      isActive={pathname === "/pricing"}
-                      onClose={() => setIsOpen(false)}
-                      ariaLabel="Pricing"
-                    />
-                    <MobileNavLink
-                      i={2}
-                      href="/stellar"
-                      icon="/icons/stellar-xlm-logo 1.svg"
-                      text="Stellar Ecosystem"
-                      isActive={pathname === "/stellar"}
-                      onClose={() => setIsOpen(false)}
-                      ariaLabel="Stellar Ecosystem"
-                    />
-                    <MobileNavLink
-                      i={3}
-                      href="/faqs"
-                      icon="/icons/help-circle.svg"
-                      text="FAQs"
-                      isActive={pathname === "/faqs"}
-                      onClose={() => setIsOpen(false)}
-                      ariaLabel="Frequently Asked Questions"
-                    />
-                  </>
-                )}
+        <div className="flex flex-col gap-6">
+          {isLoggedIn ? (
+            <>
+              <MobileNavLink
+                i={0}
+                href="/home"
+                icon="/icons/home.svg"
+                text="Home"
+                isActive={pathname === "/home"}
+                onClose={() => setIsOpen(false)}
+                ariaLabel="Home"
+              />
+              <MobileNavLink
+                i={1}
+                href="/discover"
+                icon="/icons/earth-yellow.svg"
+                text="Discover Events"
+                isActive={pathname === "/discover" || pathname.startsWith("/events")}
+                onClose={() => setIsOpen(false)}
+                ariaLabel="Discover Events"
+              />
+              <MobileNavLink
+                i={2}
+                href="/organizers"
+                icon="/icons/user-group.svg"
+                text="Organizers"
+                isActive={pathname === "/organizers"}
+                onClose={() => setIsOpen(false)}
+                ariaLabel="Organizers"
+              />
+              <MobileNavLink
+                i={3}
+                href="/stellar"
+                icon="/icons/stellar-xlm-logo 1.svg"
+                text="Stellar Ecosystem"
+                isActive={pathname === "/stellar"}
+                onClose={() => setIsOpen(false)}
+                ariaLabel="Stellar Ecosystem"
+              />
+            </>
+          ) : (
+            <>
+              <MobileNavLink
+                i={0}
+                href="/discover"
+                icon="/icons/earth.svg"
+                text="Discover Events"
+                isActive={pathname === "/discover" || pathname.startsWith("/events")}
+                onClose={() => setIsOpen(false)}
+                ariaLabel="Discover Events"
+              />
+              <MobileNavLink
+                i={1}
+                href="/pricing"
+                icon="/icons/dollar-circle.svg"
+                text="Pricing"
+                isActive={pathname === "/pricing"}
+                onClose={() => setIsOpen(false)}
+                ariaLabel="Pricing"
+              />
+              <MobileNavLink
+                i={2}
+                href="/stellar"
+                icon="/icons/stellar-xlm-logo 1.svg"
+                text="Stellar Ecosystem"
+                isActive={pathname === "/stellar"}
+                onClose={() => setIsOpen(false)}
+                ariaLabel="Stellar Ecosystem"
+              />
+              <MobileNavLink
+                i={3}
+                href="/faqs"
+                icon="/icons/help-circle.svg"
+                text="FAQs"
+                isActive={pathname === "/faqs"}
+                onClose={() => setIsOpen(false)}
+                ariaLabel="Frequently Asked Questions"
+              />
+            </>
+          )}
 
-                <motion.div custom={4} variants={linkVariants} className="mt-4">
-                  <Link href={isLoggedIn ? "/create-event" : "/auth"} onClick={() => setIsOpen(false)}>
-                    <Button variant="dark" className="w-full justify-center">
-                      <span>Create Your Event</span>
-                      <Image
-                        src="/icons/arrow-up-right-01.svg"
-                        alt="Create event"
-                        width={24}
-                        height={24}
-                        className="invert group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-                      />
-                    </Button>
-                  </Link>
-                </motion.div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          <motion.div custom={4} variants={linkVariants} className="mt-4">
+            <Link href={isLoggedIn ? "/create-event" : "/auth"} onClick={() => setIsOpen(false)}>
+              <Button variant="dark" className="w-full justify-center">
+                <span>Create Your Event</span>
+                <Image
+                  src="/icons/arrow-up-right-01.svg"
+                  alt="Create event"
+                  width={24}
+                  height={24}
+                  className="invert group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+                />
+              </Button>
+            </Link>
+          </motion.div>
+        </div>
+      </div>
     </>
   );
 }

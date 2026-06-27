@@ -19,6 +19,7 @@ dependencies = [
  "hex",
  "http-body-util",
  "jsonwebtoken",
+ "once_cell",
  "pin-project",
  "rand 0.8.5",
  "redis",
