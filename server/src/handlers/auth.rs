@@ -41,8 +41,8 @@ pub struct Claims {
     pub exp: i64,
 }
 
-fn jwt_secret() -> String {
-    env::var("JWT_SECRET").unwrap_or_else(|_| "fallback_dev_secret_change_in_prod".to_string())
+pub fn jwt_secret() -> String {
+    env::var("JWT_SECRET").expect("JWT_SECRET environment variable is missing. It is required for signing JWTs.")
 }
 
 /// Encode a JWT for the given Stellar address with a 24-hour expiry.

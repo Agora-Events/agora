@@ -446,6 +446,7 @@ mod tests {
     #[test]
     fn build_where_clause_includes_min_tickets_available() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -473,6 +474,7 @@ mod tests {
     fn test_event_filters_deserialization() {
         // Test that filters can be deserialized from query params
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: Some(Uuid::new_v4()),
             organizer_wallet: Some("GABC123".to_string()),
             location: Some("New York".to_string()),
@@ -496,6 +498,7 @@ mod tests {
     #[test]
     fn test_organizer_wallet_filter() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: Some("GBXXX".to_string()),
             location: None,
@@ -546,6 +549,7 @@ mod tests {
     #[test]
     fn test_is_free_filter() {
         let filters_free = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -563,6 +567,7 @@ mod tests {
         assert_eq!(filters_free.is_free, Some(true));
 
         let filters_paid = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -580,6 +585,7 @@ mod tests {
         assert_eq!(filters_paid.is_free, Some(false));
 
         let filters_none = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -600,6 +606,7 @@ mod tests {
     #[test]
     fn test_start_date_filter_generates_where_clause() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -625,6 +632,7 @@ mod tests {
     #[test]
     fn test_end_date_filter_generates_where_clause() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -650,6 +658,7 @@ mod tests {
     #[test]
     fn test_followers_only_filter() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -1048,6 +1057,7 @@ mod tests {
     #[test]
     fn test_invalid_sort_by_returns_validation_error() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -1070,6 +1080,7 @@ mod tests {
     #[test]
     fn test_invalid_sort_order_returns_validation_error() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -2675,6 +2686,7 @@ pub async fn get_event_revenue(
 fn test_event_filters_deserialization() {
     // Test that filters can be deserialized from query params
     let filters = EventFilters {
+            is_featured: None,
         organizer_id: Some(Uuid::new_v4()),
         organizer_wallet: Some("GABC123".to_string()),
         location: Some("New York".to_string()),
@@ -2698,6 +2710,7 @@ fn test_event_filters_deserialization() {
 #[test]
 fn test_organizer_wallet_filter() {
     let filters = EventFilters {
+            is_featured: None,
         organizer_id: None,
         organizer_wallet: Some("GBXXX".to_string()),
         location: None,
@@ -2718,6 +2731,7 @@ fn test_organizer_wallet_filter() {
 #[test]
 fn test_is_free_filter() {
     let filters_free = EventFilters {
+            is_featured: None,
         organizer_id: None,
         organizer_wallet: None,
         location: None,
@@ -2735,6 +2749,7 @@ fn test_is_free_filter() {
     assert_eq!(filters_free.is_free, Some(true));
 
     let filters_paid = EventFilters {
+            is_featured: None,
         organizer_id: None,
         organizer_wallet: None,
         location: None,
@@ -2752,6 +2767,7 @@ fn test_is_free_filter() {
     assert_eq!(filters_paid.is_free, Some(false));
 
     let filters_none = EventFilters {
+            is_featured: None,
         organizer_id: None,
         organizer_wallet: None,
         location: None,
