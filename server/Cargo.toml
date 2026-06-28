@@ -70,6 +70,9 @@ utoipa = "5.5.0"
 utoipa-swagger-ui = "9.0.2"
 axum-extra = { version = "0.12.6", features = ["cookie"] }
 
+# Prometheus metrics
+prometheus = { version = "0.13", features = ["process"] }
+
 # Currency conversion HTTP client already covered by reqwest above
 
 # Testing
