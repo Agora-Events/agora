@@ -27,11 +27,15 @@ Purpose:
 - Shared button primitive for call-to-action buttons across landing pages, nav drawers, pricing cards, and forms.
 - Keeps the hard-shadow, rounded-pill, and motion behavior consistent with the Agora visual style.
 
-Key props:
-- `backgroundColor`: Tailwind background utility or raw color value
-- `textColor`: Tailwind text utility or raw color value
-- `shadowColor`: shadow color for the neubrutalist offset
-- `className`: size and layout overrides
+**Props**
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `children` | `React.ReactNode` | Yes | - | Content to render inside the button |
+| `variant` | `"primary" \| "secondary"` | No | - | Visual style variant of the button |
+| `shadowColor` | `string` | No | `"rgba(0,0,0,1)"` | Shadow color for the button's drop shadow effect |
+| `textColor` | `string` | No | `"text-black"` | Text color class or custom color |
+| `backgroundColor` | `string` | No | `"bg-white"` | Background color class or custom color |
+| `isLoading` | `boolean` | No | `false` | When true, shows a spinner and reduces label opacity |
 
 Use it when:
 - You need a primary or secondary CTA
@@ -41,19 +45,76 @@ Avoid when:
 - The element is not interactive
 - The layout needs a one-off control that should first be promoted into a reusable primitive
 
-Example:
+**Usage Example:**
 
 ```tsx
 import { Button } from "@/components/ui/button";
 
 <Button
-  className="w-[215px] h-[56px]"
   backgroundColor="bg-[#FDDA23]"
   textColor="text-black"
   shadowColor="rgba(0,0,0,1)"
 >
-  <span>Create Your Event</span>
-</Button>;
+  Create Your Event
+</Button>
+```
+
+### `components/ui/form-field.tsx`
+
+Purpose:
+- A reusable input field with an integrated label, responsive border styling, and error message display.
+
+**Props**
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `label` | `string` | Yes | - | The text label for the input |
+| `name` | `string` | Yes | - | The name attribute for the input |
+| `type` | `string` | Yes | - | The HTML input type (e.g. text, email) |
+| `value` | `string` | Yes | - | The current value of the input |
+| `onChange` | `(e: React.ChangeEvent<HTMLInputElement>) => void` | Yes | - | Callback fired when the value changes |
+| `error` | `string` | No | - | Error message to display below the input |
+| `placeholder` | `string` | No | - | Placeholder text for the input |
+
+**Usage Example:**
+
+```tsx
+import { FormField } from "@/components/ui/form-field";
+
+<FormField
+  label="Email Address"
+  name="email"
+  type="email"
+  value={emailValue}
+  onChange={(e) => setEmailValue(e.target.value)}
+  placeholder="Enter your email"
+/>
+```
+
+### `components/ui/EmptyState.tsx`
+
+Purpose:
+- Displayed when no content (e.g., events) matches the active filters. Accepts a title, message, and an optional call-to-action (CTA).
+
+**Props**
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `title` | `string` | Yes | - | Heading text |
+| `message` | `string` | Yes | - | Supporting message / body copy |
+| `ctaLabel` | `string` | No | - | Label for the optional call-to-action button |
+| `ctaLink` | `string` | No | - | Where the CTA button navigates to |
+| `illustrationSrc` | `string` | No | `"/icons/404-illustration.svg"` | Override the default illustration src |
+
+**Usage Example:**
+
+```tsx
+import { EmptyState } from "@/components/ui/EmptyState";
+
+<EmptyState
+  title="No events found"
+  message="Try adjusting your filters or search criteria."
+  ctaLabel="Create Event"
+  ctaLink="/events/new"
+/>
 ```
 
 ## Landing Components
@@ -140,9 +201,89 @@ Purpose:
 - Ticket-style event preview card used in event discovery.
 - Encodes the standard treatment for event title, date, location, price, and "View Event" affordance.
 
+**Props**
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `id` | `string \| number` | Yes | - | The unique identifier for the event |
+| `title` | `string` | Yes | - | The title of the event |
+| `date` | `string` | Yes | - | The formatted date string for the event |
+| `location` | `string` | Yes | - | The location of the event |
+| `price` | `string` | Yes | - | The price of the event, or "free" |
+| `imageUrl` | `string` | Yes | - | URL of the event's thumbnail image |
+| `loading` | `boolean` | No | `false` | When true, shows a small loading spinner overlay in the card |
+
+**Usage Example:**
+
+```tsx
+import { EventCard } from "@/components/events/event-card";
+
+<EventCard
+  id="123"
+  title="Web3 Developers Meetup"
+  date="Sat, Oct 24 • 10:00 AM"
+  location="Discord"
+  price="Free"
+  imageUrl="/images/event-thumbnail.jpg"
+/>
+```
+
 Notes:
 - Use this as the default event summary card before inventing a new card layout.
 - Automatically swaps the location icon for Discord-style events.
+
+### `EventCardSkeleton`
+
+File: `components/events/event-card-skeleton.tsx`
+
+Purpose:
+- A loading placeholder that mimics the layout of the `EventCard` component to prevent layout shifts while fetching data.
+
+**Props**
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+*(This component accepts no props)*
+
+**Usage Example:**
+
+```tsx
+import { EventCardSkeleton } from "@/components/events/event-card-skeleton";
+
+<EventCardSkeleton />
+```
+
+### `TicketModal`
+
+File: `components/events/TicketModal.tsx`
+
+Purpose:
+- A modal dialog that allows users to confirm ticket purchases, select ticket quantity, or gift a ticket to another wallet.
+
+**Props**
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `isOpen` | `boolean` | Yes | - | Controls whether the modal is visible |
+| `onClose` | `() => void` | Yes | - | Callback fired when the modal should be closed |
+| `event` | `{ id: number; title: string; price: string; location: string; date: string; }` | Yes | - | Details of the event being purchased |
+| `initialQuantity` | `number` | Yes | - | The default number of tickets to purchase |
+
+**Usage Example:**
+
+```tsx
+import { TicketModal } from "@/components/events/TicketModal";
+
+<TicketModal
+  isOpen={isModalOpen}
+  onClose={() => setIsModalOpen(false)}
+  event={{
+    id: 123,
+    title: "Web3 Developers Meetup",
+    price: "$15.00",
+    location: "San Francisco, CA",
+    date: "Oct 24, 2023"
+  }}
+  initialQuantity={1}
+/>
+```
 
 ### `FilterSidebar`
 
