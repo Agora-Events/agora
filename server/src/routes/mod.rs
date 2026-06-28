@@ -83,6 +83,22 @@ const GENERAL_WINDOW: Duration = Duration::from_secs(60);
 ///
 /// # Returns
 /// A configured Axum Router with all routes and middleware applied
+use utoipa::OpenApi;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        crate::handlers::health::health_check
+    ),
+    components(
+        schemas(crate::handlers::health::HealthResponse)
+    ),
+    tags(
+        (name = "Agora API", description = "Agora Events Platform API")
+    )
+)]
+pub struct ApiDoc;
+
 pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
 
@@ -257,7 +273,9 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     let api_routes = Router::new()
         .merge(sensitive_routes)
         .merge(general_routes)
-        .merge(public_api_routes);
+        .merge(public_api_routes)
+        .merge(utoipa_swagger_ui::SwaggerUi::new("/swagger-ui").url("/openapi.json", ApiDoc::openapi()))
+        .layer(middleware::from_fn(crate::middleware::csrf::check_csrf));
 
     // Deep linking routes
     let deep_link_routes = Router::new()

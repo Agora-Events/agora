@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 struct HealthResponse {
     status: &'static str,
     timestamp: String,
@@ -40,6 +40,13 @@ struct HealthBlockchainResponse {
 ///
 /// Returns 200 when both the API process and the database are healthy.
 /// On failure it returns a structured JSON 503 error (via [`AppError`]).
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "API is healthy", body = HealthResponse)
+    )
+)]
 pub async fn health_check(State(pool): State<PgPool>) -> Response {
     match sqlx::query("SELECT 1").fetch_one(&pool).await {
         Ok(_) => {
