@@ -241,6 +241,14 @@ impl EventRegistry {
             }
         }
 
+        // Validate event time range
+        if args.start_time != 0
+            && args.end_time != 0
+            && args.end_time <= args.start_time
+        {
+            return Err(EventRegistryError::InvalidDeadline);
+        }
+
         let platform_fee_percent = storage::get_platform_fee(&env);
 
         let event_info = EventInfo {
@@ -359,7 +367,11 @@ impl EventRegistry {
     }
 
     /// Cancel an event (only by organizer). This is irreversible.
-    pub fn cancel_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
+    pub fn cancel_event(
+        env: Env,
+        event_id: String,
+        reason: Option<String>,
+    ) -> Result<(), EventRegistryError> {
         match storage::get_event(&env, event_id.clone()) {
             Some(mut event_info) => {
                 // Verify organizer signature
@@ -372,6 +384,7 @@ impl EventRegistry {
                 // Update status to Cancelled and deactivate
                 event_info.status = EventStatus::Cancelled;
                 event_info.is_active = false;
+                event_info.cancellation_reason = reason.clone();
                 storage::update_event(&env, event_info.clone());
 
                 // Emit cancellation event
@@ -381,7 +394,7 @@ impl EventRegistry {
                         event_id,
                         cancelled_by: event_info.organizer_address,
                         timestamp: env.ledger().timestamp(),
-                        reason: None,
+                        reason,
                     },
                 );
 
@@ -518,6 +531,23 @@ impl EventRegistry {
     /// Retrieves an event by its ID.
     pub fn get_event(env: Env, event_id: String) -> Option<EventInfo> {
         storage::get_event(&env, event_id)
+    }
+
+    /// Retrieves a batch of events by their IDs (max 50).
+    pub fn get_events_batch(env: Env, event_ids: Vec<String>) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
+        if event_ids.len() > 50 {
+            return Err(EventRegistryError::TooManyIds);
+        }
+        let mut results = Vec::new(&env);
+        for id in event_ids.into_iter() {
+            results.push_back(storage::get_event(&env, id));
+        }
+        Ok(results)
+    }
+
+    /// Returns the total number of tickets sold across all events.
+    pub fn get_global_tickets_sold(env: Env) -> i128 {
+        storage::get_global_tickets_sold(&env)
     }
 
     /// Checks if an event exists.
@@ -668,6 +698,7 @@ impl EventRegistry {
         env: Env,
         event_id: String,
         tier_id: String,
+        user: Address,
         quantity: u32,
     ) -> Result<(), EventRegistryError> {
         let ticket_payment_addr =
@@ -713,8 +744,19 @@ impl EventRegistry {
             return Err(EventRegistryError::TierSoldOut);
         }
 
+        // Per-user limit enforcement
+        if tier.max_per_user > 0 {
+            let user_count = storage::get_user_ticket_count(&env, &event_id, &tier_id, &user);
+            let new_user_count = user_count
+                .checked_add(quantity)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
+            if new_user_count > tier.max_per_user {
+                return Err(EventRegistryError::PerUserLimitExceeded);
+            }
+        }
+
         tier.current_sold = new_tier_sold;
-        event_info.tiers.set(tier_id, tier);
+        event_info.tiers.set(tier_id.clone(), tier.clone());
 
         event_info.current_supply = event_info
             .current_supply
@@ -722,6 +764,14 @@ impl EventRegistry {
             .ok_or(EventRegistryError::SupplyOverflow)?;
 
         let new_supply = event_info.current_supply;
+
+        // Update per-user ticket count after all checks pass
+        if tier.max_per_user > 0 {
+            storage::add_to_user_ticket_count(&env, &event_id, &tier_id, &user, quantity);
+        }
+
+        // Update global tickets sold counter
+        storage::add_to_global_tickets_sold(&env, quantity_i128);
 
         // Check if goal met now
         if !event_info.goal_met
@@ -1670,14 +1720,14 @@ impl EventRegistry {
         let mut proposal =
             storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::MultisigError)?;
 
-        // Check if already executed
-        if proposal.executed {
-            return Err(EventRegistryError::ProposalAlreadyExecuted);
-        }
-
         // Check if expired
         if env.ledger().timestamp() > proposal.expires_at {
             return Err(EventRegistryError::ProposalExpired);
+        }
+
+        // Check if already executed
+        if proposal.executed {
+            return Err(EventRegistryError::ProposalAlreadyExecuted);
         }
 
         // Check if already approved by this admin
@@ -1734,7 +1784,7 @@ impl EventRegistry {
                 let mut new_config = config.clone();
                 new_config.admins.push_back(new_admin.clone());
                 storage::set_multisig_config(&env, &new_config);
-                storage::set_admin(&env, new_admin); // Update legacy admin storage
+                storage::set_admin(&env, &new_admin); // Update legacy admin storage
             }
             types::ParameterChange::RemoveAdmin(admin_to_remove) => {
                 let mut new_config = config.clone();
@@ -1759,10 +1809,10 @@ impl EventRegistry {
                 storage::set_multisig_config(&env, &new_config);
             }
             types::ParameterChange::UpdatePlatformWallet(new_wallet) => {
-                storage::set_platform_wallet(&env, new_wallet);
+                storage::set_platform_wallet(&env, &new_wallet);
             }
-            types::ParameterChange::SetPlatformFee(new_fee) => {
-                storage::set_platform_fee(&env, *new_fee);
+            types::ParameterChange::SetPlatformFee(fee) => {
+                storage::set_platform_fee(&env, *fee);
             }
             types::ParameterChange::SetMinStakeAmount(new_amount) => {
                 storage::set_min_stake_amount(&env, *new_amount);
@@ -1859,6 +1909,9 @@ fn suspend_organizer_events(
 
 #[cfg(test)]
 mod issue_tests;
+
+#[cfg(test)]
+mod test_issue_fixes;
 
 #[cfg(test)]
 mod test_global_promo;

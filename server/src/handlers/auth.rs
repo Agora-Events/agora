@@ -41,8 +41,8 @@ pub struct Claims {
     pub exp: i64,
 }
 
-fn jwt_secret() -> String {
-    env::var("JWT_SECRET").unwrap_or_else(|_| "fallback_dev_secret_change_in_prod".to_string())
+pub fn jwt_secret() -> String {
+    env::var("JWT_SECRET").expect("JWT_SECRET environment variable is missing. It is required for signing JWTs.")
 }
 
 /// Encode a JWT for the given Stellar address with a 24-hour expiry.
@@ -234,6 +234,21 @@ pub async fn verify_signature(
         }
     };
 
+    let pk_array: [u8; 32] = match pk_bytes.as_slice().try_into() {
+        Ok(arr) => arr,
+        Err(_) => {
+            return AppError::ValidationError("public_key must be 32 bytes".to_string())
+                .into_response();
+        }
+    };
+
+    let strkey_pk = stellar_strkey::ed25519::PublicKey(pk_array);
+    let strkey = stellar_strkey::Strkey::PublicKeyEd25519(strkey_pk);
+    if strkey.to_string() != payload.address {
+        return AppError::AuthError("Public key does not match address".to_string())
+            .into_response();
+    }
+
     let verifying_key = match pk_bytes
         .as_slice()
         .try_into()
@@ -281,10 +296,25 @@ pub async fn verify_signature(
     }
 
     // 4. Issue JWT
-    match issue_jwt(&payload.address) {
-        Ok(token) => success(TokenResponse { token }, "Authentication successful").into_response(),
-        Err(e) => e.into_response(),
-    }
+    let token = match issue_jwt(&payload.address) {
+        Ok(t) => t,
+        Err(e) => return e.into_response(),
+    };
+
+    let mut response = success(TokenResponse { token: token.clone() }, "Authentication successful").into_response();
+    
+    // Generate CSRF token
+    let mut csrf_bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut csrf_bytes);
+    let csrf_token = hex::encode(csrf_bytes);
+
+    let cookie = format!(
+        "XSRF-TOKEN={}; Path=/; HttpOnly; SameSite=Lax",
+        csrf_token
+    );
+    response.headers_mut().insert(axum::http::header::SET_COOKIE, cookie.parse().unwrap());
+    
+    response
 }
 
 /// `POST /api/v1/auth/logout`

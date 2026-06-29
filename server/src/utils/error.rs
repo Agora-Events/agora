@@ -125,6 +125,7 @@ impl AppError {
             | AppError::AuthError(msg)
             | AppError::Forbidden(msg)
             | AppError::NotFound(msg)
+            | AppError::Conflict(msg)
             | AppError::ExternalServiceError(msg)
             | AppError::InternalServerError(msg) => msg.clone(),
             AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {

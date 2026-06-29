@@ -127,6 +127,16 @@ Stay in `server/` and run the database migration first:
 sqlx migrate run
 ```
 
+This applies all migrations in `server/migrations/`, including `20260630000001_add_events_indexes.sql`, which adds indexes on `events(is_featured)` and `events(created_at DESC)` for featured-event listings.
+
+To verify the indexes are used after migrating, seed or load events data and run:
+
+```bash
+psql "$DATABASE_URL" -c "EXPLAIN ANALYZE SELECT * FROM events WHERE is_featured = TRUE ORDER BY created_at DESC LIMIT 20;"
+```
+
+The plan should show an index scan (for example on `idx_events_featured` or `idx_events_created_at`) rather than a sequential scan on large datasets.
+
 Then start the Axum API:
 
 ```bash

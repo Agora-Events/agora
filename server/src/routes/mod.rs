@@ -35,6 +35,7 @@ use crate::config::{
     create_cors_layer, create_security_headers_layer, propagate_request_id_layer,
     set_request_id_layer, Config,
 };
+use crate::metrics::{metrics_handler, track_metrics};
 use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories, CategoryState},
@@ -42,22 +43,25 @@ use crate::handlers::{
         export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
         get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
         list_event_ratings, list_event_tickets, list_events, list_events_by_category,
-        list_featured_events, list_past_events, list_similar_events, list_ticket_tiers,
-        list_upcoming_events, search_events, set_event_featured, submit_event_rating,
-        toggle_event_flag, EventState,
+        list_past_events, list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
+        set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
-    health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
+    health::{health_check, health_check_blockchain, health_check_db, health_check_ready, health_check_redis},
     leaderboard::{get_leaderboard, LeaderboardState},
     monitoring::{monitoring_dashboard, MonitoringState},
     profile::{
-        get_my_profile, get_organizer_stats, get_profile_by_address, list_events_by_organizer,
+        delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address, list_events_by_organizer,
         list_my_transactions, patch_profile, upsert_profile, ProfileState,
+    },
+    qr_payload::{
+        generate_qr_payload, verify_qr_payload, mark_qr_used, list_qr_payloads, delete_qr_payload, list_event_qr_codes,
     },
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
+use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
 use crate::middleware::content_type::require_json_content_type;
 use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
@@ -83,6 +87,22 @@ const GENERAL_WINDOW: Duration = Duration::from_secs(60);
 ///
 /// # Returns
 /// A configured Axum Router with all routes and middleware applied
+use utoipa::OpenApi;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        crate::handlers::health::health_check
+    ),
+    components(
+        schemas(crate::handlers::health::HealthResponse)
+    ),
+    tags(
+        (name = "Agora API", description = "Agora Events Platform API")
+    )
+)]
+pub struct ApiDoc;
+
 pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
 
@@ -222,6 +242,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .with_state(pool.clone())
         .merge(
             Router::new()
+                .route("/health/redis", get(health_check_redis))
+                .with_state(redis.clone())
+        )
+        .merge(
+            Router::new()
                 .route("/monitoring/dashboard", get(monitoring_dashboard))
                 .route_layer(middleware::from_fn_with_state(
                     monitoring_auth_state,
@@ -266,7 +291,9 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     let api_routes = Router::new()
         .merge(sensitive_routes)
         .merge(general_routes)
-        .merge(public_api_routes);
+        .merge(public_api_routes)
+        .merge(utoipa_swagger_ui::SwaggerUi::new("/swagger-ui").url("/openapi.json", ApiDoc::openapi()))
+        .layer(middleware::from_fn(crate::middleware::csrf::check_csrf));
 
     // Deep linking routes
     let deep_link_routes = Router::new()
@@ -277,9 +304,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/.well-known/assetlinks.json", get(serve_assetlinks));
 
     Router::new()
+        .route("/metrics", get(metrics_handler))
         .nest("/api/v1", api_routes)
         .nest("/api/v1/admin", admin_routes)
         .merge(deep_link_routes)
+        .layer(middleware::from_fn(track_metrics))
         .layer(create_security_headers_layer())
         .layer(create_cors_layer())
         .layer(middleware::from_fn(trace_request_id))
@@ -325,6 +354,7 @@ mod tests {
             .route("/api/v1/health/blockchain", get(|| async { "ok" }))
             .route("/api/v1/health/db", get(|| async { "ok" }))
             .route("/api/v1/health/ready", get(|| async { "ok" }))
+            .route("/api/v1/health/redis", get(|| async { "ok" }))
             .route("/api/v1/examples/validation-error", get(|| async { "ok" }))
             .route("/api/v1/examples/empty-success", get(|| async { "ok" }))
             .route("/api/v1/examples/not-found/:id", get(|| async { "ok" }))
@@ -368,6 +398,15 @@ mod tests {
         let router = test_router();
         assert_ne!(
             get_status(router, "/api/v1/health/ready").await,
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    async fn test_health_redis_route_exists_under_api_v1() {
+        let router = test_router();
+        assert_ne!(
+            get_status(router, "/api/v1/health/redis").await,
             StatusCode::NOT_FOUND
         );
     }

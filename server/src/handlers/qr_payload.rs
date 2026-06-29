@@ -34,6 +34,9 @@ pub struct GenerateQrRequest {
     pub data: serde_json::Value,
     /// Optional expiration time in seconds (default: 3600)
     pub expires_in_seconds: Option<i64>,
+    /// Optional ticket UUID to associate with this QR code.
+    /// Required when qr_type is "ticket".
+    pub ticket_id: Option<Uuid>,
 }
 
 /// Response containing the signed QR payload
@@ -159,26 +162,53 @@ pub async fn generate_qr_payload(
     let signature_base64 = general_purpose::STANDARD.encode(signature.to_bytes());
     let public_key_hex = hex::encode(verifying_key.to_bytes());
 
+    // Determine if we need to write ticket_id
+    let has_ticket_id = request.ticket_id.is_some();
+    let ticket_id = request.ticket_id;
+
     // Store in database
-    let result = sqlx::query(
-        r#"
-        INSERT INTO qr_payloads (
-            id, qr_type, payload_data, signature, public_key, 
-            created_at, expires_at, is_used
+    let result = if has_ticket_id {
+        sqlx::query(
+            r#"
+            INSERT INTO qr_payloads (
+                id, qr_type, payload_data, signature, public_key, 
+                created_at, expires_at, is_used, ticket_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "#,
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#,
-    )
-    .bind(&qr_id)
-    .bind(&request.qr_type)
-    .bind(&request.data)
-    .bind(&signature_base64)
-    .bind(&public_key_hex)
-    .bind(created_at)
-    .bind(expires_at)
-    .bind(false)
-    .execute(&pool)
-    .await;
+        .bind(&qr_id)
+        .bind(&request.qr_type)
+        .bind(&request.data)
+        .bind(&signature_base64)
+        .bind(&public_key_hex)
+        .bind(created_at)
+        .bind(expires_at)
+        .bind(false)
+        .bind(ticket_id)
+        .execute(&pool)
+        .await
+    } else {
+        sqlx::query(
+            r#"
+            INSERT INTO qr_payloads (
+                id, qr_type, payload_data, signature, public_key, 
+                created_at, expires_at, is_used
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "#,
+        )
+        .bind(&qr_id)
+        .bind(&request.qr_type)
+        .bind(&request.data)
+        .bind(&signature_base64)
+        .bind(&public_key_hex)
+        .bind(created_at)
+        .bind(expires_at)
+        .bind(false)
+        .execute(&pool)
+        .await
+    };
 
     if let Err(e) = result {
         tracing::error!("Failed to store QR payload: {:?}", e);

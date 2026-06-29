@@ -145,6 +145,10 @@ pub struct EventFilters {
 
     /// Sort direction: `asc` (default) or `desc`
     pub sort_order: Option<String>,
+
+    /// Simple sort parameter: `newest` (start_time DESC) or `popular` (count_of_ratings DESC).
+    /// Takes precedence over `sort_by`/`sort_order` when provided.
+    pub sort: Option<String>,
 }
 
 /// Supported sort fields for event listings.
@@ -153,6 +157,8 @@ pub enum EventSortBy {
     StartTime,
     CreatedAt,
     Popularity,
+    /// Sort by review count (alias of "popular" but exposes the underlying column).
+    CountOfRatings,
 }
 
 impl EventSortBy {
@@ -161,8 +167,9 @@ impl EventSortBy {
             "start_time" => Ok(Self::StartTime),
             "created_at" => Ok(Self::CreatedAt),
             "popularity" => Ok(Self::Popularity),
+            "count_of_ratings" => Ok(Self::CountOfRatings),
             other => Err(format!(
-                "Invalid sort_by value '{}'. Supported values: start_time, created_at, popularity",
+                "Invalid sort_by value '{}'. Supported values: start_time, created_at, popularity, count_of_ratings",
                 other
             )),
         }
@@ -205,7 +212,32 @@ pub struct ValidatedEventSort {
 
 impl EventFilters {
     /// Validate `sort_by` and `sort_order`, applying defaults when omitted.
+    /// The `sort` field takes precedence when provided.
     pub fn validate_sort(&self) -> Result<ValidatedEventSort, String> {
+        // Simple `sort` param takes precedence over the legacy `sort_by`/`sort_order` pair.
+        if let Some(ref sort) = self.sort {
+            match sort.as_str() {
+                "newest" => {
+                    return Ok(ValidatedEventSort {
+                        sort_by: EventSortBy::StartTime,
+                        sort_order: SortOrder::Desc,
+                    });
+                }
+                "popular" => {
+                    return Ok(ValidatedEventSort {
+                        sort_by: EventSortBy::CountOfRatings,
+                        sort_order: SortOrder::Desc,
+                    });
+                }
+                other => {
+                    return Err(format!(
+                        "Invalid sort value '{}'. Supported values: newest, popular",
+                        other
+                    ));
+                }
+            }
+        }
+
         let sort_by = match self.sort_by.as_deref() {
             Some(value) => EventSortBy::parse(value)?,
             None => EventSortBy::StartTime,
@@ -223,13 +255,14 @@ impl EventFilters {
 
 /// Build the ORDER BY clause for event listings.
 fn build_event_order_by_clause(sort: &ValidatedEventSort) -> String {
-    let column = match sort.sort_by {
-        EventSortBy::StartTime => "start_time",
-        EventSortBy::CreatedAt => "created_at",
-        EventSortBy::Popularity => "minted_tickets",
+    let (column, tiebreaker_direction) = match sort.sort_by {
+        EventSortBy::StartTime => ("start_time", sort.sort_order.sql()),
+        EventSortBy::CreatedAt => ("created_at", sort.sort_order.sql()),
+        EventSortBy::Popularity => ("minted_tickets", sort.sort_order.sql()),
+        EventSortBy::CountOfRatings => ("count_of_ratings", "ASC"),
     };
     let direction = sort.sort_order.sql();
-    format!("ORDER BY {column} {direction}, id {direction}")
+    format!("ORDER BY {column} {direction}, id {tiebreaker_direction}")
 }
 
 /// Build WHERE clause and return (where_clause, param_count)
@@ -342,6 +375,8 @@ fn build_event_where_clause(
             (EventSortBy::CreatedAt, SortOrder::Desc) => ("created_at", "<", "<"),
             (EventSortBy::Popularity, SortOrder::Asc) => ("minted_tickets", ">", ">"),
             (EventSortBy::Popularity, SortOrder::Desc) => ("minted_tickets", "<", "<"),
+            (EventSortBy::CountOfRatings, SortOrder::Asc) => ("count_of_ratings", ">", ">"),
+            (EventSortBy::CountOfRatings, SortOrder::Desc) => ("count_of_ratings", "<", "<"),
         };
 
         where_clauses.push(format!(
@@ -411,6 +446,7 @@ mod tests {
     #[test]
     fn build_where_clause_includes_min_tickets_available() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -438,6 +474,7 @@ mod tests {
     fn test_event_filters_deserialization() {
         // Test that filters can be deserialized from query params
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: Some(Uuid::new_v4()),
             organizer_wallet: Some("GABC123".to_string()),
             location: Some("New York".to_string()),
@@ -461,6 +498,7 @@ mod tests {
     #[test]
     fn test_organizer_wallet_filter() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: Some("GBXXX".to_string()),
             location: None,
@@ -511,6 +549,7 @@ mod tests {
     #[test]
     fn test_is_free_filter() {
         let filters_free = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -528,6 +567,7 @@ mod tests {
         assert_eq!(filters_free.is_free, Some(true));
 
         let filters_paid = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -545,6 +585,7 @@ mod tests {
         assert_eq!(filters_paid.is_free, Some(false));
 
         let filters_none = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -565,6 +606,7 @@ mod tests {
     #[test]
     fn test_start_date_filter_generates_where_clause() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -590,6 +632,7 @@ mod tests {
     #[test]
     fn test_end_date_filter_generates_where_clause() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -615,6 +658,7 @@ mod tests {
     #[test]
     fn test_followers_only_filter() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -1017,6 +1061,7 @@ mod tests {
     #[test]
     fn test_invalid_sort_by_returns_validation_error() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -1039,6 +1084,7 @@ mod tests {
     #[test]
     fn test_invalid_sort_order_returns_validation_error() {
         let filters = EventFilters {
+            is_featured: None,
             organizer_id: None,
             organizer_wallet: None,
             location: None,
@@ -1269,17 +1315,17 @@ pub async fn list_events(
                 };
                 items_query_builder = items_query_builder.bind(created_at).bind(c.id);
             }
-            EventSortBy::Popularity => {
-                let minted_tickets = match c.minted_tickets {
+            EventSortBy::Popularity | EventSortBy::CountOfRatings => {
+                let sort_key = match c.minted_tickets {
                     Some(value) => value,
                     None => {
                         return AppError::ValidationError(
-                            "Cursor is missing minted_tickets for popularity sort".to_string(),
+                            "Cursor is missing minted_tickets for popularity/count_of_ratings sort".to_string(),
                         )
                         .into_response();
                     }
                 };
-                items_query_builder = items_query_builder.bind(minted_tickets).bind(c.id);
+                items_query_builder = items_query_builder.bind(sort_key).bind(c.id);
             }
         }
     }
@@ -1306,6 +1352,7 @@ pub async fn list_events(
             id: last.id,
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
+            count_of_ratings: Some(last.count_of_ratings as i64),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -1564,7 +1611,7 @@ pub async fn list_similar_events(
     let limit = params.limit.unwrap_or(4).clamp(1, 10) as i64;
 
     // Fetch the source event to get its location (category via join below).
-    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1")
+    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE")
         .bind(event_id)
         .fetch_optional(&state.pool)
         .await
@@ -1829,7 +1876,7 @@ pub async fn submit_event_rating(
     let (ticket_status, ticket_event_id) = ticket;
 
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -2450,7 +2497,7 @@ pub async fn get_event_social_proof(
 
     // Check if event exists
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -2482,7 +2529,7 @@ pub async fn get_event_social_proof(
         // Average rating from events table
         async {
             sqlx::query_as::<_, (i64, i32)>(
-                "SELECT sum_of_ratings, count_of_ratings FROM events WHERE id = $1",
+                "SELECT sum_of_ratings, count_of_ratings FROM events WHERE id = $1 AND is_flagged = FALSE",
             )
             .bind(event_id)
             .fetch_one(&state.pool)
@@ -2501,7 +2548,7 @@ pub async fn get_event_social_proof(
         // Tickets remaining (total_tickets - minted_tickets)
         async {
             sqlx::query_scalar::<_, i64>(
-                "SELECT total_tickets - minted_tickets FROM events WHERE id = $1",
+                "SELECT total_tickets - minted_tickets FROM events WHERE id = $1 AND is_flagged = FALSE",
             )
             .bind(event_id)
             .fetch_one(&state.pool)
@@ -2552,7 +2599,7 @@ pub async fn get_attendee_count(
     Path(event_id): Path<Uuid>,
 ) -> Response {
     let row = match sqlx::query_as::<_, (i64, i64)>(
-        "SELECT minted_tickets, total_tickets FROM events WHERE id = $1",
+        "SELECT minted_tickets, total_tickets FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
     .bind(event_id)
     .fetch_optional(&state.pool)
@@ -2590,7 +2637,7 @@ pub async fn get_event_revenue(
 ) -> Response {
     // 404 if event doesn't exist
     let exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -2651,6 +2698,7 @@ pub async fn get_event_revenue(
 fn test_event_filters_deserialization() {
     // Test that filters can be deserialized from query params
     let filters = EventFilters {
+            is_featured: None,
         organizer_id: Some(Uuid::new_v4()),
         organizer_wallet: Some("GABC123".to_string()),
         location: Some("New York".to_string()),
@@ -2674,6 +2722,7 @@ fn test_event_filters_deserialization() {
 #[test]
 fn test_organizer_wallet_filter() {
     let filters = EventFilters {
+            is_featured: None,
         organizer_id: None,
         organizer_wallet: Some("GBXXX".to_string()),
         location: None,
@@ -2694,6 +2743,7 @@ fn test_organizer_wallet_filter() {
 #[test]
 fn test_is_free_filter() {
     let filters_free = EventFilters {
+            is_featured: None,
         organizer_id: None,
         organizer_wallet: None,
         location: None,
@@ -2711,6 +2761,7 @@ fn test_is_free_filter() {
     assert_eq!(filters_free.is_free, Some(true));
 
     let filters_paid = EventFilters {
+            is_featured: None,
         organizer_id: None,
         organizer_wallet: None,
         location: None,
@@ -2728,6 +2779,7 @@ fn test_is_free_filter() {
     assert_eq!(filters_paid.is_free, Some(false));
 
     let filters_none = EventFilters {
+            is_featured: None,
         organizer_id: None,
         organizer_wallet: None,
         location: None,
@@ -2951,18 +3003,19 @@ pub async fn list_event_ratings(
     Path(event_id): Path<Uuid>,
     Query(pagination): Query<PaginationParams>,
 ) -> Response {
-    let exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
-            .bind(event_id)
-            .fetch_one(&state.pool)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("Failed to check event existence for ratings: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    let exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence for ratings: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     if !exists {
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
@@ -3025,7 +3078,7 @@ pub async fn get_ratings_summary(
 
     // 404 if event doesn't exist
     let exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -3271,7 +3324,7 @@ pub async fn export_attendees_csv(
 ) -> Response {
     // Verify the event exists
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -3376,7 +3429,7 @@ pub async fn list_event_tickets(
 ) -> Response {
     // 404 if event does not exist.
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -3532,6 +3585,7 @@ pub async fn list_events_by_category(
             id: last.id,
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
+            count_of_ratings: Some(last.count_of_ratings as i64),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -3567,7 +3621,7 @@ pub async fn list_ticket_tiers(
     Path(event_id): Path<Uuid>,
 ) -> Response {
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await

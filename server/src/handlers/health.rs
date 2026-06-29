@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 struct HealthResponse {
     status: &'static str,
     timestamp: String,
@@ -40,6 +40,13 @@ struct HealthBlockchainResponse {
 ///
 /// Returns 200 when both the API process and the database are healthy.
 /// On failure it returns a structured JSON 503 error (via [`AppError`]).
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "API is healthy", body = HealthResponse)
+    )
+)]
 pub async fn health_check(State(pool): State<PgPool>) -> Response {
     match sqlx::query("SELECT 1").fetch_one(&pool).await {
         Ok(_) => {
@@ -153,6 +160,31 @@ pub async fn health_check_blockchain() -> Response {
             AppError::ExternalServiceError(format!("Soroban RPC health check failed: {error}"))
                 .into_response()
         }
+    }
+}
+
+#[derive(Serialize)]
+struct HealthRedisResponse {
+    status: &'static str,
+    timestamp: String,
+}
+
+/// GET /health/redis – Redis connectivity check.
+///
+/// Returns 200 when Redis is reachable.
+/// Returns a structured JSON error (via [`AppError`]) when it is not.
+pub async fn health_check_redis(State(mut redis): State<crate::cache::RedisCache>) -> Response {
+    // Perform a basic Redis command to verify connectivity
+    match redis.ping().await {
+        Ok(_) => {
+            let payload = HealthRedisResponse {
+                status: "ok",
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "Redis is healthy").into_response()
+        }
+        Err(e) => AppError::ExternalServiceError(format!("Redis health check failed: {e}"))
+            .into_response(),
     }
 }
 

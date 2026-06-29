@@ -330,6 +330,14 @@ async fn process_event(
             "event_status_updated" | "event_cancelled" => {
                 handle_event_status_updated(pool, event).await?;
             }
+            // Emitted by EventRegistry::stake_collateral
+            "collateral_staked" | "CollateralStaked" => {
+                handle_collateral_staked(pool, event).await?;
+            }
+            // Emitted by EventRegistry::unstake_collateral
+            "collateral_unstaked" | "CollateralUnstaked" => {
+                handle_collateral_unstaked(pool, event).await?;
+            }
             _ => {
                 tracing::debug!("Unhandled event_registry event: {}", event_name);
             }
@@ -471,6 +479,48 @@ async fn handle_event_status_updated(_pool: &PgPool, event: &SorobanEvent) -> Re
     );
     Ok(())
 }
+
+async fn handle_collateral_staked(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+    let data = &event.value;
+    let organizer_wallet = data
+        .get("organizer")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let is_verified = data
+        .get("is_verified")
+        .and_then(|v| v.as_bool())
+        .unwrap_or_default();
+
+    if !organizer_wallet.is_empty() {
+        sqlx::query("UPDATE organizers SET is_verified = $1, updated_at = NOW() WHERE wallet_address = $2")
+            .bind(is_verified)
+            .bind(organizer_wallet)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to update organizer verified status: {}", e))?;
+    }
+
+    Ok(())
+}
+
+async fn handle_collateral_unstaked(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+    let data = &event.value;
+    let organizer_wallet = data
+        .get("organizer")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+
+    if !organizer_wallet.is_empty() {
+        sqlx::query("UPDATE organizers SET is_verified = FALSE, updated_at = NOW() WHERE wallet_address = $1")
+            .bind(organizer_wallet)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to reset organizer verified status: {}", e))?;
+    }
+
+    Ok(())
+}
+
 
 // ---------------------------------------------------------------------------
 // Tests

@@ -4471,3 +4471,20 @@ fn test_propose_add_admin_new_address_succeeds() {
     assert!(!proposal.executed);
     assert_eq!(proposal.change, crate::types::ParameterChange::AddAdmin(new_admin));
 }
+
+#[test]
+fn test_get_events_batch_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let mut event_ids = soroban_sdk::Vec::new(&env);
+    for i in 0..51 {
+        event_ids.push_back(soroban_sdk::String::from_str(&env, "event_id"));
+    }
+    
+    let contract_id = env.register_contract(None, EventRegistryContract);
+    let client = EventRegistryContractClient::new(&env, &contract_id);
+    
+    let res = client.try_get_events_batch(&event_ids);
+    assert_eq!(res, Err(Ok(EventRegistryError::TooManyIds)));
+}
