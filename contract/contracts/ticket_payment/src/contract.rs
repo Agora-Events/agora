@@ -315,12 +315,12 @@ impl TicketPaymentContract {
         let mut proposal =
             get_proposal(&env, proposal_id).ok_or(TicketPaymentError::InvalidProposal)?;
 
-        if proposal.status != ProposalStatus::Pending {
-            return Err(TicketPaymentError::ProposalNotActive);
-        }
-
         if env.ledger().timestamp() > proposal.expires_at {
             return Err(TicketPaymentError::ProposalExpired);
+        }
+
+        if proposal.status != ProposalStatus::Pending {
+            return Err(TicketPaymentError::ProposalNotActive);
         }
 
         if proposal.voters.contains(&voter) {
@@ -353,14 +353,14 @@ impl TicketPaymentContract {
         let mut proposal =
             get_proposal(&env, proposal_id).ok_or(TicketPaymentError::InvalidProposal)?;
 
-        if proposal.status != ProposalStatus::Pending {
-            return Err(TicketPaymentError::ProposalNotActive);
-        }
-
         let current_time = env.ledger().timestamp();
 
         if current_time > proposal.expires_at {
             return Err(TicketPaymentError::ProposalExpired);
+        }
+
+        if proposal.status != ProposalStatus::Pending {
+            return Err(TicketPaymentError::ProposalNotActive);
         }
 
         // 48 hours = 48 * 60 * 60 = 172800 seconds
