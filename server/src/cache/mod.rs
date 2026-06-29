@@ -26,6 +26,9 @@ impl RedisCache {
         let value: Option<String> = self.client.get(key).await?;
         match value {
             Some(json) => {
+                crate::metrics::CACHE_HITS_TOTAL
+                    .with_label_values(&[key])
+                    .inc();
                 let parsed = serde_json::from_str(&json).map_err(|e| {
                     RedisError::from((
                         redis::ErrorKind::TypeError,
@@ -35,7 +38,12 @@ impl RedisCache {
                 })?;
                 Ok(Some(parsed))
             }
-            None => Ok(None),
+            None => {
+                crate::metrics::CACHE_MISSES_TOTAL
+                    .with_label_values(&[key])
+                    .inc();
+                Ok(None)
+            }
         }
     }
 

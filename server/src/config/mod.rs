@@ -76,6 +76,14 @@ pub struct Config {
 
     /// Base URL for the application (e.g., https://agora.events).
     pub base_url: String,
+
+    /// Optional static bearer token required to access the monitoring dashboard.
+    /// Set via `MONITORING_TOKEN` environment variable.
+    pub monitoring_token: Option<String>,
+
+    /// Optional static bearer token required to access admin APIs.
+    /// Set via `ADMIN_TOKEN` environment variable.
+    pub admin_token: Option<String>,
 }
 
 impl Config {
@@ -112,6 +120,8 @@ impl Config {
         let s3_endpoint_url = env::var("S3_ENDPOINT_URL").ok();
         let s3_public_url = env::var("S3_PUBLIC_URL").unwrap_or_default();
         let base_url = env::var("BASE_URL").unwrap_or_else(|_| "https://agora.events".to_string());
+        let monitoring_token = env::var("MONITORING_TOKEN").ok();
+        let admin_token = env::var("ADMIN_TOKEN").ok();
 
         Ok(Self {
             database_url,
@@ -128,6 +138,8 @@ impl Config {
             s3_endpoint_url,
             s3_public_url,
             base_url,
+            monitoring_token,
+            admin_token,
         })
     }
 

@@ -36,6 +36,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_compose_has_server_service_with_healthcheck() {
+        let compose = load_compose();
+        let server = &compose["services"]["server"];
+        assert!(server.is_mapping(), "services should contain a 'server' entry");
+
+        let healthcheck = &server["healthcheck"];
+        assert!(
+            healthcheck.is_mapping(),
+            "server should define a healthcheck"
+        );
+        let test = healthcheck["test"]
+            .as_sequence()
+            .expect("server healthcheck test should be a sequence");
+        let test_command = test
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            test_command.contains("http://localhost:3001/api/v1/health"),
+            "server healthcheck should call the health endpoint"
+        );
+        assert_eq!(healthcheck["interval"].as_str(), Some("30s"));
+        assert_eq!(healthcheck["timeout"].as_str(), Some("5s"));
+        assert_eq!(healthcheck["retries"].as_i64(), Some(3));
+    }
+
+    #[tokio::test]
+    async fn test_compose_has_redis_service_with_healthcheck() {
+        let compose = load_compose();
+        let redis = &compose["services"]["redis"];
+        assert!(redis.is_mapping(), "services should contain a 'redis' entry");
+
+        let healthcheck = &redis["healthcheck"];
+        assert!(healthcheck.is_mapping(), "redis should define a healthcheck");
+        let test = healthcheck["test"]
+            .as_sequence()
+            .expect("redis healthcheck test should be a sequence");
+        assert!(
+            test.iter()
+                .filter_map(|value| value.as_str())
+                .any(|part| part.contains("redis-cli")),
+            "redis healthcheck should use redis-cli"
+        );
+    }
+
+    #[tokio::test]
     async fn test_postgres_env_vars_are_set() {
         let compose = load_compose();
         let required_keys = ["POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"];

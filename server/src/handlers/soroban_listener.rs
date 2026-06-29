@@ -24,8 +24,11 @@ use tokio::time::sleep;
 /// but we use 2 for safety).
 const MIN_CONFIRMATIONS: u32 = 2;
 
-/// How often to poll the RPC node for new events.
+/// How often to poll the RPC node for new events (base interval and first-failure delay).
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Maximum back-off delay between retries after consecutive RPC failures.
+const MAX_BACKOFF: Duration = Duration::from_secs(300);
 
 /// Maximum events to fetch per poll cycle.
 const MAX_EVENTS_PER_POLL: u32 = 100;
@@ -166,6 +169,7 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
     let http = reqwest::Client::new();
     let mut cursor: Option<String> = None;
     let mut start_ledger = Some(config.start_ledger);
+    let mut current_backoff = POLL_INTERVAL;
 
     tracing::info!(
         "Soroban listener started. RPC={} poll_interval={:?}",
@@ -201,12 +205,24 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
                     // Once we have a cursor, stop specifying startLedger
                     start_ledger = None;
                 }
+
+                // Reset back-off on any successful poll
+                current_backoff = POLL_INTERVAL;
             }
             Ok(None) => {
-                // No new events — nothing to do
+                // No new events — reset back-off and poll again at base rate
+                current_backoff = POLL_INTERVAL;
             }
             Err(e) => {
-                tracing::error!("Soroban listener poll error: {:?}", e);
+                tracing::error!(
+                    "Soroban listener poll error (retrying in {:?}): {:?}",
+                    current_backoff,
+                    e
+                );
+                sleep(current_backoff).await;
+                // Double the back-off for the next failure, capped at MAX_BACKOFF
+                current_backoff = (current_backoff * 2).min(MAX_BACKOFF);
+                continue;
             }
         }
 
@@ -313,6 +329,14 @@ async fn process_event(
             // Emitted by EventRegistry::update_event_status / cancel_event
             "event_status_updated" | "event_cancelled" => {
                 handle_event_status_updated(pool, event).await?;
+            }
+            // Emitted by EventRegistry::stake_collateral
+            "collateral_staked" | "CollateralStaked" => {
+                handle_collateral_staked(pool, event).await?;
+            }
+            // Emitted by EventRegistry::unstake_collateral
+            "collateral_unstaked" | "CollateralUnstaked" => {
+                handle_collateral_unstaked(pool, event).await?;
             }
             _ => {
                 tracing::debug!("Unhandled event_registry event: {}", event_name);
@@ -456,6 +480,48 @@ async fn handle_event_status_updated(_pool: &PgPool, event: &SorobanEvent) -> Re
     Ok(())
 }
 
+async fn handle_collateral_staked(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+    let data = &event.value;
+    let organizer_wallet = data
+        .get("organizer")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let is_verified = data
+        .get("is_verified")
+        .and_then(|v| v.as_bool())
+        .unwrap_or_default();
+
+    if !organizer_wallet.is_empty() {
+        sqlx::query("UPDATE organizers SET is_verified = $1, updated_at = NOW() WHERE wallet_address = $2")
+            .bind(is_verified)
+            .bind(organizer_wallet)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to update organizer verified status: {}", e))?;
+    }
+
+    Ok(())
+}
+
+async fn handle_collateral_unstaked(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+    let data = &event.value;
+    let organizer_wallet = data
+        .get("organizer")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+
+    if !organizer_wallet.is_empty() {
+        sqlx::query("UPDATE organizers SET is_verified = FALSE, updated_at = NOW() WHERE wallet_address = $1")
+            .bind(organizer_wallet)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to reset organizer verified status: {}", e))?;
+    }
+
+    Ok(())
+}
+
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -507,6 +573,33 @@ mod tests {
         assert_eq!(event.ledger, 100);
         assert_eq!(event.contract_id, "CABC123");
         assert_eq!(event.topic[0], "ticket_purchased");
+    }
+
+    #[test]
+    fn test_backoff_sequence_doubles_and_caps() {
+        let mut backoff = POLL_INTERVAL;
+        // First failure: wait POLL_INTERVAL (5s), then double
+        assert_eq!(backoff, Duration::from_secs(5));
+        backoff = (backoff * 2).min(MAX_BACKOFF);
+        assert_eq!(backoff, Duration::from_secs(10));
+        backoff = (backoff * 2).min(MAX_BACKOFF);
+        assert_eq!(backoff, Duration::from_secs(20));
+        backoff = (backoff * 2).min(MAX_BACKOFF);
+        assert_eq!(backoff, Duration::from_secs(40));
+        backoff = (backoff * 2).min(MAX_BACKOFF);
+        assert_eq!(backoff, Duration::from_secs(80));
+        backoff = (backoff * 2).min(MAX_BACKOFF);
+        assert_eq!(backoff, Duration::from_secs(160));
+        backoff = (backoff * 2).min(MAX_BACKOFF);
+        // 320 > 300, so capped at MAX_BACKOFF
+        assert_eq!(backoff, MAX_BACKOFF);
+        backoff = (backoff * 2).min(MAX_BACKOFF);
+        // Still capped
+        assert_eq!(backoff, MAX_BACKOFF);
+
+        // Reset on success
+        backoff = POLL_INTERVAL;
+        assert_eq!(backoff, Duration::from_secs(5));
     }
 
     #[test]

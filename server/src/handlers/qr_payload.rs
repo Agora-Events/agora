@@ -10,7 +10,9 @@
 //! ## Cryptography
 //! Uses Ed25519 digital signatures for payload signing and verification.
 
-use axum::{extract::Query, extract::State, response::IntoResponse, response::Response, Json};
+use axum::{
+    extract::Path, extract::Query, extract::State, response::IntoResponse, response::Response, Json,
+};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
@@ -32,6 +34,9 @@ pub struct GenerateQrRequest {
     pub data: serde_json::Value,
     /// Optional expiration time in seconds (default: 3600)
     pub expires_in_seconds: Option<i64>,
+    /// Optional ticket UUID to associate with this QR code.
+    /// Required when qr_type is "ticket".
+    pub ticket_id: Option<Uuid>,
 }
 
 /// Response containing the signed QR payload
@@ -157,26 +162,53 @@ pub async fn generate_qr_payload(
     let signature_base64 = general_purpose::STANDARD.encode(signature.to_bytes());
     let public_key_hex = hex::encode(verifying_key.to_bytes());
 
+    // Determine if we need to write ticket_id
+    let has_ticket_id = request.ticket_id.is_some();
+    let ticket_id = request.ticket_id;
+
     // Store in database
-    let result = sqlx::query(
-        r#"
-        INSERT INTO qr_payloads (
-            id, qr_type, payload_data, signature, public_key, 
-            created_at, expires_at, is_used
+    let result = if has_ticket_id {
+        sqlx::query(
+            r#"
+            INSERT INTO qr_payloads (
+                id, qr_type, payload_data, signature, public_key, 
+                created_at, expires_at, is_used, ticket_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "#,
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#,
-    )
-    .bind(&qr_id)
-    .bind(&request.qr_type)
-    .bind(&request.data)
-    .bind(&signature_base64)
-    .bind(&public_key_hex)
-    .bind(created_at)
-    .bind(expires_at)
-    .bind(false)
-    .execute(&pool)
-    .await;
+        .bind(&qr_id)
+        .bind(&request.qr_type)
+        .bind(&request.data)
+        .bind(&signature_base64)
+        .bind(&public_key_hex)
+        .bind(created_at)
+        .bind(expires_at)
+        .bind(false)
+        .bind(ticket_id)
+        .execute(&pool)
+        .await
+    } else {
+        sqlx::query(
+            r#"
+            INSERT INTO qr_payloads (
+                id, qr_type, payload_data, signature, public_key, 
+                created_at, expires_at, is_used
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "#,
+        )
+        .bind(&qr_id)
+        .bind(&request.qr_type)
+        .bind(&request.data)
+        .bind(&signature_base64)
+        .bind(&public_key_hex)
+        .bind(created_at)
+        .bind(expires_at)
+        .bind(false)
+        .execute(&pool)
+        .await
+    };
 
     if let Err(e) = result {
         tracing::error!("Failed to store QR payload: {:?}", e);
@@ -495,6 +527,114 @@ pub struct QrPayloadListItem {
     pub used_at: Option<DateTime<Utc>>,
 }
 
+/// DELETE `/api/v1/qr/:id`
+///
+/// Deletes the QR payload with the given ID.
+pub async fn delete_qr_payload(
+    State(pool): State<PgPool>,
+    axum::extract::Path(qr_id): axum::extract::Path<Uuid>,
+) -> Response {
+    let id_str = qr_id.to_string();
+    match sqlx::query_scalar::<_, String>("DELETE FROM qr_payloads WHERE id = $1 RETURNING id")
+        .bind(&id_str)
+        .fetch_optional(&pool)
+        .await
+    {
+        Ok(Some(_)) => (axum::http::StatusCode::NO_CONTENT).into_response(),
+        Ok(None) => {
+            AppError::NotFound(format!("QR payload with id '{}' not found", qr_id)).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to delete QR payload: {:?}", e);
+            AppError::DatabaseError(e).into_response()
+        }
+    }
+}
+
+/// Metadata returned per QR code in the per-event listing.
+/// Raw signature and public key are intentionally excluded.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct EventQrCodeItem {
+    pub id: String,
+    pub event_id: Option<Uuid>,
+    pub ticket_id: Option<Uuid>,
+    /// Alias for `is_used` to match the issue spec's `used` field name.
+    #[sqlx(rename = "is_used")]
+    pub used: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+/// List QR codes for a specific event (paginated).
+///
+/// # Endpoint
+/// GET `/api/v1/events/:id/qr-codes`
+///
+/// Returns only metadata (id, event_id, ticket_id, used, created_at).
+/// The raw QR payload, signature, and public key are never exposed.
+pub async fn list_event_qr_codes(
+    State(pool): State<PgPool>,
+    Path(event_id): Path<Uuid>,
+    Query(pagination): Query<PaginationParams>,
+) -> Response {
+    // Verify the event exists first.
+    let event_exists =
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(event_id)
+            .fetch_one(&pool)
+            .await
+        {
+            Ok(exists) => exists,
+            Err(e) => {
+                tracing::error!("Failed to check event existence: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event '{}' not found", event_id)).into_response();
+    }
+
+    let validated = pagination.validate();
+
+    let total =
+        match sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM qr_payloads WHERE event_id = $1")
+            .bind(event_id)
+            .fetch_one(&pool)
+            .await
+        {
+            Ok(count) => count,
+            Err(e) => {
+                tracing::error!("Failed to count QR codes for event: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+    let items = match sqlx::query_as::<_, EventQrCodeItem>(
+        r"
+        SELECT id, event_id, ticket_id, is_used, created_at
+        FROM qr_payloads
+        WHERE event_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+        ",
+    )
+    .bind(event_id)
+    .bind(validated.limit())
+    .bind(validated.offset())
+    .fetch_all(&pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch QR codes for event: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let response = PaginatedResponse::new(items, validated, total);
+    success(response, "QR codes retrieved successfully").into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -527,5 +667,13 @@ mod tests {
         let signature = signing_key.sign(message);
 
         assert!(verifying_key.verify(message, &signature).is_ok());
+    }
+
+    #[test]
+    fn test_delete_qr_payload_id_parsing() {
+        let test_uuid = Uuid::new_v4();
+        let uuid_str = test_uuid.to_string();
+        let parsed = Uuid::parse_str(&uuid_str).unwrap();
+        assert_eq!(test_uuid, parsed);
     }
 }

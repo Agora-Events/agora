@@ -26,6 +26,8 @@ pub struct Organizer {
     pub wallet_address: Option<String>,
     /// Timestamp when the organizer account was created.
     pub created_at: DateTime<Utc>,
+    /// Whether the organizer is verified by staking the required collateral.
+    pub is_verified: bool,
     /// Timestamp of the last update to this record. Managed by a DB trigger.
     pub updated_at: DateTime<Utc>,
 }
