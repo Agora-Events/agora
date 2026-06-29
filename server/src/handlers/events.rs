@@ -1607,7 +1607,7 @@ pub async fn list_similar_events(
     let limit = params.limit.unwrap_or(4).clamp(1, 10) as i64;
 
     // Fetch the source event to get its location (category via join below).
-    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1")
+    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE")
         .bind(event_id)
         .fetch_optional(&state.pool)
         .await
@@ -1872,7 +1872,7 @@ pub async fn submit_event_rating(
     let (ticket_status, ticket_event_id) = ticket;
 
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -2485,7 +2485,7 @@ pub async fn get_event_social_proof(
 
     // Check if event exists
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -2517,7 +2517,7 @@ pub async fn get_event_social_proof(
         // Average rating from events table
         async {
             sqlx::query_as::<_, (i64, i32)>(
-                "SELECT sum_of_ratings, count_of_ratings FROM events WHERE id = $1",
+                "SELECT sum_of_ratings, count_of_ratings FROM events WHERE id = $1 AND is_flagged = FALSE",
             )
             .bind(event_id)
             .fetch_one(&state.pool)
@@ -2536,7 +2536,7 @@ pub async fn get_event_social_proof(
         // Tickets remaining (total_tickets - minted_tickets)
         async {
             sqlx::query_scalar::<_, i64>(
-                "SELECT total_tickets - minted_tickets FROM events WHERE id = $1",
+                "SELECT total_tickets - minted_tickets FROM events WHERE id = $1 AND is_flagged = FALSE",
             )
             .bind(event_id)
             .fetch_one(&state.pool)
@@ -2587,7 +2587,7 @@ pub async fn get_attendee_count(
     Path(event_id): Path<Uuid>,
 ) -> Response {
     let row = match sqlx::query_as::<_, (i64, i64)>(
-        "SELECT minted_tickets, total_tickets FROM events WHERE id = $1",
+        "SELECT minted_tickets, total_tickets FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
     .bind(event_id)
     .fetch_optional(&state.pool)
@@ -2625,7 +2625,7 @@ pub async fn get_event_revenue(
 ) -> Response {
     // 404 if event doesn't exist
     let exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -2992,7 +2992,7 @@ pub async fn list_event_ratings(
     Query(pagination): Query<PaginationParams>,
 ) -> Response {
     let exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)",
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
     )
     .bind(event_id)
     .fetch_one(&state.pool)
@@ -3066,7 +3066,7 @@ pub async fn get_ratings_summary(
 
     // 404 if event doesn't exist
     let exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -3312,7 +3312,7 @@ pub async fn export_attendees_csv(
 ) -> Response {
     // Verify the event exists
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -3417,7 +3417,7 @@ pub async fn list_event_tickets(
 ) -> Response {
     // 404 if event does not exist.
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await
@@ -3609,7 +3609,7 @@ pub async fn list_ticket_tiers(
     Path(event_id): Path<Uuid>,
 ) -> Response {
     let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
             .bind(event_id)
             .fetch_one(&state.pool)
             .await

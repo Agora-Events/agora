@@ -533,6 +533,18 @@ impl EventRegistry {
         storage::get_event(&env, event_id)
     }
 
+    /// Retrieves a batch of events by their IDs (max 50).
+    pub fn get_events_batch(env: Env, event_ids: Vec<String>) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
+        if event_ids.len() > 50 {
+            return Err(EventRegistryError::TooManyIds);
+        }
+        let mut results = Vec::new(&env);
+        for id in event_ids.into_iter() {
+            results.push_back(storage::get_event(&env, id));
+        }
+        Ok(results)
+    }
+
     /// Returns the total number of tickets sold across all events.
     pub fn get_global_tickets_sold(env: Env) -> i128 {
         storage::get_global_tickets_sold(&env)
@@ -1708,14 +1720,14 @@ impl EventRegistry {
         let mut proposal =
             storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::MultisigError)?;
 
-        // Check if already executed
-        if proposal.executed {
-            return Err(EventRegistryError::ProposalAlreadyExecuted);
-        }
-
         // Check if expired
         if env.ledger().timestamp() > proposal.expires_at {
             return Err(EventRegistryError::ProposalExpired);
+        }
+
+        // Check if already executed
+        if proposal.executed {
+            return Err(EventRegistryError::ProposalAlreadyExecuted);
         }
 
         // Check if already approved by this admin

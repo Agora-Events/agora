@@ -55,4 +55,5 @@ pub enum EventRegistryError {
     InvalidCategoryId = 71,
     AlreadyOnWaitlist = 75,
     TooManyTiers = 80,
+    TooManyIds = 81,
 }
