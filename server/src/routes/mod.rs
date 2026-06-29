@@ -42,9 +42,9 @@ use crate::handlers::{
         export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
         get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
         list_event_ratings, list_event_tickets, list_events, list_events_by_category,
-        list_featured_events, list_past_events,
-        list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
-        set_event_featured, submit_event_rating, toggle_event_flag, EventState,
+        list_featured_events, list_past_events, list_similar_events, list_ticket_tiers,
+        list_upcoming_events, search_events, set_event_featured, submit_event_rating,
+        toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{health_check, health_check_blockchain, health_check_db, health_check_ready},
@@ -121,7 +121,13 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // Organizer profile routes (Issue #486)
     // Routes that use Redis caching use ProfileState; stats route keeps PgPool.
     let profile_routes = Router::new()
-        .route("/", get(get_my_profile).put(upsert_profile).patch(patch_profile).delete(delete_profile))
+        .route(
+            "/",
+            get(get_my_profile)
+                .put(upsert_profile)
+                .patch(patch_profile)
+                .delete(delete_profile),
+        )
         .route("/transactions", get(list_my_transactions))
         .route("/:address", get(get_profile_by_address))
         .route("/:address/events", get(list_events_by_organizer))
@@ -140,7 +146,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     let admin_routes = Router::new()
         .route("/events/:id/toggle-flag", post(toggle_event_flag))
         .route("/events/:id/feature", patch(set_event_featured))
-        .route_layer(middleware::from_fn_with_state(admin_auth_state, require_admin_token))
+        .route_layer(middleware::from_fn_with_state(
+            admin_auth_state,
+            require_admin_token,
+        ))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
         .with_state(event_state.clone());
 

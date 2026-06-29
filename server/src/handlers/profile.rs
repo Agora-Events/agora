@@ -282,10 +282,7 @@ pub async fn patch_profile(
 /// `DELETE /api/v1/profile`
 ///
 /// Deletes the authenticated organizer's profile if there are no active upcoming events.
-pub async fn delete_profile(
-    State(mut state): State<ProfileState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn delete_profile(State(mut state): State<ProfileState>, headers: HeaderMap) -> Response {
     let address = match extract_auth(&headers) {
         Ok(a) => a,
         Err(e) => return e.into_response(),
@@ -896,7 +893,9 @@ mod tests {
         assert_eq!(query.matches("SELECT").count(), 1);
         assert!(query.contains("COUNT(*) AS total_events"));
         assert!(query.contains("COALESCE(SUM(e.minted_tickets), 0) AS total_tickets_sold"));
-        assert!(query.contains("AVG(CAST(e.sum_of_ratings AS FLOAT) / NULLIF(e.count_of_ratings, 0))"));
+        assert!(
+            query.contains("AVG(CAST(e.sum_of_ratings AS FLOAT) / NULLIF(e.count_of_ratings, 0))")
+        );
         assert!(query.contains("JOIN organizers"));
         assert!(query.contains("o.wallet_address = $1"));
         assert!(query.contains("e.is_flagged = FALSE"));

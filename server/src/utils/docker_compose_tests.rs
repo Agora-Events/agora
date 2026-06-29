@@ -39,7 +39,10 @@ mod tests {
     async fn test_compose_has_server_service_with_healthcheck() {
         let compose = load_compose();
         let server = &compose["services"]["server"];
-        assert!(server.is_mapping(), "services should contain a 'server' entry");
+        assert!(
+            server.is_mapping(),
+            "services should contain a 'server' entry"
+        );
 
         let healthcheck = &server["healthcheck"];
         assert!(
@@ -67,10 +70,16 @@ mod tests {
     async fn test_compose_has_redis_service_with_healthcheck() {
         let compose = load_compose();
         let redis = &compose["services"]["redis"];
-        assert!(redis.is_mapping(), "services should contain a 'redis' entry");
+        assert!(
+            redis.is_mapping(),
+            "services should contain a 'redis' entry"
+        );
 
         let healthcheck = &redis["healthcheck"];
-        assert!(healthcheck.is_mapping(), "redis should define a healthcheck");
+        assert!(
+            healthcheck.is_mapping(),
+            "redis should define a healthcheck"
+        );
         let test = healthcheck["test"]
             .as_sequence()
             .expect("redis healthcheck test should be a sequence");

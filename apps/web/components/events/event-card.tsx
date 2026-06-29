@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { LazyImage } from "@/components/ui/LazyImage";
 
 /**
  * SOLUTION FOR ISSUE #449 & #711:
@@ -48,13 +49,12 @@ export function EventCard({
         <div className="flex gap-4.75">
           {/* Left Side: Image & Mobile Actions */}
           <div className="flex-shrink-0 w-[40%] sm:w-auto">
-            <Image
+            <LazyImage
               src={imageUrl}
+              alt={title}
               width={227}
               height={112}
-              alt={title}
               className="object-cover w-full h-auto rounded-lg"
-              loading="lazy"
             />
             
             {/* Price Label (Mobile Only) */}

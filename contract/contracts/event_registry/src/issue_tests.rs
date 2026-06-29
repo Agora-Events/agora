@@ -287,7 +287,10 @@ fn test_authorize_scanner_event_includes_authorized_by() {
     client.authorize_scanner(&event_id, &scanner);
 
     // Verify at least one event was emitted by authorize_scanner.
-    assert!(!env.events().all().is_empty(), "ScannerAuthorized event was not emitted");
+    assert!(
+        !env.events().all().is_empty(),
+        "ScannerAuthorized event was not emitted"
+    );
 
     // Verify the ScannerAuthorizedEvent struct carries the authorized_by field.
     let event_struct = crate::events::ScannerAuthorizedEvent {
@@ -320,7 +323,10 @@ fn test_revoke_scanner_event_includes_revoked_by() {
     client.revoke_scanner(&event_id, &scanner);
 
     // Verify at least one event was emitted by revoke_scanner.
-    assert!(!env.events().all().is_empty(), "ScannerRevoked event was not emitted");
+    assert!(
+        !env.events().all().is_empty(),
+        "ScannerRevoked event was not emitted"
+    );
 
     // Verify the ScannerRevokedEvent struct carries the revoked_by field.
     let event_struct = crate::events::ScannerRevokedEvent {
