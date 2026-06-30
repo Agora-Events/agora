@@ -656,6 +656,75 @@ mod tests {
     }
 
     #[test]
+    fn test_start_date_and_end_date_filters_bind_expected_param_count() {
+        let filters = EventFilters {
+            is_featured: None,
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: None,
+            is_free: None,
+            start_date: Some("2026-06-15".to_string()),
+            end_date: Some("2026-06-20".to_string()),
+            followers_only: None,
+            sort_by: None,
+            sort_order: None,
+            sort: None,
+        };
+        let (where_clause, param_count) =
+            build_event_where_clause(&filters, &default_event_sort(), None);
+        assert_eq!(
+            param_count, 2,
+            "Expected param_count of 2 for start_date + end_date, got: {}. where_clause: {}",
+            param_count, where_clause
+        );
+        assert!(where_clause.contains("start_time >= $1"));
+        assert!(where_clause.contains("start_time <= $2"));
+    }
+
+    #[test]
+    fn test_whitespace_only_search_is_treated_as_no_search() {
+        let filters = EventFilters {
+            is_featured: None,
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: Some("   ".to_string()),
+            min_tickets_available: None,
+            is_free: None,
+            start_date: None,
+            end_date: None,
+            followers_only: None,
+            sort_by: None,
+            sort_order: None,
+            sort: None,
+        };
+
+        let normalized = filters
+            .search
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        assert_eq!(
+            normalized, None,
+            "Whitespace-only search should normalize to None"
+        );
+    }
+
+    #[test]
+    fn test_real_search_term_is_preserved_after_trim() {
+        let raw = "  concert  ".to_string();
+        let normalized = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
+        assert_eq!(normalized, Some("concert".to_string()));
+    }
+
+    #[test]
     fn test_followers_only_filter() {
         let filters = EventFilters {
             is_featured: None,
@@ -1156,7 +1225,7 @@ pub struct SubmitEventRatingResponse {
 pub async fn list_events(
     State(state): State<EventState>,
     Query(pagination): Query<CursorParams>,
-    Query(filters): Query<EventFilters>,
+    Query(mut filters): Query<EventFilters>,
 ) -> Response {
     let validated = pagination.validate();
 
@@ -1176,6 +1245,12 @@ pub async fn list_events(
         },
         None => None,
     };
+
+    // Normalize search: treat whitespace-only search as no search term at all,
+    // so a single space doesn't match every event via `% %` ILIKE.
+    if let Some(trimmed) = filters.search.as_ref().map(|s| s.trim().to_string()) {
+        filters.search = if trimmed.is_empty() { None } else { Some(trimmed) };
+    }
 
     // Build the WHERE clause dynamically based on filters
     let (where_clause, param_count) = build_event_where_clause(&filters, &sort, cursor.as_ref());
