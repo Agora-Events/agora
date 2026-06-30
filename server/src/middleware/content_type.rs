@@ -70,7 +70,12 @@ mod tests {
             .layer(middleware::from_fn(require_json_content_type))
     }
 
-    async fn send(router: Router, method: &str, content_type: Option<&str>, body: &str) -> StatusCode {
+    async fn send(
+        router: Router,
+        method: &str,
+        content_type: Option<&str>,
+        body: &str,
+    ) -> StatusCode {
         let mut builder = Request::builder().method(method).uri("/test");
         if let Some(ct) = content_type {
             builder = builder.header("content-type", ct);
@@ -113,7 +118,13 @@ mod tests {
     #[tokio::test]
     async fn test_json_with_charset_passes() {
         let router = test_router();
-        let status = send(router, "POST", Some("application/json; charset=utf-8"), r#"{"x":1}"#).await;
+        let status = send(
+            router,
+            "POST",
+            Some("application/json; charset=utf-8"),
+            r#"{"x":1}"#,
+        )
+        .await;
         assert_ne!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 

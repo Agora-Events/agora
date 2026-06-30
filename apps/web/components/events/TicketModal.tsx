@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2, Gift } from "@/components/ui/icons";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 interface TicketModalProps {
   isOpen: boolean;
@@ -28,7 +29,7 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
   const [recipientWallet, setRecipientWallet] = useState<string>("");
   const [isGiftMode, setIsGiftMode] = useState(false);
 
-  const modalRef = useRef<HTMLDivElement>(null);
+  const modalRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   const isFree = event.price.toLowerCase() === "free";
   const unitPrice = isFree ? 0 : parseFloat(event.price.replace("$", ""));
@@ -39,59 +40,13 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 1. Handle Escape Close
       if (e.key === "Escape") {
         onClose();
-        return;
-      }
-
-      // 2. Focus Trap Logic
-      if (e.key === "Tab" && modalRef.current) {
-        const focusableSelectors = [
-          'a[href]',
-          'area[href]',
-          'input:not([disabled])',
-          'select:not([disabled])',
-          'textarea:not([disabled])',
-          'button:not([disabled])',
-          'iframe',
-          'object',
-          'embed',
-          '[contenteditable]',
-          '[tabindex]:not([tabindex="-1"])'
-        ].join(',');
-
-        const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(focusableSelectors);
-        if (focusableElements.length === 0) return;
-
-        const firstElement = focusableElements[0];
-        const lastElement = focusableElements[focusableElements.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === firstElement) {
-            e.preventDefault();
-            lastElement.focus();
-          }
-        } else {
-          if (document.activeElement === lastElement) {
-            e.preventDefault();
-            firstElement.focus();
-          }
-        }
       }
     };
 
-    // Prevent background page content layout scrolling while modal layer is active
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", handleKeyDown);
-
-    // Initial contextual focus alignment inside the container wrapper
-    setTimeout(() => {
-      if (modalRef.current) {
-        const focusable = modalRef.current.querySelectorAll<HTMLElement>('button, input');
-        if (focusable.length > 0) focusable[0].focus();
-      }
-    }, 50);
 
     return () => {
       document.body.style.overflow = "";

@@ -838,7 +838,11 @@ mod tests {
                 page: 1,
                 page_size: size,
             };
-            assert!(params.validate_page_size().is_ok(), "page_size={} should be valid", size);
+            assert!(
+                params.validate_page_size().is_ok(),
+                "page_size={} should be valid",
+                size
+            );
         }
     }
 
@@ -1203,15 +1207,15 @@ pub async fn list_events(
     }
     if let Some(ref date_str) = filters.start_date {
         if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-            let dt: DateTime<Utc> = Utc
-                .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+            let dt: DateTime<Utc> =
+                Utc.from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
             count_builder = count_builder.bind(dt);
         }
     }
     if let Some(ref date_str) = filters.end_date {
         if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-            let dt: DateTime<Utc> = Utc
-                .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+            let dt: DateTime<Utc> =
+                Utc.from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
             count_builder = count_builder.bind(dt);
         }
     }
@@ -2322,7 +2326,9 @@ pub async fn toggle_event_flag(
 
     // Attach the organizer wallet so the audit middleware records it in metadata.
     if let Some(wallet) = organizer_wallet {
-        response.extensions_mut().insert(AuditMetadata(json!({ "organizer_wallet": wallet })));
+        response
+            .extensions_mut()
+            .insert(AuditMetadata(json!({ "organizer_wallet": wallet })));
     }
 
     response
@@ -2362,7 +2368,11 @@ pub async fn set_event_featured(
 
     let cache_key = format!("event:detail:{}", event_id);
     if let Err(e) = state.redis.delete(&cache_key).await {
-        tracing::warn!("Failed to invalidate cache for featured update on event {}: {:?}", event_id, e);
+        tracing::warn!(
+            "Failed to invalidate cache for featured update on event {}: {:?}",
+            event_id,
+            e
+        );
     }
 
     let mut response = success(
@@ -2371,7 +2381,9 @@ pub async fn set_event_featured(
     )
     .into_response();
 
-    response.extensions_mut().insert(AuditMetadata(json!({ "featured": updated })));
+    response
+        .extensions_mut()
+        .insert(AuditMetadata(json!({ "featured": updated })));
 
     response
 }

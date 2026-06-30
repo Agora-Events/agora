@@ -127,3 +127,14 @@ select:focus-visible,
 [data-theme="dark"] .border-black {
   border-color: var(--color-subtle);
 }
+
+/* ── LazyImage blur-up effect ── */
+.lazy-image {
+  transition: filter 0.4s ease;
+}
+.lazy-image--blurred {
+  filter: blur(8px);
+}
+.lazy-image--revealed {
+  filter: blur(0);
+}

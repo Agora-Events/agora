@@ -141,7 +141,13 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // Organizer profile routes (Issue #486)
     // Routes that use Redis caching use ProfileState; stats route keeps PgPool.
     let profile_routes = Router::new()
-        .route("/", get(get_my_profile).put(upsert_profile).patch(patch_profile).delete(delete_profile))
+        .route(
+            "/",
+            get(get_my_profile)
+                .put(upsert_profile)
+                .patch(patch_profile)
+                .delete(delete_profile),
+        )
         .route("/transactions", get(list_my_transactions))
         .route("/:address", get(get_profile_by_address))
         .route("/:address/events", get(list_events_by_organizer))
@@ -160,7 +166,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     let admin_routes = Router::new()
         .route("/events/:id/toggle-flag", post(toggle_event_flag))
         .route("/events/:id/feature", patch(set_event_featured))
-        .route_layer(middleware::from_fn_with_state(admin_auth_state, require_admin_token))
+        .route_layer(middleware::from_fn_with_state(
+            admin_auth_state,
+            require_admin_token,
+        ))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
         .with_state(event_state.clone());
 

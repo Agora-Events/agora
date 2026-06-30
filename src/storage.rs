@@ -1,4 +1,4 @@
-use soroban_sdk::{Env, Symbol, symbol_short};
+use soroban_sdk::{symbol_short, Env, Symbol};
 
 use crate::location::{validate_location, Location};
 

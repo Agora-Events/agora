@@ -3,5 +3,8 @@ name = "agora_event_geotag"
 version = "0.1.0"
 edition = "2021"
 
+[lints.rust]
+unexpected_cfgs = "allow"
+
 [dependencies]
 soroban-sdk = "20.0.0"

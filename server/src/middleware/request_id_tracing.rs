@@ -36,10 +36,7 @@ pub async fn trace_request_id(request: Request, next: Next) -> Response {
 /// Must be applied after [`SetRequestIdLayer`] so the header is already set on
 /// the incoming request.
 pub async fn propagate_request_id(request: Request, next: Next) -> Response {
-    let request_id = request
-        .headers()
-        .get(REQUEST_ID_HEADER)
-        .cloned();
+    let request_id = request.headers().get(REQUEST_ID_HEADER).cloned();
 
     let mut response = next.run(request).await;
 
@@ -54,8 +51,8 @@ pub async fn propagate_request_id(request: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, http::Request, http::StatusCode, middleware, routing::get, Router};
     use crate::config::request_id::set_request_id_layer;
+    use axum::{body::Body, http::Request, http::StatusCode, middleware, routing::get, Router};
     use tower::ServiceExt;
 
     #[tokio::test]
@@ -84,10 +81,7 @@ mod tests {
     #[tokio::test]
     async fn test_propagate_request_id_on_error_response() {
         let router = Router::new()
-            .route(
-                "/",
-                get(|| async { StatusCode::BAD_REQUEST }),
-            )
+            .route("/", get(|| async { StatusCode::BAD_REQUEST }))
             .layer(middleware::from_fn(propagate_request_id))
             .layer(set_request_id_layer());
 
