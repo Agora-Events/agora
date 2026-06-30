@@ -253,7 +253,68 @@ You should also be able to open:
 - Confirm Rust and Cargo are installed correctly.
 - Confirm Soroban CLI is installed if your contract workflow depends on it.
 
-## 11. PR Reminder
+## 11. Pre-commit Hooks
+
+Pre-commit hooks enforce formatting and linting before every commit, catching issues locally before they reach CI.
+
+### Install pre-commit
+
+```bash
+pip install pre-commit
+```
+
+### Activate hooks for this repo
+
+Run once after cloning (or after any change to `.pre-commit-config.yaml`):
+
+```bash
+pre-commit install
+```
+
+This installs the hooks into `.git/hooks/pre-commit`.
+
+### What runs on each commit
+
+| Hook | What it checks |
+|------|---------------|
+| `trailing-whitespace` | Removes trailing whitespace |
+| `end-of-file-fixer` | Ensures files end with a newline |
+| `check-merge-conflict` | Catches leftover merge conflict markers |
+| `rustfmt` | Formats Rust code (`cargo fmt --check`) |
+| `clippy` | Lints Rust code (`cargo clippy -D warnings`) |
+| `prettier` | Formats JS/TS/CSS/JSON/MD files |
+| `eslint` | Lints JS/TS files in `apps/web` |
+
+### Run hooks manually
+
+```bash
+# Run on all files (same as CI)
+pre-commit run --all-files
+
+# Run a single hook
+pre-commit run rustfmt --all-files
+pre-commit run eslint --all-files
+```
+
+### Auto-fix formatting before committing
+
+```bash
+# Rust
+cargo fmt --all
+
+# JS/TS/CSS/JSON/MD (from repo root)
+pnpm --filter web format
+```
+
+### Skipping hooks (not recommended)
+
+```bash
+git commit --no-verify -m "message"
+```
+
+Only skip when you have a specific reason; CI will still run all checks.
+
+## 12. PR Reminder
 
 When you open the PR for this task, include the linked issue in the PR description:
 
