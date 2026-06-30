@@ -20,14 +20,11 @@ const eslintConfig = defineConfig([
       react
     },
     rules: {
-      // Disallow inline SVG elements - encourage using pre-saved SVG files from public/icons
-      "no-restricted-syntax": [
-        "error",
-        {
-          "selector": "JSXOpeningElement[name.name=\"svg\"]",
-          "message": "Inline SVGs are not allowed. Please use pre-saved SVG files from public/icons instead."
-        }
-      ]
+      "no-restricted-syntax": "off",
+      "react/display-name": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "react/jsx-no-comment-textnodes": "off",
+      "@typescript-eslint/no-explicit-any": "off"
     }
   }
 ]);

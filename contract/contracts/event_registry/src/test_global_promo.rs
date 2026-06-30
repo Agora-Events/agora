@@ -21,7 +21,7 @@ mod get_global_promo_tests {
     fn ledger_at(timestamp: u64) -> LedgerInfo {
         LedgerInfo {
             timestamp,
-            protocol_version: 22,
+            protocol_version: 23,
             sequence_number: 1,
             network_id: Default::default(),
             base_reserve: 10,
