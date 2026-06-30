@@ -499,7 +499,7 @@ fn test_postpone_event_grace_period_in_past() {
     let grace_period_end = 500u64;
 
     let result = client.try_postpone_event(&event_id, &1500u64, &grace_period_end);
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidGracePeriodEnd)));
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidGracePeriod)));
 }
 
 #[test]
@@ -1783,7 +1783,7 @@ fn test_tier_limit_exceeds_max_supply() {
     });
     assert_eq!(
         result,
-        Err(Ok(EventRegistryError::TierLimitExceedsMaxSupply))
+        Err(Ok(EventRegistryError::TierLimitExceeds))
     );
 }
 
@@ -2297,7 +2297,7 @@ fn test_remove_non_blacklisted_fails() {
     // Try to remove non-blacklisted organizer - should fail
     let reason = String::from_str(&env, "Removal attempt");
     let result = client.try_remove_from_blacklist(&organizer, &reason);
-    assert_eq!(result, Err(Ok(EventRegistryError::OrganizerNotBlacklisted)));
+    assert_eq!(result, Err(Ok(EventRegistryError::OrgNotBlacklisted)));
 }
 
 // ==================== Resale Cap Tests ====================
@@ -2646,7 +2646,7 @@ fn test_cancel_already_cancelled_fails() {
 
     client.cancel_event(&event_id);
     let result = client.try_cancel_event(&event_id);
-    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCancelled)));
+    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCanceled)));
 }
 
 #[test]
@@ -4016,7 +4016,7 @@ fn test_target_deadline_after_end_time_rejected() {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
 
-    // target_deadline (20000) > end_time (10000) should panic with DeadlineAfterEndTime
+    // target_deadline (20000) > end_time (10000) should panic with DeadlinePastEnd
     client.register_event(&EventRegistrationArgs {
         event_id,
         name: String::from_str(&env, "Test Event"),
@@ -4486,5 +4486,5 @@ fn test_get_events_batch_limit() {
     let client = EventRegistryContractClient::new(&env, &contract_id);
     
     let res = client.try_get_events_batch(&event_ids);
-    assert_eq!(res, Err(Ok(EventRegistryError::TooManyIds)));
+    assert_eq!(res, Err(Ok(EventRegistryError::TooManyTiers)));
 }

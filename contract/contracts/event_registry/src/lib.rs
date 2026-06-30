@@ -230,7 +230,7 @@ impl EventRegistry {
                     .ok_or(EventRegistryError::SupplyOverflow)?;
             }
             if total_tier_limit > args.max_supply {
-                return Err(EventRegistryError::TierLimitExceedsMaxSupply);
+                return Err(EventRegistryError::TierLimitExceeds);
             }
         }
 
@@ -242,10 +242,7 @@ impl EventRegistry {
         }
 
         // Validate event time range
-        if args.start_time != 0
-            && args.end_time != 0
-            && args.end_time <= args.start_time
-        {
+        if args.start_time != 0 && args.end_time != 0 && args.end_time <= args.start_time {
             return Err(EventRegistryError::InvalidDeadline);
         }
 
@@ -378,7 +375,7 @@ impl EventRegistry {
                 auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
                 if matches!(event_info.status, EventStatus::Cancelled) {
-                    return Err(EventRegistryError::EventAlreadyCancelled);
+                    return Err(EventRegistryError::EventAlreadyCanceled);
                 }
 
                 // Update status to Cancelled and deactivate
@@ -534,9 +531,12 @@ impl EventRegistry {
     }
 
     /// Retrieves a batch of events by their IDs (max 50).
-    pub fn get_events_batch(env: Env, event_ids: Vec<String>) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
+    pub fn get_events_batch(
+        env: Env,
+        event_ids: Vec<String>,
+    ) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
         if event_ids.len() > 50 {
-            return Err(EventRegistryError::TooManyIds);
+            return Err(EventRegistryError::TooManyTiers);
         }
         let mut results = Vec::new(&env);
         for id in event_ids.into_iter() {
@@ -950,7 +950,7 @@ impl EventRegistry {
 
         // Check if currently blacklisted
         if !storage::is_blacklisted(&env, &organizer_address) {
-            return Err(EventRegistryError::OrganizerNotBlacklisted);
+            return Err(EventRegistryError::OrgNotBlacklisted);
         }
 
         // Remove from blacklist
@@ -1068,7 +1068,7 @@ impl EventRegistry {
             return Err(EventRegistryError::InvalidDeadline);
         }
         if grace_period_end <= now {
-            return Err(EventRegistryError::InvalidGracePeriodEnd);
+            return Err(EventRegistryError::InvalidGracePeriod);
         }
 
         event_info.start_time = new_start_time;
@@ -1583,7 +1583,7 @@ impl EventRegistry {
                 }
                 // Ensure we don't remove the last admin
                 if config.admins.len() <= 1 {
-                    return Err(EventRegistryError::CannotRemoveLastAdmin);
+                    return Err(EventRegistryError::CannotRemoveLast);
                 }
             }
             types::ParameterChange::SetThreshold(threshold) => {
@@ -1727,7 +1727,7 @@ impl EventRegistry {
 
         // Check if already executed
         if proposal.executed {
-            return Err(EventRegistryError::ProposalAlreadyExecuted);
+            return Err(EventRegistryError::PropAlreadyExecuted);
         }
 
         // Check if already approved by this admin
@@ -1765,7 +1765,7 @@ impl EventRegistry {
 
         // Check if already executed
         if proposal.executed {
-            return Err(EventRegistryError::ProposalAlreadyExecuted);
+            return Err(EventRegistryError::PropAlreadyExecuted);
         }
 
         // Check if expired
@@ -1784,13 +1784,13 @@ impl EventRegistry {
                 let mut new_config = config.clone();
                 new_config.admins.push_back(new_admin.clone());
                 storage::set_multisig_config(&env, &new_config);
-                storage::set_admin(&env, &new_admin); // Update legacy admin storage
+                storage::set_admin(&env, new_admin); // Update legacy admin storage
             }
             types::ParameterChange::RemoveAdmin(admin_to_remove) => {
                 let mut new_config = config.clone();
                 let mut new_admins = Vec::new(&env);
                 for admin in new_config.admins.iter() {
-                    if admin != *admin_to_remove {
+                    if admin != admin_to_remove.clone() {
                         new_admins.push_back(admin);
                     }
                 }
@@ -1809,7 +1809,7 @@ impl EventRegistry {
                 storage::set_multisig_config(&env, &new_config);
             }
             types::ParameterChange::UpdatePlatformWallet(new_wallet) => {
-                storage::set_platform_wallet(&env, &new_wallet);
+                storage::set_platform_wallet(&env, new_wallet);
             }
             types::ParameterChange::SetPlatformFee(fee) => {
                 storage::set_platform_fee(&env, *fee);

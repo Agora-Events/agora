@@ -86,7 +86,13 @@ fn test_per_user_limit_enforced() {
     let (client, _admin, _) = setup(&env);
     let organizer = Address::generate(&env);
 
-    let args = make_event_args(&env, "evt_peruser", &organizer, 100, single_tier(&env, 100, 2));
+    let args = make_event_args(
+        &env,
+        "evt_peruser",
+        &organizer,
+        100,
+        single_tier(&env, 100, 2),
+    );
     client.register_event(&args);
 
     let ticket_payment = Address::generate(&env);
@@ -119,7 +125,13 @@ fn test_per_user_limit_zero_means_unlimited() {
     let (client, _admin, _) = setup(&env);
     let organizer = Address::generate(&env);
 
-    let args = make_event_args(&env, "evt_unlim_user", &organizer, 100, single_tier(&env, 100, 0));
+    let args = make_event_args(
+        &env,
+        "evt_unlim_user",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
     client.register_event(&args);
 
     let ticket_payment = Address::generate(&env);
@@ -149,7 +161,13 @@ fn test_global_tickets_sold_increments() {
     let (client, _admin, _) = setup(&env);
     let organizer = Address::generate(&env);
 
-    let args = make_event_args(&env, "evt_global1", &organizer, 100, single_tier(&env, 100, 0));
+    let args = make_event_args(
+        &env,
+        "evt_global1",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
     client.register_event(&args);
 
     let ticket_payment = Address::generate(&env);
@@ -180,7 +198,13 @@ fn test_global_tickets_sold_increments() {
     assert_eq!(client.get_global_tickets_sold(), 5);
 
     // Register a second event and purchase tickets there too
-    let args2 = make_event_args(&env, "evt_global2", &organizer, 100, single_tier(&env, 100, 0));
+    let args2 = make_event_args(
+        &env,
+        "evt_global2",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
     client.register_event(&args2);
 
     client.increment_inventory(
@@ -253,7 +277,9 @@ fn test_register_event_accepts_valid_time_range() {
     args.end_time = 2000; // end after start
 
     client.register_event(&args);
-    let info = client.get_event(&String::from_str(&env, "evt_good_time")).unwrap();
+    let info = client
+        .get_event(&String::from_str(&env, "evt_good_time"))
+        .unwrap();
     assert_eq!(info.start_time, 1000);
     assert_eq!(info.end_time, 2000);
 }
@@ -269,7 +295,13 @@ fn test_cancel_event_stores_reason() {
     let (client, _admin, _) = setup(&env);
     let organizer = Address::generate(&env);
 
-    let args = make_event_args(&env, "evt_cancel", &organizer, 100, single_tier(&env, 100, 0));
+    let args = make_event_args(
+        &env,
+        "evt_cancel",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
     client.register_event(&args);
 
     let reason = String::from_str(&env, "Venue became unavailable");
@@ -290,7 +322,13 @@ fn test_cancel_event_without_reason() {
     let (client, _admin, _) = setup(&env);
     let organizer = Address::generate(&env);
 
-    let args = make_event_args(&env, "evt_cancel_none", &organizer, 100, single_tier(&env, 100, 0));
+    let args = make_event_args(
+        &env,
+        "evt_cancel_none",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
     client.register_event(&args);
 
     client.cancel_event(&String::from_str(&env, "evt_cancel_none"), &None);

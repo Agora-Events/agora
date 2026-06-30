@@ -107,7 +107,11 @@ pub struct ConfigError {
 
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Configuration errors:\n  - {}", self.errors.join("\n  - "))
+        write!(
+            f,
+            "Configuration errors:\n  - {}",
+            self.errors.join("\n  - ")
+        )
     }
 }
 
@@ -633,8 +637,11 @@ mod tests {
         cfg.database_url = String::new();
         let err = cfg.validate().unwrap_err();
         assert!(
-            err.errors.iter().any(|e| e.contains("DATABASE_URL") && e.contains("required")),
-            "got: {:?}", err.errors
+            err.errors
+                .iter()
+                .any(|e| e.contains("DATABASE_URL") && e.contains("required")),
+            "got: {:?}",
+            err.errors
         );
     }
 
@@ -644,8 +651,11 @@ mod tests {
         cfg.database_url = "mysql://user:pass@localhost/db".to_string();
         let err = cfg.validate().unwrap_err();
         assert!(
-            err.errors.iter().any(|e| e.contains("DATABASE_URL") && e.contains("postgres")),
-            "got: {:?}", err.errors
+            err.errors
+                .iter()
+                .any(|e| e.contains("DATABASE_URL") && e.contains("postgres")),
+            "got: {:?}",
+            err.errors
         );
     }
 
@@ -659,8 +669,11 @@ mod tests {
         cfg.jwt_secret = String::new();
         let err = cfg.validate().unwrap_err();
         assert!(
-            err.errors.iter().any(|e| e.contains("JWT_SECRET") && e.contains("required")),
-            "got: {:?}", err.errors
+            err.errors
+                .iter()
+                .any(|e| e.contains("JWT_SECRET") && e.contains("required")),
+            "got: {:?}",
+            err.errors
         );
     }
 
@@ -670,8 +683,11 @@ mod tests {
         cfg.jwt_secret = "too_short".to_string();
         let err = cfg.validate().unwrap_err();
         assert!(
-            err.errors.iter().any(|e| e.contains("JWT_SECRET") && e.contains("too short")),
-            "got: {:?}", err.errors
+            err.errors
+                .iter()
+                .any(|e| e.contains("JWT_SECRET") && e.contains("too short")),
+            "got: {:?}",
+            err.errors
         );
     }
 
@@ -694,7 +710,8 @@ mod tests {
         let err = cfg.validate().unwrap_err();
         assert!(
             err.errors.iter().any(|e| e.contains("PORT")),
-            "got: {:?}", err.errors
+            "got: {:?}",
+            err.errors
         );
     }
 
@@ -725,8 +742,11 @@ mod tests {
         cfg.redis_url = "memcache://localhost".to_string();
         let err = cfg.validate().unwrap_err();
         assert!(
-            err.errors.iter().any(|e| e.contains("REDIS_URL") && e.contains("redis")),
-            "got: {:?}", err.errors
+            err.errors
+                .iter()
+                .any(|e| e.contains("REDIS_URL") && e.contains("redis")),
+            "got: {:?}",
+            err.errors
         );
     }
 
@@ -748,8 +768,11 @@ mod tests {
         cfg.soroban_rpc_url = "ftp://soroban.example.com".to_string();
         let err = cfg.validate().unwrap_err();
         assert!(
-            err.errors.iter().any(|e| e.contains("SOROBAN_RPC_URL") && e.contains("http")),
-            "got: {:?}", err.errors
+            err.errors
+                .iter()
+                .any(|e| e.contains("SOROBAN_RPC_URL") && e.contains("http")),
+            "got: {:?}",
+            err.errors
         );
     }
 
@@ -771,8 +794,11 @@ mod tests {
         cfg.base_url = "ws://agora.events".to_string();
         let err = cfg.validate().unwrap_err();
         assert!(
-            err.errors.iter().any(|e| e.contains("BASE_URL") && e.contains("http")),
-            "got: {:?}", err.errors
+            err.errors
+                .iter()
+                .any(|e| e.contains("BASE_URL") && e.contains("http")),
+            "got: {:?}",
+            err.errors
         );
     }
 
@@ -785,7 +811,10 @@ mod tests {
         let mut cfg = valid_config();
         cfg.cors_allowed_origins = String::new();
         let err = cfg.validate().unwrap_err();
-        assert!(err.errors.iter().any(|e| e.contains("CORS_ALLOWED_ORIGINS")));
+        assert!(err
+            .errors
+            .iter()
+            .any(|e| e.contains("CORS_ALLOWED_ORIGINS")));
     }
 
     // -----------------------------------------------------------------------
@@ -798,8 +827,11 @@ mod tests {
         cfg.rust_env = "staging".to_string();
         let err = cfg.validate().unwrap_err();
         assert!(
-            err.errors.iter().any(|e| e.contains("RUST_ENV") && e.contains("staging")),
-            "got: {:?}", err.errors
+            err.errors
+                .iter()
+                .any(|e| e.contains("RUST_ENV") && e.contains("staging")),
+            "got: {:?}",
+            err.errors
         );
     }
 

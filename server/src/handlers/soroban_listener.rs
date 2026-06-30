@@ -492,12 +492,14 @@ async fn handle_collateral_staked(pool: &PgPool, event: &SorobanEvent) -> Result
         .unwrap_or_default();
 
     if !organizer_wallet.is_empty() {
-        sqlx::query("UPDATE organizers SET is_verified = $1, updated_at = NOW() WHERE wallet_address = $2")
-            .bind(is_verified)
-            .bind(organizer_wallet)
-            .execute(pool)
-            .await
-            .map_err(|e| format!("Failed to update organizer verified status: {}", e))?;
+        sqlx::query(
+            "UPDATE organizers SET is_verified = $1, updated_at = NOW() WHERE wallet_address = $2",
+        )
+        .bind(is_verified)
+        .bind(organizer_wallet)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to update organizer verified status: {}", e))?;
     }
 
     Ok(())
@@ -520,7 +522,6 @@ async fn handle_collateral_unstaked(pool: &PgPool, event: &SorobanEvent) -> Resu
 
     Ok(())
 }
-
 
 // ---------------------------------------------------------------------------
 // Tests

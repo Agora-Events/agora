@@ -64,13 +64,13 @@ fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
     }
     if req.display_name.len() > MAX_DISPLAY_NAME {
         return Err(AppError::ValidationError(
-            "displayName must not exceed 50 characters".to_string()
+            "displayName must not exceed 50 characters".to_string(),
         ));
     }
     if let Some(ref bio) = req.bio {
         if bio.len() > MAX_BIO {
             return Err(AppError::ValidationError(
-                "bio must not exceed 500 characters".to_string()
+                "bio must not exceed 500 characters".to_string(),
             ));
         }
     }
@@ -341,7 +341,6 @@ pub async fn get_my_profile(State(mut state): State<ProfileState>, headers: Head
 
     fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
 }
-
 
 /// Summary of a payment transaction returned by `GET /api/v1/profile/transactions`.
 #[derive(Debug, Clone, Serialize, FromRow)]
@@ -620,6 +619,7 @@ pub async fn list_events_by_organizer(
             id: last.id,
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
+            count_of_ratings: Some(last.count_of_ratings as i64),
         }) {
             Ok(c) => Some(c),
             Err(e) => {

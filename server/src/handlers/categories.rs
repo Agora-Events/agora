@@ -226,16 +226,56 @@ pub async fn get_category(
 /// Canonical categories defined in the contract's Category enum.
 /// Used to validate database categories match the contract at startup.
 pub const CANONICAL_CATEGORIES: &[(u32, &str, &str)] = &[
-    (1, "Music", "Music events including concerts, festivals, and live performances"),
-    (2, "Sports", "Sports events including games, tournaments, and athletic competitions"),
-    (3, "Tech", "Technology events including conferences, hackathons, and meetups"),
-    (4, "Arts", "Arts events including exhibitions, galleries, and cultural shows"),
-    (5, "Food", "Food events including tastings, festivals, and cooking classes"),
-    (6, "Business", "Business events including networking, seminars, and trade shows"),
-    (7, "Health", "Health events including wellness workshops, fitness classes, and medical conferences"),
-    (8, "Education", "Education events including workshops, lectures, and training sessions"),
-    (9, "Community", "Community events including social gatherings, volunteering, and local meetups"),
-    (10, "Other", "Other events that do not fit into the above categories"),
+    (
+        1,
+        "Music",
+        "Music events including concerts, festivals, and live performances",
+    ),
+    (
+        2,
+        "Sports",
+        "Sports events including games, tournaments, and athletic competitions",
+    ),
+    (
+        3,
+        "Tech",
+        "Technology events including conferences, hackathons, and meetups",
+    ),
+    (
+        4,
+        "Arts",
+        "Arts events including exhibitions, galleries, and cultural shows",
+    ),
+    (
+        5,
+        "Food",
+        "Food events including tastings, festivals, and cooking classes",
+    ),
+    (
+        6,
+        "Business",
+        "Business events including networking, seminars, and trade shows",
+    ),
+    (
+        7,
+        "Health",
+        "Health events including wellness workshops, fitness classes, and medical conferences",
+    ),
+    (
+        8,
+        "Education",
+        "Education events including workshops, lectures, and training sessions",
+    ),
+    (
+        9,
+        "Community",
+        "Community events including social gatherings, volunteering, and local meetups",
+    ),
+    (
+        10,
+        "Other",
+        "Other events that do not fit into the above categories",
+    ),
 ];
 
 /// Validates that the categories in the database match the contract's canonical list.
@@ -254,7 +294,10 @@ pub async fn validate_categories_match_contract(pool: &PgPool) {
                 .collect();
 
             if db_names == canonical_names {
-                tracing::info!("Database categories match the contract's canonical list ({} categories)", db_names.len());
+                tracing::info!(
+                    "Database categories match the contract's canonical list ({} categories)",
+                    db_names.len()
+                );
             } else {
                 tracing::warn!(
                     "Database categories mismatch detected! DB has {:?}, contract expects {:?}",

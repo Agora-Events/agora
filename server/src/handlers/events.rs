@@ -460,6 +460,7 @@ mod tests {
             followers_only: None,
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
 
         let (where_clause, _) = build_event_where_clause(&filters, &default_event_sort(), None);
@@ -488,6 +489,7 @@ mod tests {
             followers_only: None,
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
 
         assert!(filters.organizer_id.is_some());
@@ -512,6 +514,7 @@ mod tests {
             followers_only: None,
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
         assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
     }
@@ -563,6 +566,7 @@ mod tests {
             followers_only: None,
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
         assert_eq!(filters_free.is_free, Some(true));
 
@@ -581,6 +585,7 @@ mod tests {
             followers_only: None,
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
         assert_eq!(filters_paid.is_free, Some(false));
 
@@ -599,6 +604,7 @@ mod tests {
             followers_only: None,
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
         assert_eq!(filters_none.is_free, None);
     }
@@ -620,6 +626,7 @@ mod tests {
             followers_only: None,
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
         let (where_clause, _) = build_event_where_clause(&filters, &default_event_sort(), None);
         assert!(
@@ -646,6 +653,7 @@ mod tests {
             followers_only: None,
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
         let (where_clause, _) = build_event_where_clause(&filters, &default_event_sort(), None);
         assert!(
@@ -672,6 +680,7 @@ mod tests {
             followers_only: Some(true),
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
         let (where_clause, _) = build_event_where_clause(&filters, &default_event_sort(), None);
         assert!(
@@ -1039,6 +1048,7 @@ mod tests {
             is_featured: Some(true),
             sort_by: None,
             sort_order: None,
+            sort: None,
         };
 
         let sort = filters.validate_sort().unwrap();
@@ -1075,6 +1085,7 @@ mod tests {
             followers_only: None,
             sort_by: Some("invalid".to_string()),
             sort_order: None,
+            sort: None,
         };
 
         let err = filters.validate_sort().unwrap_err();
@@ -1098,6 +1109,7 @@ mod tests {
             followers_only: None,
             sort_by: Some("created_at".to_string()),
             sort_order: Some("sideways".to_string()),
+            sort: None,
         };
 
         let err = filters.validate_sort().unwrap_err();
@@ -1320,7 +1332,8 @@ pub async fn list_events(
                     Some(value) => value,
                     None => {
                         return AppError::ValidationError(
-                            "Cursor is missing minted_tickets for popularity/count_of_ratings sort".to_string(),
+                            "Cursor is missing minted_tickets for popularity/count_of_ratings sort"
+                                .to_string(),
                         )
                         .into_response();
                     }
@@ -1611,10 +1624,12 @@ pub async fn list_similar_events(
     let limit = params.limit.unwrap_or(4).clamp(1, 10) as i64;
 
     // Fetch the source event to get its location (category via join below).
-    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE")
-        .bind(event_id)
-        .fetch_optional(&state.pool)
-        .await
+    let source = match sqlx::query_as::<_, Event>(
+        "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
     {
         Ok(Some(e)) => e,
         Ok(None) => {
@@ -1875,18 +1890,19 @@ pub async fn submit_event_rating(
 
     let (ticket_status, ticket_event_id) = ticket;
 
-    let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
-            .bind(event_id)
-            .fetch_one(&state.pool)
-            .await
-        {
-            Ok(exists) => exists,
-            Err(e) => {
-                tracing::error!("Failed to check event existence for rating: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(exists) => exists,
+        Err(e) => {
+            tracing::error!("Failed to check event existence for rating: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     if !event_exists {
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
@@ -2017,8 +2033,6 @@ pub async fn search_events(
     if let Err(msg) = params.validate_page_size() {
         return AppError::ValidationError(msg).into_response();
     }
-
-    let start = std::time::Instant::now();
     let pagination = PaginationParams {
         page: params.page,
         page_size: params.page_size,
@@ -2496,18 +2510,19 @@ pub async fn get_event_social_proof(
     }
 
     // Check if event exists
-    let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
-            .bind(event_id)
-            .fetch_one(&state.pool)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("Failed to check event existence: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     if !event_exists {
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
@@ -2636,18 +2651,19 @@ pub async fn get_event_revenue(
     Path(event_id): Path<Uuid>,
 ) -> Response {
     // 404 if event doesn't exist
-    let exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
-            .bind(event_id)
-            .fetch_one(&state.pool)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("Failed to check event existence: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    let exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     if !exists {
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
@@ -2698,7 +2714,7 @@ pub async fn get_event_revenue(
 fn test_event_filters_deserialization() {
     // Test that filters can be deserialized from query params
     let filters = EventFilters {
-            is_featured: None,
+        is_featured: None,
         organizer_id: Some(Uuid::new_v4()),
         organizer_wallet: Some("GABC123".to_string()),
         location: Some("New York".to_string()),
@@ -2712,6 +2728,7 @@ fn test_event_filters_deserialization() {
         followers_only: None,
         sort_by: None,
         sort_order: None,
+        sort: None,
     };
 
     assert!(filters.organizer_id.is_some());
@@ -2722,7 +2739,7 @@ fn test_event_filters_deserialization() {
 #[test]
 fn test_organizer_wallet_filter() {
     let filters = EventFilters {
-            is_featured: None,
+        is_featured: None,
         organizer_id: None,
         organizer_wallet: Some("GBXXX".to_string()),
         location: None,
@@ -2736,6 +2753,7 @@ fn test_organizer_wallet_filter() {
         followers_only: None,
         sort_by: None,
         sort_order: None,
+        sort: None,
     };
     assert_eq!(filters.organizer_wallet.as_deref(), Some("GBXXX"));
 }
@@ -2743,7 +2761,7 @@ fn test_organizer_wallet_filter() {
 #[test]
 fn test_is_free_filter() {
     let filters_free = EventFilters {
-            is_featured: None,
+        is_featured: None,
         organizer_id: None,
         organizer_wallet: None,
         location: None,
@@ -2757,11 +2775,12 @@ fn test_is_free_filter() {
         followers_only: None,
         sort_by: None,
         sort_order: None,
+        sort: None,
     };
     assert_eq!(filters_free.is_free, Some(true));
 
     let filters_paid = EventFilters {
-            is_featured: None,
+        is_featured: None,
         organizer_id: None,
         organizer_wallet: None,
         location: None,
@@ -2775,11 +2794,12 @@ fn test_is_free_filter() {
         followers_only: None,
         sort_by: None,
         sort_order: None,
+        sort: None,
     };
     assert_eq!(filters_paid.is_free, Some(false));
 
     let filters_none = EventFilters {
-            is_featured: None,
+        is_featured: None,
         organizer_id: None,
         organizer_wallet: None,
         location: None,
@@ -2793,6 +2813,7 @@ fn test_is_free_filter() {
         followers_only: None,
         sort_by: None,
         sort_order: None,
+        sort: None,
     };
     assert_eq!(filters_none.is_free, None);
 }
@@ -3077,18 +3098,19 @@ pub async fn get_ratings_summary(
     }
 
     // 404 if event doesn't exist
-    let exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
-            .bind(event_id)
-            .fetch_one(&state.pool)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("Failed to check event existence: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    let exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     if !exists {
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
@@ -3323,18 +3345,19 @@ pub async fn export_attendees_csv(
     Path(event_id): Path<Uuid>,
 ) -> Response {
     // Verify the event exists
-    let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
-            .bind(event_id)
-            .fetch_one(&state.pool)
-            .await
-        {
-            Ok(exists) => exists,
-            Err(e) => {
-                tracing::error!("Failed to check event existence: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(exists) => exists,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     if !event_exists {
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
@@ -3428,18 +3451,19 @@ pub async fn list_event_tickets(
     Query(pagination): Query<PaginationParams>,
 ) -> Response {
     // 404 if event does not exist.
-    let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
-            .bind(event_id)
-            .fetch_one(&state.pool)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("Failed to check event existence for tickets: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence for tickets: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     if !event_exists {
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
@@ -3620,18 +3644,19 @@ pub async fn list_ticket_tiers(
     State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    let event_exists =
-        match sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)")
-            .bind(event_id)
-            .fetch_one(&state.pool)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("Failed to check event existence: {:?}", e);
-                return AppError::DatabaseError(e).into_response();
-            }
-        };
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
 
     if !event_exists {
         return AppError::NotFound(format!("Event with id '{event_id}' not found")).into_response();

@@ -6,8 +6,8 @@ use axum::{
 };
 use once_cell::sync::Lazy;
 use prometheus::{
-    register_counter_vec_with_registry, register_histogram_vec_with_registry, CounterVec,
-    Encoder, HistogramOpts, HistogramVec, Opts, Registry, TextEncoder,
+    register_counter_vec_with_registry, register_histogram_vec_with_registry, CounterVec, Encoder,
+    HistogramOpts, HistogramVec, Opts, Registry, TextEncoder,
 };
 use std::time::Instant;
 
@@ -58,10 +58,7 @@ pub async fn metrics_handler() -> Response {
     encoder.encode(&REGISTRY.gather(), &mut buffer).unwrap();
     (
         StatusCode::OK,
-        [(
-            "content-type",
-            "text/plain; version=0.0.4; charset=utf-8",
-        )],
+        [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
         buffer,
     )
         .into_response()

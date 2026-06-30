@@ -9,7 +9,7 @@ use crate::utils::error::AppError;
 use crate::utils::response::success;
 
 #[derive(Serialize, utoipa::ToSchema)]
-struct HealthResponse {
+pub struct HealthResponse {
     status: &'static str,
     timestamp: String,
 }

@@ -35,7 +35,6 @@ use crate::config::{
     create_cors_layer, create_security_headers_layer, propagate_request_id_layer,
     set_request_id_layer, Config,
 };
-use crate::metrics::{metrics_handler, track_metrics};
 use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories, CategoryState},
@@ -43,24 +42,30 @@ use crate::handlers::{
         export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
         get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
         list_event_ratings, list_event_tickets, list_events, list_events_by_category,
-        list_past_events, list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
-        set_event_featured, submit_event_rating, toggle_event_flag, EventState,
+        list_past_events, list_similar_events, list_ticket_tiers, list_upcoming_events,
+        search_events, set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
-    health::{health_check, health_check_blockchain, health_check_db, health_check_ready, health_check_redis},
+    health::{
+        health_check, health_check_blockchain, health_check_db, health_check_ready,
+        health_check_redis,
+    },
     leaderboard::{get_leaderboard, LeaderboardState},
     monitoring::{monitoring_dashboard, MonitoringState},
     profile::{
-        delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address, list_events_by_organizer,
-        list_my_transactions, patch_profile, upsert_profile, ProfileState,
+        delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
+        list_events_by_organizer, list_my_transactions, patch_profile, upsert_profile,
+        ProfileState,
     },
     qr_payload::{
-        generate_qr_payload, verify_qr_payload, mark_qr_used, list_qr_payloads, delete_qr_payload, list_event_qr_codes,
+        delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads,
+        mark_qr_used, verify_qr_payload,
     },
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
+use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
 use crate::middleware::content_type::require_json_content_type;
@@ -243,7 +248,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .merge(
             Router::new()
                 .route("/health/redis", get(health_check_redis))
-                .with_state(redis.clone())
+                .with_state(redis.clone()),
         )
         .merge(
             Router::new()
@@ -292,7 +297,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .merge(sensitive_routes)
         .merge(general_routes)
         .merge(public_api_routes)
-        .merge(utoipa_swagger_ui::SwaggerUi::new("/swagger-ui").url("/openapi.json", ApiDoc::openapi()))
+        .merge(
+            utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
+                .url("/openapi.json", ApiDoc::openapi()),
+        )
         .layer(middleware::from_fn(crate::middleware::csrf::check_csrf));
 
     // Deep linking routes

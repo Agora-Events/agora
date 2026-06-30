@@ -111,7 +111,10 @@ mod tests {
     #[tokio::test]
     async fn test_wrong_token_returns_401() {
         let router = make_router(Some("secret"));
-        assert_eq!(call(router, Some("Bearer wrong")).await, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            call(router, Some("Bearer wrong")).await,
+            StatusCode::UNAUTHORIZED
+        );
     }
 
     #[tokio::test]

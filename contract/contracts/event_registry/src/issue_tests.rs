@@ -209,7 +209,7 @@ fn test_remove_not_blacklisted() {
     let organizer = Address::generate(&env);
 
     let result = client.try_remove_from_blacklist(&organizer, &String::from_str(&env, "none"));
-    assert_eq!(result, Err(Ok(EventRegistryError::OrganizerNotBlacklisted)));
+    assert_eq!(result, Err(Ok(EventRegistryError::OrgNotBlacklisted)));
 }
 
 #[test]

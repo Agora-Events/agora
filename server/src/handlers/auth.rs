@@ -42,7 +42,8 @@ pub struct Claims {
 }
 
 pub fn jwt_secret() -> String {
-    env::var("JWT_SECRET").expect("JWT_SECRET environment variable is missing. It is required for signing JWTs.")
+    env::var("JWT_SECRET")
+        .expect("JWT_SECRET environment variable is missing. It is required for signing JWTs.")
 }
 
 /// Encode a JWT for the given Stellar address with a 24-hour expiry.
@@ -244,7 +245,7 @@ pub async fn verify_signature(
 
     let strkey_pk = stellar_strkey::ed25519::PublicKey(pk_array);
     let strkey = stellar_strkey::Strkey::PublicKeyEd25519(strkey_pk);
-    if strkey.to_string() != payload.address {
+    if strkey.to_string().as_str() != payload.address {
         return AppError::AuthError("Public key does not match address".to_string())
             .into_response();
     }
@@ -301,19 +302,24 @@ pub async fn verify_signature(
         Err(e) => return e.into_response(),
     };
 
-    let mut response = success(TokenResponse { token: token.clone() }, "Authentication successful").into_response();
-    
+    let mut response = success(
+        TokenResponse {
+            token: token.clone(),
+        },
+        "Authentication successful",
+    )
+    .into_response();
+
     // Generate CSRF token
     let mut csrf_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut csrf_bytes);
     let csrf_token = hex::encode(csrf_bytes);
 
-    let cookie = format!(
-        "XSRF-TOKEN={}; Path=/; HttpOnly; SameSite=Lax",
-        csrf_token
-    );
-    response.headers_mut().insert(axum::http::header::SET_COOKIE, cookie.parse().unwrap());
-    
+    let cookie = format!("XSRF-TOKEN={}; Path=/; HttpOnly; SameSite=Lax", csrf_token);
+    response
+        .headers_mut()
+        .insert(axum::http::header::SET_COOKIE, cookie.parse().unwrap());
+
     response
 }
 

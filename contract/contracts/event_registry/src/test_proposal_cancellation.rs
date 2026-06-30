@@ -135,7 +135,7 @@ fn test_cannot_cancel_executed_proposal() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Cancel a proposal as the proposer, then try to cancel it again.
-/// The second cancel must return ProposalAlreadyCancelled (error code #49).
+/// The second cancel must return PropAlreadyCanceled (error code #49).
 #[test]
 fn test_cancel_proposal_by_proposer() {
     let (env, client, admin1, admin2) = create_test_env();
@@ -153,19 +153,19 @@ fn test_cancel_proposal_by_proposer() {
     assert!(proposal.cancelled, "proposal should be marked cancelled");
     assert!(!proposal.executed, "proposal should not be executed");
 
-    // Cancelling again must return ProposalAlreadyCancelled (#49)
+    // Cancelling again must return PropAlreadyCanceled (#49)
     let result = client.try_cancel_proposal(&admin1, &proposal_id);
     assert_eq!(
         result,
         Err(Ok(
-            crate::error::EventRegistryError::ProposalAlreadyCancelled
+            crate::error::EventRegistryError::PropAlreadyCanceled
         )),
-        "second cancel should return ProposalAlreadyCancelled"
+        "second cancel should return PropAlreadyCanceled"
     );
 }
 
 /// Create, vote on, and execute a proposal, then try to cancel it.
-/// Must return ProposalAlreadyExecuted (error code #38).
+/// Must return PropAlreadyExecuted (error code #38).
 #[test]
 fn test_cancel_already_executed_proposal() {
     let (env, client, admin1, admin2) = create_test_env();
@@ -183,14 +183,14 @@ fn test_cancel_already_executed_proposal() {
         "proposal should be executed before cancel attempt"
     );
 
-    // Trying to cancel an already-executed proposal must return ProposalAlreadyExecuted (#38)
+    // Trying to cancel an already-executed proposal must return PropAlreadyExecuted (#38)
     let result = client.try_cancel_proposal(&admin1, &proposal_id);
     assert_eq!(
         result,
         Err(Ok(
-            crate::error::EventRegistryError::ProposalAlreadyExecuted
+            crate::error::EventRegistryError::PropAlreadyExecuted
         )),
-        "cancelling an executed proposal should return ProposalAlreadyExecuted"
+        "cancelling an executed proposal should return PropAlreadyExecuted"
     );
 }
 
@@ -227,7 +227,7 @@ fn test_cancel_proposal_by_non_proposer() {
 }
 
 /// Cancel a proposal, then try to vote on it.
-/// Must return ProposalAlreadyCancelled (error code #49).
+/// Must return PropAlreadyCanceled (error code #49).
 #[test]
 fn test_vote_on_cancelled_proposal() {
     let (env, client, admin1, admin2) = create_test_env();
@@ -248,13 +248,13 @@ fn test_vote_on_cancelled_proposal() {
     let proposal = client.get_proposal(&proposal_id).unwrap();
     assert!(proposal.cancelled, "proposal should be cancelled");
 
-    // admin2 tries to approve the cancelled proposal — must return ProposalAlreadyCancelled (#49)
+    // admin2 tries to approve the cancelled proposal — must return PropAlreadyCanceled (#49)
     let result = client.try_approve_proposal(&admin2, &proposal_id);
     assert_eq!(
         result,
         Err(Ok(
-            crate::error::EventRegistryError::ProposalAlreadyCancelled
+            crate::error::EventRegistryError::PropAlreadyCanceled
         )),
-        "voting on a cancelled proposal should return ProposalAlreadyCancelled"
+        "voting on a cancelled proposal should return PropAlreadyCanceled"
     );
 }

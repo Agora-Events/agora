@@ -122,7 +122,7 @@ fn test_e2e_complete_event_lifecycle() {
 
     // Cancel again should fail
     let result = client.try_cancel_event(&String::from_str(&env, "evt_1"), &None);
-    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCancelled)));
+    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCanceled)));
 }
 
 // ---------------------------------------------------------------------------
