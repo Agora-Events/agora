@@ -33,7 +33,17 @@ async fn main() {
     dotenv().ok();
     init_logging();
 
-    let config = Config::from_env().expect("Failed to load configuration");
+    let config = Config::from_env().unwrap_or_else(|e| {
+        eprintln!("ERROR: Failed to load configuration: {e}");
+        std::process::exit(1);
+    });
+
+    if let Err(e) = config.validate() {
+        eprintln!("ERROR: Invalid configuration:\n{e}");
+        tracing::error!("Server startup aborted due to configuration errors:\n{e}");
+        std::process::exit(1);
+    }
+
     tracing::info!("Starting server in {} mode", config.rust_env);
     tracing::info!("Configuration: PORT={}", config.port);
     tracing::info!("Configuration: RUST_ENV={}", config.rust_env);
@@ -45,9 +55,6 @@ async fn main() {
     tracing::info!("Configuration: SOROBAN_RPC_URL={}", config.soroban_rpc_url);
     tracing::info!("Configuration: REDIS_URL={}", config.redis_url);
     // Note: DATABASE_URL is strictly excluded from logging for security reasons.
-
-    // Validate that JWT_SECRET is set before binding
-    let _ = agora_server::handlers::auth::jwt_secret();
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
