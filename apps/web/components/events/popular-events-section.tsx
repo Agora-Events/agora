@@ -258,7 +258,7 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
 
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
               <Button
-                variant="dark"
+                variant="primary"
                 className="border-none sm:rounded-4xl! max-sm:p-0 h-9.75 sm:w-34 w-9.75"
                 onClick={() => setIsFilterOpen(true)}
                 aria-haspopup="dialog"

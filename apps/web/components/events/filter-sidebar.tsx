@@ -372,7 +372,7 @@ export function FilterSidebar({
             {/* ── Footer CTA ── */}
             <div className="px-6 py-5 border-t border-black/10 shrink-0">
             <Button
-              variant="dark"
+              variant="primary"
               onClick={handleApply}
               className="w-full h-12 rounded-[13px] text-[15px]"
             >

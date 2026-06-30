@@ -12,6 +12,7 @@ export interface TicketAvailabilityData {
   availableTickets: number;
   isSoldOut: boolean;
   percentageSold: number;
+  isUsingSSE?: boolean;
 }
 
 /**

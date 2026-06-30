@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { motion } from "framer-motion";
@@ -591,7 +591,7 @@ function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
               You haven&apos;t created any events yet
             </p>
             <Link href="/create-event">
-              <Button variant="dark" className="rounded-full">
+              <Button variant="primary" className="rounded-full">
                 Start Hosting
               </Button>
             </Link>
@@ -625,7 +625,7 @@ function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
         <div className="flex flex-col items-center gap-4">
           <p className="text-xl font-medium leading-5.5 text-center">Nothing Here, Yet</p>
           <Link href="/create-event">
-            <Button variant="dark" className="rounded-full">
+            <Button variant="primary" className="rounded-full">
               Create Your First Event
             </Button>
           </Link>

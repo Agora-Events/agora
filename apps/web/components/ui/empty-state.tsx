@@ -26,7 +26,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
       </div>
 
       {action && (
-        <Button variant="dark" onClick={action.onClick}>
+        <Button variant="primary" onClick={action.onClick}>
           {action.label}
         </Button>
       )}

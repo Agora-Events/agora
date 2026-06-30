@@ -57,7 +57,9 @@ export default function RootLayout({
           <LoadingBar />
         </Suspense>
         <Toaster position="bottom-right" richColors />
-        {children}
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

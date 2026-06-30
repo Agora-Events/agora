@@ -244,7 +244,7 @@ export function Navbar() {
 
           <motion.div custom={4} variants={linkVariants} className="mt-4">
             <Link href={isLoggedIn ? "/create-event" : "/auth"} onClick={() => setIsOpen(false)}>
-              <Button variant="dark" className="w-full justify-center">
+              <Button variant="primary" className="w-full justify-center">
                 <span>Create Your Event</span>
                 <Image
                   src="/icons/arrow-up-right-01.svg"

@@ -34,14 +34,14 @@ export const Secondary: Story = {
 
 export const Dark: Story = {
   args: {
-    variant: "dark",
+    variant: "primary",
     children: "Filter",
   },
 };
 
 export const Ghost: Story = {
   args: {
-    variant: "ghost",
+    variant: "secondary",
     children: "Cancel",
   },
 };

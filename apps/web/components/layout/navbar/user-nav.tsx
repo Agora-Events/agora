@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BaseNav, type NavItem } from "./base-nav";
+import { useTheme } from "@/components/providers/theme-context";
 
 const USER_NAV_ITEMS: NavItem[] = [
   {

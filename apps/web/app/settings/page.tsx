@@ -111,17 +111,9 @@ export default function SettingsPage() {
       }
       return true;
     };
-
-    router.beforePopState((state) => {
-      if (isDirty && !window.confirm("You have unsaved changes. Leave anyway?")) {
-        window.history.pushState(null, "", state.url);
-        return false;
-      }
-      return true;
-    });
-
+    // Next.js App Router does not support router.beforePopState
     return () => {
-      router.beforePopState(() => true);
+      // cleanup
     };
   }, [isDirty, router]);
 

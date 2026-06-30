@@ -287,7 +287,7 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                 </div>
 
                 <Button
-                  variant="dark"
+                  variant="primary"
                   onClick={onClose}
                   className="w-full h-14 rounded-full text-lg"
                 >
