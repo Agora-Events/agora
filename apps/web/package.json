@@ -55,7 +55,7 @@
     "typescript": "^5",
     "vitest": "^3.2.4",
     "@storybook/nextjs": "^8.6.12",
-    "@storybook/react": "^8.6.12",
+    "@storybook/react": "^10.4.6",
     "@storybook/addon-essentials": "^8.6.12",
     "@storybook/addon-interactions": "^8.6.12",
     "@storybook/blocks": "^8.6.12",
