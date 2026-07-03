@@ -59,7 +59,7 @@
     "@storybook/addon-essentials": "^8.6.12",
     "@storybook/addon-interactions": "^8.6.12",
     "@storybook/blocks": "^8.6.12",
-    "storybook": "^8.6.12",
+    "storybook": "^10.4.6",
     "chromatic": "^11.28.0"
   }
 }
