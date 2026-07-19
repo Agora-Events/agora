@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import Button from '@/components/ui/Button';
+import { useAuth } from '@/hooks/useAuth';
+import { useEventCreationForm } from '@/hooks/useEventCreationForm';
 
 interface EventItem {
   id: string;
@@ -42,9 +44,19 @@ const MOCK_EVENTS: EventItem[] = [
 
 export default function DiscoverScreen() {
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
+  const resetForm = useEventCreationForm((s) => s.resetForm);
+  const goToStep = useEventCreationForm((s) => s.goToStep);
+
+  const handleCreateEvent = () => {
+    resetForm();
+    goToStep(1);
+    router.push('/create-event/step-1-basics');
+  };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <View style={styles.wrapper}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.header}>Featured Events</Text>
       
       {MOCK_EVENTS.map((event) => (
@@ -72,11 +84,26 @@ export default function DiscoverScreen() {
           </View>
         </Pressable>
       ))}
-    </ScrollView>
+      </ScrollView>
+
+      {/* Floating Action Button for organizers */}
+      {isAuthenticated && (
+        <Pressable
+          style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+          onPress={handleCreateEvent}
+        >
+          <Text style={styles.fabText}>＋ Create Event</Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    flex: 1,
+    backgroundColor: Colors.darkBackground,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.darkBackground,
@@ -150,5 +177,28 @@ const styles = StyleSheet.create({
   },
   buyButtonText: {
     fontSize: 14,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    backgroundColor: Colors.primaryYellow,
+    borderRadius: 28,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    shadowColor: Colors.primaryYellow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  fabPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
+  },
+  fabText: {
+    color: Colors.darkBackground,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
