@@ -138,7 +138,6 @@ export default function Step1BasicDetails() {
         multiline
         numberOfLines={4}
         containerStyle={styles.textAreaContainer}
-        // @ts-expect-error – RN accepts style on TextInput
         style={styles.textArea}
       />
 
