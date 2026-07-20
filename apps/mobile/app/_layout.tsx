@@ -66,6 +66,46 @@ function AppNavigation() {
           headerShadowVisible: false,
         }}
       />
+      <Stack.Screen
+        name="create-event/index"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="create-event/step-1-basics"
+        options={{
+          title: 'Create Event',
+          headerStyle: { backgroundColor: Colors.darkBackground },
+          headerTintColor: Colors.primaryText,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="create-event/step-2-location"
+        options={{
+          title: 'Create Event',
+          headerStyle: { backgroundColor: Colors.darkBackground },
+          headerTintColor: Colors.primaryText,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="create-event/step-3-tickets"
+        options={{
+          title: 'Create Event',
+          headerStyle: { backgroundColor: Colors.darkBackground },
+          headerTintColor: Colors.primaryText,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="create-event/step-4-review"
+        options={{
+          title: 'Create Event',
+          headerStyle: { backgroundColor: Colors.darkBackground },
+          headerTintColor: Colors.primaryText,
+          headerShadowVisible: false,
+        }}
+      />
       <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
     </Stack>
   );
