@@ -12,6 +12,7 @@ export interface AuthState {
   isAuthenticated: boolean;
   login: (email: string, name?: string, walletAddress?: string) => void;
   logout: () => void;
+  updateWalletAddress: (walletAddress: string) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -31,6 +32,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       user: null,
       isAuthenticated: false,
     });
+  },
+  updateWalletAddress: (walletAddress: string) => {
+    set((state) => ({
+      user: state.user
+        ? { ...state.user, walletAddress }
+        : { name: 'Agora User', email: '', walletAddress },
+    }));
   },
 }));
 
