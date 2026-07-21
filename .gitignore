@@ -19,3 +19,10 @@ package-lock.json
 
 # PR description drafts
 pr-*.md
+
+# Storybook build output and logs
+storybook-static
+**/storybook-static
+*.log
+**/*.log
+
