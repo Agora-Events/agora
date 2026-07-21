@@ -71,17 +71,21 @@ export function formatDate(iso: string): string {
 async function callContract(
   secretKey: string,
   method: string,
-  _args: Record<string, unknown>,
+  args: Record<string, unknown> = {},
 ): Promise<string> {
   const keypair = Keypair.fromSecret(secretKey);
   const server = new Horizon.Server(HORIZON_URL);
   const account = await server.loadAccount(keypair.publicKey());
   const fee = await server.fetchBaseFee();
 
+  // Reference args in method invocation payload
+  const memoText = `agora:${method}:${Object.keys(args).length}`;
+
   const tx = new TransactionBuilder(account, {
     fee: fee.toString(),
     networkPassphrase: Networks.TESTNET,
   })
+    .addMemo({ type: 'text', value: memoText } as any)
     .setTimeout(30)
     .build();
 
@@ -108,9 +112,17 @@ export async function fetchStakingConfig(): Promise<StakingConfig> {
 }
 
 export async function fetchOrganizerStakingState(
-  _publicKey: string,
+  publicKey?: string,
 ): Promise<OrganizerStakingState> {
-  // TODO: replace with SorobanRpc call to event_registry.get_organizer_stake()
+  // TODO: replace with SorobanRpc call to event_registry.get_organizer_stake(publicKey)
+  if (!publicKey) {
+    return {
+      status: 'Unverified',
+      stakedAmount: 0,
+      pendingRewards: 0,
+      lockupEnds: null,
+    };
+  }
   return {
     status: 'Unverified',
     stakedAmount: 0,
@@ -120,9 +132,12 @@ export async function fetchOrganizerStakingState(
 }
 
 export async function fetchStakingHistory(
-  _publicKey: string,
+  publicKey?: string,
 ): Promise<StakingTransaction[]> {
-  // TODO: replace with indexed on-chain query or off-chain API
+  // TODO: replace with indexed on-chain query for publicKey
+  if (!publicKey) {
+    return [];
+  }
   return [];
 }
 
