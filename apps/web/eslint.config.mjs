@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Storybook build output (bundled 3rd-party code):
+    "storybook-static/**",
   ]),
   {
     plugins: {
@@ -27,7 +29,12 @@ const eslintConfig = defineConfig([
       "react/display-name": "off",
       "react-hooks/set-state-in-effect": "off",
       "react/jsx-no-comment-textnodes": "off",
-      "@typescript-eslint/no-explicit-any": "off"
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": ["warn", {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }]
     }
   },
   ...storybook.configs["flat/recommended"]

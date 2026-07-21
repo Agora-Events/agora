@@ -104,14 +104,8 @@ export default function SettingsPage() {
   }, [handleBeforeUnload]);
 
   useEffect(() => {
-    const handleRouteChange = () => {
-      if (isDirty && !window.confirm("You have unsaved changes. Leave anyway?")) {
-        router.push(window.location.pathname);
-        return false;
-      }
-      return true;
-    };
-    // Next.js App Router does not support router.beforePopState
+    // Next.js App Router does not support router.beforePopState;
+    // unsaved-changes prompt on navigation is handled by the beforeunload event above.
     return () => {
       // cleanup
     };
