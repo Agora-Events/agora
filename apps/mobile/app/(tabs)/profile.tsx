@@ -6,6 +6,7 @@ import {
   SafeAreaView,
   ScrollView,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import Colors from '@/constants/Colors';
 import Button from '@/components/ui/Button';
@@ -14,6 +15,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { StellarWalletManager, StellarBalances } from '@/services/stellar';
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { user, logout, updateWalletAddress } = useAuth();
   const [secretInput, setSecretInput] = useState('');
   const [publicKey, setPublicKey] = useState('');
@@ -173,6 +175,13 @@ export default function ProfileScreen() {
           <Button title="Import Wallet" onPress={handleImportWallet} variant="secondary" style={styles.actionButton} />
           <Button title="Generate New Wallet" onPress={handleGenerateWallet} style={styles.actionButton} />
           <Button title="Copy Public Key" onPress={handleCopyPublicKey} variant="outline" style={styles.actionButton} />
+
+          <Button
+            title="Organizer Staking Dashboard"
+            onPress={() => router.push('/organizer/staking')}
+            variant="primary"
+            style={styles.actionButton}
+          />
 
           {balances?.accountExists && !balances.hasUSDCTrustline ? (
             <Button
