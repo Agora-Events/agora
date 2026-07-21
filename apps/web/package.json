@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:ci": "vitest run --coverage --thresholds.coverageMap=80",
+    "postinstall": "node ../../scripts/fix-storybook-next.js",
     "storybook": "storybook dev -p 6006",
+    "prebuild-storybook": "node ../../scripts/fix-storybook-next.js",
     "build-storybook": "storybook build",
     "chromatic": "chromatic --exit-zero-on-changes"
   },

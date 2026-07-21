@@ -5,6 +5,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "postinstall": "node scripts/fix-storybook-next.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "cy:run": "cypress run --spec \"cypress/integration/create_event.spec.ts\"",
     "cy:open": "cypress open"
