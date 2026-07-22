@@ -35,7 +35,7 @@
     "expo-status-bar": "~1.12.1",
     "expo-system-ui": "~3.0.7",
     "expo-web-browser": "~13.0.3",
-    "@stellar/stellar-sdk": "^13.3.0",
+    "@stellar/stellar-sdk": "^16.0.1",
     "expo-clipboard": "~5.0.1",
     "expo-secure-store": "13.0.1",
     "react": "18.2.0",
