@@ -7,7 +7,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { createEventSchema, CreateEventInput } from "@/lib/validation";
+
 import { useIsMounted } from "@/hooks/useIsMounted";
 import { z } from "zod";
 
@@ -75,10 +75,6 @@ export default function CreateEventPage() {
   // Error State
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const getStartsAt = (data: CreateEventInput) => {
-    const startsAt = new Date(`${data.startDate}T${data.startTime}`);
-    return startsAt.toISOString();
-  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -114,7 +110,6 @@ export default function CreateEventPage() {
     setErrors({});
     setIsSubmitting(true);
     try {
-      const values = result.data;
       const response = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -106,6 +106,15 @@ function AppNavigation() {
           headerShadowVisible: false,
         }}
       />
+      <Stack.Screen
+        name="organizer/staking"
+        options={{
+          title: 'Organizer Staking',
+          headerStyle: { backgroundColor: Colors.darkBackground },
+          headerTintColor: Colors.primaryText,
+          headerShadowVisible: false,
+        }}
+      />
       <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
     </Stack>
   );

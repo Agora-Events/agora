@@ -1,4 +1,4 @@
-import type { Preview } from "@storybook/react";
+import type { Preview } from "@storybook/nextjs";
 import "../app/globals.css";
 
 const preview: Preview = {
@@ -10,17 +10,22 @@ const preview: Preview = {
       },
     },
     backgrounds: {
-      default: "agora-base",
-      values: [
-        { name: "agora-base", value: "#FFFBE9" },
-        { name: "white", value: "#ffffff" },
-        { name: "dark", value: "#0B151F" },
-      ],
+      options: {
+        "agora-base": { name: "agora-base", value: "#FFFBE9" },
+        white: { name: "white", value: "#ffffff" },
+        dark: { name: "dark", value: "#0B151F" }
+      }
     },
     nextjs: {
       appDirectory: true,
     },
   },
+
+  initialGlobals: {
+    backgrounds: {
+      value: "agora-base"
+    }
+  }
 };
 
 export default preview;
