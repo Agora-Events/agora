@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 const fallbackCardsData: DiscoverOrganizer[] = [
   {
@@ -121,11 +122,11 @@ export function OrganizerComponent({ onError }: OrganizerComponentProps) {
           ))}
         {!isLoading &&
           organizersToRender.map((card) => (
-          <div key={card.id} className="relative h-full">
+          <Link key={card.id} href={`/organizers/${card.id}`} className="relative h-full block">
             <section className="absolute border-10 rounded-2xl bg-yellow-400 border-yellow-400 w-102 h-58 -left-2 top-2 z-0"></section>
             <div
               className="relative z-10 bg-black text-white p-5x border rounded-2xl lg:min-w-100
-                     h-40 lg:h-58"
+                     h-40 lg:h-58 cursor-pointer hover:-translate-y-1 transition-transform"
             >
               <div className="absolute top-5 left-5">
                 <Image
@@ -133,19 +134,21 @@ export function OrganizerComponent({ onError }: OrganizerComponentProps) {
                   alt={card.title}
                   height={65}
                   width={65}
-                  className="relative z-10 border-4 border-black rounded-full"
+                  className="relative z-10 border-4 border-black rounded-full object-cover"
                 />
                 <div className="absolute -left-1 top-1 w-15 h-15 bg-white rounded-full z-0" />
               </div>
-              <div className="text-lg font-semibold absolute left-25 top-10 w-full">
+              <div className="text-lg font-semibold absolute left-25 top-10 w-full hover:underline">
                 {card.title}
               </div>
               <p className="text-xs absolute left-25 top-20 w-65">
                 {card.description}
               </p>
-              <SubscribeButton />
+              <div onClick={(e) => e.preventDefault()}>
+                <SubscribeButton />
+              </div>
             </div>
-          </div>
+          </Link>
           ))}
         {!isLoading && cardsData.length === 0 && (
           <p className="text-sm text-black/60">No data available</p>
