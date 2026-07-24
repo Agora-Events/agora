@@ -107,13 +107,16 @@ Purpose:
 **Usage Example:**
 
 ```tsx
-import { EmptyState } from "@/components/ui/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 
-<EmptyState
+<EmptyState 
   title="No events found"
-  message="Try adjusting your filters or search criteria."
-  ctaLabel="Create Event"
-  ctaLink="/events/new"
+  description="There are no events matching your current filters. Try a different category or be the first to create one!"
+  illustrationSrc="/icons/404-illustration.svg"
+  action={{
+    label: "Create an Event",
+    href: "/events/create",
+  }}
 />
 ```
 
