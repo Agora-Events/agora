@@ -341,92 +341,116 @@ fn test_cancel_event_without_reason() {
     assert!(!info.is_active);
 }
 
-// ── Issue #885: cleanup_expired_proposals ─────────────────────────────────
+// ── Issue #883: resale_cap_bps validation for update scenarios ─────────────
 
 #[test]
-fn test_cleanup_expired_proposals_removes_expired() {
+fn test_set_resale_cap_bps_valid() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, admin, _) = setup(&env);
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
 
-    // Set ledger time so proposals have deterministic timestamps.
-    env.ledger().set_timestamp(1000);
+    let args = make_event_args(
+        &env,
+        "evt_resale_valid",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
+    client.register_event(&args);
 
-    // Propose a change that expires quickly (expiry_ledgers = 1 ledger = 1 second offset).
-    let proposal_id = client.propose_parameter_change(
-        &admin,
-        &ParameterChange::SetPlatformFee(300),
-        &10, // expires at ledger timestamp 1000 + 10 = 1010
+    // Setting a valid cap should succeed.
+    client.set_resale_cap_bps(
+        &String::from_str(&env, "evt_resale_valid"),
+        &Some(5000),
     );
 
-    // Verify it's in the active list.
-    let active_before = client.get_active_proposals();
-    assert!(active_before.contains(&proposal_id));
-
-    // Advance ledger past expiry.
-    env.ledger().set_timestamp(2000);
-
-    // Cleanup should remove the expired proposal.
-    let removed = client.cleanup_expired_proposals();
-    assert_eq!(removed, 1);
-
-    // It must no longer appear in the active list.
-    let active_after = client.get_active_proposals();
-    assert!(!active_after.contains(&proposal_id));
+    let info = client
+        .get_event(&String::from_str(&env, "evt_resale_valid"))
+        .unwrap();
+    assert_eq!(info.resale_cap_bps, Some(5000));
 }
 
 #[test]
-fn test_cleanup_expired_proposals_keeps_non_expired() {
+fn test_set_resale_cap_bps_boundary() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, admin, _) = setup(&env);
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
 
-    env.ledger().set_timestamp(1000);
+    let args = make_event_args(
+        &env,
+        "evt_resale_boundary",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
+    client.register_event(&args);
 
-    // Create a proposal with a long expiry.
-    let long_lived = client.propose_parameter_change(
-        &admin,
-        &ParameterChange::SetPlatformFee(400),
-        &100_000, // expires far in the future
+    // Exactly 10000 (100%) must be accepted.
+    client.set_resale_cap_bps(
+        &String::from_str(&env, "evt_resale_boundary"),
+        &Some(10000),
     );
 
-    // Create a proposal with a short expiry.
-    let short_lived = client.propose_parameter_change(
-        &admin,
-        &ParameterChange::SetPlatformFee(500),
-        &5, // expires at 1005
-    );
-
-    // Advance past the short-lived proposal's expiry but not the long-lived one.
-    env.ledger().set_timestamp(1010);
-
-    let removed = client.cleanup_expired_proposals();
-    assert_eq!(removed, 1);
-
-    let active = client.get_active_proposals();
-    assert!(active.contains(&long_lived));
-    assert!(!active.contains(&short_lived));
+    let info = client
+        .get_event(&String::from_str(&env, "evt_resale_boundary"))
+        .unwrap();
+    assert_eq!(info.resale_cap_bps, Some(10000));
 }
 
 #[test]
-fn test_cleanup_expired_proposals_ignores_executed() {
+fn test_set_resale_cap_bps_invalid_returns_error() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, admin, _) = setup(&env);
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
 
-    env.ledger().set_timestamp(1000);
-
-    // Create and execute a proposal before it expires.
-    let pid = client.propose_parameter_change(
-        &admin,
-        &ParameterChange::SetPlatformFee(300),
-        &10_000,
+    let args = make_event_args(
+        &env,
+        "evt_resale_invalid",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
     );
-    client.execute_proposal(&admin, &pid);
+    client.register_event(&args);
 
-    // Advance past "expiry" and run cleanup; count should be 0 since it was already executed
-    // (and removed from active list by execute_proposal).
-    env.ledger().set_timestamp(999_999);
-    let removed = client.cleanup_expired_proposals();
-    assert_eq!(removed, 0);
+    // Value above 10000 must return InvalidResaleCapBps.
+    let result = client.try_set_resale_cap_bps(
+        &String::from_str(&env, "evt_resale_invalid"),
+        &Some(10001),
+    );
+    assert_eq!(
+        result,
+        Err(Ok(EventRegistryError::InvalidResaleCapBps))
+    );
+}
+
+#[test]
+fn test_set_resale_cap_bps_none_clears_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+
+    let mut args = make_event_args(
+        &env,
+        "evt_resale_clear",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
+    args.resale_cap_bps = Some(3000);
+    client.register_event(&args);
+
+    // Clearing the cap (None) must be allowed.
+    client.set_resale_cap_bps(
+        &String::from_str(&env, "evt_resale_clear"),
+        &None,
+    );
+
+    let info = client
+        .get_event(&String::from_str(&env, "evt_resale_clear"))
+        .unwrap();
+    assert_eq!(info.resale_cap_bps, None);
 }

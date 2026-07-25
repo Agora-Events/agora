@@ -522,7 +522,41 @@ impl EventRegistry {
         if event_info.feedback_cid.is_some() {
             require_event_ended(&env, &event_info).unwrap();
         }
+        // Validate resale_cap_bps on every write path (Issue #883).
+        if let Some(cap) = event_info.resale_cap_bps {
+            if cap > 10000 {
+                panic!("InvalidResaleCapBps");
+            }
+        }
         storage::store_event(&env, event_info);
+    }
+
+    /// Updates the resale cap for an event. Only callable by the event organizer.
+    ///
+    /// # Arguments
+    /// * `event_id` - The event to update.
+    /// * `resale_cap_bps` - New resale cap in basis points (`None` removes the cap).
+    ///   Must be `<= 10000` when `Some`.
+    pub fn set_resale_cap_bps(
+        env: Env,
+        event_id: String,
+        resale_cap_bps: Option<u32>,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
+
+        if let Some(cap) = resale_cap_bps {
+            if cap > 10000 {
+                return Err(EventRegistryError::InvalidResaleCapBps);
+            }
+        }
+
+        event_info.resale_cap_bps = resale_cap_bps;
+        storage::update_event(&env, event_info);
+
+        Ok(())
     }
 
     /// Retrieves an event by its ID.
