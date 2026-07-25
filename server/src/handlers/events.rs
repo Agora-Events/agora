@@ -97,6 +97,18 @@ pub struct EventDetail {
     pub event: Event,
     /// Organizer profile, if one has been created for the event's organizer wallet.
     pub organizer_profile: Option<OrganizerProfile>,
+    /// Ticket tiers for the event, sorted by price ascending.
+    /// Only present when `?include_tiers=true` is passed (Issue #884).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tiers: Option<Vec<TicketTierResponse>>,
+}
+
+/// Query parameters for `GET /api/v1/events/:id`.
+#[derive(Debug, Deserialize, Default)]
+pub struct GetEventParams {
+    /// When `true`, includes a `tiers` array in the response (Issue #884).
+    #[serde(default)]
+    pub include_tiers: bool,
 }
 
 /// Query parameters for filtering events
@@ -1528,20 +1540,22 @@ pub async fn list_past_events(
 pub async fn get_event(
     State(mut state): State<EventState>,
     axum::extract::Path(event_id): axum::extract::Path<Uuid>,
+    Query(params): Query<GetEventParams>,
 ) -> Response {
+    // Cache is only used when tiers are not requested, to avoid caching partial data.
     let cache_key = format!("event:detail:{}", event_id);
-
-    // Try to get from cache first
-    match state.redis.get::<EventDetail>(&cache_key).await {
-        Ok(Some(detail)) => {
-            tracing::debug!("Cache hit for event {}", event_id);
-            return success(detail, "Event retrieved successfully (cached)").into_response();
-        }
-        Ok(None) => {
-            tracing::debug!("Cache miss for event {}", event_id);
-        }
-        Err(e) => {
-            tracing::warn!("Redis error, falling back to database: {:?}", e);
+    if !params.include_tiers {
+        match state.redis.get::<EventDetail>(&cache_key).await {
+            Ok(Some(detail)) => {
+                tracing::debug!("Cache hit for event {}", event_id);
+                return success(detail, "Event retrieved successfully (cached)").into_response();
+            }
+            Ok(None) => {
+                tracing::debug!("Cache miss for event {}", event_id);
+            }
+            Err(e) => {
+                tracing::warn!("Redis error, falling back to database: {:?}", e);
+            }
         }
     }
 
@@ -1591,14 +1605,46 @@ pub async fn get_event(
         _ => None,
     };
 
+    // Optionally fetch ticket tiers sorted by price ascending (Issue #884).
+    let tiers = if params.include_tiers {
+        match sqlx::query_as::<_, TicketTierResponse>(
+            r#"
+            SELECT
+                id,
+                name,
+                price,
+                total_quantity    AS quantity,
+                (total_quantity - available_quantity) AS sold
+            FROM ticket_tiers
+            WHERE event_id = $1
+            ORDER BY price ASC
+            "#,
+        )
+        .bind(event_id)
+        .fetch_all(&state.pool)
+        .await
+        {
+            Ok(rows) => Some(rows),
+            Err(e) => {
+                tracing::warn!("Failed to fetch ticket tiers for event {}: {:?}", event_id, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let detail = EventDetail {
         event,
         organizer_profile,
+        tiers,
     };
 
-    // Store in cache for future requests
-    if let Err(e) = state.redis.set(&cache_key, &detail, EVENT_CACHE_TTL).await {
-        tracing::warn!("Failed to cache event {}: {:?}", event_id, e);
+    // Only cache responses without tiers to keep the cached shape stable.
+    if !params.include_tiers {
+        if let Err(e) = state.redis.set(&cache_key, &detail, EVENT_CACHE_TTL).await {
+            tracing::warn!("Failed to cache event {}: {:?}", event_id, e);
+        }
     }
 
     success(detail, "Event retrieved successfully").into_response()
@@ -1843,6 +1889,7 @@ pub async fn create_event(
     let detail = EventDetail {
         event: event.clone(),
         organizer_profile,
+        tiers: None,
     };
 
     let cache_key = format!("event:detail:{}", event.id);
@@ -3705,6 +3752,99 @@ fn test_ticket_tier_response_serialization() {
     assert_eq!(json["name"], "General");
     assert_eq!(json["quantity"], 500);
     assert_eq!(json["sold"], 120);
+}
+
+#[test]
+fn test_event_detail_tiers_omitted_when_none() {
+    use chrono::DateTime;
+    use uuid::Uuid;
+
+    let event = Event {
+        id: Uuid::new_v4(),
+        organizer_id: Uuid::new_v4(),
+        title: "Test Event".to_string(),
+        description: None,
+        location: "Lagos".to_string(),
+        start_time: DateTime::default(),
+        end_time: None,
+        is_flagged: false,
+        is_featured: false,
+        sum_of_ratings: 0,
+        count_of_ratings: 0,
+        created_at: DateTime::default(),
+        updated_at: DateTime::default(),
+        image_url: None,
+        is_free: false,
+        minted_tickets: 0,
+    };
+
+    let detail = EventDetail {
+        event,
+        organizer_profile: None,
+        tiers: None,
+    };
+
+    let json = serde_json::to_value(&detail).unwrap();
+    // `tiers` must not appear in the response when None.
+    assert!(json.get("tiers").is_none(), "tiers should be omitted when None");
+}
+
+#[test]
+fn test_event_detail_tiers_present_when_some() {
+    use chrono::DateTime;
+    use rust_decimal::Decimal;
+    use uuid::Uuid;
+
+    let event = Event {
+        id: Uuid::new_v4(),
+        organizer_id: Uuid::new_v4(),
+        title: "Test Event".to_string(),
+        description: None,
+        location: "Lagos".to_string(),
+        start_time: DateTime::default(),
+        end_time: None,
+        is_flagged: false,
+        is_featured: false,
+        sum_of_ratings: 0,
+        count_of_ratings: 0,
+        created_at: DateTime::default(),
+        updated_at: DateTime::default(),
+        image_url: None,
+        is_free: true,
+        minted_tickets: 0,
+    };
+
+    let tier = TicketTierResponse {
+        id: Uuid::new_v4(),
+        name: "VIP".to_string(),
+        price: Decimal::new(0, 0),
+        quantity: 50,
+        sold: 5,
+    };
+
+    let detail = EventDetail {
+        event,
+        organizer_profile: None,
+        tiers: Some(vec![tier]),
+    };
+
+    let json = serde_json::to_value(&detail).unwrap();
+    let tiers = json.get("tiers").expect("tiers should be present when Some");
+    assert!(tiers.is_array());
+    assert_eq!(tiers.as_array().unwrap().len(), 1);
+    assert_eq!(tiers[0]["name"], "VIP");
+}
+
+#[test]
+fn test_get_event_params_defaults_to_no_tiers() {
+    let params: GetEventParams = serde_json::from_str("{}").unwrap();
+    assert!(!params.include_tiers);
+}
+
+#[test]
+fn test_get_event_params_parses_include_tiers_true() {
+    let params: GetEventParams = serde_json::from_str(r#"{"include_tiers": true}"#).unwrap();
+    assert!(params.include_tiers);
 }
 
 #[test]
