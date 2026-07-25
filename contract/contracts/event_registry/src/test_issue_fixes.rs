@@ -340,3 +340,117 @@ fn test_cancel_event_without_reason() {
     assert_eq!(info.cancellation_reason, None);
     assert!(!info.is_active);
 }
+
+// ── Issue #883: resale_cap_bps validation for update scenarios ─────────────
+
+#[test]
+fn test_set_resale_cap_bps_valid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+
+    let args = make_event_args(
+        &env,
+        "evt_resale_valid",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
+    client.register_event(&args);
+
+    // Setting a valid cap should succeed.
+    client.set_resale_cap_bps(
+        &String::from_str(&env, "evt_resale_valid"),
+        &Some(5000),
+    );
+
+    let info = client
+        .get_event(&String::from_str(&env, "evt_resale_valid"))
+        .unwrap();
+    assert_eq!(info.resale_cap_bps, Some(5000));
+}
+
+#[test]
+fn test_set_resale_cap_bps_boundary() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+
+    let args = make_event_args(
+        &env,
+        "evt_resale_boundary",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
+    client.register_event(&args);
+
+    // Exactly 10000 (100%) must be accepted.
+    client.set_resale_cap_bps(
+        &String::from_str(&env, "evt_resale_boundary"),
+        &Some(10000),
+    );
+
+    let info = client
+        .get_event(&String::from_str(&env, "evt_resale_boundary"))
+        .unwrap();
+    assert_eq!(info.resale_cap_bps, Some(10000));
+}
+
+#[test]
+fn test_set_resale_cap_bps_invalid_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+
+    let args = make_event_args(
+        &env,
+        "evt_resale_invalid",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
+    client.register_event(&args);
+
+    // Value above 10000 must return InvalidResaleCapBps.
+    let result = client.try_set_resale_cap_bps(
+        &String::from_str(&env, "evt_resale_invalid"),
+        &Some(10001),
+    );
+    assert_eq!(
+        result,
+        Err(Ok(EventRegistryError::InvalidResaleCapBps))
+    );
+}
+
+#[test]
+fn test_set_resale_cap_bps_none_clears_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+
+    let mut args = make_event_args(
+        &env,
+        "evt_resale_clear",
+        &organizer,
+        100,
+        single_tier(&env, 100, 0),
+    );
+    args.resale_cap_bps = Some(3000);
+    client.register_event(&args);
+
+    // Clearing the cap (None) must be allowed.
+    client.set_resale_cap_bps(
+        &String::from_str(&env, "evt_resale_clear"),
+        &None,
+    );
+
+    let info = client
+        .get_event(&String::from_str(&env, "evt_resale_clear"))
+        .unwrap();
+    assert_eq!(info.resale_cap_bps, None);
+}
