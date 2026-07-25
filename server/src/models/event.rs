@@ -48,6 +48,13 @@ pub struct Event {
     /// Number of tickets minted for this event. Loaded from DB for sorting; omitted from API.
     #[serde(skip)]
     pub minted_tickets: i64,
+    /// Tracks whether `populate_is_free` has been called for this event (Issue #886).
+    /// When `false` at serialization time a warning is emitted so log-based checks
+    /// can catch any code path that forgot to call `populate_is_free` before returning
+    /// event data to clients. Never serialized or read from the database.
+    #[sqlx(skip)]
+    #[serde(skip)]
+    pub is_free_populated: bool,
 }
 
 impl Event {
@@ -65,12 +72,24 @@ impl Event {
 /// the raw columns, so clients don't have to derive it from
 /// `sum_of_ratings` / `count_of_ratings` (Issue #584). It is `null` when the
 /// event has no ratings.
+///
+/// Emits a `tracing::warn!` when `is_free_populated` is `false` so that any
+/// code path that serializes an `Event` without first calling `populate_is_free`
+/// is visible in logs (Issue #886).
 impl Serialize for Event {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
+
+        if !self.is_free_populated {
+            tracing::warn!(
+                event_id = %self.id,
+                "Event serialized without populate_is_free being called; \
+                 is_free will default to false and may be incorrect"
+            );
+        }
 
         let mut state = serializer.serialize_struct("Event", 15)?;
         state.serialize_field("id", &self.id)?;
@@ -122,6 +141,7 @@ pub async fn populate_is_free(events: &mut [Event], pool: &sqlx::PgPool) {
 
     for event in events.iter_mut() {
         event.is_free = !paid_ids.contains(&event.id);
+        event.is_free_populated = true;
     }
 }
 
@@ -149,6 +169,7 @@ mod tests {
             image_url: None,
             is_free: false,
             minted_tickets: 0,
+            is_free_populated: false,
         };
         assert!(!event.is_free);
     }
@@ -172,6 +193,7 @@ mod tests {
             image_url: None,
             is_free: false,
             minted_tickets: 0,
+            is_free_populated: false,
         };
         event.is_free = true;
         let json = serde_json::to_value(&event).unwrap();
@@ -197,6 +219,7 @@ mod tests {
             image_url: None,
             is_free: false,
             minted_tickets: 0,
+            is_free_populated: false,
         };
         assert!(event.average_rating().is_none());
     }
@@ -220,6 +243,7 @@ mod tests {
             image_url: None,
             is_free: false,
             minted_tickets: 0,
+            is_free_populated: false,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["average_rating"], 4.5);
@@ -247,6 +271,7 @@ mod tests {
             image_url: None,
             is_free: false,
             minted_tickets: 0,
+            is_free_populated: false,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert!(!json["created_at"].is_null(), "created_at must be present");
@@ -272,8 +297,87 @@ mod tests {
             image_url: None,
             is_free: false,
             minted_tickets: 0,
+            is_free_populated: false,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert!(json["average_rating"].is_null());
+    }
+
+    // ── Issue #886: is_free correctly populated ────────────────────────────
+
+    fn make_event(id: Uuid) -> Event {
+        Event {
+            is_featured: false,
+            id,
+            organizer_id: Uuid::new_v4(),
+            title: "T".into(),
+            description: None,
+            location: "L".into(),
+            start_time: DateTime::default(),
+            end_time: None,
+            is_flagged: false,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: DateTime::default(),
+            updated_at: DateTime::default(),
+            image_url: None,
+            is_free: false,
+            minted_tickets: 0,
+            is_free_populated: false,
+        }
+    }
+
+    /// Simulate what `populate_is_free` does without a real DB:
+    /// given a list of paid event IDs, mark each event accordingly
+    /// and set `is_free_populated = true`.
+    fn apply_populate_is_free(events: &mut [Event], paid_ids: &[Uuid]) {
+        for event in events.iter_mut() {
+            event.is_free = !paid_ids.contains(&event.id);
+            event.is_free_populated = true;
+        }
+    }
+
+    #[test]
+    fn test_populate_is_free_marks_free_event_correctly() {
+        let free_id = Uuid::new_v4();
+        let mut events = vec![make_event(free_id)];
+
+        // No paid IDs → event is free.
+        apply_populate_is_free(&mut events, &[]);
+
+        assert!(events[0].is_free, "event with no paid tiers should be free");
+        assert!(events[0].is_free_populated, "is_free_populated must be true after populate");
+    }
+
+    #[test]
+    fn test_populate_is_free_marks_paid_event_correctly() {
+        let paid_id = Uuid::new_v4();
+        let mut events = vec![make_event(paid_id)];
+
+        // Event ID in paid list → event is paid (is_free = false).
+        apply_populate_is_free(&mut events, &[paid_id]);
+
+        assert!(!events[0].is_free, "event with paid tiers should not be free");
+        assert!(events[0].is_free_populated, "is_free_populated must be true after populate");
+    }
+
+    #[test]
+    fn test_populate_is_free_mixed_batch() {
+        let free_id = Uuid::new_v4();
+        let paid_id = Uuid::new_v4();
+        let mut events = vec![make_event(free_id), make_event(paid_id)];
+
+        apply_populate_is_free(&mut events, &[paid_id]);
+
+        assert!(events[0].is_free, "first event (no paid tiers) should be free");
+        assert!(!events[1].is_free, "second event (paid tier) should not be free");
+        assert!(events[0].is_free_populated);
+        assert!(events[1].is_free_populated);
+    }
+
+    #[test]
+    fn test_is_free_populated_flag_starts_false() {
+        let event = make_event(Uuid::new_v4());
+        assert!(!event.is_free_populated, "flag must default to false before populate_is_free");
     }
 }
