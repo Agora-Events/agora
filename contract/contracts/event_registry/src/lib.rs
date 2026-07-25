@@ -1836,6 +1836,33 @@ impl EventRegistry {
     pub fn get_active_proposals(env: Env) -> Vec<u64> {
         storage::get_active_proposals(&env)
     }
+
+    /// Removes expired proposals from the `ActiveProposals` list.
+    ///
+    /// Any proposal whose `expires_at` timestamp has passed is considered expired and
+    /// will be removed from the active list. This prevents unbounded growth of the
+    /// list over time. Any admin may call this function.
+    ///
+    /// # Returns
+    /// The number of expired proposals that were removed.
+    pub fn cleanup_expired_proposals(env: Env) -> Result<u32, EventRegistryError> {
+        let _admin = auth::require_admin(&env)?;
+
+        let now = env.ledger().timestamp();
+        let active = storage::get_active_proposals(&env);
+        let mut removed: u32 = 0;
+
+        for proposal_id in active.iter() {
+            if let Some(proposal) = storage::get_proposal(&env, proposal_id) {
+                if now > proposal.expires_at && !proposal.executed && !proposal.cancelled {
+                    storage::remove_active_proposal(&env, proposal_id);
+                    removed += 1;
+                }
+            }
+        }
+
+        Ok(removed)
+    }
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
