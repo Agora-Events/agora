@@ -1,6 +1,6 @@
 use super::*;
 use crate::error::EventRegistryError;
-use crate::types::{EventRegistrationArgs, EventStatus, TicketTier};
+use crate::types::{EventRegistrationArgs, EventStatus, ParameterChange, TicketTier};
 use soroban_sdk::{testutils::Address as _, Address, Env, Map, String};
 
 fn test_payment_address(env: &Env) -> Address {
