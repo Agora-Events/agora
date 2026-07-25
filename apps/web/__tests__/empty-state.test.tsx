@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { expect, describe, it } from "vitest";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // next/image is mocked in vitest.setup.ts / jsdom — works fine with static props
 describe("EmptyState component", () => {
@@ -10,11 +10,13 @@ describe("EmptyState component", () => {
     // Simulate the conditional used in discover/page.tsx
     if (events.length === 0) {
       render(
-        <EmptyState
+        <EmptyState 
           title="No events found"
-          message="Try a different category or come back later."
-          ctaLabel="Create an Event"
-          ctaLink="/events/create"
+          description="Try a different category or come back later."
+          action={{
+            label: "Create an Event",
+            href: "/events/create",
+          }}
         />
       );
     }
@@ -26,13 +28,15 @@ describe("EmptyState component", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the CTA link when ctaLabel and ctaLink are provided", () => {
+  it("renders the action link when an href action is provided", () => {
     render(
-      <EmptyState
+      <EmptyState 
         title="No events"
-        message="Nothing here yet."
-        ctaLabel="Create an Event"
-        ctaLink="/events/create"
+        description="Nothing here yet."
+        action={{
+          label: "Create an Event",
+          href: "/events/create",
+        }}
       />
     );
 
@@ -41,8 +45,8 @@ describe("EmptyState component", () => {
     expect(cta).toHaveAttribute("href", "/events/create");
   });
 
-  it("does NOT render a CTA when ctaLabel/ctaLink are omitted", () => {
-    render(<EmptyState title="No events" message="Nothing here yet." />);
+  it("does not render an action link when no action is provided", () => {
+    render(<EmptyState title="No events" description="Nothing here yet." />);
 
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
@@ -52,7 +56,7 @@ describe("EmptyState component", () => {
     const { container } = render(
       <>
         {events.length === 0 && (
-          <EmptyState title="No events" message="Nothing here yet." />
+          <EmptyState title="No events" description="Nothing here yet." />
         )}
       </>
     );
@@ -60,11 +64,11 @@ describe("EmptyState component", () => {
     expect(container.querySelector("[data-testid='empty-state']")).toBeNull();
   });
 
-  it("renders title and message as accessible text", () => {
+  it("renders title and description as accessible text", () => {
     render(
       <EmptyState
         title="No upcoming events"
-        message="Check back soon for new events in your area."
+        description="Check back soon for new events in your area."
       />
     );
 
