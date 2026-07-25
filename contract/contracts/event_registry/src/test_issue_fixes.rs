@@ -1,6 +1,6 @@
 use super::*;
 use crate::error::EventRegistryError;
-use crate::types::{EventRegistrationArgs, EventStatus, TicketTier};
+use crate::types::{EventRegistrationArgs, EventStatus, ParameterChange, TicketTier};
 use soroban_sdk::{testutils::Address as _, Address, Env, Map, String};
 
 fn test_payment_address(env: &Env) -> Address {
@@ -339,4 +339,94 @@ fn test_cancel_event_without_reason() {
     assert_eq!(info.status, EventStatus::Cancelled);
     assert_eq!(info.cancellation_reason, None);
     assert!(!info.is_active);
+}
+
+// ── Issue #885: cleanup_expired_proposals ─────────────────────────────────
+
+#[test]
+fn test_cleanup_expired_proposals_removes_expired() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup(&env);
+
+    // Set ledger time so proposals have deterministic timestamps.
+    env.ledger().set_timestamp(1000);
+
+    // Propose a change that expires quickly (expiry_ledgers = 1 ledger = 1 second offset).
+    let proposal_id = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::SetPlatformFee(300),
+        &10, // expires at ledger timestamp 1000 + 10 = 1010
+    );
+
+    // Verify it's in the active list.
+    let active_before = client.get_active_proposals();
+    assert!(active_before.contains(&proposal_id));
+
+    // Advance ledger past expiry.
+    env.ledger().set_timestamp(2000);
+
+    // Cleanup should remove the expired proposal.
+    let removed = client.cleanup_expired_proposals();
+    assert_eq!(removed, 1);
+
+    // It must no longer appear in the active list.
+    let active_after = client.get_active_proposals();
+    assert!(!active_after.contains(&proposal_id));
+}
+
+#[test]
+fn test_cleanup_expired_proposals_keeps_non_expired() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup(&env);
+
+    env.ledger().set_timestamp(1000);
+
+    // Create a proposal with a long expiry.
+    let long_lived = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::SetPlatformFee(400),
+        &100_000, // expires far in the future
+    );
+
+    // Create a proposal with a short expiry.
+    let short_lived = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::SetPlatformFee(500),
+        &5, // expires at 1005
+    );
+
+    // Advance past the short-lived proposal's expiry but not the long-lived one.
+    env.ledger().set_timestamp(1010);
+
+    let removed = client.cleanup_expired_proposals();
+    assert_eq!(removed, 1);
+
+    let active = client.get_active_proposals();
+    assert!(active.contains(&long_lived));
+    assert!(!active.contains(&short_lived));
+}
+
+#[test]
+fn test_cleanup_expired_proposals_ignores_executed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup(&env);
+
+    env.ledger().set_timestamp(1000);
+
+    // Create and execute a proposal before it expires.
+    let pid = client.propose_parameter_change(
+        &admin,
+        &ParameterChange::SetPlatformFee(300),
+        &10_000,
+    );
+    client.execute_proposal(&admin, &pid);
+
+    // Advance past "expiry" and run cleanup; count should be 0 since it was already executed
+    // (and removed from active list by execute_proposal).
+    env.ledger().set_timestamp(999_999);
+    let removed = client.cleanup_expired_proposals();
+    assert_eq!(removed, 0);
 }
