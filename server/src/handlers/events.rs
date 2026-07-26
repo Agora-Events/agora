@@ -76,40 +76,40 @@ pub async fn list_events(
     
     if filters.organizer_id.is_some() {
         param_count += 1;
-        where_clauses.push(format!("organizer_id = ${}", param_count));
+        where_clauses.push(format!("e.organizer_id = ${}", param_count));
     }
-    
+
     if filters.location.is_some() {
         param_count += 1;
-        where_clauses.push(format!("location ILIKE ${}", param_count));
+        where_clauses.push(format!("e.location ILIKE ${}", param_count));
     }
-    
+
     if filters.start_after.is_some() {
         param_count += 1;
-        where_clauses.push(format!("start_time >= ${}", param_count));
+        where_clauses.push(format!("e.start_time >= ${}", param_count));
     }
-    
+
     if filters.start_before.is_some() {
         param_count += 1;
-        where_clauses.push(format!("start_time <= ${}", param_count));
+        where_clauses.push(format!("e.start_time <= ${}", param_count));
     }
-    
+
     if filters.search.is_some() {
         param_count += 1;
         where_clauses.push(format!(
-            "(title ILIKE ${} OR description ILIKE ${})",
+            "(e.title ILIKE ${} OR e.description ILIKE ${})",
             param_count, param_count
         ));
     }
-    
+
     let where_clause = if where_clauses.is_empty() {
         String::new()
     } else {
         format!("WHERE {}", where_clauses.join(" AND "))
     };
-    
+
     // Count total items
-    let count_query = format!("SELECT COUNT(*) FROM events {}", where_clause);
+    let count_query = format!("SELECT COUNT(*) FROM events e {}", where_clause);
     let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
     
     if let Some(organizer_id) = filters.organizer_id {
@@ -136,9 +136,16 @@ pub async fn list_events(
         }
     };
     
-    // Fetch paginated items
+    // Fetch paginated items, joining ticket_tiers to expose total/minted ticket counts
     let items_query = format!(
-        "SELECT * FROM events {} ORDER BY start_time DESC LIMIT ${} OFFSET ${}",
+        "SELECT e.*, \
+         COALESCE(SUM(tt.total_quantity), 0)::bigint AS total_tickets, \
+         COALESCE(SUM(tt.total_quantity - tt.available_quantity), 0)::bigint AS minted_tickets \
+         FROM events e \
+         LEFT JOIN ticket_tiers tt ON tt.event_id = e.id \
+         {} \
+         GROUP BY e.id \
+         ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
         where_clause,
         param_count + 1,
         param_count + 2
@@ -187,7 +194,13 @@ pub async fn get_event(
     axum::extract::Path(event_id): axum::extract::Path<Uuid>,
 ) -> Response {
     let event = match sqlx::query_as::<_, Event>(
-        "SELECT * FROM events WHERE id = $1"
+        "SELECT e.*, \
+         COALESCE(SUM(tt.total_quantity), 0)::bigint AS total_tickets, \
+         COALESCE(SUM(tt.total_quantity - tt.available_quantity), 0)::bigint AS minted_tickets \
+         FROM events e \
+         LEFT JOIN ticket_tiers tt ON tt.event_id = e.id \
+         WHERE e.id = $1 \
+         GROUP BY e.id"
     )
     .bind(event_id)
     .fetch_optional(&pool)
@@ -344,5 +357,28 @@ mod tests {
         
         assert!(filters.organizer_id.is_some());
         assert_eq!(filters.location.unwrap(), "New York");
+    }
+
+    #[test]
+    fn test_event_serialization_includes_ticket_totals() {
+        let event = Event {
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            title: "Test Event".to_string(),
+            description: None,
+            location: "Remote".to_string(),
+            start_time: Utc::now(),
+            end_time: None,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            total_tickets: 100,
+            minted_tickets: 42,
+        };
+
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["total_tickets"], 100);
+        assert_eq!(json["minted_tickets"], 42);
     }
 }

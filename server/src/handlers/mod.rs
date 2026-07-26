@@ -1,7 +1,10 @@
 pub mod categories;
 pub mod events;
 pub mod health;
+pub mod leaderboard;
+pub mod monitoring;
 pub mod qr_payload;
+pub mod rates;
 pub mod ws;
 
 use axum::{extract::Path, response::IntoResponse, response::Response};

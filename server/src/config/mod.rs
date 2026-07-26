@@ -19,6 +19,9 @@
 //! - `CORS_ALLOWED_ORIGINS` (optional, default: localhost URLs) - CORS origins
 //! - `RUST_LOG` (optional, default: info) - Logging level
 //! - `SOROBAN_RPC_URL` (optional, default: Stellar testnet RPC) - Blockchain health probe URL
+//! - `REDIS_URL` (optional) - Redis connection string used to cache `/api/v1/rates` responses
+//! - `RATES_PROVIDER_URL` (optional) - External exchange rate provider base URL
+//! - `MONITORING_API_KEY` (optional) - Bearer token required to access `/api/v1/monitoring`
 
 use std::env;
 

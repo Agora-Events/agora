@@ -35,6 +35,15 @@ pub struct Event {
     pub created_at: DateTime<Utc>,
     /// Timestamp of the last update to this record. Managed by a DB trigger.
     pub updated_at: DateTime<Utc>,
+    /// Sum of `total_quantity` across all of this event's ticket tiers.
+    /// Defaults to `0` for queries that don't join `ticket_tiers`.
+    #[sqlx(default)]
+    pub total_tickets: i64,
+    /// Number of tickets already sold (`total_quantity - available_quantity`
+    /// summed across tiers). Defaults to `0` for queries that don't join
+    /// `ticket_tiers`.
+    #[sqlx(default)]
+    pub minted_tickets: i64,
 }
 
 impl Event {

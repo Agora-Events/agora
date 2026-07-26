@@ -36,7 +36,10 @@ use crate::handlers::{
     example_not_found,
     example_validation_error,
     health::{ health_check, health_check_blockchain, health_check_db, health_check_ready },
+    leaderboard::get_leaderboard,
+    monitoring::get_monitoring,
     qr_payload::{generate_qr_payload, list_qr_payloads, mark_qr_used, verify_qr_payload},
+    rates::get_rates,
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
 use crate::utils::rate_limit::RateLimitLayer;
@@ -93,11 +96,13 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/:id", get(get_category))
         .with_state(pool.clone());
 
-    let api_routes = Router::new()
+    let sensitive_routes = Router::new()
         .route("/health", get(health_check))
         .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
+        .route("/leaderboard", get(get_leaderboard))
+        .route("/monitoring", get(get_monitoring))
         .with_state(pool.clone())
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
 
@@ -107,6 +112,7 @@ pub fn create_routes(pool: PgPool) -> Router {
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
+        .route("/rates", get(get_rates))
         .with_state(pool)
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
