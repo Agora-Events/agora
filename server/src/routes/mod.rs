@@ -35,6 +35,7 @@ use crate::config::{
     create_cors_layer, create_security_headers_layer, propagate_request_id_layer,
     set_request_id_layer, Config,
 };
+use crate::middleware::catch_panic::catch_panic_layer;
 use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories, CategoryState},
@@ -100,7 +101,10 @@ use utoipa::OpenApi;
         crate::handlers::health::health_check
     ),
     components(
-        schemas(crate::handlers::health::HealthResponse)
+        schemas(
+            crate::handlers::health::HealthResponse,
+            crate::utils::error::ApiError
+        )
     ),
     tags(
         (name = "Agora API", description = "Agora Events Platform API")
@@ -323,6 +327,8 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .layer(middleware::from_fn(propagate_request_id))
         .layer(propagate_request_id_layer())
         .layer(set_request_id_layer())
+        // Outermost: convert uncaught panics into standardised ApiError JSON.
+        .layer(catch_panic_layer())
 }
 
 /// Serve Apple App Site Association file for iOS deep linking
