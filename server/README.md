@@ -216,6 +216,20 @@ The script checks:
 
 On Windows, run the script from Git Bash or WSL.
 
+## API Documentation
+
+The API is documented in [`openapi.yaml`](./openapi.yaml) (OpenAPI 3.0). It
+covers the health probes and event endpoints, including
+`GET /api/v1/events/:id/social-proof`, which returns recent purchases,
+average rating, waitlist count, and tickets remaining for an event (cached
+for 60 seconds, no authentication required).
+
+Lint the spec locally with:
+
+```bash
+npx @redocly/cli lint server/openapi.yaml
+```
+
 ## Pull Request Note
 
 When opening the PR for this issue, include the closing keyword in the PR description:
