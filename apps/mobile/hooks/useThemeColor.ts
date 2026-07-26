@@ -1,22 +1,23 @@
 /**
- * Learn more about light and dark modes:
- * https://docs.expo.dev/guides/color-schemes/
+ * useThemeColor
+ *
+ * Returns a single resolved color value for the active theme.
+ * Reads the scheme from ThemeContext so it reacts instantly to both
+ * system-level Appearance changes and manual overrides.
+ *
+ * Usage:
+ *   const bg = useThemeColor({ light: '#FFF', dark: '#000' }, 'background');
  */
 
-import { useColorScheme } from 'react-native';
-
 import { Colors } from '@/constants/Colors';
+import { useThemeContext } from '@/context/ThemeContext';
 
 export function useThemeColor(
   props: { light?: string; dark?: string },
   colorName: keyof typeof Colors.light & keyof typeof Colors.dark
 ) {
-  const theme = useColorScheme() ?? 'light';
-  const colorFromProps = props[theme];
+  const { colorScheme } = useThemeContext();
+  const colorFromProps = props[colorScheme];
 
-  if (colorFromProps) {
-    return colorFromProps;
-  } else {
-    return Colors[theme][colorName];
-  }
+  return colorFromProps ?? Colors[colorScheme][colorName];
 }

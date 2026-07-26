@@ -1,122 +1,145 @@
-import React, { useEffect } from 'react';
-import { ThemeProvider, DarkTheme } from '@react-navigation/native';
+import React, { useEffect, useMemo } from 'react';
+import { ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
 
+import { ThemeProvider, useThemeContext } from '@/context/ThemeContext';
 import { useAuth } from '@/hooks/useAuth';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
-import Colors from '@/constants/Colors';
+import { Colors } from '@/constants/Colors';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-const AgoraNavigationTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    background: Colors.darkBackground,
-    primary: Colors.primaryYellow,
-    card: Colors.darkBackground,
-    text: Colors.primaryText,
-    border: '#1E1E20',
-  },
-};
+/**
+ * Builds a react-navigation theme from the current Agora theme tokens.
+ * Re-runs whenever colorScheme changes so the navigator updates instantly.
+ */
+function useAgoraNavTheme() {
+  const { colorScheme } = useThemeContext();
+
+  return useMemo(() => {
+    const base = colorScheme === 'dark' ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        background: Colors[colorScheme].background,
+        primary: Colors.primaryYellow,
+        card: Colors[colorScheme].background,
+        text: Colors[colorScheme].text,
+        border: colorScheme === 'dark' ? '#1E1E20' : '#E5E5EA',
+        notification: Colors.primaryYellow,
+      },
+    };
+  }, [colorScheme]);
+}
 
 function AppNavigation() {
   const { isAuthenticated } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const navTheme = useAgoraNavTheme();
+  const { colorScheme } = useThemeContext();
 
   useEffect(() => {
-    // Check if the user is in the auth route group
     const inAuthGroup = segments[0] === 'auth';
 
     if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to the auth landing screen if not authenticated
       router.replace('/auth');
     } else if (isAuthenticated && inAuthGroup) {
-      // Redirect to discover tab once authenticated
       router.replace('/(tabs)/discover');
     }
   }, [isAuthenticated, segments, router]);
 
+  const headerStyle = useMemo(
+    () => ({
+      backgroundColor: Colors[colorScheme].background,
+    }),
+    [colorScheme]
+  );
+
+  const headerTintColor = Colors[colorScheme].text;
+
   return (
-    <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="auth" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="checkout"
-        options={{
-          presentation: 'modal',
-          title: 'Ticket Checkout',
-          headerStyle: { backgroundColor: Colors.darkBackground },
-          headerTintColor: Colors.primaryText,
-          headerShadowVisible: false,
-        }}
-      />
-      <Stack.Screen
-        name="event/[id]"
-        options={{
-          presentation: 'modal',
-          title: 'Event Details',
-          headerStyle: { backgroundColor: Colors.darkBackground },
-          headerTintColor: Colors.primaryText,
-          headerShadowVisible: false,
-        }}
-      />
-      <Stack.Screen
-        name="create-event/index"
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="create-event/step-1-basics"
-        options={{
-          title: 'Create Event',
-          headerStyle: { backgroundColor: Colors.darkBackground },
-          headerTintColor: Colors.primaryText,
-          headerShadowVisible: false,
-        }}
-      />
-      <Stack.Screen
-        name="create-event/step-2-location"
-        options={{
-          title: 'Create Event',
-          headerStyle: { backgroundColor: Colors.darkBackground },
-          headerTintColor: Colors.primaryText,
-          headerShadowVisible: false,
-        }}
-      />
-      <Stack.Screen
-        name="create-event/step-3-tickets"
-        options={{
-          title: 'Create Event',
-          headerStyle: { backgroundColor: Colors.darkBackground },
-          headerTintColor: Colors.primaryText,
-          headerShadowVisible: false,
-        }}
-      />
-      <Stack.Screen
-        name="create-event/step-4-review"
-        options={{
-          title: 'Create Event',
-          headerStyle: { backgroundColor: Colors.darkBackground },
-          headerTintColor: Colors.primaryText,
-          headerShadowVisible: false,
-        }}
-      />
-      <Stack.Screen
-        name="organizer/staking"
-        options={{
-          title: 'Organizer Staking',
-          headerStyle: { backgroundColor: Colors.darkBackground },
-          headerTintColor: Colors.primaryText,
-          headerShadowVisible: false,
-        }}
-      />
-      <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
-    </Stack>
+    <NavThemeProvider value={navTheme}>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="auth" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="checkout"
+          options={{
+            presentation: 'modal',
+            title: 'Ticket Checkout',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="event/[id]"
+          options={{
+            presentation: 'modal',
+            title: 'Event Details',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="create-event/index"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="create-event/step-1-basics"
+          options={{
+            title: 'Create Event',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="create-event/step-2-location"
+          options={{
+            title: 'Create Event',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="create-event/step-3-tickets"
+          options={{
+            title: 'Create Event',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="create-event/step-4-review"
+          options={{
+            title: 'Create Event',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="organizer/staking"
+          options={{
+            title: 'Organizer Staking',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
+      </Stack>
+    </NavThemeProvider>
   );
 }
 
@@ -138,7 +161,7 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <ThemeProvider value={AgoraNavigationTheme}>
+      <ThemeProvider>
         <AppNavigation />
       </ThemeProvider>
     </ErrorBoundary>

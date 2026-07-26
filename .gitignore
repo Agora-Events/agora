@@ -20,6 +20,9 @@ package-lock.json
 # PR description drafts
 pr-*.md
 
+# Kiro IDE directory
+.kiro/
+
 # Storybook build output and logs
 storybook-static
 **/storybook-static
