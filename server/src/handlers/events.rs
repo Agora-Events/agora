@@ -21,7 +21,8 @@ use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
 use crate::utils::cursor_pagination::{
-    decode_cursor, encode_cursor, CursorParams, CursorResponse, EventCursor, PastEventCursor,
+    decode_cursor, encode_cursor, AttendeeCursor, CursorParams, CursorResponse, EventCursor,
+    PastEventCursor,
 };
 use crate::utils::db_timer::log_if_slow;
 use crate::utils::error::AppError;
@@ -3383,6 +3384,116 @@ pub async fn get_event_organizer(
     success(profile, "Organizer profile retrieved successfully").into_response()
 }
 
+/// Response shape for a single attendee row.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct AttendeeResponse {
+    pub id: Uuid,
+    pub owner_wallet: Option<String>,
+    pub buyer_wallet: Option<String>,
+    pub quantity: i32,
+    pub created_at: chrono::DateTime<Utc>,
+}
+
+/// GET /api/v1/events/:id/attendees
+///
+/// Cursor-paginated list of ticket holders for an event. Default page size
+/// is 20, maximum 100. Requesting beyond the last page returns an empty
+/// list and no `next_cursor` (Issue #854).
+pub async fn list_event_attendees(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Query(pagination): Query<CursorParams>,
+) -> Response {
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{event_id}' not found")).into_response();
+    }
+
+    let validated = pagination.validate();
+
+    let cursor = match validated.cursor {
+        Some(ref c) => match decode_cursor::<AttendeeCursor>(c) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::warn!("Invalid cursor provided: {}", e);
+                return AppError::ValidationError(format!("Invalid cursor: {}", e)).into_response();
+            }
+        },
+        None => None,
+    };
+
+    let items_query = if cursor.is_some() {
+        r#"
+        SELECT t.id, t.owner_wallet, t.buyer_wallet, t.quantity, t.created_at
+        FROM tickets t
+        JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+        WHERE tt.event_id = $1
+          AND (t.created_at > $3 OR (t.created_at = $3 AND t.id > $4))
+        ORDER BY t.created_at ASC, t.id ASC
+        LIMIT $2
+        "#
+    } else {
+        r#"
+        SELECT t.id, t.owner_wallet, t.buyer_wallet, t.quantity, t.created_at
+        FROM tickets t
+        JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+        WHERE tt.event_id = $1
+        ORDER BY t.created_at ASC, t.id ASC
+        LIMIT $2
+        "#
+    };
+
+    let mut query_builder = sqlx::query_as::<_, AttendeeResponse>(items_query)
+        .bind(event_id)
+        .bind(validated.query_limit());
+
+    if let Some(ref c) = cursor {
+        query_builder = query_builder.bind(c.created_at).bind(c.id);
+    }
+
+    let mut items = match query_builder.fetch_all(&state.pool).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch attendees for event {}: {:?}", event_id, e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let has_more = items.len() > validated.page_size();
+    let next_cursor = if has_more {
+        let last = items.pop().unwrap();
+        match encode_cursor(&AttendeeCursor {
+            created_at: last.created_at,
+            id: last.id,
+        }) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::error!("Failed to encode attendee cursor: {:?}", e);
+                return AppError::InternalServerError("Failed to encode cursor".to_string())
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+
+    let response = CursorResponse::new(items, &validated, next_cursor);
+    success(response, "Attendees retrieved successfully").into_response()
+}
+
 /// GET /api/v1/events/:id/export-attendees
 ///
 /// Exports all attendees for an event as a CSV file.
@@ -3673,20 +3784,23 @@ pub async fn list_events_by_category(
     success(response, "Events in category retrieved successfully").into_response()
 }
 
-/// Response shape for a single ticket tier.
+/// Response shape for a single ticket tier (Issue #853).
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct TicketTierResponse {
     pub id: Uuid,
     pub name: String,
+    pub description: Option<String>,
     pub price: rust_decimal::Decimal,
-    pub quantity: i32,
-    pub sold: i32,
+    pub total_quantity: i32,
+    pub available_quantity: i32,
+    pub created_at: chrono::DateTime<Utc>,
 }
 
 /// GET `/api/v1/events/:id/ticket-tiers`
 ///
 /// Returns all ticket tiers for the given event ordered by price ascending.
-/// Returns 404 if the event does not exist.
+/// Returns 404 if the event does not exist; returns an empty list if the
+/// event exists but has no tiers (Issue #853).
 pub async fn list_ticket_tiers(
     State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
@@ -3714,9 +3828,11 @@ pub async fn list_ticket_tiers(
         SELECT
             id,
             name,
+            description,
             price,
-            total_quantity    AS quantity,
-            (total_quantity - available_quantity) AS sold
+            total_quantity,
+            available_quantity,
+            created_at
         FROM ticket_tiers
         WHERE event_id = $1
         ORDER BY price ASC
@@ -3744,14 +3860,17 @@ fn test_ticket_tier_response_serialization() {
     let tier = TicketTierResponse {
         id: Uuid::new_v4(),
         name: "General".to_string(),
+        description: Some("General admission".to_string()),
         price: Decimal::new(2500, 2),
-        quantity: 500,
-        sold: 120,
+        total_quantity: 500,
+        available_quantity: 380,
+        created_at: Utc::now(),
     };
     let json = serde_json::to_value(&tier).unwrap();
     assert_eq!(json["name"], "General");
-    assert_eq!(json["quantity"], 500);
-    assert_eq!(json["sold"], 120);
+    assert_eq!(json["description"], "General admission");
+    assert_eq!(json["total_quantity"], 500);
+    assert_eq!(json["available_quantity"], 380);
 }
 
 #[test]

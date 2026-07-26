@@ -106,6 +106,7 @@ fn test_per_user_limit_enforced() {
         &String::from_str(&env, "tier_1"),
         &user,
         &2,
+        &Address::generate(&env),
     );
 
     // Second purchase of 1 should fail (2 + 1 > 2)
@@ -146,6 +147,7 @@ fn test_per_user_limit_zero_means_unlimited() {
             &String::from_str(&env, "tier_1"),
             &user,
             &1,
+            &Address::generate(&env),
         );
     }
 }
@@ -185,6 +187,7 @@ fn test_global_tickets_sold_increments() {
         &String::from_str(&env, "tier_1"),
         &user1,
         &3,
+        &Address::generate(&env),
     );
     assert_eq!(client.get_global_tickets_sold(), 3);
 
@@ -194,6 +197,7 @@ fn test_global_tickets_sold_increments() {
         &String::from_str(&env, "tier_1"),
         &user2,
         &2,
+        &Address::generate(&env),
     );
     assert_eq!(client.get_global_tickets_sold(), 5);
 
@@ -212,6 +216,7 @@ fn test_global_tickets_sold_increments() {
         &String::from_str(&env, "tier_1"),
         &user1,
         &4,
+        &Address::generate(&env),
     );
     assert_eq!(client.get_global_tickets_sold(), 9);
 }

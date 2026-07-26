@@ -56,4 +56,6 @@ pub enum EventRegistryError {
     AlreadyOnWaitlist = 75,
     TooManyTiers = 80,
     // TooManyIds = 81,
+    /// Issue #851: payment token is not in the event's accepted_tokens list.
+    TokenNotAccepted = 82,
 }
