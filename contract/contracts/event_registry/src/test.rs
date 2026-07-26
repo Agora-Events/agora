@@ -4488,3 +4488,121 @@ fn test_get_events_batch_limit() {
     let res = client.try_get_events_batch(&event_ids);
     assert_eq!(res, Err(Ok(EventRegistryError::TooManyTiers)));
 }
+
+// ── Issues #862, #863, #864: CID validation, is_tier_sold_out, add_tier, deactivate_tier ──
+
+#[test]
+fn test_validate_metadata_cid_v0_and_v1() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+
+    // CIDv0 (Qm... len >= 46) should succeed
+    let cid_v0 = String::from_str(&env, "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco");
+    let mut args = make_args(&env, "event_cid_v0", &organizer, None);
+    args.metadata_cid = cid_v0;
+    client.register_event(&args);
+
+    // CIDv1 (bafy... len >= 59) should succeed
+    let cid_v1 = String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi");
+    let mut args2 = make_args(&env, "event_cid_v1", &organizer, None);
+    args2.metadata_cid = cid_v1;
+    client.register_event(&args2);
+
+    // Invalid prefix should fail
+    let invalid_cid = String::from_str(&env, "invalid_cid_prefix_1234567890123456789012345678901234567890");
+    let mut args3 = make_args(&env, "event_invalid_cid", &organizer, None);
+    args3.metadata_cid = invalid_cid;
+    let res = client.try_register_event(&args3);
+    assert_eq!(res, Err(Ok(EventRegistryError::InvalidMetadataCid)));
+}
+
+#[test]
+fn test_is_tier_sold_out() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "sold_out_event");
+    let tier_id = String::from_str(&env, "general");
+
+    client.register_event(&make_args(&env, "sold_out_event", &organizer, None));
+
+    // Initially not sold out
+    assert!(!client.is_tier_sold_out(&event_id, &tier_id));
+
+    // Non-existent event returns EventNotFound
+    let fake_event = String::from_str(&env, "non_existent");
+    assert_eq!(
+        client.try_is_tier_sold_out(&fake_event, &tier_id),
+        Err(Ok(EventRegistryError::EventNotFound))
+    );
+
+    // Non-existent tier returns TierNotFound
+    let fake_tier = String::from_str(&env, "fake_tier");
+    assert_eq!(
+        client.try_is_tier_sold_out(&event_id, &fake_tier),
+        Err(Ok(EventRegistryError::TierNotFound))
+    );
+}
+
+#[test]
+fn test_add_tier_and_deactivate_tier() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "tier_mgmt_event");
+    let new_tier_id = String::from_str(&env, "vip_new");
+
+    client.register_event(&make_args(&env, "tier_mgmt_event", &organizer, None));
+
+    let new_tier = TicketTier {
+        name: String::from_str(&env, "VIP New"),
+        price: 200,
+        tier_limit: 50,
+        current_sold: 0,
+        is_refundable: true,
+        auction_config: soroban_sdk::Vec::new(&env),
+        loyalty_multiplier: 2,
+        max_per_user: 5,
+    };
+
+    // Add new tier succeeds
+    client.add_tier(&event_id, &new_tier_id, &new_tier);
+    assert!(!client.is_tier_sold_out(&event_id, &new_tier_id));
+
+    // Deactivate tier sets tier_limit = current_sold (0), making it sold out
+    client.deactivate_tier(&event_id, &new_tier_id);
+    assert!(client.is_tier_sold_out(&event_id, &new_tier_id));
+}
+
+#[test]
+fn test_add_tier_exceeds_max_supply() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "max_supply_event");
+    let new_tier_id = String::from_str(&env, "overflow_tier");
+
+    let mut args = make_args(&env, "max_supply_event", &organizer, None);
+    args.max_supply = 100; // Total supply limit 100, initial tier limit is 100
+    client.register_event(&args);
+
+    let overflow_tier = TicketTier {
+        name: String::from_str(&env, "Extra Tier"),
+        price: 100,
+        tier_limit: 10, // 100 + 10 > 100 max_supply
+        current_sold: 0,
+        is_refundable: true,
+        auction_config: soroban_sdk::Vec::new(&env),
+        loyalty_multiplier: 1,
+        max_per_user: 0,
+    };
+
+    let res = client.try_add_tier(&event_id, &new_tier_id, &overflow_tier);
+    assert_eq!(res, Err(Ok(EventRegistryError::TierLimitExceeds)));
+}
+

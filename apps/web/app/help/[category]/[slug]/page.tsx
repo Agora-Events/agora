@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -9,6 +10,45 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import HelpCircleIcon from "@/public/icons/help-circle.svg";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ category: string; slug: string }>;
+}): Promise<Metadata> {
+  const { category, slug } = await params;
+  const article = getArticle(category, slug);
+
+  if (!article) {
+    return {
+      title: "Article Not Found | Agora Help Center",
+    };
+  }
+
+  const title = `${article.title} | Help Center - Agora`;
+  const description = article.summary || article.content.slice(0, 160).replace(/[#*`]/g, "").trim();
+  const canonicalUrl = `https://agora.events/help/${category}/${slug}`;
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      title,
+      description,
+      url: canonicalUrl,
+      type: "article",
+      siteName: "Agora Events",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+    },
+  };
+}
 
 export default async function HelpArticlePage({
   params,
