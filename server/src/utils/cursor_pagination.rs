@@ -63,7 +63,7 @@ impl ValidatedCursorParams {
 }
 
 /// Pagination metadata included in cursor-based responses
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CursorMeta {
     /// Number of items in the current page
     pub page_size: u32,
@@ -76,7 +76,7 @@ pub struct CursorMeta {
 }
 
 /// Standard cursor-paginated response wrapper
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CursorResponse<T> {
     /// The data items for this page
     pub items: Vec<T>,

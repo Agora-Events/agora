@@ -16,7 +16,9 @@ use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::cache::RedisCache;
+use crate::cache::{
+    RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL,
+};
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
@@ -223,6 +225,25 @@ pub struct ValidatedEventSort {
 }
 
 impl EventFilters {
+    /// True when no query filters are applied (eligible for the shared list cache).
+    fn is_unfiltered(&self) -> bool {
+        self.organizer_id.is_none()
+            && self.organizer_wallet.is_none()
+            && self.location.is_none()
+            && self.start_after.is_none()
+            && self.start_before.is_none()
+            && self.search.is_none()
+            && self.min_tickets_available.is_none()
+            && self.is_free.is_none()
+            && self.start_date.is_none()
+            && self.end_date.is_none()
+            && self.is_featured.is_none()
+            && self.followers_only.is_none()
+            && self.sort_by.is_none()
+            && self.sort_order.is_none()
+            && self.sort.is_none()
+    }
+
     /// Validate `sort_by` and `sort_order`, applying defaults when omitted.
     /// The `sort` field takes precedence when provided.
     pub fn validate_sort(&self) -> Result<ValidatedEventSort, String> {
@@ -1178,7 +1199,7 @@ pub struct SubmitEventRatingResponse {
 /// # Response
 /// Returns a cursor-paginated list of upcoming events with metadata
 pub async fn list_events(
-    State(state): State<EventState>,
+    State(mut state): State<EventState>,
     Query(pagination): Query<CursorParams>,
     Query(filters): Query<EventFilters>,
 ) -> Response {
@@ -1188,6 +1209,33 @@ pub async fn list_events(
         Ok(sort) => sort,
         Err(message) => return AppError::ValidationError(message).into_response(),
     };
+
+    // Serve the default (unfiltered, first-page) list from cache when available.
+    let use_list_cache = validated.cursor.is_none()
+        && filters.is_unfiltered()
+        && validated.limit == crate::utils::cursor_pagination::DEFAULT_PAGE_SIZE;
+    if use_list_cache {
+        match state
+            .redis
+            .get::<CursorResponse<Event>>(EVENTS_LIST_CACHE_KEY)
+            .await
+        {
+            Ok(Some(cached)) => {
+                tracing::debug!("Cache hit for {}", EVENTS_LIST_CACHE_KEY);
+                return success(cached, "Events retrieved successfully (cached)").into_response();
+            }
+            Ok(None) => {
+                tracing::debug!("Cache miss for {}", EVENTS_LIST_CACHE_KEY);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Redis error for {}, falling back to database: {:?}",
+                    EVENTS_LIST_CACHE_KEY,
+                    e
+                );
+            }
+        }
+    }
 
     // Decode cursor if provided
     let cursor = match validated.cursor {
@@ -1393,6 +1441,17 @@ pub async fn list_events(
     populate_is_free(&mut items, &state.pool).await;
 
     let response = CursorResponse::new(items, &validated, next_cursor);
+
+    if use_list_cache {
+        if let Err(e) = state
+            .redis
+            .set(EVENTS_LIST_CACHE_KEY, &response, EVENTS_LIST_CACHE_TTL)
+            .await
+        {
+            tracing::warn!("Failed to cache {}: {:?}", EVENTS_LIST_CACHE_KEY, e);
+        }
+    }
+
     let mut resp = success(response, "Events retrieved successfully").into_response();
     if let Ok(v) = HeaderValue::from_str(&total_count.to_string()) {
         resp.headers_mut().insert("X-Total-Count", v);
@@ -1560,6 +1619,7 @@ pub async fn get_event(
     }
 
     // Cache miss or error, fetch from database
+    let start = std::time::Instant::now();
     let event = match sqlx::query_as::<_, Event>(
         "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
@@ -1569,14 +1629,17 @@ pub async fn get_event(
     {
         Ok(Some(event)) => event,
         Ok(None) => {
+            log_if_slow("get_event", start.elapsed());
             return AppError::NotFound(format!("Event with id '{}' not found", event_id))
                 .into_response();
         }
         Err(e) => {
+            log_if_slow("get_event", start.elapsed());
             tracing::error!("Failed to fetch event: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
+    log_if_slow("get_event", start.elapsed());
 
     // Fetch organizer profile by wallet address (Issue #486)
     // Look up the organizer's Stellar wallet, then fetch their profile.
@@ -1897,6 +1960,9 @@ pub async fn create_event(
         tracing::warn!("Cache warm-up failed for event {}: {:?}", event.id, e);
     }
 
+    // New events invalidate the shared list cache.
+    state.redis.invalidate_events_list().await;
+
     success(event, "Event created successfully").into_response()
 }
 
@@ -1914,6 +1980,7 @@ pub async fn submit_event_rating(
             .into_response();
     }
 
+    let start = std::time::Instant::now();
     let ticket = match sqlx::query_as::<_, (String, uuid::Uuid)>(
         r#"SELECT t.status, tt.event_id
            FROM tickets t
@@ -1926,10 +1993,12 @@ pub async fn submit_event_rating(
     {
         Ok(Some((status, ticket_event_id))) => (status, ticket_event_id),
         Ok(None) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             return AppError::NotFound(format!("Ticket with id '{}' not found", payload.ticket_id))
                 .into_response();
         }
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to fetch ticket for rating: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
@@ -1946,22 +2015,26 @@ pub async fn submit_event_rating(
     {
         Ok(exists) => exists,
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to check event existence for rating: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
     if !event_exists {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
             .into_response();
     }
 
     if ticket_event_id != event_id {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::Forbidden("Ticket does not belong to this event".to_string())
             .into_response();
     }
 
     if ticket_status != "used" {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::ValidationError(
             "Only attendees with a used ticket may leave a rating".to_string(),
         )
@@ -1971,6 +2044,7 @@ pub async fn submit_event_rating(
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to begin transaction: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
@@ -1985,12 +2059,14 @@ pub async fn submit_event_rating(
     {
         Ok(exists) => exists.is_some(),
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to verify existing rating: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
     if already_rated {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::ValidationError(
             "Each attendee may only submit one rating per event".to_string(),
         )
@@ -2007,6 +2083,7 @@ pub async fn submit_event_rating(
     .execute(&mut *tx)
     .await
     {
+        log_if_slow("submit_event_rating", start.elapsed());
         tracing::error!("Failed to insert event rating: {:?}", e);
         return AppError::DatabaseError(e).into_response();
     }
@@ -2021,19 +2098,23 @@ pub async fn submit_event_rating(
     {
         Ok(Some(event)) => event,
         Ok(None) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             return AppError::NotFound(format!("Event with id '{}' not found", event_id))
                 .into_response();
         }
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to update event rating aggregates: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
     if let Err(e) = tx.commit().await {
+        log_if_slow("submit_event_rating", start.elapsed());
         tracing::error!("Failed to commit rating transaction: {:?}", e);
         return AppError::DatabaseError(e).into_response();
     }
+    log_if_slow("submit_event_rating", start.elapsed());
 
     let cache_key = format!("event:detail:{}", event_id);
     if let Err(e) = state.redis.delete(&cache_key).await {
@@ -2043,6 +2124,7 @@ pub async fn submit_event_rating(
             e
         );
     }
+    state.redis.invalidate_events_list().await;
 
     let response = SubmitEventRatingResponse {
         sum_of_ratings: updated_event.sum_of_ratings,
@@ -2378,6 +2460,7 @@ pub async fn toggle_event_flag(
     if let Err(e) = state.redis.delete(&cache_key).await {
         tracing::warn!("Failed to invalidate cache for event {}: {:?}", event_id, e);
     }
+    state.redis.invalidate_events_list().await;
 
     let mut response = success(
         json!({ "is_flagged": new_flagged }),
@@ -2435,6 +2518,7 @@ pub async fn set_event_featured(
             e
         );
     }
+    state.redis.invalidate_events_list().await;
 
     let mut response = success(
         json!({ "is_featured": updated }),
@@ -3674,7 +3758,7 @@ pub async fn list_events_by_category(
 }
 
 /// Response shape for a single ticket tier.
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct TicketTierResponse {
     pub id: Uuid,
     pub name: String,
@@ -3776,6 +3860,7 @@ fn test_event_detail_tiers_omitted_when_none() {
         image_url: None,
         is_free: false,
         minted_tickets: 0,
+        is_free_populated: true,
     };
 
     let detail = EventDetail {
@@ -3812,6 +3897,7 @@ fn test_event_detail_tiers_present_when_some() {
         image_url: None,
         is_free: true,
         minted_tickets: 0,
+        is_free_populated: true,
     };
 
     let tier = TicketTierResponse {

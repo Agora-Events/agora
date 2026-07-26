@@ -72,6 +72,7 @@ axum-extra = { version = "0.12.6", features = ["cookie"] }
 
 # Prometheus metrics
 prometheus = { version = "0.13", features = ["process"] }
+dashmap = "6.2.1"
 
 # Currency conversion HTTP client already covered by reqwest above
 
