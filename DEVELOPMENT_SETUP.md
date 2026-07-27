@@ -94,29 +94,52 @@ That file is only needed for devnet/testnet deployment flows such as `scripts/de
 
 There is currently no frontend `.env.example` in `apps/web`, so contributors do not need to create an `apps/web/.env.local` file for the default local setup described here.
 
-## 4. Start Infrastructure First
+## 4. Start Infrastructure First (1-Click Startup)
 
-The backend expects PostgreSQL to be running before migrations and server startup.
+The unified `docker-compose.yml` at the repo root starts PostgreSQL, Redis, Stellar RPC, backend, and frontend with a single command.
 
-From `server/`:
+From the repo root:
 
 ```bash
-cd server
-docker compose up -d
+make up
 ```
 
-This starts PostgreSQL with:
+Or directly:
 
-- Host: `localhost`
-- Port: `5432`
-- Database: `agora`
-- Username: `user`
-- Password: `password`
+```bash
+docker compose up --build
+```
 
-To confirm the container is running:
+This starts the full stack with these defaults:
+
+| Service | Container Name | Port | Environment |
+|---------|---------------|------|-------------|
+| PostgreSQL | `agora_postgres` | `5432` | `POSTGRES_USER=user`, `POSTGRES_PASSWORD=password`, `POSTGRES_DB=agora` |
+| Redis | `agora_redis` | `6379` | AOF persistence enabled |
+| Stellar RPC | `agora_stellar_rpc` | `8000` | Test network passphrase |
+| Backend (Rust) | `agora_backend` | `3001` | Connects to postgres + redis + stellar-rpc |
+| Frontend (Next.js) | `agora_frontend` | `3000` | `NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1` |
+
+Container names and ports can be customized with environment variables (see `make help`).
+
+To confirm all containers are running and healthy:
 
 ```bash
 docker compose ps
+```
+
+Each service should report `healthy` once startup completes.
+
+To view logs from all services:
+
+```bash
+make logs
+```
+
+To stop the stack:
+
+```bash
+make down
 ```
 
 ## 5. Start The Backend
@@ -195,11 +218,11 @@ Use this order for first-time setup:
 
 1. Install prerequisites.
 2. Run `pnpm install` from the repo root.
-3. Create `server/.env` from `server/.env.example`.
-4. Start PostgreSQL with `docker compose up -d` from `server/`.
-5. Run `sqlx migrate run` from `server/`.
-6. Start the backend with `cargo run` from `server/`.
-7. Start the frontend with `pnpm dev` from `apps/web/`.
+3. Copy `server/.env.example` to `server/.env` (or create `server/.env` with your local settings).
+4. Run `make up` from the repo root to start the full stack.
+5. Once containers are healthy, run `sqlx migrate run` from `server/` against the Docker database.
+6. Start the backend with `cargo run` from `server/` if running outside Docker.
+7. Start the frontend with `pnpm dev` from `apps/web/` if running outside Docker.
 8. Run `cargo test` from `contract/`.
 
 ## 9. Health Verification
