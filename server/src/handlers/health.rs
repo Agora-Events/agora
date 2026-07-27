@@ -3,15 +3,25 @@ use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
 use sqlx::PgPool;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
+static CATEGORY_SYNC_STATUS: LazyLock<std::sync::Mutex<bool>> =
+    LazyLock::new(|| std::sync::Mutex::new(true));
+
+/// Update the category sync status. Called during startup after validation.
+pub fn set_category_sync_status(synced: bool) {
+    *CATEGORY_SYNC_STATUS.lock().unwrap() = synced;
+}
+
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct HealthResponse {
     status: &'static str,
     timestamp: String,
+    category_sync: bool,
 }
 
 #[derive(Serialize)]
@@ -48,11 +58,14 @@ struct HealthBlockchainResponse {
     )
 )]
 pub async fn health_check(State(pool): State<PgPool>) -> Response {
+    let category_sync = *CATEGORY_SYNC_STATUS.lock().unwrap();
+    
     match sqlx::query("SELECT 1").fetch_one(&pool).await {
         Ok(_) => {
             let payload = HealthResponse {
                 status: "ok",
                 timestamp: Utc::now().to_rfc3339(),
+                category_sync,
             };
             success(payload, "API is healthy").into_response()
         }
@@ -206,6 +219,7 @@ mod tests {
         let payload = HealthResponse {
             status: "ok",
             timestamp: Utc::now().to_rfc3339(),
+            category_sync: true,
         };
         let resp = success(payload, "API is healthy").into_response();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -227,6 +241,7 @@ mod tests {
                 let payload = HealthResponse {
                     status: "ok",
                     timestamp: Utc::now().to_rfc3339(),
+                    category_sync: true,
                 };
                 success(payload, "API is healthy").into_response()
             }),
