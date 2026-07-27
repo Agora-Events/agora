@@ -1,24 +1,34 @@
 import * as React from 'react';
-import renderer from 'react-test-renderer';
+import renderer, { act } from 'react-test-renderer';
 
 import { ThemedText } from '../ThemedText';
 import { ThemeProvider } from '../../context/ThemeContext';
 
 /**
  * ThemedText reads its colours through `useThemeColor`, which calls
- * `useThemeContext`. That hook throws when no provider is mounted, so
- * rendering the component bare fails outright — this test has been red since
- * ThemeContext was introduced. Wrapping it in the provider matches how the
- * component is actually used at runtime.
+ * `useThemeContext`. That hook throws without a provider, so rendering the
+ * component bare fails — this test has been red since ThemeContext landed.
+ *
+ * `act` is required as well as the provider: ThemeProvider subscribes to
+ * `Appearance` in an effect, and a bare `renderer.create` leaves that effect
+ * to run after Jest has torn the environment down ("trying to `import` a file
+ * after the Jest environment has been torn down"). Flushing inside `act` and
+ * unmounting keeps the subscription's whole lifecycle within the test.
  */
 it(`renders correctly`, () => {
-  const tree = renderer
-    .create(
+  let tree: renderer.ReactTestRenderer;
+
+  act(() => {
+    tree = renderer.create(
       <ThemeProvider>
         <ThemedText>Snapshot test!</ThemedText>
       </ThemeProvider>,
-    )
-    .toJSON();
+    );
+  });
 
-  expect(tree).toMatchSnapshot();
+  expect(tree!.toJSON()).toMatchSnapshot();
+
+  act(() => {
+    tree.unmount();
+  });
 });
