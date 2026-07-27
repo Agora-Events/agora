@@ -36,19 +36,14 @@ pub async fn upload_image(
     };
 
     // Validate content-type
-    let content_type = field
-        .content_type()
-        .unwrap_or("")
-        .to_string();
+    let content_type = field.content_type().unwrap_or("").to_string();
 
     let ext = match content_type.as_str() {
         "image/jpeg" => "jpg",
         "image/png" => "png",
         _ => {
-            return AppError::ValidationError(
-                "Only JPEG and PNG images are accepted".to_string(),
-            )
-            .into_response()
+            return AppError::ValidationError("Only JPEG and PNG images are accepted".to_string())
+                .into_response()
         }
     };
 

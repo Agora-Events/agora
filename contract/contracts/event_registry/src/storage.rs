@@ -1131,6 +1131,25 @@ pub fn subtract_from_user_ticket_count(
     );
 }
 
+// ── Waitlist Storage ──────────────────────────────────────────────────────────
+
+/// Check if a user is already on the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user). Storage type: Persistent
+pub fn is_on_waitlist(env: &Env, event_id: &String, user: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Waitlist(event_id.clone(), user.clone()))
+        .unwrap_or(false)
+}
+
+/// Add a user to the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user) -> true. Storage type: Persistent
+pub fn add_to_waitlist(env: &Env, event_id: &String, user: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Waitlist(event_id.clone(), user.clone()), &true);
+}
+
 // ── Event Pause Storage ────────────────────────────────────────────────────────
 
 /// Returns whether an event is paused. Returns false if the pause status is not set (i.e., event is not paused).
@@ -1148,4 +1167,82 @@ pub fn set_event_paused(env: &Env, event_id: &String, is_paused: bool) {
     env.storage()
         .persistent()
         .set(&DataKey::EventPaused(event_id.clone()), &is_paused);
+}
+
+// ── Category Index Storage ─────────────────────────────────────────────────────
+
+/// Appends `event_id` to the index list for `category_id`.
+/// Storage key: DataKey::CategoryEvents(category_id). Storage type: Persistent
+pub fn index_event_category(env: &Env, category_id: u32, event_id: String) {
+    let key = DataKey::CategoryEvents(category_id);
+    let mut ids: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| vec![env]);
+    ids.push_back(event_id);
+    env.storage().persistent().set(&key, &ids);
+}
+
+/// Returns all event IDs tagged with `category_id`.
+/// Storage key: DataKey::CategoryEvents(category_id). Storage type: Persistent
+pub fn get_events_by_category(env: &Env, category_id: u32) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::CategoryEvents(category_id))
+        .unwrap_or_else(|| vec![env])
+}
+
+// ── Event Team Role Storage ────────────────────────────────────────────────────
+
+/// Sets the role for a team member on a specific event.
+/// Storage key: DataKey::EventTeamRole(event_id, member_address). Storage type: Persistent
+pub fn set_event_team_role(
+    env: &Env,
+    event_id: &String,
+    member: &Address,
+    role: crate::types::Role,
+) {
+    env.storage().persistent().set(
+        &DataKey::EventTeamRole(event_id.clone(), member.clone()),
+        &role,
+    );
+}
+
+/// Gets the role for a team member on a specific event.
+/// Returns None if the member has no role assigned.
+/// Storage key: DataKey::EventTeamRole(event_id, member_address). Storage type: Persistent
+pub fn get_event_team_role(
+    env: &Env,
+    event_id: &String,
+    member: &Address,
+) -> Option<crate::types::Role> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventTeamRole(event_id.clone(), member.clone()))
+}
+
+/// Removes a team member's role from an event.
+/// Storage key: DataKey::EventTeamRole(event_id, member_address). Storage type: Persistent
+pub fn remove_event_team_role(env: &Env, event_id: &String, member: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventTeamRole(event_id.clone(), member.clone()));
+}
+
+/// Checks if a member has a specific role or higher for an event.
+/// Role hierarchy: Admin > Manager > Scanner
+/// Returns true if the member has the required role or a higher role.
+pub fn has_event_role(
+    env: &Env,
+    event_id: &String,
+    member: &Address,
+    required_role: crate::types::Role,
+) -> bool {
+    if let Some(member_role) = get_event_team_role(env, event_id, member) {
+        // Check role hierarchy: Admin (1) > Manager (2) > Scanner (3)
+        (member_role as u32) <= (required_role as u32)
+    } else {
+        false
+    }
 }

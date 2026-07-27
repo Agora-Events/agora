@@ -1,17 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEventById } from "@/lib/events-store";
+import { prisma } from "@/lib/prisma";
+import { withErrorHandler } from "@/lib/api-handler";
+import { throwApiError } from "@/lib/api-errors";
 
-type Params = {
-  params: Promise<{ id: string }>;
-};
-
-export async function GET(_request: NextRequest, { params }: Params) {
-  const { id } = await params;
-  const event = getEventById(id);
+export const GET = withErrorHandler(async (_request: NextRequest, { params }) => {
+  const resolvedParams = await params;
+  const id = resolvedParams.id as string;
+  const event = await prisma.event.findUnique({
+    where: { id },
+  });
 
   if (!event) {
-    return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    throwApiError("Event not found", 404);
   }
 
-  return NextResponse.json({ event });
-}
+  
+  const organizerProfile = await prisma.organizerProfile
+    .findUnique({ where: { address: event!.organizerWallet } })
+    .catch(() => null);
+
+  return NextResponse.json({ event, organizerProfile });
+});
+
+

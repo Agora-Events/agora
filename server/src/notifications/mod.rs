@@ -53,7 +53,9 @@ pub struct NotificationService {
 
 impl NotificationService {
     pub fn new() -> Self {
-        Self { providers: Vec::new() }
+        Self {
+            providers: Vec::new(),
+        }
     }
 
     /// Register a provider. Call this during application startup.

@@ -18,7 +18,7 @@ pub struct PaginationParams {
     /// Page number (1-indexed)
     #[serde(default = "default_page")]
     pub page: u32,
-    
+
     /// Number of items per page
     #[serde(default = "default_page_size")]
     pub page_size: u32,
@@ -36,8 +36,8 @@ impl PaginationParams {
     /// Validate and normalize pagination parameters
     pub fn validate(self) -> ValidatedPagination {
         let page = if self.page == 0 { 1 } else { self.page };
-        let page_size = self.page_size.min(MAX_PAGE_SIZE).max(1);
-        
+        let page_size = self.page_size.clamp(1, MAX_PAGE_SIZE);
+
         ValidatedPagination { page, page_size }
     }
 }
@@ -54,12 +54,12 @@ impl ValidatedPagination {
     pub fn offset(&self) -> i64 {
         ((self.page - 1) * self.page_size) as i64
     }
-    
+
     /// Get the SQL LIMIT value
     pub fn limit(&self) -> i64 {
         self.page_size as i64
     }
-    
+
     /// Create pagination metadata from total count
     pub fn metadata(&self, total: i64) -> PaginationMeta {
         let total_pages = if total == 0 {
@@ -67,7 +67,7 @@ impl ValidatedPagination {
         } else {
             ((total as f64) / (self.page_size as f64)).ceil() as u32
         };
-        
+
         PaginationMeta {
             page: self.page,
             page_size: self.page_size,
@@ -80,33 +80,33 @@ impl ValidatedPagination {
 }
 
 /// Pagination metadata included in responses
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PaginationMeta {
     /// Current page number (1-indexed)
     pub page: u32,
-    
+
     /// Number of items per page
     pub page_size: u32,
-    
+
     /// Total number of items across all pages
     pub total_items: i64,
-    
+
     /// Total number of pages
     pub total_pages: u32,
-    
+
     /// Whether there is a next page
     pub has_next: bool,
-    
+
     /// Whether there is a previous page
     pub has_previous: bool,
 }
 
 /// Standard paginated response wrapper
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PaginatedResponse<T> {
     /// The data items for this page
     pub items: Vec<T>,
-    
+
     /// Pagination metadata
     pub pagination: PaginationMeta,
 }
@@ -132,7 +132,7 @@ mod tests {
             page_size: 0,
         };
         let validated = params.validate();
-        
+
         assert_eq!(validated.page, 1);
         assert_eq!(validated.page_size, 1);
     }
@@ -144,7 +144,7 @@ mod tests {
             page_size: 1000,
         };
         let validated = params.validate();
-        
+
         assert_eq!(validated.page_size, MAX_PAGE_SIZE);
     }
 
@@ -155,13 +155,13 @@ mod tests {
             page_size: 20,
         };
         assert_eq!(validated.offset(), 0);
-        
+
         let validated = ValidatedPagination {
             page: 2,
             page_size: 20,
         };
         assert_eq!(validated.offset(), 20);
-        
+
         let validated = ValidatedPagination {
             page: 5,
             page_size: 10,
@@ -176,13 +176,13 @@ mod tests {
             page_size: 10,
         };
         let meta = validated.metadata(45);
-        
+
         assert_eq!(meta.page, 2);
         assert_eq!(meta.page_size, 10);
         assert_eq!(meta.total_items, 45);
         assert_eq!(meta.total_pages, 5);
-        assert_eq!(meta.has_next, true);
-        assert_eq!(meta.has_previous, true);
+        assert!(meta.has_next);
+        assert!(meta.has_previous);
     }
 
     #[test]
@@ -192,9 +192,9 @@ mod tests {
             page_size: 10,
         };
         let meta = validated.metadata(45);
-        
-        assert_eq!(meta.has_next, true);
-        assert_eq!(meta.has_previous, false);
+
+        assert!(meta.has_next);
+        assert!(!meta.has_previous);
     }
 
     #[test]
@@ -204,9 +204,9 @@ mod tests {
             page_size: 10,
         };
         let meta = validated.metadata(45);
-        
-        assert_eq!(meta.has_next, false);
-        assert_eq!(meta.has_previous, true);
+
+        assert!(!meta.has_next);
+        assert!(meta.has_previous);
     }
 
     #[test]
@@ -216,9 +216,9 @@ mod tests {
             page_size: 10,
         };
         let meta = validated.metadata(0);
-        
+
         assert_eq!(meta.total_pages, 0);
-        assert_eq!(meta.has_next, false);
-        assert_eq!(meta.has_previous, false);
+        assert!(!meta.has_next);
+        assert!(!meta.has_previous);
     }
 }

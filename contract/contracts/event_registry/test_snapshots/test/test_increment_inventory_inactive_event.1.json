@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 6,
+    "address": 7,
     "nonce": 0,
     "mux_id": 0
   },
@@ -39,7 +39,21 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "accepted_tokens"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "banner_cid"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "category_ids"
                       },
                       "val": "void"
                     },
@@ -121,6 +135,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "referral_rate_bps"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "refund_deadline"
                       },
                       "val": {
@@ -139,6 +159,14 @@
                       },
                       "val": {
                         "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "start_time"
+                      },
+                      "val": {
+                        "u64": "0"
                       }
                     },
                     {
@@ -199,6 +227,14 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "max_per_user"
+                                  },
+                                  "val": {
+                                    "u32": 0
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "name"
                                   },
                                   "val": {
@@ -225,6 +261,22 @@
                             }
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_lock_duration"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "use_global_whitelist"
+                      },
+                      "val": {
+                        "bool": true
                       }
                     }
                   ]
@@ -348,7 +400,27 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "accepted_tokens"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "banner_cid"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "cancellation_reason"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "category_ids"
                       },
                       "val": "void"
                     },
@@ -500,6 +572,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "referral_rate_bps"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "refund_deadline"
                       },
                       "val": {
@@ -518,6 +598,14 @@
                       },
                       "val": {
                         "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "start_time"
+                      },
+                      "val": {
+                        "u64": "0"
                       }
                     },
                     {
@@ -592,6 +680,14 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "max_per_user"
+                                  },
+                                  "val": {
+                                    "u32": 0
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "name"
                                   },
                                   "val": {
@@ -618,6 +714,22 @@
                             }
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_lock_duration"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "use_global_whitelist"
+                      },
+                      "val": {
+                        "bool": true
                       }
                     }
                   ]
@@ -1141,7 +1253,35 @@
                     "executable": {
                       "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     },
-                    "storage": null
+                    "storage": [
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ApprovedOrganizer"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": true
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ContractAdmin"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      }
+                    ]
                   }
                 }
               }

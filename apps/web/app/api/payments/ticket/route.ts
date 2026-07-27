@@ -1,51 +1,83 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getEventById,
-  hasAvailableTickets,
-  incrementMintedTickets,
-} from "@/lib/events-store";
+import { prisma } from "@/lib/prisma";
 import { mintTicket } from "@/utils/stellar";
+import { withErrorHandler } from "@/lib/api-handler";
+import { throwApiError, ApiError } from "@/lib/api-errors";
 
 type TicketRequestBody = {
   eventId?: string;
   quantity?: number;
   buyerWallet?: string;
+  recipientWallet?: string; // Optional: if provided, ticket goes to recipient instead of buyer
 };
 
-export async function POST(request: NextRequest) {
+export const POST = withErrorHandler(async (request: NextRequest) => {
   let payload: TicketRequestBody;
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    throwApiError("Invalid JSON payload", 400);
   }
 
-  const { eventId, quantity, buyerWallet } = payload;
+  const { eventId, quantity, buyerWallet, recipientWallet } = payload;
 
+  // Validation
   if (!eventId || typeof eventId !== "string") {
-    return NextResponse.json({ error: "Invalid eventId" }, { status: 400 });
-  }
-  if (!Number.isInteger(quantity) || (quantity ?? 0) <= 0) {
-    return NextResponse.json({ error: "Invalid quantity" }, { status: 400 });
-  }
-  if (!buyerWallet || typeof buyerWallet !== "string") {
-    return NextResponse.json({ error: "Invalid buyerWallet" }, { status: 400 });
+    throwApiError("Invalid eventId", 400);
   }
 
-  const event = getEventById(eventId);
-  if (!event) {
-    return NextResponse.json({ error: "Event not found" }, { status: 404 });
+  // Ensure quantity is a valid number and cast it for TypeScript safety
+  if (typeof quantity !== "number" || !Number.isInteger(quantity) || quantity <= 0) {
+    throwApiError("Invalid quantity", 400);
   }
 
+  // Type assertion for subsequent logic
   const qty = quantity as number;
 
-  if (!hasAvailableTickets(event, qty)) {
-    return NextResponse.json({ error: "Not enough tickets available" }, { status: 409 });
+  if (!buyerWallet || typeof buyerWallet !== "string") {
+    throwApiError("Invalid buyerWallet", 400);
+  }
+  
+  // Validate recipientWallet if provided
+  if (recipientWallet !== undefined && recipientWallet !== null && typeof recipientWallet !== "string") {
+    throwApiError("Invalid recipientWallet", 400);
+  }
+
+  // Determine the actual owner of the ticket
+  const ownerWallet = recipientWallet || buyerWallet;
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+  });
+
+  if (!event) {
+    throwApiError("Event not found", 404);
+  }
+
+  // Check ticket availability using Prisma data
+  if (event.mintedTickets + qty > event.totalTickets) {
+    throwApiError("Not enough tickets available", 409);
   }
 
   try {
-    const mintResult = await mintTicket(eventId, buyerWallet, qty);
-    incrementMintedTickets(eventId, qty);
+    const mintResult = await mintTicket(eventId, ownerWallet, qty);
+
+    // Atomically update event count and create ticket record
+    await prisma.$transaction([
+      prisma.event.update({
+        where: { id: eventId },
+        data: { mintedTickets: { increment: qty } },
+      }),
+      prisma.ticket.create({
+        data: {
+          stellarId: mintResult.ticketId,
+          eventId,
+          buyerWallet,
+          ownerWallet,
+          quantity: qty,
+        },
+      }),
+    ]);
 
     return NextResponse.json(
       {
@@ -54,7 +86,9 @@ export async function POST(request: NextRequest) {
       },
       { status: 200 },
     );
-  } catch {
-    return NextResponse.json({ error: "Failed to mint ticket" }, { status: 502 });
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    console.error("Minting Error:", error);
+    throwApiError("Failed to mint ticket", 502);
   }
-}
+});

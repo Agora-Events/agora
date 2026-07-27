@@ -24,7 +24,6 @@ use std::{
 use axum::{
     body::Body,
     http::{Request, Response, StatusCode},
-    response::IntoResponse,
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -54,7 +53,7 @@ impl IpState {
         let cutoff = now - window;
 
         // Remove timestamps outside the sliding window
-        while self.timestamps.front().map_or(false, |t| *t < cutoff) {
+        while self.timestamps.front().is_some_and(|t| *t < cutoff) {
             self.timestamps.pop_front();
         }
 
@@ -165,7 +164,7 @@ where
         }
 
         let future = self.inner.call(req);
-        Box::pin(async move { future.await })
+        Box::pin(future)
     }
 }
 
@@ -182,7 +181,11 @@ fn extract_ip(req: &Request<Body>) -> IpAddr {
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
     {
-        if let Some(ip) = forwarded.split(',').next().and_then(|s| s.trim().parse().ok()) {
+        if let Some(ip) = forwarded
+            .split(',')
+            .next()
+            .and_then(|s| s.trim().parse().ok())
+        {
             return ip;
         }
     }

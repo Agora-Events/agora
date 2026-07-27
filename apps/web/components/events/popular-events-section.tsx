@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, Transition } from "framer-motion";
 import Image from "next/image";
 import { EventCard } from "./event-card";
+import { EventCardSkeleton } from "./event-card-skeleton";
 import { Button } from "../ui/button";
+import { EmptyState } from "../ui/empty-state";
 import { FilterSidebar, FilterState } from "./filter-sidebar";
 import { fetchPopularEvents, type DiscoverEvent } from "@/utils/api";
 
@@ -45,10 +47,13 @@ const DEFAULT_FILTERS: FilterState = {
 };
 
 type PopularEventsSectionProps = {
+  activeCategory?: string;
   onError: (message: string) => void;
+  /** Called whenever the filtered event count changes, so parent can show EmptyState */
+  onEventsChange?: (count: number) => void;
 };
 
-export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
+export function PopularEventsSection({ activeCategory, onError, onEventsChange }: PopularEventsSectionProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -56,32 +61,63 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
   const [events, setEvents] = useState<DiscoverEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState<number | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
 
     const loadEvents = async () => {
       try {
-        const data = await fetchPopularEvents();
-        if (active) {
-          setEvents(data);
-        }
-      } catch {
-        if (active) {
-          setEvents([]);
-          onError("Could not load popular events");
-        }
+        setIsLoading(true);
+        const data = await fetchPopularEvents(1, controller.signal);
+        setEvents(data.events);
+        setTotal(data.meta?.total ?? data.events.length);
+        setPage(data.meta?.page ?? 1);
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        setEvents([]);
+        onError("Could not load popular events");
       } finally {
-        if (active) {
+        if (!controller.signal.aborted) {
           setIsLoading(false);
         }
       }
     };
 
     loadEvents();
-    return () => {
-      active = false;
-    };
+    return () => controller.abort();
   }, [onError]);
+
+  const loadMore = async () => {
+    // If we already know total and have loaded all, skip
+    if (total !== null && events.length >= total) return;
+
+    const nextPage = page + 1;
+    const controller = new AbortController();
+    try {
+      setIsLoadingMore(true);
+      const data = await fetchPopularEvents(nextPage, controller.signal);
+
+      // Append new events while avoiding duplicates
+      setEvents((prev) => {
+        const existingIds = new Set(prev.map((e) => e.id));
+        const newEvents = data.events.filter((e) => !existingIds.has(e.id));
+        return [...prev, ...newEvents];
+      });
+
+      setPage(data.meta?.page ?? nextPage);
+      setTotal(data.meta?.total ?? (total ?? events.length + data.events.length));
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      onError("Could not load more events");
+    } finally {
+      controller.abort();
+      setIsLoadingMore(false);
+    }
+  };
 
   const filteredEvents = useMemo(() => {
     let result = events;
@@ -99,6 +135,8 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
       result = result.filter((event) =>
         filters.categories.includes(event.category),
       );
+    } else if (activeCategory && activeCategory !== "All") {
+      result = result.filter((event) => event.category.toLowerCase() === activeCategory.toLowerCase());
     }
 
     // 3. Location
@@ -132,7 +170,19 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
     }
 
     return result;
-  }, [search, filters, events]);
+  }, [search, filters, events, activeCategory]);
+
+  // Notify parent whenever the visible count changes
+  const prevCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isLoading && onEventsChange) {
+      const count = filteredEvents.length;
+      if (prevCountRef.current !== count) {
+        prevCountRef.current = count;
+        onEventsChange(count);
+      }
+    }
+  }, [filteredEvents.length, isLoading, onEventsChange]);
 
   const widthVariants = {
     focused: { width: "12rem" },
@@ -144,8 +194,10 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
     unfocused: { width: "2.438rem" },
   };
 
+  const allLoaded = total !== null && events.length >= total;
+
   return (
-    <section className="px-4 bg-[#FFFBE9] py-12">
+    <section className="px-4 bg-base py-12">
       <div className="max-w-305.25 mx-auto">
         <motion.div
           className="flex justify-between gap-3 mb-5.75"
@@ -206,9 +258,7 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
 
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
               <Button
-                backgroundColor="bg-black"
-                shadowColor="transparent"
-                textColor="text-white"
+                variant="primary"
                 className="border-none sm:rounded-4xl! max-sm:p-0 h-9.75 sm:w-34 w-9.75"
                 onClick={() => setIsFilterOpen(true)}
                 aria-haspopup="dialog"
@@ -227,17 +277,20 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
         </motion.div>
 
         <motion.div
-          className="grid min-[900px]:grid-cols-2 gap-8 place-content-center "
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 place-content-center "
           variants={container}
           initial="hidden"
           animate="show"
         >
           {isLoading &&
             Array.from({ length: 4 }).map((_, index) => (
-              <div
+              <motion.div
                 key={`event-skeleton-${index}`}
-                className="h-56 w-full animate-pulse rounded-xl border border-black/20 bg-black/10"
-              />
+                variants={item}
+                className="flex"
+              >
+                <EventCardSkeleton />
+              </motion.div>
             ))}
           {!isLoading &&
             filteredEvents.map((event) => (
@@ -260,22 +313,21 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
             ))}
 
           {!isLoading && filteredEvents.length === 0 && (
-            <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-16 h-16 mb-4 rounded-full bg-black/5 flex items-center justify-center">
-                <Image
-                  src="/icons/search.svg"
-                  width={32}
-                  height={32}
-                  alt="search icon"
-                  className="opacity-40"
-                />
-              </div>
-              <h4 className="text-[20px] font-semibold text-black mb-2">
-                No data available
-              </h4>
-              <p className="text-[15px] text-black/60 max-w-sm">
-                We couldn&apos;t load events for this section. Please try again later.
-              </p>
+            <div className="col-span-full">
+              <EmptyState
+                icon={
+                  <Image
+                    src="/icons/search.svg"
+                    width={32}
+                    height={32}
+                    alt="search"
+                    className="opacity-60"
+                  />
+                }
+                title="No events found"
+                description="Try adjusting your search or filters to find what you're looking for."
+                action={{ label: "Clear Search", onClick: () => setSearch("") }}
+              />
             </div>
           )}
         </motion.div>
@@ -289,19 +341,32 @@ export function PopularEventsSection({ onError }: PopularEventsSectionProps) {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.97 }}
         >
-          <Button
-            backgroundColor="bg-[#FDDA23]"
-            shadowColor="transparent"
-            className="border-none rounded-[13px]! h-11"
-          >
-            View all Events
-            <Image
-              src="/icons/arrow-right.svg"
-              width={24}
-              height={24}
-              alt="arrow-right icon"
-            />
-          </Button>
+          {!allLoaded && (
+            <Button
+              variant="primary"
+              className="border-none rounded-[13px]! h-11 flex items-center gap-3"
+              onClick={loadMore}
+            >
+              {isLoadingMore ? (
+                // Simple spinner using CSS
+                <span className="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  View all Events
+                  <Image
+                    src="/icons/arrow-right.svg"
+                    width={24}
+                    height={24}
+                    alt="arrow-right icon"
+                  />
+                </>
+              )}
+            </Button>
+          )}
+
+          {allLoaded && (
+            <div className="text-sm text-gray-500">All events loaded</div>
+          )}
         </motion.div>
       </div>
 

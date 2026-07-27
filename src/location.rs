@@ -1,4 +1,5 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[soroban_sdk::contracttype]
 pub struct Location {
     pub lat: i32,
     pub long: i32,
@@ -6,6 +7,7 @@ pub struct Location {
 
 pub const COORD_SCALE: i32 = 1_000_000;
 
+#[allow(dead_code)]
 pub fn scale_coord(value: f64) -> i32 {
     (value * COORD_SCALE as f64) as i32
 }
@@ -18,11 +20,11 @@ pub fn validate_location(lat: i32, long: i32) -> Result<(), &'static str> {
     let lat_f = unscale_coord(lat);
     let long_f = unscale_coord(long);
 
-    if lat_f < -90.0 || lat_f > 90.0 {
+    if !(-90.0..=90.0).contains(&lat_f) {
         return Err("Latitude out of range");
     }
 
-    if long_f < -180.0 || long_f > 180.0 {
+    if !(-180.0..=180.0).contains(&long_f) {
         return Err("Longitude out of range");
     }
 

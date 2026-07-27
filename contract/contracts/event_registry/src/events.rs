@@ -1,67 +1,6 @@
-use soroban_sdk::{contracttype, Address, String};
+pub use crate::topics::AgoraEvent;
 
-/// Enum of all contract event types emitted by the Event Registry.
-///
-/// Each variant corresponds to a specific action or state change within the
-/// platform. These are used as the first element of the event topic tuple when
-/// publishing via `env.events().publish(...)`.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AgoraEvent {
-    /// A new event has been registered on the platform.
-    EventRegistered,
-    /// An event's active/inactive status has been toggled by its organizer.
-    EventStatusUpdated,
-    /// An event has been permanently cancelled by its organizer.
-    EventCancelled,
-    /// The global platform fee percentage has been updated by the admin.
-    FeeUpdated,
-    /// The contract has been initialized with admin, wallet, fee, and token settings.
-    ContractInitialized,
-    /// The contract WASM has been upgraded to a new version.
-    ContractUpgraded,
-    /// An event's IPFS metadata CID has been updated by its organizer.
-    MetadataUpdated,
-    /// Ticket inventory has been incremented (tickets sold) for an event/tier.
-    InventoryIncremented,
-    /// Ticket inventory has been decremented (refund processed) for an event/tier.
-    InventoryDecremented,
-    /// An organizer has been added to the platform blacklist by an admin.
-    OrganizerBlacklisted,
-    /// An organizer has been removed from the platform blacklist by an admin.
-    OrganizerRemovedFromBlacklist,
-    /// All active events for a blacklisted organizer have been suspended.
-    EventsSuspended,
-    /// The global promotional discount rate and expiry have been updated.
-    GlobalPromoUpdated,
-    /// An event has been marked as postponed with a refund grace period.
-    EventPostponed,
-    /// An event has been archived and its storage reclaimed.
-    EventArchived,
-    /// A scanner wallet has been authorized for ticket validation at an event.
-    ScannerAuthorized,
-    /// An event's minimum sales target has been reached.
-    GoalMet,
-    /// An organizer has staked collateral tokens toward Verified status.
-    CollateralStaked,
-    /// An organizer has withdrawn their staked collateral tokens.
-    CollateralUnstaked,
-    /// Staking rewards have been distributed proportionally to all active stakers.
-    StakerRewardsDistributed,
-    /// An organizer has claimed their accumulated staking rewards.
-    StakerRewardsClaimed,
-    /// A guest's loyalty score has been updated after a ticket purchase.
-    LoyaltyScoreUpdated,
-    /// A custom fee override has been set for a specific event by an admin.
-    CustomFeeSet,
-    AdminUpdated,
-    /// Post-event feedback CID has been set by the organizer after event end_time.
-    FeedbackCidSet,
-    /// An event's token whitelist has been updated (token added or removed).
-    TokenWhitelistUpdated,
-    /// A governance proposal has been cancelled by the proposer.
-    ProposalCancelled,
-}
+use soroban_sdk::{contracttype, Address, String};
 
 /// Emitted when an event is permanently cancelled.
 ///
@@ -285,10 +224,34 @@ pub struct EventPostponedEvent {
     pub event_id: String,
     /// The wallet address of the event organizer.
     pub organizer_address: Address,
+    /// The new Unix timestamp when the event will start.
+    pub new_start_time: u64,
     /// The Unix timestamp when the refund grace period ends.
     pub grace_period_end: u64,
     /// The ledger timestamp when the postponement occurred.
     pub timestamp: u64,
+}
+
+/// Emitted when the staking token address is changed by an admin.
+///
+/// Published with topic `(AgoraEvent::StakingTokenUpdated,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StakingTokenUpdatedEvent {
+    pub old_token: Option<Address>,
+    pub new_token: Address,
+    pub admin: Address,
+}
+
+/// Emitted when the minimum stake amount is changed by an admin.
+///
+/// Published with topic `(AgoraEvent::MinStakeAmountUpdated,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MinStakeAmountUpdatedEvent {
+    pub old_amount: i128,
+    pub new_amount: i128,
+    pub admin: Address,
 }
 
 /// Emitted when a governance proposal is created by an admin.
@@ -397,6 +360,22 @@ pub struct ScannerAuthorizedEvent {
     /// The organizer address that authorized the scanner.
     pub authorized_by: Address,
     /// The ledger timestamp when the scanner was authorized.
+    pub timestamp: u64,
+}
+
+/// Emitted when a scanner wallet's authorization is revoked for an event.
+///
+/// Published with topic `(AgoraEvent::ScannerRevoked,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScannerRevokedEvent {
+    /// The unique identifier of the event.
+    pub event_id: String,
+    /// The wallet address of the revoked scanner.
+    pub scanner: Address,
+    /// The organizer address that revoked the scanner.
+    pub revoked_by: Address,
+    /// The ledger timestamp when the scanner was revoked.
     pub timestamp: u64,
 }
 
@@ -558,5 +537,19 @@ pub struct TokenWhitelistUpdatedEvent {
     /// The organizer address that performed the update.
     pub organizer_address: Address,
     /// The ledger timestamp when the whitelist was updated.
+    pub timestamp: u64,
+}
+
+/// Emitted when a user successfully joins the waitlist for an event.
+///
+/// Published with topic `(AgoraEvent::WaitlistJoined,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WaitlistJoinedEvent {
+    /// The unique identifier of the event.
+    pub event_id: String,
+    /// The address of the user who joined the waitlist.
+    pub user: Address,
+    /// The ledger timestamp when the user joined.
     pub timestamp: u64,
 }

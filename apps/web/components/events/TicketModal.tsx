@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2 } from "lucide-react";
+import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2, Gift } from "@/components/ui/icons";
 import Image from "next/image";
+import { Button } from "@/components/ui/button";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 interface TicketModalProps {
   isOpen: boolean;
@@ -24,24 +26,59 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
   const [quantity, setQuantity] = useState(initialQuantity);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [purchasedTicket, setPurchasedTicket] = useState<{ id: string } | null>(null);
+  const [recipientWallet, setRecipientWallet] = useState<string>("");
+  const [isGiftMode, setIsGiftMode] = useState(false);
+
+  const modalRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   const isFree = event.price.toLowerCase() === "free";
   const unitPrice = isFree ? 0 : parseFloat(event.price.replace("$", ""));
   const totalPrice = unitPrice * quantity;
 
+  // Global Keydown Listeners: Escape Key Closing & Keyboard Focus Stacking Trap
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   const handleConfirmPurchase = async () => {
     setIsPurchasing(true);
     try {
+      const requestBody: {
+        eventId: string;
+        quantity: number;
+        buyerWallet: string;
+        recipientWallet?: string;
+      } = {
+        eventId: event.id.toString(),
+        quantity: quantity,
+        buyerWallet: "G...MOCK_WALLET_ADDRESS", // Placeholder
+      };
+
+      // Only include recipientWallet if gift mode is enabled and address is provided
+      if (isGiftMode && recipientWallet.trim()) {
+        requestBody.recipientWallet = recipientWallet.trim();
+      }
+
       const response = await fetch("/api/payments/ticket", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          eventId: event.id.toString(),
-          quantity: quantity,
-          buyerWallet: "G...MOCK_WALLET_ADDRESS", // Placeholder
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -51,9 +88,15 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       }
 
       setPurchasedTicket({ id: data.ticketId });
-      toast.success("Ticket purchased successfully!");
-    } catch (error: any) {
-      toast.error(error.message || "Something went wrong. Please try again.");
+      if (isGiftMode && recipientWallet.trim()) {
+        toast.success("Ticket purchased as a gift! The recipient will see it in their wallet.");
+      } else {
+        toast.success("Ticket purchased successfully!");
+      }
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      toast.error(errorMessage);
     } finally {
       setIsPurchasing(false);
     }
@@ -70,19 +113,27 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
             exit={{ opacity: 0 }}
             onClick={onClose}
             className="absolute inset-0 bg-black/60 backdrop-blur-md"
+            aria-hidden="true"
           />
 
-          {/* Modal Content */}
+          {/* Modal Content - Equipped with standard WAI-ARIA Modal Roles */}
           <motion.div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ticket-modal-title"
+            aria-describedby="ticket-modal-subtitle"
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
-            className="relative w-full max-w-[500px] bg-[#FFFBE9] rounded-[32px] overflow-hidden border border-black/10 shadow-2xl"
+            className="relative w-full max-w-[500px] bg-base rounded-[32px] overflow-hidden border border-black/10 shadow-2xl z-10"
           >
             {/* Close Button */}
             <button
+              type="button"
               onClick={onClose}
               className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/50 hover:bg-white transition-colors flex items-center justify-center border border-black/5 z-10"
+              aria-label="Cerrar modal"
             >
               <X size={20} className="text-black" />
             </button>
@@ -90,14 +141,14 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
             {!purchasedTicket ? (
               <div className="p-8 sm:p-10 flex flex-col gap-8">
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-[#FDDA23] font-bold uppercase tracking-wider text-sm">
-                    <Ticket size={16} />
+                  <div className="flex items-center gap-2 text-accent font-bold uppercase tracking-wider text-sm">
+                    <Ticket size={16} aria-hidden="true" />
                     <span>Confirm Ticket</span>
                   </div>
-                  <h2 className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight">
+                  <h2 id="ticket-modal-title" className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight">
                     {event.title}
                   </h2>
-                  <p className="text-black/60 font-medium">
+                  <p id="ticket-modal-subtitle" className="text-black/60 font-medium">
                     {event.date} • {event.location}
                   </p>
                 </div>
@@ -107,22 +158,77 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                     <span className="text-lg font-bold text-black">Quantity</span>
                     <div className="flex items-center gap-4">
                       <button
+                        type="button"
                         onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-[#FDDA23] transition-colors"
+                        className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-accent transition-colors"
+                        aria-label="Disminuir cantidad"
                       >
                         <Minus size={18} />
                       </button>
-                      <span className="text-xl font-bold w-6 text-center">{quantity}</span>
+                      <span className="text-xl font-bold w-6 text-center" aria-live="polite" aria-atomic="true">
+                        {quantity}
+                      </span>
                       <button
+                        type="button"
                         onClick={() => setQuantity(quantity + 1)}
-                        className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-[#FDDA23] transition-colors"
+                        className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-accent transition-colors"
+                        aria-label="Aumentar cantidad"
                       >
                         <Plus size={18} />
                       </button>
                     </div>
                   </div>
 
-                  <div className="h-[1px] bg-black/5 w-full" />
+                  <div className="h-[1px] bg-black/5 w-full" aria-hidden="true" />
+
+                  {/* Gift Mode Toggle */}
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <Gift size={20} className="text-black/70" aria-hidden="true" />
+                      <span className="text-lg font-bold text-black">Gift to someone?</span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isGiftMode}
+                      onClick={() => {
+                        setIsGiftMode(!isGiftMode);
+                        if (isGiftMode) setRecipientWallet("");
+                      }}
+                      className={`w-14 h-8 rounded-full transition-colors relative ${
+                        isGiftMode ? "bg-accent" : "bg-gray-300"
+                      }`}
+                      aria-label="Modo regalo"
+                    >
+                      <div
+                        className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${
+                          isGiftMode ? "translate-x-7" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Recipient Wallet Input */}
+                  {isGiftMode && (
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="recipientWallet" className="text-sm font-bold text-black/70">
+                        Recipient Wallet Address
+                      </label>
+                      <input
+                        id="recipientWallet"
+                        type="text"
+                        value={recipientWallet}
+                        onChange={(e) => setRecipientWallet(e.target.value)}
+                        placeholder="G... (Stellar address)"
+                        className="w-full px-4 py-3 rounded-xl border border-black/10 bg-white focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
+                      />
+                      <p className="text-xs text-black/50">
+                        The ticket will be sent to this wallet address
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="h-[1px] bg-black/5 w-full" aria-hidden="true" />
 
                   <div className="flex justify-between items-center">
                     <span className="text-lg font-bold text-black">Total Price</span>
@@ -132,20 +238,21 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                   </div>
                 </div>
 
-                <button
+                <Button
+                  variant="primary"
                   onClick={handleConfirmPurchase}
                   disabled={isPurchasing}
-                  className="w-full bg-[#FDDA23] text-black font-bold text-xl h-16 rounded-full border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-3 disabled:opacity-70 disabled:cursor-not-allowed group"
+                  className="w-full h-16 rounded-full text-xl disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {isPurchasing ? (
-                    <div className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                    <div className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin" aria-label="Procesando compra" />
                   ) : (
                     <>
                       <span>Confirm Purchase</span>
-                      <ArrowRight size={24} className="group-hover:translate-x-1 transition-transform" />
+                      <ArrowRight size={24} className="group-hover:translate-x-1 transition-transform" aria-hidden="true" />
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             ) : (
               <div className="p-8 sm:p-10 flex flex-col items-center text-center gap-8">
@@ -154,12 +261,16 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                   animate={{ scale: 1, opacity: 1 }}
                   className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center text-green-600"
                 >
-                  <CheckCircle2 size={48} />
+                  <CheckCircle2 size={48} aria-hidden="true" />
                 </motion.div>
 
                 <div className="flex flex-col gap-2">
                   <h2 className="text-3xl font-bold text-black font-heading">Ticket Minted!</h2>
-                  <p className="text-black/60 font-medium">Your ticket has been successfully registered on the Stellar network.</p>
+                  <p className="text-black/60 font-medium">
+                    {isGiftMode && recipientWallet.trim()
+                      ? `Your gift ticket has been sent to ${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-4)} on the Stellar network.`
+                      : "Your ticket has been successfully registered on the Stellar network."}
+                  </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-3xl shadow-xl border border-black/5 flex flex-col items-center gap-4">
@@ -175,12 +286,13 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                   </div>
                 </div>
 
-                <button
+                <Button
+                  variant="primary"
                   onClick={onClose}
-                  className="w-full bg-black text-white font-bold text-lg h-14 rounded-full hover:opacity-90 transition-opacity"
+                  className="w-full h-14 rounded-full text-lg"
                 >
                   Done
-                </button>
+                </Button>
               </div>
             )}
 
@@ -190,7 +302,8 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                 src="/icons/stellar-logo.svg"
                 width={300}
                 height={300}
-                alt="bg-watermark"
+                alt=""
+                aria-hidden="true"
               />
             </div>
           </motion.div>

@@ -1,23 +1,32 @@
+"use client";
+
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { OrganizerComponent } from "@/components/events/organizer-component";
+import { useState } from "react";
 
 export default function OrganizersPage() {
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showErrorToast = (message: string) => {
+    setToastMessage(message);
+    window.setTimeout(() => setToastMessage(null), 3500);
+  };
+
   return (
-    <main className="flex flex-col min-h-screen bg-[#FFFBE9]">
+    <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
-      <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
-        <h1 className="text-4xl font-bold mb-4">Organizers</h1>
-        <p className="text-xl text-gray-600 mb-8 max-w-md">
-          Discover top event organizers on Agora. This page is currently under development.
-        </p>
-        <Link href="/">
-          <Button backgroundColor="bg-black" textColor="text-white" shadowColor="rgba(0,0,0,0.2)">
-            Back to Home
-          </Button>
-        </Link>
+      {toastMessage && (
+        <div className="fixed top-4 right-4 z-[60] rounded-lg bg-black px-4 py-3 text-sm text-white shadow-lg">
+          {toastMessage}
+        </div>
+      )}
+      <div className="p-10 pl-45 hidden lg:block bg-base">
+        <div className="flex justify-start items-center gap-4 p-5 pb-10">
+          <h1 className="font-semibold md:text-4xl pl-3">Explore organizers</h1>
+        </div>
       </div>
+      <OrganizerComponent onError={showErrorToast} />
       <Footer />
     </main>
   );

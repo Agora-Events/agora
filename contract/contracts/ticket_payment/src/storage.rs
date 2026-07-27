@@ -1,6 +1,8 @@
 use crate::{
     error::TicketPaymentError,
-    types::{DataKey, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus},
+    types::{
+        DataKey, DiscountData, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus,
+    },
 };
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
@@ -168,6 +170,18 @@ pub fn get_event_registry(env: &Env) -> Address {
         .persistent()
         .get(&DataKey::EventRegistry)
         .expect("Event registry not set")
+}
+
+pub fn set_pro_subscription_contract(env: &Env, address: Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ProSubscriptionContract, &address);
+}
+
+pub fn get_pro_subscription_contract(env: &Env) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ProSubscriptionContract)
 }
 
 pub fn set_initialized(env: &Env, value: bool) {
@@ -836,4 +850,36 @@ pub fn verify_secret(env: &Env, payment_id: &String, raw_secret: &Bytes) -> bool
         }
         None => false,
     }
+}
+
+// ── Per-event discount codes ──────────────────────────────────────────────────
+
+pub fn set_discount_code(env: &Env, event_id: String, code: String, data: &DiscountData) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DiscountCode(event_id, code), data);
+}
+
+pub fn get_discount_code(env: &Env, event_id: &String, code: &String) -> Option<DiscountData> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DiscountCode(event_id.clone(), code.clone()))
+}
+
+// ── Affiliate commission rates ────────────────────────────────────────────────
+
+/// Sets a per-event affiliate commission rate in basis points.
+/// Only rates in [1, 10000] are meaningful; 0 means "use default".
+pub fn set_affiliate_rate(env: &Env, event_id: String, affiliate: &Address, rate_bps: u32) {
+    env.storage().persistent().set(
+        &DataKey::AffiliateRate(event_id, affiliate.clone()),
+        &rate_bps,
+    );
+}
+
+/// Returns the affiliate-specific commission rate for (event_id, affiliate), if set.
+pub fn get_affiliate_rate(env: &Env, event_id: &String, affiliate: &Address) -> Option<u32> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AffiliateRate(event_id.clone(), affiliate.clone()))
 }

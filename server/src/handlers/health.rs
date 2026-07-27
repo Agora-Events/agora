@@ -8,8 +8,8 @@ use std::time::Duration;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
-#[derive(Serialize)]
-struct HealthResponse {
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct HealthResponse {
     status: &'static str,
     timestamp: String,
 }
@@ -40,6 +40,13 @@ struct HealthBlockchainResponse {
 ///
 /// Returns 200 when both the API process and the database are healthy.
 /// On failure it returns a structured JSON 503 error (via [`AppError`]).
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "API is healthy", body = HealthResponse)
+    )
+)]
 pub async fn health_check(State(pool): State<PgPool>) -> Response {
     match sqlx::query("SELECT 1").fetch_one(&pool).await {
         Ok(_) => {
@@ -108,10 +115,13 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
 /// Returns 200 when the configured Soroban RPC endpoint is reachable.
 /// On failure the response uses [`AppError`] for a consistent error schema.
 pub async fn health_check_blockchain() -> Response {
-    let soroban_rpc_url =
-        std::env::var("SOROBAN_RPC_URL").unwrap_or_else(|_| "https://soroban-testnet.stellar.org".to_string());
+    let soroban_rpc_url = std::env::var("SOROBAN_RPC_URL")
+        .unwrap_or_else(|_| "https://soroban-testnet.stellar.org".to_string());
 
-    let client = match reqwest::Client::builder().timeout(Duration::from_secs(5)).build() {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
         Ok(client) => client,
         Err(error) => {
             return AppError::ExternalServiceError(format!(
@@ -146,10 +156,35 @@ pub async fn health_check_blockchain() -> Response {
             resp.status()
         ))
         .into_response(),
-        Err(error) => AppError::ExternalServiceError(format!(
-            "Soroban RPC health check failed: {error}"
-        ))
-        .into_response(),
+        Err(error) => {
+            AppError::ExternalServiceError(format!("Soroban RPC health check failed: {error}"))
+                .into_response()
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct HealthRedisResponse {
+    status: &'static str,
+    timestamp: String,
+}
+
+/// GET /health/redis – Redis connectivity check.
+///
+/// Returns 200 when Redis is reachable.
+/// Returns a structured JSON error (via [`AppError`]) when it is not.
+pub async fn health_check_redis(State(mut redis): State<crate::cache::RedisCache>) -> Response {
+    // Perform a basic Redis command to verify connectivity
+    match redis.ping().await {
+        Ok(_) => {
+            let payload = HealthRedisResponse {
+                status: "ok",
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "Redis is healthy").into_response()
+        }
+        Err(e) => AppError::ExternalServiceError(format!("Redis health check failed: {e}"))
+            .into_response(),
     }
 }
 

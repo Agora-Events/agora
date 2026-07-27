@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator dbml {
+  provider = "prisma-dbml-generator"
+  output   = "../../../docs/architecture"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Event {
+  id              String   @id @default(uuid())
+  title           String
+  description     String   @default("")
+  startsAt        DateTime
+  location        String
+  category        String
+  organizerName   String
+  organizerWallet String
+  imageUrl        String   @default("/images/event1.png")
+  ticketPrice     Float    @default(0)
+  totalTickets    Int      @default(100)
+  mintedTickets   Int      @default(0)
+  followersOnly   Boolean  @default(false)
+  hostEmail       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tickets         Ticket[]
+}
+
+model Ticket {
+  id          String   @id @default(uuid())
+  stellarId   String?  @unique
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id])
+  buyerWallet String   // The person who paid for the ticket
+  ownerWallet String   // The person who owns/receives the ticket (can be different from buyer)
+  quantity    Int      @default(1)
+  createdAt   DateTime @default(now())
+}
+
+/// Organizer brand profile keyed by Stellar wallet address.
+/// Issue #486: Organizer Profile Management
+model OrganizerProfile {
+  address     String   @id
+  displayName String   @db.VarChar(50)
+  bio         String?  @db.VarChar(500)
+  avatarUrl   String?
+  socials     Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

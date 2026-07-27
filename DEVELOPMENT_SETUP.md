@@ -127,6 +127,16 @@ Stay in `server/` and run the database migration first:
 sqlx migrate run
 ```
 
+This applies all migrations in `server/migrations/`, including `20260630000001_add_events_indexes.sql`, which adds indexes on `events(is_featured)` and `events(created_at DESC)` for featured-event listings.
+
+To verify the indexes are used after migrating, seed or load events data and run:
+
+```bash
+psql "$DATABASE_URL" -c "EXPLAIN ANALYZE SELECT * FROM events WHERE is_featured = TRUE ORDER BY created_at DESC LIMIT 20;"
+```
+
+The plan should show an index scan (for example on `idx_events_featured` or `idx_events_created_at`) rather than a sequential scan on large datasets.
+
 Then start the Axum API:
 
 ```bash
@@ -215,6 +225,25 @@ You should also be able to open:
 - `http://localhost:3000` for the frontend
 - `http://localhost:3001/api/v1/health` for the backend
 
+### Docker Compose healthchecks
+
+`server/docker-compose.yml` defines container-level healthchecks so dependent
+services only start once their dependencies are actually ready:
+
+- `server`: `curl -fsS http://localhost:3001/api/v1/health`
+- `postgres`: `pg_isready -U user -d agora`
+- `redis`: `redis-cli ping`
+
+The `server` service uses `depends_on` with `condition: service_healthy`, so it
+waits for PostgreSQL and Redis to pass their healthchecks before starting.
+Verify container health with:
+
+```bash
+docker compose ps
+```
+
+Each service should report a `healthy` status once startup completes.
+
 ## 10. Troubleshooting
 
 ### PostgreSQL will not start
@@ -243,7 +272,68 @@ You should also be able to open:
 - Confirm Rust and Cargo are installed correctly.
 - Confirm Soroban CLI is installed if your contract workflow depends on it.
 
-## 11. PR Reminder
+## 11. Pre-commit Hooks
+
+Pre-commit hooks enforce formatting and linting before every commit, catching issues locally before they reach CI.
+
+### Install pre-commit
+
+```bash
+pip install pre-commit
+```
+
+### Activate hooks for this repo
+
+Run once after cloning (or after any change to `.pre-commit-config.yaml`):
+
+```bash
+pre-commit install
+```
+
+This installs the hooks into `.git/hooks/pre-commit`.
+
+### What runs on each commit
+
+| Hook | What it checks |
+|------|---------------|
+| `trailing-whitespace` | Removes trailing whitespace |
+| `end-of-file-fixer` | Ensures files end with a newline |
+| `check-merge-conflict` | Catches leftover merge conflict markers |
+| `rustfmt` | Formats Rust code (`cargo fmt --check`) |
+| `clippy` | Lints Rust code (`cargo clippy -D warnings`) |
+| `prettier` | Formats JS/TS/CSS/JSON/MD files |
+| `eslint` | Lints JS/TS files in `apps/web` |
+
+### Run hooks manually
+
+```bash
+# Run on all files (same as CI)
+pre-commit run --all-files
+
+# Run a single hook
+pre-commit run rustfmt --all-files
+pre-commit run eslint --all-files
+```
+
+### Auto-fix formatting before committing
+
+```bash
+# Rust
+cargo fmt --all
+
+# JS/TS/CSS/JSON/MD (from repo root)
+pnpm --filter web format
+```
+
+### Skipping hooks (not recommended)
+
+```bash
+git commit --no-verify -m "message"
+```
+
+Only skip when you have a specific reason; CI will still run all checks.
+
+## 12. PR Reminder
 
 When you open the PR for this task, include the linked issue in the PR description:
 

@@ -1,8 +1,7 @@
 "use client";
 
 import { motion, type Transition } from "framer-motion";
-import Image from "next/image";
-import { useEffect, useState } from "react";
+import useSWR from "swr";
 import { fetchCategories, type DiscoverCategory } from "@/utils/api";
 
 const defaultCategories = [
@@ -41,45 +40,42 @@ const item = {
   },
 };
 
+import { CategoryChips } from "./category-chips";
+
 type CategorySectionProps = {
+  activeCategory: string;
+  onCategoryChange: (category: string) => void;
   onError: (message: string) => void;
 };
 
-export function CategorySection({ onError }: CategorySectionProps) {
-  const [categories, setCategories] = useState<DiscoverCategory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+export function CategorySection({ activeCategory, onCategoryChange, onError }: CategorySectionProps) {
+  // Use SWR for category fetching with automatic caching and revalidation
+  const { data: categories, error, isLoading } = useSWR<DiscoverCategory[]>(
+    "/api/events/discover/categories",
+    () => fetchCategories(),
+    {
+      // Revalidate on window focus to keep data fresh
+      revalidateOnFocus: true,
+      // Revalidate on reconnect
+      revalidateOnReconnect: true,
+      // Don't revalidate on mount if data is already cached
+      revalidateIfStale: false,
+      // Keep previous data while revalidating
+      keepPreviousData: true,
+      // Deduplicate requests within 2 seconds
+      dedupingInterval: 2000,
+    }
+  );
 
-  useEffect(() => {
-    let active = true;
+  // Handle errors from SWR
+  if (error && !categories) {
+    onError("Could not load categories");
+  }
 
-    const loadCategories = async () => {
-      try {
-        const data = await fetchCategories();
-        if (active) {
-          setCategories(data);
-        }
-      } catch {
-        if (active) {
-          setCategories([]);
-          onError("Could not load categories");
-        }
-      } finally {
-        if (active) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    loadCategories();
-    return () => {
-      active = false;
-    };
-  }, [onError]);
-
-  const categoriesToRender = categories.length > 0 ? categories : defaultCategories;
+  const categoriesToRender = categories && categories.length > 0 ? categories : defaultCategories;
 
   return (
-    <section className="px-4 bg-[#FFFBE9] pt-12 pb-6">
+    <section className="px-4 bg-base pt-12 pb-6">
       <div className="mx-auto max-w-[1221px]">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -104,42 +100,12 @@ export function CategorySection({ onError }: CategorySectionProps) {
             Browse by Category
           </motion.h3>
 
-          <motion.div variants={container} className="flex flex-wrap gap-4">
-            {isLoading &&
-              Array.from({ length: 6 }).map((_, index) => (
-                <div
-                  key={`skeleton-${index}`}
-                  className="h-12 w-36 animate-pulse rounded-full border-2 border-black/30 bg-black/10"
-                />
-              ))}
-            {!isLoading &&
-              categoriesToRender.map((category) => (
-              <motion.div key={category.name} variants={item}>
-                <button
-                  style={{ backgroundColor: category.color }}
-                  className={`
-                    flex items-center gap-2 px-[26px] py-[13px] rounded-full border-2 border-black
-                    font-medium text-[15px] whitespace-nowrap transition-all
-                    shadow-[-4px_4px_0px_0px_rgba(0,0,0,1)]
-                    active:translate-x-[2px] active:translate-y-[2px] active:shadow-none
-                    hover:opacity-90 min-w-32 justify-center
-                  `}
-                >
-                  <Image
-                    src={category.icon}
-                    alt={`${category.name} icon`}
-                    width={20}
-                    height={20}
-                    className="mr-[2px] object-contain"
-                  />
-                  <span className="text-black capitalize">{category.name}</span>
-                </button>
-              </motion.div>
-              ))}
-            {!isLoading && categories.length === 0 && (
-              <p className="text-sm text-black/60">No data available</p>
-            )}
-          </motion.div>
+          <CategoryChips 
+            categories={categoriesToRender} 
+            activeCategory={activeCategory} 
+            onCategoryChange={onCategoryChange} 
+            isLoading={isLoading} 
+          />
         </motion.div>
       </div>
     </section>

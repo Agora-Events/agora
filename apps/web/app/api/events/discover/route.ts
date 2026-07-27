@@ -1,11 +1,22 @@
 import { NextResponse } from "next/server";
-import { listEvents } from "@/lib/events-store";
+import { prisma } from "@/lib/prisma";
+import { type Event } from "@prisma/client";
+import { withErrorHandler } from "@/lib/api-handler";
 
-export async function GET() {
-  const events = listEvents();
+export const dynamic = "force-dynamic";
+
+type OrganizerData = {
+  id: string;
+  title: string;
+  description: string;
+  image: string;
+};
+
+export const GET = withErrorHandler(async () => {
+  const events = await prisma.event.findMany();
 
   const categories = Array.from(
-    new Set(events.map((event) => event.category)),
+    new Set<string>(events.map((event: Event) => event.category))
   ).map((name) => ({
     name,
     icon: `/icons/${name.toLowerCase()}.svg`,
@@ -18,7 +29,7 @@ export async function GET() {
     .map((event) => ({
       id: event.id,
       title: event.title,
-      date: new Date(event.startsAt).toLocaleString(),
+      date: event.startsAt.toLocaleString(),
       location: event.location,
       price: event.ticketPrice === 0 ? "Free" : String(event.ticketPrice),
       imageUrl: event.imageUrl,
@@ -26,7 +37,7 @@ export async function GET() {
     }));
 
   const organizers = Array.from(
-    events.reduce((acc, event) => {
+    events.reduce((acc: Map<string, OrganizerData>, event: Event) => {
       if (!acc.has(event.organizerName)) {
         acc.set(event.organizerName, {
           id: event.organizerName.toLowerCase().replace(/\s+/g, "-"),
@@ -36,8 +47,12 @@ export async function GET() {
         });
       }
       return acc;
-    }, new Map<string, { id: string; title: string; description: string; image: string }>()),
-  ).map(([, value]) => value);
+    }, new Map<string, OrganizerData>()),
+  ) as [string, OrganizerData][];
 
-  return NextResponse.json({ categories, popularEvents, organizers });
-}
+  const organizerList = organizers.map(([, organizer]) => organizer);
+
+  return NextResponse.json({ categories, popularEvents, organizers: organizerList });
+});
+
+
