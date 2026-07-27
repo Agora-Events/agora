@@ -31,7 +31,7 @@ type CreateEventInput = {
 
 const eventsStore: EventRecord[] = [
   {
-    id: "evt_1",
+    id: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
     title: "Stellar Developer Meetup",
     description: "Hands-on workshop for building with Stellar tooling.",
     startsAt: "2026-06-01T18:00:00.000Z",
@@ -46,7 +46,7 @@ const eventsStore: EventRecord[] = [
     hostEmail: "host@agora.dev",
   },
   {
-    id: "evt_2",
+    id: "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
     title: "Community Builder Night",
     description: "Networking event for local ecosystem builders.",
     startsAt: "2026-03-01T17:00:00.000Z",
@@ -62,7 +62,7 @@ const eventsStore: EventRecord[] = [
     hostEmail: "community@agora.dev",
   },
   {
-    id: "evt_3",
+    id: "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
     title: "Future of Payments Summit",
     description: "Panel and demos on modern payment rails.",
     startsAt: "2026-10-20T09:00:00.000Z",
@@ -78,8 +78,6 @@ const eventsStore: EventRecord[] = [
   },
 ];
 
-let nextEventId = 4;
-
 export function listEvents(): EventRecord[] {
   return [...eventsStore];
 }
@@ -90,7 +88,7 @@ export function getEventById(id: string): EventRecord | null {
 
 export function createEvent(input: CreateEventInput, hostEmail: string): EventRecord {
   const event: EventRecord = {
-    id: `evt_${nextEventId++}`,
+    id: crypto.randomUUID(),
     title: input.title,
     description: input.description || "",
     startsAt: input.startsAt,

@@ -127,10 +127,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         redis: redis.clone(),
     };
 
-    let rates_state = RatesState {
-        redis: redis.clone(),
-        http: reqwest::Client::new(),
-    };
+    let rates_state = RatesState::new(redis.clone(), reqwest::Client::new());
 
     // Spawn the Soroban event listener background task (Issue #490)
     let listener_config = ListenerConfig::from_env();

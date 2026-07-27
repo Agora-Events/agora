@@ -25,12 +25,24 @@ export function LazyImage({
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
+    // Reset revealed state whenever src changes so the blur-up transition
+    // re-runs for dynamically updated image URLs
+    setRevealed(false);
+    setLoaded(!supportsIO);
+
     if (!supportsIO) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setLoaded(true);
+          // Handle already-cached images: if complete flag is already set,
+          // the onLoad event will not fire, so mark as revealed immediately
+          if (imgRef.current?.complete) {
+            setLoaded(true);
+            setRevealed(true);
+          } else {
+            setLoaded(true);
+          }
           observer.disconnect();
         }
       },
@@ -39,7 +51,8 @@ export function LazyImage({
 
     if (imgRef.current) observer.observe(imgRef.current);
     return () => observer.disconnect();
-  }, []);
+    // Re-run the effect when src changes to handle dynamic URL updates
+  }, [src, supportsIO]);
 
   return (
     <img
