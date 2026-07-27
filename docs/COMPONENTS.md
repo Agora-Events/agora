@@ -69,20 +69,19 @@ import { Button } from "@/components/ui/button";
 
 ## EmptyState
 
-Displays a friendly empty state with an icon, title, description, and optional action button.
+Displays a friendly empty state with an optional icon, title, description, and optional action button.
 
-**Note**: There are two implementations. The newer one (with icon prop) is recommended.
-
-### Props (Recommended Version - empty-state.tsx)
+### Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `icon` | `React.ReactNode` | (required) | Icon to display (e.g. `<img>`, `<Image />`, or any SVG element) |
+| `icon` | `React.ReactNode` | — | Icon to display (e.g. `<img>`, `<Image />`, or any SVG element) |
 | `title` | `string` | (required) | Heading text |
 | `description` | `string` | (required) | Supporting message / body copy |
-| `action` | `{ label: string; onClick: () => void }` | — | Optional call-to-action button |
+| `action` | `{ label: string; onClick?: () => void; href?: string }` | — | Optional call-to-action; renders as a `<Link>` when `href` is provided, or as a `<Button>` when `onClick` is provided |
+| `illustrationSrc` | `string` | `"/icons/404-illustration.svg"` | Override the default illustration src |
 
-### Example (Recommended)
+### Example — with icon and click handler
 
 ```tsx
 import { EmptyState } from "@/components/ui/empty-state";
@@ -90,31 +89,30 @@ import Image from "next/image";
 
 <EmptyState
   icon={
-    <Image 
-      src="/icons/404-illustration.svg" 
-      alt="No events" 
-      width={80} 
-      height={80} 
+    <Image
+      src="/icons/search.svg"
+      alt="Search"
+      width={32}
+      height={32}
     />
   }
   title="No events found"
-  description="Try adjusting your filters or check back later."
-  action={{ 
-    label: "Create Event", 
-    onClick: () => console.log("Create clicked!") 
-  }}
+  description="Try adjusting your filters to find what you're looking for."
+  action={{ label: "Clear Search", onClick: () => setSearch("") }}
 />
 ```
 
-### Props (Legacy Version - EmptyState.tsx)
+### Example — with navigation link
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `title` | `string` | (required) | Heading text |
-| `message` | `string` | (required) | Supporting message / body copy |
-| `ctaLabel` | `string` | — | Label for the optional call-to-action button |
-| `ctaLink` | `string` | — | Where the CTA button navigates to |
-| `illustrationSrc` | `string` | `"/icons/404-illustration.svg"` | Override the default illustration src |
+```tsx
+import { EmptyState } from "@/components/ui/empty-state";
+
+<EmptyState
+  title="No events found"
+  description="There are no events matching your current filters."
+  action={{ label: "Create an Event", href: "/events/create" }}
+/>
+```
 
 ---
 

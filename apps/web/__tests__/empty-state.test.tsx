@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { expect, describe, it } from "vitest";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // next/image is mocked in vitest.setup.ts / jsdom — works fine with static props
 describe("EmptyState component", () => {
@@ -12,9 +12,8 @@ describe("EmptyState component", () => {
       render(
         <EmptyState
           title="No events found"
-          message="Try a different category or come back later."
-          ctaLabel="Create an Event"
-          ctaLink="/events/create"
+          description="Try a different category or come back later."
+          action={{ label: "Create an Event", href: "/events/create" }}
         />
       );
     }

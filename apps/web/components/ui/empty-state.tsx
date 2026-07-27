@@ -1,34 +1,71 @@
+import React from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 interface EmptyStateAction {
   label: string;
-  onClick: () => void;
+  onClick?: () => void;
+  href?: string;
 }
 
 interface EmptyStateProps {
-  /** Icon to display — pass a React node (e.g. <img>, <Image />, or any SVG element) */
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   title: string;
   description: string;
   action?: EmptyStateAction;
+  illustrationSrc?: string;
 }
 
-export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+const DEFAULT_ILLUSTRATION = "/icons/404-illustration.svg";
+
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  illustrationSrc = DEFAULT_ILLUSTRATION,
+}: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center gap-6 py-16 px-6 text-center">
-      <div className="w-20 h-20 rounded-full bg-surface flex items-center justify-center">
-        {icon}
+    <div
+      data-testid="empty-state"
+      className="flex flex-col items-center justify-center gap-6 py-20 px-6 text-center"
+    >
+      {/* Illustration */}
+      <div className="w-40 h-40 flex items-center justify-center">
+        {icon ? (
+          icon
+        ) : (
+          <Image
+            src={illustrationSrc}
+            width={160}
+            height={160}
+            alt="Empty state illustration"
+            className="w-full h-full object-contain opacity-80"
+          />
+        )}
       </div>
 
-      <div className="flex flex-col items-center gap-2">
-        <h3 className="text-lg font-semibold text-ink-deep">{title}</h3>
-        <p className="text-sm text-ink-deep/50 max-w-xs">{description}</p>
+      {/* Text content */}
+      <div className="flex flex-col items-center gap-2 max-w-sm">
+        <h3 className="text-xl font-semibold text-ink-deep">{title}</h3>
+        <p className="text-sm text-muted-text leading-relaxed">{description}</p>
       </div>
 
+      {/* Optional CTA */}
       {action && (
-        <Button variant="primary" onClick={action.onClick}>
-          {action.label}
-        </Button>
+        action.href ? (
+          <Link
+            href={action.href}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-black text-white font-semibold text-sm shadow-[-4px_4px_0px_0px_rgba(0,0,0,0.4)] hover:-translate-x-[2px] hover:translate-y-[2px] active:-translate-x-[4px] active:translate-y-[4px] transition-transform"
+          >
+            {action.label}
+          </Link>
+        ) : (
+          <Button variant="primary" onClick={action.onClick}>
+            {action.label}
+          </Button>
+        )
       )}
     </div>
   );
