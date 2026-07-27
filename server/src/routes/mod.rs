@@ -35,15 +35,17 @@ use crate::config::{
     create_cors_layer, create_security_headers_layer, propagate_request_id_layer,
     set_request_id_layer, Config,
 };
+use crate::middleware::catch_panic::catch_panic_layer;
 use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories, CategoryState},
     events::{
         export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
         get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
-        list_event_ratings, list_event_tickets, list_events, list_events_by_category,
-        list_past_events, list_similar_events, list_ticket_tiers, list_upcoming_events,
-        search_events, set_event_featured, submit_event_rating, toggle_event_flag, EventState,
+        list_event_attendees, list_event_ratings, list_event_tickets, list_events,
+        list_events_by_category, list_past_events, list_similar_events, list_ticket_tiers,
+        list_upcoming_events, search_events, set_event_featured, submit_event_rating,
+        toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{
@@ -100,7 +102,10 @@ use utoipa::OpenApi;
         crate::handlers::health::health_check
     ),
     components(
-        schemas(crate::handlers::health::HealthResponse)
+        schemas(
+            crate::handlers::health::HealthResponse,
+            crate::utils::error::ApiError
+        )
     ),
     tags(
         (name = "Agora API", description = "Agora Events Platform API")
@@ -200,6 +205,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/upcoming", get(list_upcoming_events))
         .route("/search", get(search_events))
         .route("/:id", get(get_event))
+        .route("/:id/attendees", get(list_event_attendees))
         .route("/:id/attendees/count", get(get_attendee_count))
         .route("/:id/rate", post(submit_event_rating))
         .route("/:id/check-in-stats", get(get_checkin_stats))
@@ -235,15 +241,13 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
                 .with_state(pool.clone()),
         );
 
-    let monitoring_auth_state = MonitoringAuthState {
-        token: config.monitoring_token.clone(),
-    };
-
     let sensitive_routes = Router::new()
         .route("/health", get(health_check))
         .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
+        .route("/leaderboard", get(get_leaderboard))
+        .route("/monitoring", get(get_monitoring))
         .with_state(pool.clone())
         .merge(
             Router::new()
@@ -271,8 +275,8 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
-        .route("/leaderboard", get(get_leaderboard))
-        .with_state(leaderboard_state)
+        .route("/rates", get(get_rates))
+        .with_state(pool)
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
     // Public API routes with tower-governor rate limiting
@@ -323,6 +327,8 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .layer(middleware::from_fn(propagate_request_id))
         .layer(propagate_request_id_layer())
         .layer(set_request_id_layer())
+        // Outermost: convert uncaught panics into standardised ApiError JSON.
+        .layer(catch_panic_layer())
 }
 
 /// Serve Apple App Site Association file for iOS deep linking

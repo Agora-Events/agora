@@ -74,4 +74,18 @@ describe("EmptyState component", () => {
       screen.getByText("Check back soon for new events in your area.")
     ).toBeInTheDocument();
   });
+
+  it("renders icon + action CTA variant", () => {
+    render(
+      <EmptyState
+        icon={<span data-testid="custom-icon">icon</span>}
+        title="No results"
+        description="Try another search."
+        action={{ label: "Clear", onClick: () => undefined }}
+      />
+    );
+
+    expect(screen.getByTestId("custom-icon")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /clear/i })).toBeInTheDocument();
+  });
 });

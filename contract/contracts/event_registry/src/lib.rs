@@ -241,6 +241,21 @@ impl EventRegistry {
             }
         }
 
+        // Validate milestone plan: the sum of all release_percent values
+        // (basis points) must not exceed 10000 (100%), or the plan would
+        // release more revenue than was ever collected (Issue #850).
+        if let Some(ref milestones) = args.milestone_plan {
+            let mut total_release_bps: u32 = 0;
+            for milestone in milestones.iter() {
+                total_release_bps = total_release_bps
+                    .checked_add(milestone.release_percent)
+                    .ok_or(EventRegistryError::InvalidMilestonePlan)?;
+            }
+            if total_release_bps > 10000 {
+                return Err(EventRegistryError::InvalidMilestonePlan);
+            }
+        }
+
         // Validate event time range
         if args.start_time != 0 && args.end_time != 0 && args.end_time <= args.start_time {
             return Err(EventRegistryError::InvalidDeadline);
@@ -728,12 +743,18 @@ impl EventRegistry {
     /// * `TierSupplyExceeded` - If the tier's limit has been reached.
     /// * `MaxSupplyExceeded` - If the event's max supply has been reached (when max_supply > 0).
     /// * `SupplyOverflow` - If incrementing would cause an i128 overflow.
+    /// * `TokenNotAccepted` - If the event configured a non-empty `accepted_tokens`
+    ///   list and `payment_token` is not in it (Issue #851). This is a defense-in-depth
+    ///   cross-validation: the primary enforcement lives in the `TicketPayment`
+    ///   contract, but a misconfigured or malicious caller of this function
+    ///   would otherwise bypass it entirely.
     pub fn increment_inventory(
         env: Env,
         event_id: String,
         tier_id: String,
         user: Address,
         quantity: u32,
+        payment_token: Address,
     ) -> Result<(), EventRegistryError> {
         let ticket_payment_addr =
             storage::get_ticket_payment_contract(&env).ok_or(EventRegistryError::NotInitialized)?;
@@ -748,6 +769,15 @@ impl EventRegistry {
 
         if !event_info.is_active || matches!(event_info.status, EventStatus::Cancelled) {
             return Err(EventRegistryError::EventInactive);
+        }
+
+        // Issue #851: when the event restricts payments to specific tokens,
+        // enforce that here too rather than trusting the caller (normally
+        // the TicketPayment contract) to have already validated it.
+        if !event_info.accepted_tokens.is_empty()
+            && !event_info.accepted_tokens.contains(&payment_token)
+        {
+            return Err(EventRegistryError::TokenNotAccepted);
         }
 
         let quantity_i128 = quantity as i128;
@@ -837,6 +867,74 @@ impl EventRegistry {
 
         Ok(())
     }
+
+    /// Checks whether a specific tier for an event is sold out.
+    pub fn is_tier_sold_out(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+    ) -> Result<bool, EventRegistryError> {
+        let event_info = storage::get_event(&env, event_id).ok_or(EventRegistryError::EventNotFound)?;
+        let tier = event_info
+            .tiers
+            .get(tier_id)
+            .ok_or(EventRegistryError::TierNotFound)?;
+        Ok(tier.current_sold >= tier.tier_limit)
+    }
+
+    /// Adds a new ticket tier to an existing event.
+    /// Restricted to the event organizer.
+    pub fn add_tier(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+        tier: TicketTier,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info = storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        event_info.organizer.require_auth();
+
+        if event_info.max_supply > 0 {
+            let mut total_tier_limit: i128 = 0;
+            for existing_tier in event_info.tiers.values() {
+                total_tier_limit = total_tier_limit
+                    .checked_add(existing_tier.tier_limit)
+                    .ok_or(EventRegistryError::SupplyOverflow)?;
+            }
+            total_tier_limit = total_tier_limit
+                .checked_add(tier.tier_limit)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
+
+            if total_tier_limit > event_info.max_supply {
+                return Err(EventRegistryError::TierLimitExceeds);
+            }
+        }
+
+        event_info.tiers.set(tier_id, tier);
+        storage::set_event(&env, &event_id, &event_info);
+        Ok(())
+    }
+
+    /// Deactivates a tier by setting its limit equal to current_sold, preventing further sales.
+    /// Restricted to the event organizer.
+    pub fn deactivate_tier(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info = storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        event_info.organizer.require_auth();
+
+        let mut tier = event_info
+            .tiers
+            .get(tier_id.clone())
+            .ok_or(EventRegistryError::TierNotFound)?;
+
+        tier.tier_limit = tier.current_sold;
+        event_info.tiers.set(tier_id, tier);
+        storage::set_event(&env, &event_id, &event_info);
+        Ok(())
+    }
+
 
     /// Decrements the current_supply counter for a given event and tier.
     /// This function is restricted to calls from the authorized TicketPayment contract upon refund.
@@ -1907,20 +2005,27 @@ fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryErr
 }
 
 fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryError> {
-    if cid.len() < 46 {
-        return Err(EventRegistryError::InvalidMetadataCid);
-    }
-
-    // We expect CIDv1 base32, which starts with 'b'
-    // Convert to Bytes to check the first character safely
+    let len = cid.len();
     let mut bytes = soroban_sdk::Bytes::new(env);
     bytes.append(&cid.clone().into());
 
-    if !bytes.is_empty() && bytes.get(0) != Some(b'b') {
-        return Err(EventRegistryError::InvalidMetadataCid);
+    // CIDv0: starts with "Qm" and is at least 46 characters long
+    if len >= 46 && bytes.len() >= 2 && bytes.get(0) == Some(b'Q') && bytes.get(1) == Some(b'm') {
+        return Ok(());
     }
 
-    Ok(())
+    // CIDv1: starts with "bafy" and is at least 59 characters long
+    if len >= 59
+        && bytes.len() >= 4
+        && bytes.get(0) == Some(b'b')
+        && bytes.get(1) == Some(b'a')
+        && bytes.get(2) == Some(b'f')
+        && bytes.get(3) == Some(b'y')
+    {
+        return Ok(());
+    }
+
+    Err(EventRegistryError::InvalidMetadataCid)
 }
 
 fn require_event_ended(env: &Env, event_info: &EventInfo) -> Result<(), EventRegistryError> {

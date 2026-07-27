@@ -93,7 +93,8 @@ import { FormField } from "@/components/ui/form-field";
 ### `components/ui/empty-state.tsx`
 
 Purpose:
-- Displayed when no content (e.g., events) matches the active filters. Accepts a title, description, and an optional call-to-action (CTA).
+<<<<<<< HEAD
+- Displayed when no content (e.g., events) matches the active filters. Accepts a title, description/message, optional icon or illustration, and an optional CTA (button or link).
 
 **Props**
 | Name | Type | Required | Default | Description |
