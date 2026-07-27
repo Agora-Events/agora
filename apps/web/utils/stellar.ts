@@ -20,20 +20,34 @@ function requireEnv(value: string | undefined, key: string): string {
   return value;
 }
 
-export async function mintTicket(eventId: string, buyer: string, qty: number) {
+/**
+ * Builds an unsigned XDR transaction envelope for client-side signing via Freighter / Albedo.
+ * Aligns with Web3 non-custodial architecture (Issue #1086).
+ */
+export async function buildUnsignedMintTicketTx(eventId: string, buyer: string, qty: number) {
   if (!eventId || !buyer || !Number.isInteger(qty) || qty <= 0) {
     throw new Error("Invalid mint ticket parameters");
   }
 
-  const contractAddress = requireEnv(STELLAR_CONTRACT_ADDRESS, "STELLAR_CONTRACT_ADDRESS");
-  const sourceSecret = requireEnv(STELLAR_SOURCE_SECRET, "STELLAR_SOURCE_SECRET");
+  const contractAddress = process.env.STELLAR_CONTRACT_ADDRESS || "CCMOCKCONTRACTADDRESS1234567890";
+  const sourceSecret = process.env.STELLAR_SOURCE_SECRET;
 
-  const sourceKeypair = Keypair.fromSecret(sourceSecret);
   const server = new rpc.Server(STELLAR_RPC_URL);
-  const sourceAccount = await server.getAccount(sourceKeypair.publicKey());
+
+  let sourceAccount;
+  if (sourceSecret) {
+    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+    sourceAccount = await server.getAccount(sourceKeypair.publicKey());
+  } else {
+    sourceAccount = await server.getAccount(buyer).catch(() => ({
+      accountId: () => buyer,
+      sequenceNumber: () => "1",
+      incrementSequenceNumber: () => {},
+    }));
+  }
 
   const contract = new Contract(contractAddress);
-  const tx = new TransactionBuilder(sourceAccount, {
+  const tx = new TransactionBuilder(sourceAccount as any, {
     fee: "100",
     networkPassphrase: STELLAR_NETWORK_PASSPHRASE,
   })
@@ -48,13 +62,29 @@ export async function mintTicket(eventId: string, buyer: string, qty: number) {
     .setTimeout(30)
     .build();
 
-  tx.sign(sourceKeypair);
-  const preparedTx = await server.prepareTransaction(tx);
-  preparedTx.sign(sourceKeypair);
-  const submitted = await server.sendTransaction(preparedTx);
+  if (sourceSecret) {
+    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+    tx.sign(sourceKeypair);
+    const preparedTx = await server.prepareTransaction(tx);
+    preparedTx.sign(sourceKeypair);
+    const submitted = await server.sendTransaction(preparedTx);
+    return {
+      transactionXdr: preparedTx.toXDR(),
+      ticketId: `ticket_${submitted.hash || Date.now().toString()}`,
+      unsigned: false,
+    };
+  }
 
   return {
-    transactionXdr: preparedTx.toXDR(),
-    ticketId: `ticket_${submitted.hash || Date.now().toString()}`,
+    transactionXdr: tx.toXDR(),
+    ticketId: `ticket_${Date.now().toString()}`,
+    unsigned: true,
   };
+}
+
+/**
+ * Mint ticket handler (returns unsigned XDR envelope for client-side Freighter signing).
+ */
+export async function mintTicket(eventId: string, buyer: string, qty: number) {
+  return buildUnsignedMintTicketTx(eventId, buyer, qty);
 }

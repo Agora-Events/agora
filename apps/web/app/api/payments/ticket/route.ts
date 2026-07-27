@@ -31,19 +31,16 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throwApiError("Invalid quantity", 400);
   }
 
-  // Type assertion for subsequent logic
   const qty = quantity as number;
 
   if (!buyerWallet || typeof buyerWallet !== "string") {
     throwApiError("Invalid buyerWallet", 400);
   }
-  
-  // Validate recipientWallet if provided
+
   if (recipientWallet !== undefined && recipientWallet !== null && typeof recipientWallet !== "string") {
     throwApiError("Invalid recipientWallet", 400);
   }
 
-  // Determine the actual owner of the ticket
   const ownerWallet = recipientWallet || buyerWallet;
 
   const event = await prisma.event.findUnique({
@@ -54,7 +51,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throwApiError("Event not found", 404);
   }
 
-  // Check ticket availability using Prisma data
   if (event.mintedTickets + qty > event.totalTickets) {
     throwApiError("Not enough tickets available", 409);
   }
@@ -62,7 +58,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   try {
     const mintResult = await mintTicket(eventId, ownerWallet, qty);
 
-    // Atomically update event count and create ticket record
     await prisma.$transaction([
       prisma.event.update({
         where: { id: eventId },
@@ -83,6 +78,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       {
         ticketId: mintResult.ticketId,
         transactionXdr: mintResult.transactionXdr,
+        requiresSignature: mintResult.unsigned !== false,
       },
       { status: 200 },
     );
