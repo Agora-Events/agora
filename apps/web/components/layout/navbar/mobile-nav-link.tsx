@@ -39,7 +39,8 @@ export function MobileNavLink({
         href={href}
         onClick={onClose}
         aria-label={ariaLabel}
-        className={`flex items-center gap-3 text-lg font-medium transition-colors p-2 rounded-lg ${
+        aria-current={isActive ? "page" : undefined}
+        className={`flex items-center gap-3 text-lg font-medium transition-colors p-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
           isActive ? "text-accent" : "hover:opacity-80"
         }`}
       >

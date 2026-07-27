@@ -12,9 +12,8 @@ describe("EmptyState component", () => {
       render(
         <EmptyState
           title="No events found"
-          message="Try a different category or come back later."
-          ctaLabel="Create an Event"
-          ctaLink="/events/create"
+          description="Try a different category or come back later."
+          action={{ label: "Create an Event", href: "/events/create" }}
         />
       );
     }

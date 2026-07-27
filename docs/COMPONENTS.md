@@ -69,6 +69,7 @@ import { Button } from "@/components/ui/button";
 
 ## EmptyState
 
+<<<<<<< HEAD
 Displays a friendly empty state with an illustration or icon, title, description,
 and an optional action (button or link).
 
@@ -83,7 +84,7 @@ and an optional action (button or link).
 | `message` | `string` | — | Alias for `description` (legacy) |
 | `icon` | `React.ReactNode` | — | Custom icon node |
 | `illustrationSrc` | `string` | `"/icons/404-illustration.svg"` | Illustration when no `icon` is set |
-| `action` | `{ label: string; onClick: () => void }` | — | Optional click-handler CTA |
+| `action` | `{ label: string; onClick?: () => void; href?: string }` | — | Optional call-to-action; renders as a `<Link>` when `href` is provided, or as a `<Button>` when `onClick` is provided |
 | `ctaLabel` | `string` | — | Optional link CTA label |
 | `ctaLink` | `string` | — | Optional link CTA href |
 
@@ -97,18 +98,15 @@ import Image from "next/image";
 <EmptyState
   icon={
     <Image
-      src="/icons/404-illustration.svg"
-      alt="No events"
-      width={80}
-      height={80}
+      src="/icons/search.svg"
+      alt="Search"
+      width={32}
+      height={32}
     />
   }
   title="No events found"
-  description="Try adjusting your filters or check back later."
-  action={{
-    label: "Create Event",
-    onClick: () => console.log("Create clicked!"),
-  }}
+  description="Try adjusting your filters to find what you're looking for."
+  action={{ label: "Clear Search", onClick: () => setSearch("") }}
 />
 
 // Illustration + link CTA
@@ -119,7 +117,6 @@ import Image from "next/image";
   ctaLink="/events/create"
 />
 ```
-
 ---
 
 ## ErrorBanner

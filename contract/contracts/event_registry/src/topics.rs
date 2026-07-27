@@ -65,6 +65,8 @@ pub enum AgoraEvent {
     ProposalCancelled,
     /// A user has joined the waitlist for a sold-out event.
     WaitlistJoined,
+    /// A user has left the waitlist for an event.
+    WaitlistLeft,
     /// The staking token address has been updated by an admin.
     StakingTokenUpdated,
     /// The minimum stake amount has been updated by an admin.
