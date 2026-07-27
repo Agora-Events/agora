@@ -868,6 +868,74 @@ impl EventRegistry {
         Ok(())
     }
 
+    /// Checks whether a specific tier for an event is sold out.
+    pub fn is_tier_sold_out(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+    ) -> Result<bool, EventRegistryError> {
+        let event_info = storage::get_event(&env, event_id).ok_or(EventRegistryError::EventNotFound)?;
+        let tier = event_info
+            .tiers
+            .get(tier_id)
+            .ok_or(EventRegistryError::TierNotFound)?;
+        Ok(tier.current_sold >= tier.tier_limit)
+    }
+
+    /// Adds a new ticket tier to an existing event.
+    /// Restricted to the event organizer.
+    pub fn add_tier(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+        tier: TicketTier,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info = storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        event_info.organizer.require_auth();
+
+        if event_info.max_supply > 0 {
+            let mut total_tier_limit: i128 = 0;
+            for existing_tier in event_info.tiers.values() {
+                total_tier_limit = total_tier_limit
+                    .checked_add(existing_tier.tier_limit)
+                    .ok_or(EventRegistryError::SupplyOverflow)?;
+            }
+            total_tier_limit = total_tier_limit
+                .checked_add(tier.tier_limit)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
+
+            if total_tier_limit > event_info.max_supply {
+                return Err(EventRegistryError::TierLimitExceeds);
+            }
+        }
+
+        event_info.tiers.set(tier_id, tier);
+        storage::set_event(&env, &event_id, &event_info);
+        Ok(())
+    }
+
+    /// Deactivates a tier by setting its limit equal to current_sold, preventing further sales.
+    /// Restricted to the event organizer.
+    pub fn deactivate_tier(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info = storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        event_info.organizer.require_auth();
+
+        let mut tier = event_info
+            .tiers
+            .get(tier_id.clone())
+            .ok_or(EventRegistryError::TierNotFound)?;
+
+        tier.tier_limit = tier.current_sold;
+        event_info.tiers.set(tier_id, tier);
+        storage::set_event(&env, &event_id, &event_info);
+        Ok(())
+    }
+
+
     /// Decrements the current_supply counter for a given event and tier.
     /// This function is restricted to calls from the authorized TicketPayment contract upon refund.
     ///
@@ -1937,20 +2005,27 @@ fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryErr
 }
 
 fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryError> {
-    if cid.len() < 46 {
-        return Err(EventRegistryError::InvalidMetadataCid);
-    }
-
-    // We expect CIDv1 base32, which starts with 'b'
-    // Convert to Bytes to check the first character safely
+    let len = cid.len();
     let mut bytes = soroban_sdk::Bytes::new(env);
     bytes.append(&cid.clone().into());
 
-    if !bytes.is_empty() && bytes.get(0) != Some(b'b') {
-        return Err(EventRegistryError::InvalidMetadataCid);
+    // CIDv0: starts with "Qm" and is at least 46 characters long
+    if len >= 46 && bytes.len() >= 2 && bytes.get(0) == Some(b'Q') && bytes.get(1) == Some(b'm') {
+        return Ok(());
     }
 
-    Ok(())
+    // CIDv1: starts with "bafy" and is at least 59 characters long
+    if len >= 59
+        && bytes.len() >= 4
+        && bytes.get(0) == Some(b'b')
+        && bytes.get(1) == Some(b'a')
+        && bytes.get(2) == Some(b'f')
+        && bytes.get(3) == Some(b'y')
+    {
+        return Ok(());
+    }
+
+    Err(EventRegistryError::InvalidMetadataCid)
 }
 
 fn require_event_ended(env: &Env, event_info: &EventInfo) -> Result<(), EventRegistryError> {
