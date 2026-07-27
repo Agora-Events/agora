@@ -1,251 +1,176 @@
-//! # Currency Rates Handler
+//! # Exchange Rate Handlers
 //!
-//! Provides real-time USDC-to-fiat conversion rates for the frontend.
-//!
-//! ## Endpoint
-//! `GET /api/v1/rates` — returns the latest conversion factors relative to USDC.
-//!
-//! ## Data Source
-//! Rates are fetched from the CoinGecko public API and cached in Redis for
-//! 60 seconds to avoid hammering the upstream provider.
-//!
-//! ## Response Example
-//! ```json
-//! {
-//!   "success": true,
-//!   "data": {
-//!     "base": "USDC",
-//!     "rates": {
-//!       "USD": 1.0,
-//!       "NGN": 1550.0,
-//!       "EUR": 0.92,
-//!       "GBP": 0.79,
-//!       "KES": 129.5
-//!     },
-//!     "fetched_at": "2026-05-01T12:00:00Z"
-//!   }
-//! }
-//! ```
+//! Fetches XLM exchange rates from an external provider and caches the
+//! result in Redis so that repeated requests within the TTL window don't
+//! hit the provider (and its rate limits) again.
 
-use axum::{extract::State, response::IntoResponse, response::Response};
-use chrono::Utc;
+use axum::{
+    extract::Query,
+    response::{IntoResponse, Response},
+};
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
-use std::time::Duration;
+use std::sync::OnceLock;
 
-use crate::cache::RedisCache;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
-/// Cache TTL for exchange rates (5 minutes).
-const RATES_CACHE_TTL: Duration = Duration::from_secs(300);
-const RATES_CACHE_KEY: &str = "rates:usdc";
+/// TTL for cached live rates.
+const CACHE_TTL_SECONDS: u64 = 60;
+const DEFAULT_BASE_CURRENCY: &str = "XLM";
+const DEFAULT_QUOTE_CURRENCY: &str = "USD";
 
-/// Cache key and TTL for stale fallback rates (24 hours).
-const RATES_STALE_CACHE_KEY: &str = "rates:usdc:stale";
-const RATES_STALE_CACHE_TTL: Duration = Duration::from_secs(86400);
+static REDIS_CLIENT: OnceLock<Option<redis::Client>> = OnceLock::new();
 
-/// Currencies to fetch from CoinGecko (vs USDC).
-/// USDC is pegged 1:1 to USD, so we fetch USD rates and treat them as USDC rates.
-const TARGET_CURRENCIES: &[&str] = &[
-    "usd", "ngn", "eur", "gbp", "kes", "ghs", "zar", "cad", "aud", "jpy",
-];
-
-/// Application state for the rates handler.
-#[derive(Clone)]
-pub struct RatesState {
-    pub redis: RedisCache,
-    pub http: reqwest::Client,
-}
-
-/// The response body returned to clients.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct RatesResponse {
-    /// The base currency (always "USDC").
-    pub base: String,
-    /// Map of currency code (uppercase) → units per 1 USDC.
-    pub rates: HashMap<String, f64>,
-    /// ISO 8601 timestamp of when the rates were fetched.
-    pub fetched_at: String,
-}
-
-/// CoinGecko simple/price response shape.
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct CoinGeckoPrice {
-    #[serde(flatten)]
-    prices: HashMap<String, Value>,
-}
-
-/// `GET /api/v1/rates`
-///
-/// Returns USDC conversion rates for a set of fiat currencies.
-/// Results are cached in Redis for 5 minutes.
-pub async fn get_rates(State(mut state): State<RatesState>) -> Response {
-    // 1. Try cache first
-    match state.redis.get::<RatesResponse>(RATES_CACHE_KEY).await {
-        Ok(Some(cached)) => {
-            tracing::debug!("Cache hit for currency rates");
-            return success(cached, "Rates retrieved (cached)").into_response();
-        }
-        Ok(None) => tracing::debug!("Cache miss for currency rates"),
-        Err(e) => tracing::warn!("Redis error fetching rates, falling back to API: {:?}", e),
-    }
-
-    // 2. Fetch from CoinGecko
-    let vs_currencies = TARGET_CURRENCIES.join(",");
-    let url = format!(
-        "https://api.coingecko.com/api/v3/simple/price?ids=usd-coin&vs_currencies={vs_currencies}"
-    );
-
-    let fetch_result = async {
-        let api_response = state
-            .http
-            .get(&url)
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await
-            .map_err(|e| {
-                tracing::error!("CoinGecko request failed: {:?}", e);
-                AppError::ExternalServiceError(
-                    "Failed to fetch exchange rates from provider".to_string(),
-                )
-            })?;
-
-        if !api_response.status().is_success() {
-            tracing::error!("CoinGecko returned status {}", api_response.status());
-            return Err(AppError::ExternalServiceError(format!(
-                "Exchange rate provider returned status {}",
-                api_response.status()
-            )));
-        }
-
-        let body: Value = api_response.json().await.map_err(|e| {
-            tracing::error!("Failed to parse CoinGecko response: {:?}", e);
-            AppError::ExternalServiceError("Failed to parse exchange rate response".to_string())
-        })?;
-
-        // CoinGecko returns: { "usd-coin": { "usd": 1.0, "ngn": 1550.0, ... } }
-        let coin_rates = body
-            .get("usd-coin")
-            .and_then(|v| v.as_object())
-            .ok_or_else(|| {
-                tracing::error!("Unexpected CoinGecko response shape: {:?}", body);
-                AppError::ExternalServiceError(
-                    "Unexpected response shape from exchange rate provider".to_string(),
-                )
-            })?;
-
-        let mut rates: HashMap<String, f64> = HashMap::new();
-        for (currency, value) in coin_rates {
-            if let Some(rate) = value.as_f64() {
-                rates.insert(currency.to_uppercase(), rate);
-            }
-        }
-
-        // Ensure USD is always present (USDC ≈ 1 USD)
-        rates.entry("USD".to_string()).or_insert(1.0);
-
-        Ok(RatesResponse {
-            base: "USDC".to_string(),
-            rates,
-            fetched_at: Utc::now().to_rfc3339(),
+/// Lazily builds a Redis client from `REDIS_URL`. Returns `None` (and the
+/// handler falls back to always fetching from the provider) if the client
+/// can't be constructed, e.g. because `REDIS_URL` isn't configured.
+fn redis_client() -> Option<&'static redis::Client> {
+    REDIS_CLIENT
+        .get_or_init(|| {
+            std::env::var("REDIS_URL")
+                .ok()
+                .and_then(|url| redis::Client::open(url).ok())
         })
-    }
-    .await;
-
-    match fetch_result {
-        Ok(response) => {
-            // 3. Cache the result
-            if let Err(e) = state
-                .redis
-                .set(RATES_CACHE_KEY, &response, RATES_CACHE_TTL)
-                .await
-            {
-                tracing::warn!("Failed to cache currency rates: {:?}", e);
-            }
-            if let Err(e) = state
-                .redis
-                .set(RATES_STALE_CACHE_KEY, &response, RATES_STALE_CACHE_TTL)
-                .await
-            {
-                tracing::warn!("Failed to cache stale currency rates: {:?}", e);
-            }
-
-            success(response, "Rates retrieved successfully").into_response()
-        }
-        Err(err) => {
-            // Try fallback
-            match state
-                .redis
-                .get::<RatesResponse>(RATES_STALE_CACHE_KEY)
-                .await
-            {
-                Ok(Some(stale)) => {
-                    tracing::warn!("Serving stale exchange rates from cache due to API error");
-                    let mut resp =
-                        success(stale, "Rates retrieved (stale fallback)").into_response();
-                    resp.headers_mut().insert(
-                        axum::http::header::CACHE_CONTROL,
-                        axum::http::HeaderValue::from_static("stale"),
-                    );
-                    resp
-                }
-                _ => err.into_response(),
-            }
-        }
-    }
+        .as_ref()
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+fn default_base() -> String {
+    DEFAULT_BASE_CURRENCY.to_string()
+}
+
+fn default_quote() -> String {
+    DEFAULT_QUOTE_CURRENCY.to_string()
+}
+
+fn cache_key(base: &str, quote: &str) -> String {
+    format!("rates:{}:{}", base, quote)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RatesQuery {
+    #[serde(default = "default_base")]
+    pub base: String,
+    #[serde(default = "default_quote")]
+    pub quote: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExchangeRate {
+    pub base: String,
+    pub quote: String,
+    pub rate: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderResponse {
+    rates: HashMap<String, f64>,
+}
+
+/// Get the current exchange rate for a currency pair, serving from a Redis
+/// cache when available.
+///
+/// # Endpoint
+/// GET `/api/v1/rates?base=XLM&quote=USD`
+pub async fn get_rates(Query(params): Query<RatesQuery>) -> Response {
+    let base = params.base.to_uppercase();
+    let quote = params.quote.to_uppercase();
+    let key = cache_key(&base, &quote);
+
+    if let Some(client) = redis_client() {
+        if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
+            let cached: Option<String> = conn.get(&key).await.unwrap_or(None);
+            if let Some(raw) = cached {
+                if let Ok(rate) = serde_json::from_str::<ExchangeRate>(&raw) {
+                    return success(rate, "Exchange rate retrieved from cache").into_response();
+                }
+            }
+        }
+    }
+
+    let provider_url = std::env::var("RATES_PROVIDER_URL")
+        .unwrap_or_else(|_| "https://api.exchangerate.host/latest".to_string());
+
+    let provider_response = match reqwest::Client::new()
+        .get(&provider_url)
+        .query(&[("base", base.as_str())])
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(e) => {
+            tracing::error!("Failed to reach exchange rate provider: {:?}", e);
+            return AppError::ExternalServiceError(
+                "Unable to reach exchange rate provider".to_string(),
+            )
+            .into_response();
+        }
+    };
+
+    let provider_data = match provider_response.json::<ProviderResponse>().await {
+        Ok(data) => data,
+        Err(e) => {
+            tracing::error!("Failed to parse exchange rate provider response: {:?}", e);
+            return AppError::ExternalServiceError(
+                "Invalid response from exchange rate provider".to_string(),
+            )
+            .into_response();
+        }
+    };
+
+    let rate_value = match provider_data.rates.get(&quote) {
+        Some(rate) => *rate,
+        None => {
+            return AppError::NotFound(format!("No rate available for {}/{}", base, quote))
+                .into_response();
+        }
+    };
+
+    let rate = ExchangeRate {
+        base: base.clone(),
+        quote: quote.clone(),
+        rate: rate_value,
+    };
+
+    if let Some(client) = redis_client() {
+        if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
+            if let Ok(json) = serde_json::to_string(&rate) {
+                let _: Result<(), _> = conn.set_ex(&key, json, CACHE_TTL_SECONDS).await;
+            }
+        }
+    }
+
+    success(rate, "Exchange rate retrieved successfully").into_response()
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_rates_response_serialization() {
-        let mut rates = HashMap::new();
-        rates.insert("USD".to_string(), 1.0_f64);
-        rates.insert("NGN".to_string(), 1550.0_f64);
-
-        let resp = RatesResponse {
-            base: "USDC".to_string(),
-            rates,
-            fetched_at: "2026-05-01T12:00:00Z".to_string(),
-        };
-
-        let json = serde_json::to_string(&resp).unwrap();
-        assert!(json.contains("USDC"));
-        assert!(json.contains("NGN"));
+    fn test_cache_key_includes_currency_pair() {
+        assert_eq!(cache_key("XLM", "USD"), "rates:XLM:USD");
+        assert_eq!(cache_key("XLM", "EUR"), "rates:XLM:EUR");
     }
 
     #[test]
-    fn test_target_currencies_not_empty() {
-        assert!(!TARGET_CURRENCIES.is_empty());
-        assert!(TARGET_CURRENCIES.contains(&"usd"));
-        assert!(TARGET_CURRENCIES.contains(&"ngn"));
+    fn test_default_currencies() {
+        assert_eq!(default_base(), "XLM");
+        assert_eq!(default_quote(), "USD");
     }
 
-    #[tokio::test]
-    async fn test_rates_stale_fallback_header() {
-        use axum::http::header::CACHE_CONTROL;
-        let mut rates = HashMap::new();
-        rates.insert("USD".to_string(), 1.0_f64);
-        let stale = RatesResponse {
-            base: "USDC".to_string(),
-            rates,
-            fetched_at: "2026-05-01T12:00:00Z".to_string(),
+    #[test]
+    fn test_exchange_rate_round_trips_through_json() {
+        let rate = ExchangeRate {
+            base: "XLM".to_string(),
+            quote: "USD".to_string(),
+            rate: 0.11,
         };
-        let mut resp = success(stale, "Rates retrieved (stale fallback)").into_response();
-        resp.headers_mut()
-            .insert(CACHE_CONTROL, axum::http::HeaderValue::from_static("stale"));
-
-        assert_eq!(resp.status(), axum::http::StatusCode::OK);
-        let cc = resp.headers().get(CACHE_CONTROL).unwrap().to_str().unwrap();
-        assert_eq!(cc, "stale");
+        let json = serde_json::to_string(&rate).unwrap();
+        let parsed: ExchangeRate = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.base, "XLM");
+        assert_eq!(parsed.quote, "USD");
+        assert!((parsed.rate - 0.11).abs() < f64::EPSILON);
     }
 }

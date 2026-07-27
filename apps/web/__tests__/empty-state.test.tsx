@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { expect, describe, it } from "vitest";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // next/image is mocked in vitest.setup.ts / jsdom — works fine with static props
 describe("EmptyState component", () => {
@@ -74,5 +74,19 @@ describe("EmptyState component", () => {
     expect(
       screen.getByText("Check back soon for new events in your area.")
     ).toBeInTheDocument();
+  });
+
+  it("renders icon + action CTA variant", () => {
+    render(
+      <EmptyState
+        icon={<span data-testid="custom-icon">icon</span>}
+        title="No results"
+        description="Try another search."
+        action={{ label: "Clear", onClick: () => undefined }}
+      />
+    );
+
+    expect(screen.getByTestId("custom-icon")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /clear/i })).toBeInTheDocument();
   });
 });
