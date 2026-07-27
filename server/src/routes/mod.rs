@@ -52,13 +52,6 @@ use crate::handlers::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
         health_check_redis,
     },
-    leaderboard::{get_leaderboard, LeaderboardState},
-    monitoring::{monitoring_dashboard, MonitoringState},
-    profile::{
-        delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
-        list_events_by_organizer, list_my_transactions, patch_profile, upsert_profile,
-        ProfileState,
-    },
     qr_payload::{
         delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads,
         mark_qr_used, verify_qr_payload,
@@ -71,7 +64,7 @@ use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
 use crate::middleware::content_type::require_json_content_type;
-use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
+use crate::middleware::content_type::require_json_content_type;
 use crate::middleware::rate_limit::GovernorRateLimitLayer;
 use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
 use crate::utils::rate_limit::RateLimitLayer;
@@ -243,36 +236,19 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
-        .route("/leaderboard", get(get_leaderboard))
-        .route("/monitoring", get(get_monitoring))
         .with_state(pool.clone())
         .merge(
             Router::new()
                 .route("/health/redis", get(health_check_redis))
                 .with_state(redis.clone()),
         )
-        .merge(
-            Router::new()
-                .route("/monitoring/dashboard", get(monitoring_dashboard))
-                .route_layer(middleware::from_fn_with_state(
-                    monitoring_auth_state,
-                    require_monitoring_token,
-                ))
-                .with_state(monitoring_state),
-        )
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
-
-    let leaderboard_state = LeaderboardState {
-        pool: pool.clone(),
-        redis: redis.clone(),
-    };
 
     // General endpoints — relaxed rate limit
     let general_routes = Router::new()
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
-        .route("/rates", get(get_rates))
         .with_state(pool)
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
