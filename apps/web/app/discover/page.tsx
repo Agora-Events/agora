@@ -6,7 +6,7 @@ import { CategorySection } from "@/components/events/category-section";
 import { PopularEventsSection } from "@/components/events/popular-events-section";
 import { OrganizerComponent } from "@/components/events/organizer-component";
 import { Footer } from "@/components/layout/footer";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 
 export default function DiscoverPage() {

@@ -90,24 +90,29 @@ import { FormField } from "@/components/ui/form-field";
 />
 ```
 
-### `components/ui/EmptyState.tsx`
+### `components/ui/empty-state.tsx`
 
 Purpose:
-- Displayed when no content (e.g., events) matches the active filters. Accepts a title, message, and an optional call-to-action (CTA).
+- Displayed when no content (e.g., events) matches the active filters. Accepts a
+  title, description/message, optional icon or illustration, and an optional CTA
+  (button or link).
 
 **Props**
 | Name | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `title` | `string` | Yes | - | Heading text |
-| `message` | `string` | Yes | - | Supporting message / body copy |
-| `ctaLabel` | `string` | No | - | Label for the optional call-to-action button |
-| `ctaLink` | `string` | No | - | Where the CTA button navigates to |
-| `illustrationSrc` | `string` | No | `"/icons/404-illustration.svg"` | Override the default illustration src |
+| `description` | `string` | No | - | Supporting message / body copy |
+| `message` | `string` | No | - | Alias for `description` |
+| `icon` | `React.ReactNode` | No | - | Custom icon node |
+| `illustrationSrc` | `string` | No | `"/icons/404-illustration.svg"` | Illustration when no `icon` is set |
+| `action` | `{ label: string; onClick: () => void }` | No | - | Click-handler CTA |
+| `ctaLabel` | `string` | No | - | Link CTA label |
+| `ctaLink` | `string` | No | - | Link CTA href |
 
 **Usage Example:**
 
 ```tsx
-import { EmptyState } from "@/components/ui/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 
 <EmptyState
   title="No events found"

@@ -789,7 +789,13 @@ impl TicketPaymentContract {
 
         // 6. Increment inventory after successful payment
         // Use owner_address (recipient) for inventory tracking, not buyer_address
-        registry_client.increment_inventory(&event_id, &ticket_tier_id, &owner_address, &quantity);
+        registry_client.increment_inventory(
+            &event_id,
+            &ticket_tier_id,
+            &owner_address,
+            &quantity,
+            &token_address,
+        );
 
         // 7. Create payment records for each individual ticket
         let quantity_i128 = quantity as i128;
@@ -2363,7 +2369,13 @@ impl TicketPaymentContract {
         );
 
         // Increment inventory
-        registry_client.increment_inventory(&event_id, &ticket_tier_id, &bidder_address, &1);
+        registry_client.increment_inventory(
+            &event_id,
+            &ticket_tier_id,
+            &bidder_address,
+            &1,
+            &winning_bid.token_address,
+        );
 
         // Record the payment
         let empty_tx_hash = String::from_str(&env, "");

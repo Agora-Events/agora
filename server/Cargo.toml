@@ -12,13 +12,16 @@ tokio = { version = "1.37", features = ["full"] }
 
 # Middleware
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit", "catch-panic"] }
 pin-project = "1.1"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Redis caching (exchange rate cache)
+redis = { version = "0.25", features = ["tokio-comp"] }
 
 # Env handling (recommended)
 dotenvy = "0.15"

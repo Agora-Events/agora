@@ -263,6 +263,12 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
                 }
 
                 current_backoff = POLL_INTERVAL;
+
+                // Full page means more events may be waiting — fetch next page
+                // immediately instead of waiting for POLL_INTERVAL.
+                if should_immediately_fetch_next_page(result.events.len()) {
+                    continue;
+                }
             }
             Ok(None) => {
                 current_backoff = POLL_INTERVAL;
@@ -417,6 +423,11 @@ async fn run_worker(
             }
         }
     }
+/// Returns true when a poll returned a full page, indicating more events may
+/// be available beyond the current cursor and the listener should retry
+/// immediately without waiting for [`POLL_INTERVAL`].
+fn should_immediately_fetch_next_page(events_returned: usize) -> bool {
+    events_returned == MAX_EVENTS_PER_POLL as usize
 }
 
 /// Poll the Stellar RPC node for new contract events.
@@ -750,5 +761,15 @@ mod tests {
         assert_eq!(deserialized.id, job.id);
         assert_eq!(deserialized.event.contract_id, "CPAY");
         assert_eq!(deserialized.max_retries, MAX_JOB_RETRIES);
+    }
+
+    #[test]
+    fn test_immediate_retry_when_full_page_returned() {
+        assert!(should_immediately_fetch_next_page(MAX_EVENTS_PER_POLL as usize));
+        assert!(!should_immediately_fetch_next_page(
+            (MAX_EVENTS_PER_POLL as usize) - 1
+        ));
+        assert!(!should_immediately_fetch_next_page(0));
+        assert!(!should_immediately_fetch_next_page(1));
     }
 }

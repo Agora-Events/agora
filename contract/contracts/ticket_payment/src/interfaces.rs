@@ -75,6 +75,7 @@ pub mod event_registry {
             tier_id: String,
             user: Address,
             quantity: u32,
+            payment_token: Address,
         );
         fn decrement_inventory(env: Env, event_id: String, tier_id: String, user: Address);
         fn get_global_promo_bps(env: Env) -> u32;

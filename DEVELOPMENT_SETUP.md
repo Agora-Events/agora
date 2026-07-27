@@ -225,6 +225,25 @@ You should also be able to open:
 - `http://localhost:3000` for the frontend
 - `http://localhost:3001/api/v1/health` for the backend
 
+### Docker Compose healthchecks
+
+`server/docker-compose.yml` defines container-level healthchecks so dependent
+services only start once their dependencies are actually ready:
+
+- `server`: `curl -fsS http://localhost:3001/api/v1/health`
+- `postgres`: `pg_isready -U user -d agora`
+- `redis`: `redis-cli ping`
+
+The `server` service uses `depends_on` with `condition: service_healthy`, so it
+waits for PostgreSQL and Redis to pass their healthchecks before starting.
+Verify container health with:
+
+```bash
+docker compose ps
+```
+
+Each service should report a `healthy` status once startup completes.
+
 ## 10. Troubleshooting
 
 ### PostgreSQL will not start

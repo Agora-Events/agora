@@ -524,3 +524,34 @@ fn test_set_feedback_cid_after_event_ends_succeeds() {
     let event_info = client.get_event(&event_id).unwrap();
     assert_eq!(event_info.feedback_cid, Some(feedback_cid));
 }
+
+#[test]
+fn test_approve_expired_proposal() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _) = setup(&env);
+    let admin2 = Address::generate(&env);
+    let new_wallet = Address::generate(&env);
+
+    // Add a second admin so it can attempt the approval
+    let add_admin_id = client.propose_add_admin(&admin, &admin2, &0);
+    client.execute_proposal(&admin, &add_admin_id);
+
+    // Create a proposal with a short expiry
+    let proposal_id = client.propose_set_platform_wallet(&admin, &new_wallet, &10);
+    let approvals_before = client.get_proposal(&proposal_id).unwrap().approvals;
+
+    // Advance the ledger past the expiration
+    env.ledger().with_mut(|li| {
+        li.timestamp += 11;
+    });
+
+    // Approving an expired proposal must fail with ProposalExpired
+    let result = client.try_approve_proposal(&admin2, &proposal_id);
+    assert_eq!(result, Err(Ok(EventRegistryError::ProposalExpired)));
+
+    // The approvals list must not have been altered
+    let approvals_after = client.get_proposal(&proposal_id).unwrap().approvals;
+    assert_eq!(approvals_before, approvals_after);
+}
