@@ -3986,9 +3986,14 @@ fn test_goal_met_flag_set_when_target_reached() {
     // Initially goal_met should be false
     assert!(!client.get_event(&event_id).unwrap().goal_met);
 
+    // This event opted into use_global_whitelist, so the payment token must
+    // be globally whitelisted first (Issue #851).
+    let payment_token = Address::generate(&env);
+    client.add_to_token_whitelist(&payment_token);
+
     // Increment inventory 10 times to reach the target
     for _ in 0..10 {
-        client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
+        client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1, &payment_token);
     }
 
     // After reaching target, goal_met should be true
@@ -4232,8 +4237,13 @@ fn test_global_counters_full_lifecycle() {
         referral_rate_bps: None,
     });
 
+    // This event opted into use_global_whitelist, so the payment token must
+    // be globally whitelisted first (Issue #851).
+    let payment_token = Address::generate(&env);
+    client.add_to_token_whitelist(&payment_token);
+
     for _ in 0..5 {
-        client.increment_inventory(&event_id2, &tier_id2, &Address::generate(&env), &1);
+        client.increment_inventory(&event_id2, &tier_id2, &Address::generate(&env), &1, &payment_token);
     }
     assert_eq!(client.get_global_tickets_sold(), 5);
 }

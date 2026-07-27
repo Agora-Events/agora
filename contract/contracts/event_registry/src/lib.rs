@@ -241,6 +241,21 @@ impl EventRegistry {
             }
         }
 
+        // Validate milestone plan: the sum of all release_percent values
+        // (basis points) must not exceed 10000 (100%), or the plan would
+        // release more revenue than was ever collected (Issue #850).
+        if let Some(ref milestones) = args.milestone_plan {
+            let mut total_release_bps: u32 = 0;
+            for milestone in milestones.iter() {
+                total_release_bps = total_release_bps
+                    .checked_add(milestone.release_percent)
+                    .ok_or(EventRegistryError::InvalidMilestonePlan)?;
+            }
+            if total_release_bps > 10000 {
+                return Err(EventRegistryError::InvalidMilestonePlan);
+            }
+        }
+
         // Validate event time range
         if args.start_time != 0 && args.end_time != 0 && args.end_time <= args.start_time {
             return Err(EventRegistryError::InvalidDeadline);
@@ -728,12 +743,18 @@ impl EventRegistry {
     /// * `TierSupplyExceeded` - If the tier's limit has been reached.
     /// * `MaxSupplyExceeded` - If the event's max supply has been reached (when max_supply > 0).
     /// * `SupplyOverflow` - If incrementing would cause an i128 overflow.
+    /// * `TokenNotAccepted` - If the event configured a non-empty `accepted_tokens`
+    ///   list and `payment_token` is not in it (Issue #851). This is a defense-in-depth
+    ///   cross-validation: the primary enforcement lives in the `TicketPayment`
+    ///   contract, but a misconfigured or malicious caller of this function
+    ///   would otherwise bypass it entirely.
     pub fn increment_inventory(
         env: Env,
         event_id: String,
         tier_id: String,
         user: Address,
         quantity: u32,
+        payment_token: Address,
     ) -> Result<(), EventRegistryError> {
         let ticket_payment_addr =
             storage::get_ticket_payment_contract(&env).ok_or(EventRegistryError::NotInitialized)?;
@@ -748,6 +769,15 @@ impl EventRegistry {
 
         if !event_info.is_active || matches!(event_info.status, EventStatus::Cancelled) {
             return Err(EventRegistryError::EventInactive);
+        }
+
+        // Issue #851: when the event restricts payments to specific tokens,
+        // enforce that here too rather than trusting the caller (normally
+        // the TicketPayment contract) to have already validated it.
+        if !event_info.accepted_tokens.is_empty()
+            && !event_info.accepted_tokens.contains(&payment_token)
+        {
+            return Err(EventRegistryError::TokenNotAccepted);
         }
 
         let quantity_i128 = quantity as i128;
