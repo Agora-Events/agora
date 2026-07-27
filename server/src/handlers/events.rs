@@ -3806,6 +3806,7 @@ pub async fn list_events_by_category(
 
 /// Response shape for a single ticket tier (Issue #853).
 #[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(serde::Deserialize)]
 pub struct TicketTierResponse {
     pub id: Uuid,
     pub name: String,
@@ -3915,6 +3916,12 @@ fn test_event_detail_tiers_omitted_when_none() {
         image_url: None,
         is_free: false,
         minted_tickets: 0,
+            total_tickets: 0,
+            image_url: None,
+            is_free: false,
+            is_free_populated: false,
+            is_flagged: false,
+            is_featured: false,
     };
 
     let detail = EventDetail {
@@ -3951,14 +3958,22 @@ fn test_event_detail_tiers_present_when_some() {
         image_url: None,
         is_free: true,
         minted_tickets: 0,
+            total_tickets: 0,
+            image_url: None,
+            is_free: false,
+            is_free_populated: false,
+            is_flagged: false,
+            is_featured: false,
     };
 
     let tier = TicketTierResponse {
         id: Uuid::new_v4(),
         name: "VIP".to_string(),
         price: Decimal::new(0, 0),
-        quantity: 50,
-        sold: 5,
+        total_quantity: 50,
+        available_quantity: 45,
+        description: None,
+        created_at: chrono::Utc::now(),
     };
 
     let detail = EventDetail {
