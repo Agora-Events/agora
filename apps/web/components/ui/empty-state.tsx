@@ -7,43 +7,29 @@ import { Button } from "@/components/ui/button";
 
 interface EmptyStateAction {
   label: string;
-  onClick: () => void;
+  onClick?: () => void;
+  href?: string;
 }
 
 export interface EmptyStateProps {
-  /** Heading text */
   title: string;
-  /**
-   * Supporting body copy.
-   * Prefer `description`; `message` is accepted as an alias for callers
-   * that used the legacy PascalCase EmptyState API.
-   */
   description?: string;
   message?: string;
-  /** Custom icon node (preferred when providing an action button) */
   icon?: React.ReactNode;
-  /** Override the default illustration when no `icon` is provided */
   illustrationSrc?: string;
-  /** Optional click-handler CTA */
   action?: EmptyStateAction;
-  /** Optional link CTA label (legacy API) */
   ctaLabel?: string;
-  /** Optional link CTA href (legacy API) */
   ctaLink?: string;
 }
 
-/**
- * EmptyState — single shared empty-list placeholder.
- *
- * Supports both the icon + action pattern and the illustration + link CTA
- * pattern used across Discover, chat, and popular events.
- */
+const DEFAULT_ILLUSTRATION = "/icons/404-illustration.svg";
+
 export function EmptyState({
   title,
   description,
   message,
   icon,
-  illustrationSrc = "/icons/404-illustration.svg",
+  illustrationSrc = DEFAULT_ILLUSTRATION,
   action,
   ctaLabel,
   ctaLink,
@@ -65,7 +51,7 @@ export function EmptyState({
             src={illustrationSrc}
             width={160}
             height={160}
-            alt=""
+            alt="Empty state illustration"
             className="w-full h-full object-contain opacity-80"
           />
         </div>
@@ -78,11 +64,19 @@ export function EmptyState({
         ) : null}
       </div>
 
-      {action ? (
-        <Button variant="primary" onClick={action.onClick}>
-          {action.label}
-        </Button>
-      ) : null}
+      {action &&
+        (action.href ? (
+          <Link
+            href={action.href}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-black text-white font-semibold text-sm shadow-[-4px_4px_0px_0px_rgba(0,0,0,0.4)] hover:-translate-x-[2px] hover:translate-y-[2px] active:-translate-x-[4px] active:translate-y-[4px] transition-transform"
+          >
+            {action.label}
+          </Link>
+        ) : (
+          <Button variant="primary" onClick={action.onClick}>
+            {action.label}
+          </Button>
+        ))}
 
       {!action && ctaLabel && ctaLink ? (
         <Link

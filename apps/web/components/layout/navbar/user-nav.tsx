@@ -88,6 +88,7 @@ function UserEndSlot() {
           className="relative w-[55.22px] h-[53px] px-0! py-0"
           textColor="text-black"
           shadowColor="rgba(0,0,0,1)"
+          aria-label="User profile"
         >
           <div className="size-[49px] rounded-full">
             <Image
