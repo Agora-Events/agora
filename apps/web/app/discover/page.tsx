@@ -76,7 +76,7 @@ export default function DiscoverPage() {
         <div className="flex flex-wrap gap-2 mb-6">
           <button
             onClick={() => setSelectedOrganizer(null)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${!selectedOrganizer ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${!selectedOrganizer ? 'bg-accent text-ink' : 'bg-surface text-ink-soft hover:bg-surface-alt'}`}
           >
             All Organizers
           </button>
@@ -84,7 +84,7 @@ export default function DiscoverPage() {
             <button
               key={organizer.id}
               onClick={() => setSelectedOrganizer(organizer.id)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedOrganizer === organizer.id ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedOrganizer === organizer.id ? 'bg-accent text-ink' : 'bg-surface text-ink-soft hover:bg-surface-alt'}`}
             >
               {organizer.title}
             </button>
