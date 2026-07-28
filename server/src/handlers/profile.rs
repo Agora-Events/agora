@@ -11,10 +11,12 @@ use axum::{
     extract::{Path, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
+    Extension,
     Json,
 };
 use sqlx::PgPool;
 
+use crate::config::Config;
 use crate::handlers::auth::extract_auth;
 use crate::models::organizer_profile::{OrganizerProfile, UpsertProfileRequest};
 use crate::utils::error::AppError;
@@ -62,11 +64,12 @@ fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
 /// - `bio`: optional, max 500 chars
 pub async fn upsert_profile(
     State(pool): State<PgPool>,
+    Extension(config): Extension<Config>,
     headers: HeaderMap,
     Json(payload): Json<UpsertProfileRequest>,
 ) -> Response {
     // Authenticate
-    let address = match extract_auth(&headers) {
+    let address = match extract_auth(&headers, &config) {
         Ok(a) => a,
         Err(e) => return e.into_response(),
     };
@@ -111,8 +114,12 @@ pub async fn upsert_profile(
 ///
 /// Returns the authenticated organizer's own profile.
 /// Returns 404 if no profile has been created yet.
-pub async fn get_my_profile(State(pool): State<PgPool>, headers: HeaderMap) -> Response {
-    let address = match extract_auth(&headers) {
+pub async fn get_my_profile(
+    State(pool): State<PgPool>,
+    Extension(config): Extension<Config>,
+    headers: HeaderMap,
+) -> Response {
+    let address = match extract_auth(&headers, &config) {
         Ok(a) => a,
         Err(e) => return e.into_response(),
     };

@@ -1,10 +1,11 @@
-use axum::{extract::State, response::IntoResponse, response::Response};
+use axum::{extract::State, response::IntoResponse, response::Response, Extension};
 use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
 use sqlx::PgPool;
 use std::time::Duration;
 
+use crate::config::Config;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
@@ -107,9 +108,10 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
 ///
 /// Returns 200 when the configured Soroban RPC endpoint is reachable.
 /// On failure the response uses [`AppError`] for a consistent error schema.
-pub async fn health_check_blockchain() -> Response {
-    let soroban_rpc_url = std::env::var("SOROBAN_RPC_URL")
-        .unwrap_or_else(|_| "https://soroban-testnet.stellar.org".to_string());
+pub async fn health_check_blockchain(
+    Extension(config): Extension<Config>,
+) -> Response {
+    let soroban_rpc_url = config.soroban_rpc_url.clone();
 
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(5))

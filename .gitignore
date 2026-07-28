@@ -12,3 +12,9 @@ contract/target
 
 # Contract test snapshots
 **/test_snapshots/
+
+# Kiro IDE directory
+.kiro/
+
+# PR markdown files
+pr-*.md

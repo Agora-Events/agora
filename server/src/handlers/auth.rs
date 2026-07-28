@@ -14,15 +14,15 @@
 //!
 //! Protected handlers extract `user_address` from the token via [`extract_auth`].
 
-use axum::{extract::State, response::IntoResponse, response::Response, Json};
+use axum::{extract::State, response::IntoResponse, response::Response, Extension, Json};
 use chrono::{Duration, Utc};
 use ed25519_dalek::{Signature, VerifyingKey};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use std::env;
 
+use crate::config::Config;
 use crate::utils::error::AppError;
 use crate::utils::response::{empty_success, success};
 
@@ -41,12 +41,10 @@ pub struct Claims {
     pub exp: i64,
 }
 
-fn jwt_secret() -> String {
-    env::var("JWT_SECRET").unwrap_or_else(|_| "fallback_dev_secret_change_in_prod".to_string())
-}
-
 /// Encode a JWT for the given Stellar address with a 24-hour expiry.
-pub fn issue_jwt(address: &str) -> Result<String, AppError> {
+///
+/// `secret` is taken from [`Config::jwt_secret`], validated at startup.
+pub fn issue_jwt(address: &str, secret: &str) -> Result<String, AppError> {
     let now = Utc::now();
     let claims = Claims {
         sub: address.to_string(),
@@ -56,18 +54,20 @@ pub fn issue_jwt(address: &str) -> Result<String, AppError> {
     encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(jwt_secret().as_bytes()),
+        &EncodingKey::from_secret(secret.as_bytes()),
     )
     .map_err(|e| AppError::InternalServerError(format!("Failed to issue JWT: {e}")))
 }
 
 /// Decode and validate a JWT, returning the claims on success.
-pub fn verify_jwt(token: &str) -> Result<Claims, AppError> {
+///
+/// `secret` is taken from [`Config::jwt_secret`], validated at startup.
+pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims, AppError> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.validate_exp = true;
     decode::<Claims>(
         token,
-        &DecodingKey::from_secret(jwt_secret().as_bytes()),
+        &DecodingKey::from_secret(secret.as_bytes()),
         &validation,
     )
     .map(|data| data.claims)
@@ -77,7 +77,11 @@ pub fn verify_jwt(token: &str) -> Result<Claims, AppError> {
 /// Extract the authenticated wallet address from the `Authorization: Bearer <token>` header.
 ///
 /// Returns `AppError::AuthError` if the header is missing, malformed, or the token is invalid.
-pub fn extract_auth(headers: &axum::http::HeaderMap) -> Result<String, AppError> {
+/// The JWT secret is read from the request-scoped [`Config`] extension.
+pub fn extract_auth(
+    headers: &axum::http::HeaderMap,
+    config: &Config,
+) -> Result<String, AppError> {
     let header = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -87,7 +91,7 @@ pub fn extract_auth(headers: &axum::http::HeaderMap) -> Result<String, AppError>
         AppError::AuthError("Authorization header must use Bearer scheme".to_string())
     })?;
 
-    let claims = verify_jwt(token)?;
+    let claims = verify_jwt(token, &config.jwt_secret)?;
     Ok(claims.sub)
 }
 
@@ -133,6 +137,7 @@ pub struct TokenResponse {
 /// 5 minutes and is stored in the `jwt_nonces` table.
 pub async fn request_nonce(
     State(pool): State<PgPool>,
+    Extension(_config): Extension<Config>,
     Json(payload): Json<NonceRequest>,
 ) -> Response {
     if payload.address.is_empty() {
@@ -166,6 +171,7 @@ pub async fn request_nonce(
 /// corresponding to the provided public key.
 pub async fn verify_signature(
     State(pool): State<PgPool>,
+    Extension(config): Extension<Config>,
     Json(payload): Json<VerifyRequest>,
 ) -> Response {
     if payload.address.is_empty()
@@ -281,7 +287,7 @@ pub async fn verify_signature(
     }
 
     // 4. Issue JWT
-    match issue_jwt(&payload.address) {
+    match issue_jwt(&payload.address, &config.jwt_secret) {
         Ok(token) => success(TokenResponse { token }, "Authentication successful").into_response(),
         Err(e) => e.into_response(),
     }
@@ -305,46 +311,99 @@ mod tests {
 
     #[test]
     fn test_issue_and_verify_jwt() {
+        let secret = "test-secret-for-unit-tests-only";
         let address = "GABC123XYZ";
-        let token = issue_jwt(address).expect("should issue JWT");
-        let claims = verify_jwt(&token).expect("should verify JWT");
+        let token = issue_jwt(address, secret).expect("should issue JWT");
+        let claims = verify_jwt(&token, secret).expect("should verify JWT");
         assert_eq!(claims.sub, address);
     }
 
     #[test]
     fn test_verify_invalid_jwt() {
-        let result = verify_jwt("not.a.valid.token");
+        let result = verify_jwt("not.a.valid.token", "any-secret");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_extract_auth_missing_header() {
+        let config = Config {
+            database_url: "postgres://x:x@localhost/x".into(),
+            port: 3001,
+            rust_env: "development".into(),
+            cors_allowed_origins: "http://localhost:3000".into(),
+            rust_log: "info".into(),
+            soroban_rpc_url: "https://soroban-testnet.stellar.org".into(),
+            redis_url: "redis://127.0.0.1:6379".into(),
+            s3_bucket: String::new(),
+            s3_region: "auto".into(),
+            s3_access_key_id: String::new(),
+            s3_secret_access_key: String::new(),
+            s3_endpoint_url: None,
+            s3_public_url: String::new(),
+            base_url: "https://agora.events".into(),
+            jwt_secret: "test-secret-for-unit-tests-only".into(),
+        };
         let headers = axum::http::HeaderMap::new();
-        let result = extract_auth(&headers);
+        let result = extract_auth(&headers, &config);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_extract_auth_valid_token() {
+        let secret = "test-secret-for-unit-tests-only";
+        let config = Config {
+            database_url: "postgres://x:x@localhost/x".into(),
+            port: 3001,
+            rust_env: "development".into(),
+            cors_allowed_origins: "http://localhost:3000".into(),
+            rust_log: "info".into(),
+            soroban_rpc_url: "https://soroban-testnet.stellar.org".into(),
+            redis_url: "redis://127.0.0.1:6379".into(),
+            s3_bucket: String::new(),
+            s3_region: "auto".into(),
+            s3_access_key_id: String::new(),
+            s3_secret_access_key: String::new(),
+            s3_endpoint_url: None,
+            s3_public_url: String::new(),
+            base_url: "https://agora.events".into(),
+            jwt_secret: secret.into(),
+        };
         let address = "GTEST456";
-        let token = issue_jwt(address).unwrap();
+        let token = issue_jwt(address, secret).unwrap();
         let mut headers = axum::http::HeaderMap::new();
         headers.insert(
             axum::http::header::AUTHORIZATION,
             format!("Bearer {token}").parse().unwrap(),
         );
-        let extracted = extract_auth(&headers).unwrap();
+        let extracted = extract_auth(&headers, &config).unwrap();
         assert_eq!(extracted, address);
     }
 
     #[test]
     fn test_extract_auth_wrong_scheme() {
+        let config = Config {
+            database_url: "postgres://x:x@localhost/x".into(),
+            port: 3001,
+            rust_env: "development".into(),
+            cors_allowed_origins: "http://localhost:3000".into(),
+            rust_log: "info".into(),
+            soroban_rpc_url: "https://soroban-testnet.stellar.org".into(),
+            redis_url: "redis://127.0.0.1:6379".into(),
+            s3_bucket: String::new(),
+            s3_region: "auto".into(),
+            s3_access_key_id: String::new(),
+            s3_secret_access_key: String::new(),
+            s3_endpoint_url: None,
+            s3_public_url: String::new(),
+            base_url: "https://agora.events".into(),
+            jwt_secret: "test-secret-for-unit-tests-only".into(),
+        };
         let mut headers = axum::http::HeaderMap::new();
         headers.insert(
             axum::http::header::AUTHORIZATION,
             "Basic sometoken".parse().unwrap(),
         );
-        let result = extract_auth(&headers);
+        let result = extract_auth(&headers, &config);
         assert!(result.is_err());
     }
 }
