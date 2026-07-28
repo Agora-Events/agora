@@ -30,6 +30,8 @@ pub enum ProSubscriptionError {
     InvalidAddress = 12,
     /// Subscription already exists and is active
     SubscriptionAlreadyActive = 13,
+    /// Organizer already has Pro subscription
+    AlreadyPro = 14,
 }
 
 impl core::fmt::Display for ProSubscriptionError {
@@ -77,6 +79,9 @@ impl core::fmt::Display for ProSubscriptionError {
                     "An active subscription already exists for this organizer"
                 )
             }
+            ProSubscriptionError::AlreadyPro => {
+                write!(f, "Organizer already has Pro subscription")
+            }
         }
     }
 }
@@ -111,6 +116,7 @@ mod tests {
             ProSubscriptionError::TransferFailed,
             ProSubscriptionError::InvalidAddress,
             ProSubscriptionError::SubscriptionAlreadyActive,
+            ProSubscriptionError::AlreadyPro,
         ];
 
         for error in variants {

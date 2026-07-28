@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useId } from "react";
+import styles from "./hero-section.module.css";
 
 /**
  * Hero section component for the landing page
@@ -13,7 +14,7 @@ import { useState, useId } from "react";
 export function HeroSection() {
   return (
     <div
-      className="relative w-full min-h-screen flex flex-col items-center bg-cover bg-center bg-no-repeat select-none overflow-hidden"
+      className={`relative w-full min-h-screen flex flex-col items-center bg-cover bg-center bg-no-repeat select-none overflow-hidden ${styles.hero}`}
       style={{ backgroundImage: 'url("/backgrounds/hero-gradient.svg")' }}
     >
       <Navbar />

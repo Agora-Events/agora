@@ -3,16 +3,26 @@ use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
 use sqlx::PgPool;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use crate::config::Config;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
-#[derive(Serialize)]
-struct HealthResponse {
+static CATEGORY_SYNC_STATUS: LazyLock<std::sync::Mutex<bool>> =
+    LazyLock::new(|| std::sync::Mutex::new(true));
+
+/// Update the category sync status. Called during startup after validation.
+pub fn set_category_sync_status(synced: bool) {
+    *CATEGORY_SYNC_STATUS.lock().unwrap() = synced;
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct HealthResponse {
     status: &'static str,
     timestamp: String,
+    category_sync: bool,
 }
 
 #[derive(Serialize)]
@@ -41,12 +51,22 @@ struct HealthBlockchainResponse {
 ///
 /// Returns 200 when both the API process and the database are healthy.
 /// On failure it returns a structured JSON 503 error (via [`AppError`]).
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "API is healthy", body = HealthResponse)
+    )
+)]
 pub async fn health_check(State(pool): State<PgPool>) -> Response {
+    let category_sync = *CATEGORY_SYNC_STATUS.lock().unwrap();
+    
     match sqlx::query("SELECT 1").fetch_one(&pool).await {
         Ok(_) => {
             let payload = HealthResponse {
                 status: "ok",
                 timestamp: Utc::now().to_rfc3339(),
+                category_sync,
             };
             success(payload, "API is healthy").into_response()
         }
@@ -158,6 +178,31 @@ pub async fn health_check_blockchain(
     }
 }
 
+#[derive(Serialize)]
+struct HealthRedisResponse {
+    status: &'static str,
+    timestamp: String,
+}
+
+/// GET /health/redis – Redis connectivity check.
+///
+/// Returns 200 when Redis is reachable.
+/// Returns a structured JSON error (via [`AppError`]) when it is not.
+pub async fn health_check_redis(State(mut redis): State<crate::cache::RedisCache>) -> Response {
+    // Perform a basic Redis command to verify connectivity
+    match redis.ping().await {
+        Ok(_) => {
+            let payload = HealthRedisResponse {
+                status: "ok",
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "Redis is healthy").into_response()
+        }
+        Err(e) => AppError::ExternalServiceError(format!("Redis health check failed: {e}"))
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,6 +221,7 @@ mod tests {
         let payload = HealthResponse {
             status: "ok",
             timestamp: Utc::now().to_rfc3339(),
+            category_sync: true,
         };
         let resp = success(payload, "API is healthy").into_response();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -197,6 +243,7 @@ mod tests {
                 let payload = HealthResponse {
                     status: "ok",
                     timestamp: Utc::now().to_rfc3339(),
+                    category_sync: true,
                 };
                 success(payload, "API is healthy").into_response()
             }),

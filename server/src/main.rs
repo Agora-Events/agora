@@ -33,7 +33,17 @@ async fn main() {
     dotenv().ok();
     init_logging();
 
-    let config = Config::from_env().expect("Failed to load configuration");
+    let config = Config::from_env().unwrap_or_else(|e| {
+        eprintln!("ERROR: Failed to load configuration: {e}");
+        std::process::exit(1);
+    });
+
+    if let Err(e) = config.validate() {
+        eprintln!("ERROR: Invalid configuration:\n{e}");
+        tracing::error!("Server startup aborted due to configuration errors:\n{e}");
+        std::process::exit(1);
+    }
+
     tracing::info!("Starting server in {} mode", config.rust_env);
     tracing::info!("Configuration: PORT={}", config.port);
     tracing::info!("Configuration: RUST_ENV={}", config.rust_env);
@@ -61,6 +71,14 @@ async fn main() {
 
     tracing::info!("Migrations run successfully");
 
+    // Validate categories match contract (Issue #1076)
+    let categories_synced = crate::handlers::categories::validate_categories_match_contract(&pool)
+        .await;
+    crate::handlers::health::set_category_sync_status(categories_synced);
+    if !categories_synced {
+        tracing::error!("Category sync validation failed - database categories do not match contract canonical list");
+    }
+
     // Initialize Redis cache
     let redis = match agora_server::cache::RedisCache::new(&config.redis_url).await {
         Ok(redis) => {
@@ -79,6 +97,31 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("🚀 Server running at http://localhost:{}", config.port);
     tracing::info!("Request IDs will be set via '{REQUEST_ID_HEADER}' header");
+
+    // Spawn periodic background task to clean up old nonces (Issue #823)
+    let cleanup_pool = pool.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15 * 60)); // 15 minutes
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic cleanup of jwt_nonces...");
+            match sqlx::query(
+                "DELETE FROM jwt_nonces WHERE expires_at < NOW() OR (used = TRUE AND created_at < NOW() - INTERVAL '7 days')"
+            )
+            .execute(&cleanup_pool)
+            .await
+            {
+                Ok(result) => {
+                    if result.rows_affected() > 0 {
+                        tracing::info!("Cleaned up {} expired/used nonces.", result.rows_affected());
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to clean up jwt_nonces: {:?}", e);
+                }
+            }
+        }
+    });
 
     let listener = TcpListener::bind(addr)
         .await

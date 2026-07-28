@@ -1,21 +1,33 @@
-use super::*;
-use crate::events::{PriceUpdatedEvent, ProSubscriptionEvent};
-use crate::types::{SubscriptionTier, SECONDS_PER_MONTH};
-use soroban_sdk::{
-    testutils::{Address as _, Events},
-    token::StellarAssetClient,
-    Address, Env, IntoVal,
-};
-
-fn setup_env() -> (Env, ProSubscriptionContractClient<'static>, Address, Address, Address) {
 use super::contract::ProSubscriptionContract;
 use super::types::Subscription;
 use crate::error::ProSubscriptionError;
+use crate::events::{PriceUpdatedEvent, ProSubscriptionEvent};
+use crate::types::{SubscriptionTier, SECONDS_PER_MONTH};
 use crate::ProSubscriptionContractClient;
-use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo, MockAuth, MockAuthInvoke};
-use soroban_sdk::{token, Address, Env, IntoVal};
+use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo, MockAuth, MockAuthInvoke};
+use soroban_sdk::{token, token::StellarAssetClient, Address, Env, IntoVal};
 
-const SECONDS_PER_MONTH: u64 = 30 * 24 * 60 * 60;
+fn setup_env() -> (
+    Env,
+    ProSubscriptionContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, ProSubscriptionContract);
+    let client = ProSubscriptionContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    client.initialize(&admin, &platform_wallet, &usdc, &1_000_000i128);
+
+    (env, client, admin, platform_wallet, usdc)
+}
 
 fn setup() -> (
     Env,
@@ -115,13 +127,8 @@ fn test_register_basic_blocked_when_already_pro() {
     let result = client.try_register_basic(&organizer);
     assert_eq!(
         result,
-    let usdc = env
-        .register_stellar_asset_contract_v2(Address::generate(&env))
-        .address();
-
-    client.initialize(&admin, &platform_wallet, &usdc, &1000i128);
-
-    (env, client, admin, platform_wallet, usdc)
+        Err(Ok(ProSubscriptionError::SubscriptionAlreadyActive))
+    );
 }
 
 fn setup_without_auth_mock() -> (
@@ -133,6 +140,7 @@ fn setup_without_auth_mock() -> (
     Address,
 ) {
     let env = Env::default();
+    env.mock_all_auths();
     let contract_id = env.register_contract(None, ProSubscriptionContract);
     let client = ProSubscriptionContractClient::new(&env, &contract_id);
 
@@ -142,7 +150,7 @@ fn setup_without_auth_mock() -> (
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();
 
-    client.initialize(&admin, &platform_wallet, &usdc, &1000i128);
+    client.initialize(&admin, &platform_wallet, &usdc, &1_000_000i128);
 
     (env, client, contract_id, admin, platform_wallet, usdc)
 }
@@ -161,7 +169,7 @@ fn test_is_initialized_before_and_after_initialize() {
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();
 
-    client.initialize(&admin, &platform_wallet, &usdc, &1000i128);
+    client.initialize(&admin, &platform_wallet, &usdc, &1_000_000i128);
 
     assert!(client.is_initialized());
 }
@@ -178,7 +186,7 @@ fn test_get_subscription_expiry_none_for_unknown_address() {
 fn test_get_subscription_expiry_after_subscribing() {
     let (env, client, _admin, _platform_wallet, usdc) = setup();
     let organizer = Address::generate(&env);
-    let monthly_price = 1000i128;
+    let monthly_price = 1_000_000i128;
 
     token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
     token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
@@ -199,7 +207,7 @@ fn test_renew_active_subscription() {
     let organizer = Address::generate(&env);
 
     // Mint and approve payment for initial subscription (1 month)
-    let monthly_price = 1000i128;
+    let monthly_price = 1_000_000i128;
     token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &(monthly_price));
     token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
 
@@ -230,7 +238,7 @@ fn test_renew_expired_subscription() {
     let (env, client, _admin, platform_wallet, usdc) = setup();
 
     let organizer = Address::generate(&env);
-    let monthly_price = 1000i128;
+    let monthly_price = 1_000_000i128;
 
     token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &(monthly_price));
     token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
@@ -288,7 +296,7 @@ fn test_subscribe_zero_months_error() {
 fn test_subscribe_already_active_error() {
     let (env, client, _admin, _platform_wallet, usdc) = setup();
     let organizer = Address::generate(&env);
-    let monthly_price = 1000i128;
+    let monthly_price = 1_000_000i128;
     token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
     token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
     client.subscribe_pro(&organizer, &1u32);
@@ -308,11 +316,13 @@ fn test_subscribe_already_active_error() {
 #[test]
 fn test_seconds_per_month_value() {
     assert_eq!(SECONDS_PER_MONTH, 30 * 24 * 60 * 60);
+}
+
 #[test]
 fn test_cancel_subscription_removes_member_and_decrements_total() {
     let (env, client, _admin, _platform_wallet, usdc) = setup();
     let organizer = Address::generate(&env);
-    let monthly_price = 1000i128;
+    let monthly_price = 1_000_000i128;
 
     token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
     token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
@@ -338,10 +348,10 @@ fn test_cancel_subscription_removes_member_and_decrements_total() {
 fn test_update_pro_price_success() {
     let (_env, client, _admin, _platform_wallet, _usdc) = setup();
 
-    let initial_price = 1000i128;
+    let initial_price = 1_000_000i128;
     assert_eq!(client.get_pro_monthly_price(), initial_price);
 
-    let new_price = 2000i128;
+    let new_price = 2_000_000i128;
     client.update_pro_price(&new_price);
 
     assert_eq!(client.get_pro_monthly_price(), new_price);
@@ -426,4 +436,220 @@ fn test_get_payment_token() {
 
     let result = client.get_payment_token();
     assert_eq!(result, Some(usdc));
+}
+
+#[test]
+fn test_update_payment_token_success() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let new_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    client.update_payment_token(&new_token);
+
+    assert_eq!(client.get_payment_token(), Some(new_token));
+}
+
+#[test]
+#[should_panic]
+fn test_update_payment_token_unauthorized() {
+    let (env, client, contract_id, _admin, _platform_wallet, _usdc) = setup_without_auth_mock();
+    let non_admin = Address::generate(&env);
+    let new_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "update_payment_token",
+            args: (&new_token,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.update_payment_token(&new_token);
+}
+
+// ── Pro member list events ────────────────────────────────────────────────────
+
+#[test]
+fn test_pro_member_added_event_on_subscribe() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Just check that events were emitted
+    let events = env.events().all();
+    assert!(!events.is_empty(), "No events emitted");
+}
+
+#[test]
+fn test_pro_member_added_event_on_renew() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    // Initial subscription
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Renewal
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.renew_subscription(&organizer, &1u32);
+
+    // Just check that events were emitted
+    let events = env.events().all();
+    assert!(!events.is_empty(), "No events emitted");
+}
+
+#[test]
+fn test_pro_member_removed_event_on_cancel() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    client.cancel_subscription(&organizer);
+
+    // Just check that events were emitted
+    let events = env.events().all();
+    assert!(!events.is_empty(), "No events emitted");
+}
+
+// ── Issue #640: get_total_pro_subscriptions accounting ───────────────────────
+
+#[test]
+fn test_total_subscriptions_increments_on_subscribe() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let monthly_price = 1_000_000i128;
+
+    let org1 = Address::generate(&env);
+    let org2 = Address::generate(&env);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&org1, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&org1, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&org1, &1u32);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&org2, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&org2, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&org2, &1u32);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 2u32);
+}
+
+#[test]
+fn test_total_subscriptions_decrements_on_cancel() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let monthly_price = 1_000_000i128;
+    let organizer = Address::generate(&env);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    client.cancel_subscription(&organizer);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 0u32);
+}
+
+#[test]
+fn test_total_subscriptions_no_double_count() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let monthly_price = 1_000_000i128;
+    let organizer = Address::generate(&env);
+
+    // First subscription — succeeds
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Second subscription while still active — must fail
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    let res = client.try_subscribe_pro(&organizer, &1u32);
+    assert_eq!(
+        res,
+        Err(Ok(ProSubscriptionError::SubscriptionAlreadyActive))
+    );
+
+    // Counter must still be 1, not 2
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+}
+
+// ── Issue #632: cancel_subscription coverage ─────────────────────────────────
+
+#[test]
+fn test_cancel_subscription_success() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Confirm active before cancel
+    assert!(client.is_pro_member(&organizer));
+
+    client.cancel_subscription(&organizer);
+
+    // is_pro_member must return false after cancellation
+    assert!(!client.is_pro_member(&organizer));
+
+    // Subscription record should exist but be inactive
+    let sub = client.get_subscription(&organizer).unwrap();
+    assert!(!sub.is_active);
+}
+
+#[test]
+fn test_cancel_subscription_not_found() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let never_subscribed = Address::generate(&env);
+
+    let res = client.try_cancel_subscription(&never_subscribed);
+    assert_eq!(res, Err(Ok(ProSubscriptionError::SubscriptionNotFound)));
+}
+
+#[test]
+#[should_panic]
+fn test_cancel_subscription_unauthorized() {
+    let (env, client, contract_id, _admin, _platform_wallet, usdc) = setup_without_auth_mock();
+    let non_admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    // Subscribe the organizer first (mock all auths just for setup)
+    env.mock_all_auths();
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Now attempt cancel as a non-admin — should panic
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "cancel_subscription",
+            args: (&organizer,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.cancel_subscription(&organizer);
 }

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import React, { useState } from "react";
 import { TicketModal } from "./TicketModal";
 import { Button } from "@/components/ui/button";
+import { TicketAvailabilityDisplay } from "./ticket-availability-display";
+import { parsePriceValue } from "@/lib/validation";
 
 interface RegistrationBoxProps {
   event: {
@@ -30,21 +32,22 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
   const handleRegisterClick = () => {
     // In a real production environment, you would use the app's specific auth hook here.
     // For this ticket, we will check local storage as a standard fallback for authentication state.
-    const isAuthenticated = typeof window !== 'undefined' && localStorage.getItem('token'); 
+    const isAuthenticated =
+      typeof window !== "undefined" && localStorage.getItem("token");
 
     if (isAuthenticated) {
       setIsModalOpen(true);
     } else {
-      router.push('/auth');
+      router.push("/auth");
     }
   };
 
   const isFree = event.price.toLowerCase() === "free";
-  const priceValue = isFree ? 0 : parseFloat(event.price.replace("$", ""));
+  const priceValue = isFree ? 0 : parsePriceValue(event.price);
 
   return (
     <>
-      <div className="bg-surface rounded-[24px] p-6 sm:p-8 flex flex-col gap-8 relative overflow-hidden border border-black/5 shadow-sm">
+      <div className="bg-surface rounded-3xl p-6 sm:p-8 flex flex-col gap-8 relative overflow-hidden border border-black/5 shadow-sm">
         <div className="flex justify-between items-center z-10 flex-wrap gap-4">
           <div className="bg-white rounded-full px-6 py-2.5 italic text-gray-400 font-medium text-[17px] sm:text-[20px] shadow-sm flex-1 min-w-[150px]">
             Registration
@@ -70,6 +73,15 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
               +
             </button>
           </div>
+        </div>
+
+        {/* Real-time Ticket Availability Display */}
+        <div className="z-10 bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <TicketAvailabilityDisplay
+            eventId={event.id.toString()}
+            showDetails={false}
+            pollInterval={5000}
+          />
         </div>
 
         <p className="text-[16px] sm:text-[19px] text-black font-medium z-10">

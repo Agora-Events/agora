@@ -52,7 +52,7 @@ describe("Button Component", () => {
     });
 
     it("applies dark variant styles correctly", () => {
-      render(<Button variant="dark">Dark Button</Button>);
+      render(<Button variant="primary">Dark Button</Button>);
       
       const button = screen.getByRole("button");
       expect(button).toHaveClass("bg-black");
@@ -137,7 +137,7 @@ describe("Button Component", () => {
     });
 
     it("applies variant-specific shadow color", () => {
-      render(<Button variant="dark">Dark Shadow</Button>);
+      render(<Button variant="primary">Dark Shadow</Button>);
       
       const button = screen.getByRole("button");
       expect(button).toHaveStyle({ boxShadow: "-4px 4px 0px 0px rgba(0,0,0,0.4)" });

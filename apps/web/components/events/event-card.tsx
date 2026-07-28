@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { LazyImage } from "@/components/ui/LazyImage";
 
 /**
  * SOLUTION FOR ISSUE #449 & #711:
@@ -17,6 +18,8 @@ type EventCardProps = {
   location: string;
   price: string;
   imageUrl: string;
+  /** When true, shows a small loading spinner overlay in the card */
+  loading?: boolean;
 };
 
 export function EventCard({
@@ -26,6 +29,7 @@ export function EventCard({
   location,
   price,
   imageUrl,
+  loading = false,
 }: EventCardProps) {
   const locationImageSrc = location.toLowerCase().includes("discord")
     ? "/icons/discord.svg"
@@ -35,17 +39,22 @@ export function EventCard({
 
   return (
     <Link href={`/events/${id}`} className="block w-full">
-      <div className="w-full sm:max-w-147.5 shadow-[-6px_6px_0_rgba(0,0,0,1)] sm:shadow-[-9px_9px_0_rgba(0,0,0,1)] flex flex-col bg-surface pb-4.75 sm:pl-12.5 pl-4 pt-5 sm:pt-9.75 rounded-xl sm:pr-5 pr-3.75 transition-transform hover:scale-[1.02] overflow-hidden">
+      <div className="w-full sm:max-w-147.5 shadow-[-6px_6px_0_rgba(0,0,0,1)] sm:shadow-[-9px_9px_0_rgba(0,0,0,1)] flex flex-col bg-surface pb-4.75 sm:pl-12.5 pl-4 pt-5 sm:pt-9.75 rounded-xl sm:pr-5 pr-3.75 transition-transform hover:scale-[1.02] overflow-hidden relative">
+        {/* Loading overlay spinner */}
+        {loading && (
+          <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center rounded-xl">
+            <div className="w-8 h-8 border-3 border-accent border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
         <div className="flex gap-4.75">
           {/* Left Side: Image & Mobile Actions */}
           <div className="flex-shrink-0 w-[40%] sm:w-auto">
-            <Image
+            <LazyImage
               src={imageUrl}
+              alt={title}
               width={227}
               height={112}
-              alt={title}
               className="object-cover w-full h-auto rounded-lg"
-              loading="lazy"
             />
             
             {/* Price Label (Mobile Only) */}

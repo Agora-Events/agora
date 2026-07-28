@@ -1,5 +1,7 @@
 # <img src="apps/web/public/logo/agora%20logo.svg" alt="Agora Logo" width="50" /> Agora
 
+[![Chromatic](https://chromatic.com/badge?appCode=)](https://www.chromatic.com/)
+
 **Plan Events. Bring People Together. Grow Communities.**
 
 Agora is an event and ticketing platform built for organizers, creators, and communities to create events, sell tickets, and manage attendees with ease. Built on [Stellar](https://stellar.org), it enables fast, low-cost, borderless payments using USDC.

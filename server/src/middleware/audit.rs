@@ -16,6 +16,12 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+/// Action-specific context a handler can attach to its response so the audit
+/// layer records it in the `metadata` column. Insert it into the response
+/// extensions, e.g. `response.extensions_mut().insert(AuditMetadata(json))`.
+#[derive(Clone, Debug)]
+pub struct AuditMetadata(pub Value);
+
 /// Axum middleware that records every admin request to `audit_logs`.
 ///
 /// Attach via `axum::middleware::from_fn_with_state` on the admin router.
@@ -49,6 +55,12 @@ pub async fn audit_layer(State(pool): State<PgPool>, request: Request, next: Nex
     let response = next.run(request).await;
     let status_code = response.status().as_u16() as i32;
 
+    // Pick up any handler-supplied metadata from the response extensions.
+    let metadata = response
+        .extensions()
+        .get::<AuditMetadata>()
+        .map(|m| m.0.clone());
+
     // Derive a human-readable action from the method + path.
     let action = derive_action(&method, &path);
 
@@ -66,6 +78,7 @@ pub async fn audit_layer(State(pool): State<PgPool>, request: Request, next: Nex
             request_body,
             ip_clone,
             status_code,
+            metadata,
         )
         .await
         {
@@ -92,6 +105,7 @@ fn derive_action(method: &str, path: &str) -> String {
     format!("admin.{base}.{verb}")
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn persist_audit_log(
     pool: &PgPool,
     action: &str,
@@ -100,12 +114,13 @@ async fn persist_audit_log(
     request_body: Option<Value>,
     ip_address: Option<String>,
     status_code: i32,
+    metadata: Option<Value>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         INSERT INTO audit_logs
-            (id, action, request_path, request_method, request_body, ip_address, status_code)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+            (id, action, request_path, request_method, request_body, ip_address, status_code, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
     )
     .bind(Uuid::new_v4())
@@ -115,7 +130,19 @@ async fn persist_audit_log(
     .bind(request_body)
     .bind(ip_address)
     .bind(status_code)
+    .bind(metadata)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audit_metadata_holds_organizer_wallet() {
+        let metadata = AuditMetadata(serde_json::json!({ "organizer_wallet": "GABC123" }));
+        assert_eq!(metadata.0["organizer_wallet"], "GABC123");
+    }
 }

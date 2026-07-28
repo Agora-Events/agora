@@ -15,7 +15,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -73,14 +73,49 @@ impl Default for PurchaseBroadcaster {
 /// HTTP upgrade handler — clients call this endpoint to open a WebSocket.
 ///
 /// Route: `GET /api/v1/ws/purchases`
+///
+/// Requires a valid JWT in the `Authorization: Bearer <token>` header or
+/// `?token=<jwt>` query parameter. Returns 401 if authentication fails.
 pub async fn ws_purchases_handler(
     ws: WebSocketUpgrade,
     State(broadcaster): State<PurchaseBroadcaster>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    headers: axum::http::HeaderMap,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, broadcaster))
+    // Extract JWT from Authorization header or ?token= query param.
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .or_else(|| params.get("token").map(|s| s.as_str()));
+
+    let _wallet = match token {
+        Some(t) => match crate::handlers::auth::verify_jwt(t) {
+            Ok(claims) => claims.sub,
+            Err(e) => {
+                tracing::warn!("WebSocket upgrade rejected: invalid JWT: {:?}", e);
+                return (
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    "Unauthorized: invalid or expired token",
+                )
+                    .into_response();
+            }
+        },
+        None => {
+            tracing::warn!("WebSocket upgrade rejected: no JWT provided");
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Unauthorized: authentication required",
+            )
+                .into_response();
+        }
+    };
+
+    // Pass the authenticated wallet to the socket handler for per-user scoping.
+    ws.on_upgrade(move |socket| handle_socket(socket, broadcaster, _wallet))
 }
 
-async fn handle_socket(mut socket: WebSocket, broadcaster: PurchaseBroadcaster) {
+async fn handle_socket(mut socket: WebSocket, broadcaster: PurchaseBroadcaster, _wallet: String) {
     let mut rx = broadcaster.subscribe();
 
     loop {

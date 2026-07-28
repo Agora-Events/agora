@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,8 @@ const USER_NAV_ITEMS: NavItem[] = [
   },
 ];
 
+
+
 const userCta = (
   <Link href="/create-event">
     <Button
@@ -51,45 +54,56 @@ const userCta = (
   </Link>
 );
 
-const userEndSlot = (
-  <>
-    <Link href="#">
-      <Button
-        backgroundColor="bg-white"
-        className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
-        textColor="text-black"
-        shadowColor="rgba(0,0,0,1)"
-      >
-        <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
-        <Image
-          src="/icons/notification.svg"
-          alt="Notifications"
-          width={24}
-          height={24}
-          className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-        />
-      </Button>
-    </Link>
-    <Link href="/profile">
-      <Button
-        backgroundColor="bg-white"
-        className="relative w-[55.22px] h-[53px] px-0! py-0"
-        textColor="text-black"
-        shadowColor="rgba(0,0,0,1)"
-      >
-        <div className="size-[49px] rounded-full">
-          <Image
-            src="/images/pfp.png"
-            alt="Profile"
-            width={49}
-            height={49}
-            className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-          />
-        </div>
-      </Button>
-    </Link>
-  </>
-);
+function UserEndSlot() {
+  const [notifications] = useState<any[]>([]);
+
+  return (
+    <>
+      <div className="relative">
+        <Link href="/notifications">
+          <Button
+            backgroundColor="bg-white"
+            className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
+            textColor="text-black"
+            shadowColor="rgba(0,0,0,1)"
+            aria-label="View notifications"
+          >
+            {notifications.length > 0 && (
+              <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
+            )}
+            <Image
+              src="/icons/notification.svg"
+              alt="Notifications"
+              width={24}
+              height={24}
+              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+            />
+          </Button>
+        </Link>
+      </div>
+
+      <Link href="/profile">
+        <Button
+          backgroundColor="bg-white"
+          className="relative w-[55.22px] h-[53px] px-0! py-0"
+          textColor="text-black"
+          shadowColor="rgba(0,0,0,1)"
+          aria-label="User profile"
+        >
+          <div className="size-[49px] rounded-full">
+            <Image
+              src="/images/pfp.png"
+              alt="Profile"
+              width={49}
+              height={49}
+              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+            />
+          </div>
+        </Button>
+      </Link>
+    </>
+  );
+}
 
 export function UserNav({ pathname }: { pathname: string }) {
   return (
@@ -98,7 +112,7 @@ export function UserNav({ pathname }: { pathname: string }) {
       isAuthenticated={true}
       navItems={USER_NAV_ITEMS}
       ctaSlot={userCta}
-      endSlot={userEndSlot}
+      endSlot={<UserEndSlot />}
     />
   );
 }

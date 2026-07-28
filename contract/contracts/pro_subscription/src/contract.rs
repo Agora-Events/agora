@@ -3,25 +3,18 @@ use soroban_sdk::{contract, contractimpl, token, Address, Env};
 use crate::{
     error::ProSubscriptionError,
     events::{
-        InitializationEvent, PriceUpdatedEvent, ProSubscriptionEvent, SubscriptionCancelledEvent,
-        SubscriptionCreatedEvent, SubscriptionRenewedEvent,
+        InitializationEvent, PriceUpdatedEvent, ProMemberAddedEvent, ProMemberRemovedEvent,
+        ProSubscriptionEvent, SubscriptionCancelledEvent, SubscriptionCreatedEvent,
+        SubscriptionRenewedEvent,
     },
     storage::{
-        add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin,
-        get_payment_token, get_platform_wallet, get_pro_members_list, get_pro_monthly_price,
-        get_subscription, get_total_pro_subscriptions, increment_total_pro_subscriptions,
-        is_initialized, remove_from_pro_members_list, set_admin,
-        set_initialized, set_payment_token, set_platform_wallet, set_pro_monthly_price,
-        set_subscription,
-    },
-    types::{Subscription, SubscriptionTier, SECONDS_PER_MONTH},
         add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin, get_payment_token,
         get_platform_wallet, get_pro_members_list, get_pro_monthly_price, get_subscription,
         get_total_pro_subscriptions, increment_total_pro_subscriptions, is_initialized,
         remove_from_pro_members_list, set_admin, set_initialized, set_payment_token,
         set_platform_wallet, set_pro_monthly_price, set_subscription,
     },
-    types::{Subscription, SubscriptionTier},
+    types::{Subscription, SubscriptionTier, SECONDS_PER_MONTH},
     validation::validate_address,
 };
 
@@ -133,6 +126,14 @@ impl ProSubscriptionContract {
         increment_total_pro_subscriptions(&env);
 
         env.events().publish(
+            (ProSubscriptionEvent::ProMemberAdded,),
+            ProMemberAddedEvent {
+                organizer: organizer.clone(),
+                timestamp: current_time,
+            },
+        );
+
+        env.events().publish(
             (ProSubscriptionEvent::SubscriptionCreated,),
             SubscriptionCreatedEvent {
                 organizer,
@@ -204,6 +205,14 @@ impl ProSubscriptionContract {
         add_to_pro_members_list(&env, &organizer);
 
         env.events().publish(
+            (ProSubscriptionEvent::ProMemberAdded,),
+            ProMemberAddedEvent {
+                organizer: organizer.clone(),
+                timestamp: current_time,
+            },
+        );
+
+        env.events().publish(
             (ProSubscriptionEvent::SubscriptionRenewed,),
             SubscriptionRenewedEvent {
                 organizer,
@@ -227,6 +236,14 @@ impl ProSubscriptionContract {
         set_subscription(&env, &subscription);
         remove_from_pro_members_list(&env, &organizer);
         decrement_total_pro_subscriptions(&env);
+
+        env.events().publish(
+            (ProSubscriptionEvent::ProMemberRemoved,),
+            ProMemberRemovedEvent {
+                organizer: organizer.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         env.events().publish(
             (ProSubscriptionEvent::SubscriptionCancelled,),
@@ -364,5 +381,13 @@ impl ProSubscriptionContract {
     /// Get the payment token address
     pub fn get_payment_token(env: Env) -> Option<Address> {
         get_payment_token(&env)
+    }
+
+    /// Update the accepted payment token (admin only)
+    pub fn update_payment_token(env: Env, new_token: Address) -> Result<(), ProSubscriptionError> {
+        require_admin(&env)?;
+        validate_address(&env, &new_token)?;
+        set_payment_token(&env, &new_token);
+        Ok(())
     }
 }

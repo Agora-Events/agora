@@ -1,13 +1,18 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, Transition } from "framer-motion";
 import Image from "next/image";
 import { EventCard } from "./event-card";
 import { EventCardSkeleton } from "./event-card-skeleton";
 import { Button } from "../ui/button";
+import { EmptyState } from "../ui/empty-state";
 import { FilterSidebar, FilterState } from "./filter-sidebar";
 import { fetchPopularEvents, type DiscoverEvent } from "@/utils/api";
+import { useDebounce } from "@/hooks/useDebounce";
+
+/** Quiet period before a search query is applied, in milliseconds. */
+const SEARCH_DEBOUNCE_MS = 300;
 
 const container = {
   hidden: { opacity: 0 },
@@ -48,32 +53,41 @@ const DEFAULT_FILTERS: FilterState = {
 type PopularEventsSectionProps = {
   activeCategory?: string;
   onError: (message: string) => void;
+  /** Called whenever the filtered event count changes, so parent can show EmptyState */
+  onEventsChange?: (count: number) => void;
 };
 
-export function PopularEventsSection({ activeCategory, onError }: PopularEventsSectionProps) {
+export function PopularEventsSection({ activeCategory, onError, onEventsChange }: PopularEventsSectionProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
+  // Keystrokes update `search` instantly for the input; filtering (and any
+  // future server-side search) only runs once typing pauses.
+  const debouncedSearch = useDebounce(search, SEARCH_DEBOUNCE_MS);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [events, setEvents] = useState<DiscoverEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState<number | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   useEffect(() => {
-    // AbortController cancels the in-flight fetch when the component unmounts,
-    // preventing state updates on an unmounted component and avoiding memory leaks.
     const controller = new AbortController();
 
     const loadEvents = async () => {
       try {
-        const data = await fetchPopularEvents(controller.signal);
-        setEvents(data);
+        setIsLoading(true);
+        const data = await fetchPopularEvents(1, controller.signal);
+        setEvents(data.events);
+        setTotal(data.meta?.total ?? data.events.length);
+        setPage(data.meta?.page ?? 1);
       } catch (err) {
-        // Ignore abort errors — they are intentional and not user-facing.
         if (err instanceof Error && err.name === "AbortError") return;
         setEvents([]);
         onError("Could not load popular events");
       } finally {
-        // Only update loading state if the fetch was not aborted.
         if (!controller.signal.aborted) {
           setIsLoading(false);
         }
@@ -81,16 +95,42 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
     };
 
     loadEvents();
-    return () => {
-      controller.abort();
-    };
+    return () => controller.abort();
   }, [onError]);
+
+  const loadMore = async () => {
+    // If we already know total and have loaded all, skip
+    if (total !== null && events.length >= total) return;
+
+    const nextPage = page + 1;
+    const controller = new AbortController();
+    try {
+      setIsLoadingMore(true);
+      const data = await fetchPopularEvents(nextPage, controller.signal);
+
+      // Append new events while avoiding duplicates
+      setEvents((prev) => {
+        const existingIds = new Set(prev.map((e) => e.id));
+        const newEvents = data.events.filter((e) => !existingIds.has(e.id));
+        return [...prev, ...newEvents];
+      });
+
+      setPage(data.meta?.page ?? nextPage);
+      setTotal(data.meta?.total ?? (total ?? events.length + data.events.length));
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      onError("Could not load more events");
+    } finally {
+      controller.abort();
+      setIsLoadingMore(false);
+    }
+  };
 
   const filteredEvents = useMemo(() => {
     let result = events;
 
     // 1. Search Query
-    const query = search.toLowerCase().trim();
+    const query = debouncedSearch.toLowerCase().trim();
     if (query) {
       result = result.filter((event) =>
         event.title.toLowerCase().includes(query),
@@ -137,23 +177,40 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
     }
 
     return result;
-  }, [search, filters, events, activeCategory]);
+  }, [debouncedSearch, filters, events, activeCategory]);
+
+  // Notify parent whenever the visible count changes
+  const prevCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isLoading && onEventsChange) {
+      const count = filteredEvents.length;
+      if (prevCountRef.current !== count) {
+        prevCountRef.current = count;
+        onEventsChange(count);
+      }
+    }
+  }, [filteredEvents.length, isLoading, onEventsChange]);
 
   const widthVariants = {
     focused: { width: "12rem" },
     unfocused: { width: "8.5rem" },
   };
 
-  const widthVariantsMobile = {
-    focused: { width: "8rem", paddingLeft: "2.5rem" },
-    unfocused: { width: "2.438rem" },
-  };
+  // Surfaced next to the mobile "Filter" button so users can tell at a glance
+  // that filters are still applied after the drawer closes.
+  const activeFilterCount =
+    (filters.date ? 1 : 0) +
+    filters.categories.length +
+    filters.locations.length +
+    (filters.minPrice !== "" || filters.maxPrice !== "" ? 1 : 0);
+
+  const allLoaded = total !== null && events.length >= total;
 
   return (
     <section className="px-4 bg-base py-12">
       <div className="max-w-305.25 mx-auto">
         <motion.div
-          className="flex justify-between gap-3 mb-5.75"
+          className="flex flex-col sm:flex-row sm:justify-between gap-3 mb-5.75"
           variants={container}
           initial="hidden"
           animate="show"
@@ -171,7 +228,11 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
             />
           </motion.h3>
 
-          <motion.div variants={item} className="flex items-center gap-3.75">
+          {/* ── Desktop controls ── */}
+          <motion.div
+            variants={item}
+            className="max-sm:hidden flex items-center gap-3.75"
+          >
             <div className="relative">
               <Image
                 src="/icons/search.svg"
@@ -182,9 +243,10 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
               />
 
               <motion.input
-                className="max-sm:hidden pl-13 h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+                className="pl-13 h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
                 type="text"
                 placeholder="Search"
+                aria-label="Search events"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setIsFocused(true)}
@@ -194,25 +256,12 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
                 animate={isFocused ? "focused" : "unfocused"}
                 transition={{ duration: 0.3, ease: "easeInOut" }}
               />
-
-              <motion.input
-                className="sm:hidden h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                variants={widthVariantsMobile}
-                initial="unfocused"
-                animate={isFocused ? "focused" : "unfocused"}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
-              />
             </div>
 
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
               <Button
-                variant="dark"
-                className="border-none sm:rounded-4xl! max-sm:p-0 h-9.75 sm:w-34 w-9.75"
+                variant="primary"
+                className="border-none rounded-4xl! h-9.75 w-34"
                 onClick={() => setIsFilterOpen(true)}
                 aria-haspopup="dialog"
                 aria-expanded={isFilterOpen}
@@ -221,11 +270,66 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
                   src="/icons/filter.svg"
                   width={24}
                   height={24}
-                  alt="filter icon"
+                  alt=""
+                  aria-hidden="true"
                 />
-                <span className="max-sm:hidden">Filter</span>
+                Filter
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-black px-1.5 text-[11px] font-bold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
               </Button>
             </motion.div>
+          </motion.div>
+
+          {/* ── Mobile controls ──
+              A full-width search field plus an explicitly labelled "Filter"
+              button, so the filter drawer is reachable on small viewports. */}
+          <motion.div
+            variants={item}
+            className="sm:hidden flex items-center gap-2 w-full min-w-0"
+          >
+            <div className="relative flex-1 min-w-0">
+              <Image
+                src="/icons/search.svg"
+                width={20}
+                height={20}
+                alt=""
+                aria-hidden="true"
+                className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              />
+              <input
+                className="w-full pl-10 h-9.75 rounded-4xl bg-black pr-4 py-2 text-sm text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white/70 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+                type="text"
+                placeholder="Search events"
+                aria-label="Search events"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
+            <Button
+              variant="primary"
+              className="border-none rounded-4xl! h-9.75 px-4 shrink-0"
+              onClick={() => setIsFilterOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={isFilterOpen}
+            >
+              <Image
+                src="/icons/filter.svg"
+                width={20}
+                height={20}
+                alt=""
+                aria-hidden="true"
+              />
+              Filter
+              {activeFilterCount > 0 && (
+                <span className="inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-black px-1.5 text-[11px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
           </motion.div>
         </motion.div>
 
@@ -266,22 +370,21 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
             ))}
 
           {!isLoading && filteredEvents.length === 0 && (
-            <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-16 h-16 mb-4 rounded-full bg-black/5 flex items-center justify-center">
-                <Image
-                  src="/icons/search.svg"
-                  width={32}
-                  height={32}
-                  alt="search icon"
-                  className="opacity-40"
-                />
-              </div>
-              <h4 className="text-[20px] font-semibold text-black mb-2">
-                No data available
-              </h4>
-              <p className="text-[15px] text-black/60 max-w-sm">
-                We couldn&apos;t load events for this section. Please try again later.
-              </p>
+            <div className="col-span-full">
+              <EmptyState
+                icon={
+                  <Image
+                    src="/icons/search.svg"
+                    width={32}
+                    height={32}
+                    alt="search"
+                    className="opacity-60"
+                  />
+                }
+                title="No events found"
+                description="Try adjusting your search or filters to find what you're looking for."
+                action={{ label: "Clear Search", onClick: () => setSearch("") }}
+              />
             </div>
           )}
         </motion.div>
@@ -295,18 +398,32 @@ export function PopularEventsSection({ activeCategory, onError }: PopularEventsS
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.97 }}
         >
-          <Button
-            variant="primary"
-            className="border-none rounded-[13px]! h-11"
-          >
-            View all Events
-            <Image
-              src="/icons/arrow-right.svg"
-              width={24}
-              height={24}
-              alt="arrow-right icon"
-            />
-          </Button>
+          {!allLoaded && (
+            <Button
+              variant="primary"
+              className="border-none rounded-[13px]! h-11 flex items-center gap-3"
+              onClick={loadMore}
+            >
+              {isLoadingMore ? (
+                // Simple spinner using CSS
+                <span className="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  View all Events
+                  <Image
+                    src="/icons/arrow-right.svg"
+                    width={24}
+                    height={24}
+                    alt="arrow-right icon"
+                  />
+                </>
+              )}
+            </Button>
+          )}
+
+          {allLoaded && (
+            <div className="text-sm text-gray-500">All events loaded</div>
+          )}
         </motion.div>
       </div>
 
