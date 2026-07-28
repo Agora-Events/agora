@@ -20,6 +20,12 @@ const USER_NAV_ITEMS: NavItem[] = [
     isActive: (p) => p === "/discover" || p.startsWith("/events"),
   },
   {
+    href: "/wallet",
+    icon: "/icons/ticket.svg",
+    text: "My Wallet",
+    isActive: (p) => p === "/wallet",
+  },
+  {
     href: "/organizers",
     icon: "/icons/user-group.svg",
     text: "Organizers",
