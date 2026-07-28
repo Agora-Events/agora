@@ -1805,6 +1805,9 @@ pub async fn list_similar_events(
 /// Maximum allowed length for an event title.
 pub const MAX_EVENT_TITLE_LENGTH: usize = 200;
 
+/// Maximum allowed length for an event description.
+pub const MAX_EVENT_DESCRIPTION_LENGTH: usize = 10000;
+
 /// Validates an event title for create/update requests.
 pub fn validate_event_title(title: &str) -> Result<(), String> {
     let trimmed = title.trim();
@@ -1816,6 +1819,19 @@ pub fn validate_event_title(title: &str) -> Result<(), String> {
             "title must not exceed {} characters",
             MAX_EVENT_TITLE_LENGTH
         ));
+    }
+    Ok(())
+}
+
+/// Validates an event description for create/update requests.
+pub fn validate_event_description(description: &Option<String>) -> Result<(), String> {
+    if let Some(ref desc) = description {
+        if desc.chars().count() > MAX_EVENT_DESCRIPTION_LENGTH {
+            return Err(format!(
+                "description must not exceed {} characters",
+                MAX_EVENT_DESCRIPTION_LENGTH
+            ));
+        }
     }
     Ok(())
 }
@@ -1913,6 +1929,10 @@ pub async fn create_event(
     }
 
     if let Err(message) = validate_event_title(&payload.title) {
+        return AppError::ValidationError(message).into_response();
+    }
+
+    if let Err(message) = validate_event_description(&payload.description) {
         return AppError::ValidationError(message).into_response();
     }
 
@@ -2545,6 +2565,60 @@ pub async fn set_event_featured(
     response
         .extensions_mut()
         .insert(AuditMetadata(json!({ "featured": updated })));
+
+    response
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FlagEventRequest {
+    pub flagged: bool,
+}
+
+/// Set or clear the flagged status of an event (admin only).
+///
+/// PATCH `/api/v1/admin/events/:id/flag`
+pub async fn flag_event(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Json(payload): Json<FlagEventRequest>,
+) -> Response {
+    let updated = match sqlx::query_as::<_, (bool,)>(
+        "UPDATE events SET is_flagged = $1 WHERE id = $2 RETURNING is_flagged",
+    )
+    .bind(payload.flagged)
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(row) => row.0,
+        Err(sqlx::Error::RowNotFound) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to update event flagged status: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!(
+            "Failed to invalidate cache for flagged update on event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    let mut response = success(
+        json!({ "is_flagged": updated }),
+        "Event flagged status updated successfully",
+    )
+    .into_response();
+
+    response
+        .extensions_mut()
+        .insert(AuditMetadata(json!({ "flagged": updated })));
 
     response
 }
@@ -3445,7 +3519,7 @@ pub async fn get_event_organizer(
     let wallet_address = match sqlx::query_scalar::<_, String>(
         "SELECT wallet_address FROM organizers WHERE id = $1",
     )
-    .bind(organizer_id)
+    .bind(event.organizer_id)
     .fetch_optional(&state.pool)
     .await
     {
@@ -3999,6 +4073,7 @@ fn test_event_detail_tiers_omitted_when_none() {
         image_url: None,
         is_free: false,
         minted_tickets: 0,
+        total_tickets: 0,
         is_free_populated: true,
     };
 
@@ -4036,6 +4111,7 @@ fn test_event_detail_tiers_present_when_some() {
         image_url: None,
         is_free: true,
         minted_tickets: 0,
+        total_tickets: 0,
         is_free_populated: true,
     };
 
@@ -4097,6 +4173,24 @@ fn test_validate_event_title_rejects_too_long() {
     let title = "a".repeat(MAX_EVENT_TITLE_LENGTH + 1);
     let err = validate_event_title(&title).unwrap_err();
     assert!(err.contains("200"));
+}
+
+#[test]
+fn test_validate_event_description_accepts_max_length() {
+    let desc = Some("a".repeat(MAX_EVENT_DESCRIPTION_LENGTH));
+    assert!(validate_event_description(&desc).is_ok());
+}
+
+#[test]
+fn test_validate_event_description_rejects_too_long() {
+    let desc = Some("a".repeat(MAX_EVENT_DESCRIPTION_LENGTH + 1));
+    let err = validate_event_description(&desc).unwrap_err();
+    assert!(err.contains("10000"));
+}
+
+#[test]
+fn test_validate_event_description_allows_none() {
+    assert!(validate_event_description(&None).is_ok());
 }
 
 #[test]
