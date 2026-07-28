@@ -117,7 +117,8 @@ impl EventRegistry {
     /// # Arguments
     /// * `admin` - The administrator address.
     /// * `platform_wallet` - The platform wallet address for fees.
-    /// * `platform_fee_percent` - Initial platform fee in basis points (10000 = 100%).
+    /// * `platform_fee_percent` - Initial platform fee in basis points (0–10000; 10000 = 100%).
+    ///   An explicit `0` sets a zero platform fee (no forced default).
     /// * `usdc_token` - The USDC token contract address, automatically whitelisted on init.
     pub fn initialize(
         env: Env,
@@ -134,15 +135,12 @@ impl EventRegistry {
         validate_address(&env, &platform_wallet)?;
         validate_address(&env, &usdc_token)?;
 
-        let initial_fee = if platform_fee_percent == 0 {
-            500
-        } else {
-            platform_fee_percent
-        };
-
-        if initial_fee > 10000 {
+        // Valid range is 0–10000 basis points inclusive. An explicit 0 means
+        // zero platform fee (no forced default).
+        if platform_fee_percent > 10000 {
             return Err(EventRegistryError::InvalidFeePercent);
         }
+        let initial_fee = platform_fee_percent;
 
         // Initialize multi-sig with single admin and threshold of 1
         let mut admins = Vec::new(&env);
