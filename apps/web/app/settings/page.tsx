@@ -19,6 +19,17 @@ interface NotificationSettings {
   inApp: boolean;
 }
 
+interface PayoutPreferences {
+  milestonePlan: string;
+  withdrawalCap: number;
+}
+
+interface WalletData {
+  address: string;
+  usdcBalance: number;
+  payoutPreferences?: PayoutPreferences;
+}
+
 const tabs: { id: SettingsTab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "notifications", label: "Notifications" },
@@ -55,6 +66,30 @@ export default function SettingsPage() {
     });
 
   const [avatarPreview, setAvatarPreview] = useState<string>("");
+
+  const [walletData, setWalletData] = useState<WalletData | null>(null);
+  const [isWalletLoading, setIsWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab === "payment" && isAuthenticated) {
+      const fetchWallet = async () => {
+        setIsWalletLoading(true);
+        setWalletError(null);
+        try {
+          const res = await fetch("/api/wallet");
+          if (!res.ok) throw new Error("Failed to fetch wallet");
+          const data = await res.json();
+          setWalletData(data.wallet || data);
+        } catch (err) {
+          setWalletError("Failed to load wallet data");
+        } finally {
+          setIsWalletLoading(false);
+        }
+      };
+      fetchWallet();
+    }
+  }, [activeTab, isAuthenticated]);
 
   const isDirty =
     profileData.displayName !== initialProfile.displayName ||
@@ -434,23 +469,92 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-text">
                   Manage your payment methods and billing preferences.
                 </p>
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="w-16 h-16 rounded-full bg-surface flex items-center justify-center mb-4">
-                    <Image
-                      src="/icons/ticket.svg"
-                      alt="Payment"
-                      width={24}
-                      height={24}
-                    />
+                
+                {isWalletLoading ? (
+                  <div className="py-12 text-center text-sm text-muted-text">
+                    Loading wallet data...
                   </div>
-                  <h3 className="text-lg font-semibold text-ink-soft mb-1">
-                    Payment settings coming soon
-                  </h3>
-                  <p className="text-sm text-muted-text max-w-xs">
-                    Configure billing and payment methods here in a future
-                    update.
-                  </p>
-                </div>
+                ) : walletError ? (
+                  <div className="py-12 text-center text-sm text-error">
+                    {walletError}
+                  </div>
+                ) : walletData ? (
+                  <div className="space-y-8">
+                    <div className="p-6 rounded-xl border border-border-warm bg-surface space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-ink-soft">Connected Stellar Wallet</h3>
+                          <p className="text-xs text-muted-text mt-1">
+                            {walletData.address.substring(0, 4)}...{walletData.address.substring(walletData.address.length - 4)}
+                          </p>
+                        </div>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setWalletData(null)}
+                        >
+                          Disconnect
+                        </Button>
+                      </div>
+                      
+                      <div className="pt-4 border-t border-border-warm">
+                        <p className="text-sm font-medium text-ink-soft mb-1">USDC Balance</p>
+                        <p className="text-2xl font-bold text-ink-soft">
+                          {walletData.usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
+                        </p>
+                      </div>
+                    </div>
+
+                    {walletData.payoutPreferences && (
+                      <div className="space-y-4">
+                        <h3 className="text-sm font-semibold text-ink-soft">Payout Preferences</h3>
+                        <div className="p-6 rounded-xl border border-border-warm bg-surface space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-ink-soft mb-1.5">
+                              Milestone Plan Selection
+                            </label>
+                            <select
+                              className="w-full h-11 px-3 rounded-xl bg-white border border-black/15 focus:border-black focus:ring-0 outline-none text-sm"
+                              defaultValue={walletData.payoutPreferences.milestonePlan}
+                            >
+                              <option value="standard">Standard</option>
+                              <option value="accelerated">Accelerated</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-ink-soft mb-1.5">
+                              Withdrawal Cap (USDC)
+                            </label>
+                            <input
+                              type="number"
+                              className="w-full h-11 px-3 rounded-xl bg-white border border-black/15 focus:border-black focus:ring-0 outline-none text-sm"
+                              defaultValue={walletData.payoutPreferences.withdrawalCap}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center border rounded-xl border-border-warm border-dashed">
+                    <div className="w-16 h-16 rounded-full bg-surface flex items-center justify-center mb-4">
+                      <Image
+                        src="/icons/ticket.svg"
+                        alt="Payment"
+                        width={24}
+                        height={24}
+                      />
+                    </div>
+                    <h3 className="text-lg font-semibold text-ink-soft mb-2">
+                      No Wallet Connected
+                    </h3>
+                    <p className="text-sm text-muted-text max-w-xs mb-6">
+                      Connect your Stellar wallet to view balances and configure payouts.
+                    </p>
+                    <Button variant="primary" onClick={() => setWalletError("Connect wallet not implemented")}>
+                      Connect Wallet
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
