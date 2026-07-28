@@ -25,6 +25,7 @@ use std::env;
 
 use crate::utils::error::AppError;
 use crate::utils::response::{empty_success, success};
+use stellar_strkey::Strkey;
 
 // ---------------------------------------------------------------------------
 // JWT helpers
@@ -140,6 +141,14 @@ pub async fn request_nonce(
         return AppError::ValidationError("address is required".to_string()).into_response();
     }
 
+    // Validate that the address is a valid Stellar public key
+    if validate_stellar_address(&payload.address).is_err() {
+        return AppError::ValidationError(
+            "address must be a valid Stellar public key".to_string(),
+        )
+        .into_response();
+    }
+
     // Generate a 32-byte random nonce encoded as hex
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -156,6 +165,25 @@ pub async fn request_nonce(
             tracing::error!("Failed to store nonce: {:?}", e);
             AppError::DatabaseError(e).into_response()
         }
+    }
+}
+
+/// Validates that a string is a valid Stellar public key address.
+///
+/// A valid Stellar address:
+/// - Starts with 'G'
+/// - Is 56 characters long
+/// - Contains only valid base32 characters
+fn validate_stellar_address(address: &str) -> Result<(), String> {
+    // Check basic format
+    if !address.starts_with('G') || address.len() != 56 {
+        return Err("Address must start with G and be 56 characters long".to_string());
+    }
+
+    // Try to decode as Stellar strkey
+    match Strkey::from_string(address) {
+        Ok(Strkey::PublicKeyEd25519(_)) => Ok(()),
+        _ => Err("Invalid Stellar public key format".to_string()),
     }
 }
 
@@ -381,6 +409,41 @@ mod tests {
             "Basic sometoken".parse().unwrap(),
         );
         let result = extract_auth(&headers);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_stellar_address_valid() {
+        // A valid Stellar public key (G... format, 56 chars)
+        let address = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYMY";
+        assert!(validate_stellar_address(address).is_ok());
+    }
+
+    #[test]
+    fn test_validate_stellar_address_invalid_not_starting_with_g() {
+        let address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYMY";
+        let result = validate_stellar_address(address);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_stellar_address_wrong_length() {
+        let address = "GABC123";
+        let result = validate_stellar_address(address);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_stellar_address_completely_invalid() {
+        let address = "not-an-address";
+        let result = validate_stellar_address(address);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_stellar_address_empty() {
+        let address = "";
+        let result = validate_stellar_address(address);
         assert!(result.is_err());
     }
 }

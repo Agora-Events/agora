@@ -51,6 +51,7 @@ pub struct ProfileState {
 
 const MAX_DISPLAY_NAME: usize = 50;
 const MAX_BIO: usize = 500;
+const MAX_AVATAR_URL: usize = 2048;
 
 /// Social platforms accepted in the `socials` object (#877).
 ///
@@ -132,17 +133,21 @@ fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
             ));
         }
     }
-    if let Some(ref socials) = req.socials {
-        validate_socials(socials)?;
+    if let Some(ref avatar_url) = req.avatar_url {
+        if let Err(e) = validate_avatar_url(avatar_url) {
+            return Err(e);
+        }
     }
+    validate_socials(&req.socials)?;
     Ok(())
 }
 
 fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
+    let has_socials = !req.socials.is_null();
     if req.display_name.is_none()
         && req.bio.is_none()
         && req.avatar_url.is_none()
-        && req.socials.is_none()
+        && !has_socials
     {
         return Err(AppError::ValidationError(
             "At least one profile field is required".to_string(),
@@ -170,10 +175,34 @@ fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
         }
     }
 
-    if let Some(ref socials) = req.socials {
-        validate_socials(socials)?;
+    if let Some(ref avatar_url) = req.avatar_url {
+        if let Err(e) = validate_avatar_url(avatar_url) {
+            return Err(e);
+        }
     }
 
+    validate_socials(&req.socials)?;
+
+    Ok(())
+}
+
+fn validate_avatar_url(url: &str) -> Result<(), AppError> {
+    if url.len() > MAX_AVATAR_URL {
+        return Err(AppError::ValidationError(format!(
+            "avatar_url must not exceed {MAX_AVATAR_URL} characters"
+        )));
+    }
+    if !url.starts_with("https://") {
+        return Err(AppError::ValidationError(
+            "avatar_url must start with https://".to_string(),
+        ));
+    }
+    // Basic URL validation without requiring the `url` crate
+    if !url.contains('.') || url.contains(' ') {
+        return Err(AppError::ValidationError(
+            "avatar_url must be a valid URL".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -194,7 +223,8 @@ pub struct PatchProfileRequest {
     pub bio: Option<String>,
     #[serde(alias = "avatarUrl")]
     pub avatar_url: Option<String>,
-    pub socials: Option<Value>,
+    #[serde(default)]
+    pub socials: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -321,9 +351,9 @@ pub async fn patch_profile(
         if let Some(ref avatar_url) = payload.avatar_url {
             separated.push("avatar_url = ").push_bind(avatar_url);
         }
-        if let Some(ref socials) = payload.socials {
-            separated.push("socials = ").push_bind(socials);
-        }
+    if !payload.socials.is_null() {
+        separated.push("socials = ").push_bind(payload.socials);
+    }
 
         separated.push("updated_at = NOW()");
     }
@@ -584,7 +614,7 @@ async fn fetch_profile_by_address(
 // Organizer stats endpoint
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, Clone, FromRow)]
+#[derive(Serialize, Deserialize, Clone, FromRow)]
 struct OrganizerStats {
     pub total_events: i64,
     pub total_tickets_sold: i64,
@@ -828,7 +858,7 @@ mod tests {
             display_name: None,
             bio: Some("Updated bio".to_string()),
             avatar_url: None,
-            socials: None,
+            socials: Value::Null,
         };
 
         assert!(validate_patch(&req).is_ok());
@@ -840,7 +870,7 @@ mod tests {
             display_name: None,
             bio: None,
             avatar_url: None,
-            socials: None,
+            socials: Value::Null,
         };
 
         let err = validate_patch(&req).unwrap_err();
@@ -853,7 +883,7 @@ mod tests {
             display_name: Some("   ".to_string()),
             bio: None,
             avatar_url: None,
-            socials: None,
+            socials: Value::Null,
         };
 
         let err = validate_patch(&req).unwrap_err();
