@@ -94,6 +94,12 @@ pub struct Config {
     /// Optional static bearer token required to access admin APIs.
     /// Set via `ADMIN_TOKEN` environment variable.
     pub admin_token: Option<String>,
+
+    /// Rate limit threshold for auth/nonce endpoint in requests per minute (default: 10).
+    pub auth_rate_limit_per_minute: usize,
+
+    /// Allowed MIME types for uploaded files.
+    pub allowed_upload_mime_types: Vec<String>,
 }
 
 /// A collection of configuration errors found during [`Config::validate`].
@@ -156,6 +162,23 @@ impl Config {
         let monitoring_token = env::var("MONITORING_TOKEN").ok();
         let admin_token = env::var("ADMIN_TOKEN").ok();
 
+        let auth_rate_limit_per_minute = env::var("AUTH_RATE_LIMIT_PER_MINUTE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10);
+
+        let allowed_upload_mime_types = env::var("ALLOWED_UPLOAD_MIME_TYPES")
+            .or_else(|_| env::var("ALLOWED_MIME_TYPES"))
+            .map(|s| s.split(',').map(|m| m.trim().to_string()).collect())
+            .unwrap_or_else(|_| {
+                vec![
+                    "image/jpeg".to_string(),
+                    "image/png".to_string(),
+                    "image/webp".to_string(),
+                    "image/gif".to_string(),
+                ]
+            });
+
         Ok(Self {
             database_url,
             port,
@@ -174,6 +197,8 @@ impl Config {
             jwt_secret,
             monitoring_token,
             admin_token,
+            auth_rate_limit_per_minute,
+            allowed_upload_mime_types,
         })
     }
 
