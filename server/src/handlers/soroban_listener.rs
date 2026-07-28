@@ -149,13 +149,13 @@ impl ListenerConfig {
 ///
 /// This function returns immediately; the listener runs indefinitely in the
 /// background. Errors are logged but do not crash the server.
-pub fn spawn_listener(pool: PgPool, config: ListenerConfig) {
+pub fn spawn_listener(pool: PgPool, mut redis: Option<crate::cache::RedisCache>, config: ListenerConfig) {
     tokio::spawn(async move {
-        run_listener(pool, config).await;
+        run_listener(pool, redis, config).await;
     });
 }
 
-async fn run_listener(pool: PgPool, config: ListenerConfig) {
+async fn run_listener(pool: PgPool, mut redis: Option<crate::cache::RedisCache>, config: ListenerConfig) {
     // Skip if no contract IDs are configured (e.g. in development without contracts)
     if config.ticket_payment_contract_id.is_empty() && config.event_registry_contract_id.is_empty()
     {
@@ -168,7 +168,15 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
 
     let http = reqwest::Client::new();
     let mut cursor: Option<String> = None;
-    let mut start_ledger = Some(config.start_ledger);
+
+    if let Some(ref mut r) = redis {
+        if let Ok(Some(cached_cursor)) = r.get::<String>(CURSOR_CACHE_KEY).await {
+            tracing::info!("Loaded Soroban event cursor from Redis: {}", cached_cursor);
+            cursor = Some(cached_cursor);
+        }
+    }
+
+    let mut start_ledger = if cursor.is_none() { Some(config.start_ledger) } else { None };
     let mut current_backoff = POLL_INTERVAL;
 
     tracing::info!(
@@ -202,8 +210,13 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
                 // Advance cursor to the last event we received
                 if let Some(last) = result.events.last() {
                     cursor = Some(last.id.clone());
-                    // Once we have a cursor, stop specifying startLedger
                     start_ledger = None;
+
+                    if let Some(ref mut r) = redis {
+                        if let Err(e) = r.set(CURSOR_CACHE_KEY, &last.id, Duration::from_secs(86400 * 30)).await {
+                            tracing::warn!("Failed to persist Soroban event cursor to Redis: {:?}", e);
+                        }
+                    }
                 }
 
                 // Reset back-off on any successful poll
@@ -449,7 +462,7 @@ async fn handle_ticket_refunded(pool: &PgPool, event: &SorobanEvent) -> Result<(
 }
 
 /// Handle an `event_registered` event — record the on-chain event ID.
-async fn handle_event_registered(_pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+async fn handle_event_registered(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
     let data = &event.value;
     let on_chain_event_id = data
         .get("event_id")
@@ -458,6 +471,14 @@ async fn handle_event_registered(_pool: &PgPool, event: &SorobanEvent) -> Result
 
     if on_chain_event_id.is_empty() {
         return Ok(());
+    }
+
+    if let Ok(uuid) = uuid::Uuid::parse_str(on_chain_event_id) {
+        sqlx::query("UPDATE events SET updated_at = NOW() WHERE id = $1")
+            .bind(uuid)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("DB error updating registered event: {e}"))?;
     }
 
     tracing::info!(
@@ -469,7 +490,7 @@ async fn handle_event_registered(_pool: &PgPool, event: &SorobanEvent) -> Result
 }
 
 /// Handle an `event_status_updated` or `event_cancelled` event.
-async fn handle_event_status_updated(_pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+async fn handle_event_status_updated(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
     let data = &event.value;
     let on_chain_event_id = data
         .get("event_id")
@@ -482,6 +503,14 @@ async fn handle_event_status_updated(_pool: &PgPool, event: &SorobanEvent) -> Re
 
     if on_chain_event_id.is_empty() {
         return Ok(());
+    }
+
+    if let Ok(uuid) = uuid::Uuid::parse_str(on_chain_event_id) {
+        sqlx::query("UPDATE events SET updated_at = NOW() WHERE id = $1")
+            .bind(uuid)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("DB error updating event status: {e}"))?;
     }
 
     tracing::info!(
