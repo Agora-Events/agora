@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/components/providers/theme-context";
 
-type SettingsTab = "profile" | "notifications" | "payment";
+type SettingsTab = "profile" | "notifications" | "payment" | "appearance";
 
 interface ProfileData {
   displayName: string;
@@ -34,11 +35,13 @@ const tabs: { id: SettingsTab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "notifications", label: "Notifications" },
   { id: "payment", label: "Payment" },
+  { id: "appearance", label: "Appearance" },
 ];
 
 export default function SettingsPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading, signOut } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -555,6 +558,30 @@ export default function SettingsPage() {
                     </Button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === "appearance" && (
+              <div className="space-y-6">
+                <p className="text-sm text-muted-text">
+                  Customize the look and feel of the application.
+                </p>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 rounded-xl border border-border-warm bg-surface">
+                    <div>
+                      <p className="text-sm font-semibold text-ink-soft">
+                        Dark mode
+                      </p>
+                      <p className="text-xs text-muted-text mt-0.5">
+                        Toggle between light and dark themes
+                      </p>
+                    </div>
+                    <Toggle
+                      enabled={theme === "dark"}
+                      onChange={() => toggleTheme()}
+                    />
+                  </div>
+                </div>
               </div>
             )}
           </div>
