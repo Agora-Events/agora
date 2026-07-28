@@ -69,13 +69,24 @@ function AppNavigation() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
         <Stack.Screen
-          name="checkout"
+          name="checkout/index"
           options={{
             presentation: 'modal',
             title: 'Ticket Checkout',
             headerStyle,
             headerTintColor,
             headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="checkout/complete"
+          options={{
+            presentation: 'modal',
+            title: 'Purchase Complete',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen
