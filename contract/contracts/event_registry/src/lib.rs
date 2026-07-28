@@ -609,8 +609,9 @@ impl EventRegistry {
     }
 
     /// Retrieves all event IDs for an organizer.
-    pub fn get_organizer_events(env: Env, organizer: Address) -> Vec<String> {
-        storage::get_organizer_events(&env, &organizer)
+    /// If the caller is not the organizer, private events are filtered out (Issue #880).
+    pub fn get_organizer_events(env: Env, organizer: Address, caller: Address) -> Vec<String> {
+        storage::get_organizer_events(&env, &organizer, &caller)
     }
 
     /// Updates the platform fee percentage. Only callable by the administrator.
@@ -2220,7 +2221,8 @@ fn suspend_organizer_events(
     env: Env,
     organizer_address: Address,
 ) -> Result<(), EventRegistryError> {
-    let organizer_events = storage::get_organizer_events(&env, &organizer_address);
+    // Pass organizer as both organizer and caller since this is an internal operation
+    let organizer_events = storage::get_organizer_events(&env, &organizer_address, &organizer_address);
     let mut suspended_count = 0u32;
 
     for event_id in organizer_events.iter() {

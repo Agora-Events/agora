@@ -981,6 +981,73 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_event_timestamps_end_time_before_start_time() {
+        let start = Utc::now();
+        let end = start - chrono::Duration::hours(1); // end before start
+        let result = validate_event_timestamps(start, Some(end));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("end_time must be strictly after start_time"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_end_time_equals_start_time() {
+        let start = Utc::now();
+        let end = start; // end equals start
+        let result = validate_event_timestamps(start, Some(end));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("end_time must be strictly after start_time"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_start_time_in_past() {
+        let start = Utc::now() - chrono::Duration::minutes(10); // 10 minutes ago
+        let end = Some(start + chrono::Duration::hours(2));
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("start_time must be in the future"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_start_time_in_grace_period() {
+        let start = Utc::now() - chrono::Duration::seconds(200); // 3.3 minutes ago (within grace period)
+        let end = Some(start + chrono::Duration::hours(2));
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_valid_future_timestamps() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let end = Some(start + chrono::Duration::hours(3));
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_no_end_time() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let result = validate_event_timestamps(start, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_duration_exceeds_max() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let end = Some(start + chrono::Duration::days(31)); // 31 days exceeds max
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("event duration must not exceed"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_duration_at_max() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let end = Some(start + chrono::Duration::days(30)); // exactly 30 days
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn test_ratings_summary_average_computed() {
         // 1×4 + 1×5 = 9 / 2 = 4.5
         let rows: Vec<(i16, i64)> = vec![(4, 1), (5, 1)];
@@ -1886,6 +1953,13 @@ fn is_valid_email(email: &str) -> bool {
 
 const MAX_LOCATION_LENGTH: usize = 500;
 
+/// Maximum allowed event duration in days (30 days).
+const MAX_EVENT_DURATION_DAYS: i64 = 30;
+
+/// Grace period in seconds for start_time validation (5 minutes).
+/// Allows organizers to create events that start slightly in the past.
+const START_TIME_GRACE_PERIOD_SECONDS: i64 = 300;
+
 fn validate_event_location(location: &str) -> Result<(), AppError> {
     if location.trim().is_empty() {
         return Err(AppError::ValidationError(
@@ -1897,6 +1971,42 @@ fn validate_event_location(location: &str) -> Result<(), AppError> {
             "location must be at most {MAX_LOCATION_LENGTH} characters"
         )));
     }
+    Ok(())
+}
+
+/// Validates event timestamps for create/update requests.
+/// Ensures start_time is not too far in the past, end_time > start_time (if provided),
+/// and event duration does not exceed the maximum allowed.
+fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTime<Utc>>) -> Result<(), AppError> {
+    let now = Utc::now();
+    
+    // Check that start_time is not too far in the past (with grace period)
+    let grace_period = chrono::Duration::seconds(START_TIME_GRACE_PERIOD_SECONDS);
+    if start_time + grace_period < now {
+        return Err(AppError::ValidationError(
+            "start_time must be in the future or within the grace period".to_string(),
+        ));
+    }
+    
+    // If end_time is provided, validate it
+    if let Some(end) = end_time {
+        // end_time must be strictly after start_time
+        if end <= start_time {
+            return Err(AppError::ValidationError(
+                "end_time must be strictly after start_time".to_string(),
+            ));
+        }
+        
+        // Check event duration does not exceed maximum
+        let max_duration = chrono::Duration::days(MAX_EVENT_DURATION_DAYS);
+        if end - start_time > max_duration {
+            return Err(AppError::ValidationError(format!(
+                "event duration must not exceed {} days",
+                MAX_EVENT_DURATION_DAYS
+            )));
+        }
+    }
+    
     Ok(())
 }
 
@@ -1932,6 +2042,9 @@ pub async fn create_event(
         return AppError::ValidationError(message).into_response();
     }
 
+    // Validate event timestamps
+    if let Err(e) = validate_event_timestamps(payload.start_time, payload.end_time) {
+        return e.into_response();
     if let Err(message) = validate_event_description(&payload.description) {
         return AppError::ValidationError(message).into_response();
     }
