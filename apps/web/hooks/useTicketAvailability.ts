@@ -88,6 +88,26 @@ export function useTicketAvailability(
   const [sseData, setSSEData] = useState<TicketAvailabilityData | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  // Track whether the browser tab is currently visible
+  const [isTabVisible, setIsTabVisible] = useState(
+    typeof document !== "undefined"
+      ? document.visibilityState === "visible"
+      : true,
+  );
+
+  // Page Visibility API: pause polling when hidden, resume + re-fetch on focus
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const visible = document.visibilityState === "visible";
+      setIsTabVisible(visible);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
   // Regular SWR polling approach
   const url = `/api/events/${eventId}/availability`;
   const { data, error, isLoading, mutate } = useSWR<TicketAvailabilityData>(
@@ -97,10 +117,19 @@ export function useTicketAvailability(
       // Only revalidate on focus if pollOnBlur is false
       revalidateOnFocus: !pollOnBlur,
       revalidateOnReconnect: true,
-      // Poll at specified interval (0 disables polling)
-      refreshInterval: pollInterval > 0 ? pollInterval : 0,
+      // Pause polling while the tab is hidden; resume at the configured interval when visible
+      refreshInterval: pollInterval > 0 && isTabVisible ? pollInterval : 0,
     },
   );
+
+  // Re-fetch immediately when the tab becomes visible again to catch missed updates
+  const prevIsTabVisible = useRef(isTabVisible);
+  useEffect(() => {
+    if (!useSSE && isTabVisible && !prevIsTabVisible.current) {
+      mutate();
+    }
+    prevIsTabVisible.current = isTabVisible;
+  }, [isTabVisible, useSSE, mutate]);
 
   // Server-Sent Events (SSE) approach for real-time updates
   useEffect(() => {
