@@ -14,14 +14,16 @@ pub fn slow_query_threshold() -> Duration {
     Duration::from_millis(ms)
 }
 
-/// Emit a `WARN` log if `elapsed` exceeds the configured threshold.
+/// Emit a structured `WARN` log if `elapsed` exceeds the configured threshold.
+///
+/// Fields: `query_name`, `duration_ms`, `threshold_ms`.
 pub fn log_if_slow(query_name: &str, elapsed: Duration) {
     let threshold = slow_query_threshold();
     if elapsed >= threshold {
         tracing::warn!(
-            query = query_name,
-            elapsed_ms = elapsed.as_millis(),
-            threshold_ms = threshold.as_millis(),
+            query_name = query_name,
+            duration_ms = elapsed.as_millis() as u64,
+            threshold_ms = threshold.as_millis() as u64,
             "Slow database query detected"
         );
     }
@@ -51,18 +53,84 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
+    use tracing::field::{Field, Visit};
+    use tracing::Subscriber;
+    use tracing_subscriber::layer::{Context, SubscriberExt};
+    use tracing_subscriber::Layer;
+
+    #[derive(Default)]
+    struct FieldCollector {
+        values: HashMap<&'static str, String>,
+    }
+
+    impl Visit for FieldCollector {
+        fn record_u64(&mut self, field: &Field, value: u64) {
+            self.values.insert(field.name(), value.to_string());
+        }
+
+        fn record_i64(&mut self, field: &Field, value: i64) {
+            self.values.insert(field.name(), value.to_string());
+        }
+
+        fn record_str(&mut self, field: &Field, value: &str) {
+            self.values.insert(field.name(), value.to_string());
+        }
+
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            self.values.insert(field.name(), format!("{:?}", value));
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct CaptureLayer {
+        captured: Arc<Mutex<Vec<HashMap<&'static str, String>>>>,
+    }
+
+    impl<S> Layer<S> for CaptureLayer
+    where
+        S: Subscriber,
+    {
+        fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+            let mut collector = FieldCollector::default();
+            event.record(&mut collector);
+            self.captured.lock().unwrap().push(collector.values);
+        }
+    }
 
     #[test]
     fn test_log_if_slow_does_not_panic_below_threshold() {
-        // Should complete without warning (zero elapsed is well below 500 ms).
         log_if_slow("test_query", Duration::from_millis(0));
     }
 
     #[test]
     fn test_log_if_slow_does_not_panic_above_threshold() {
-        // Verify the function is callable with an elapsed time that exceeds the default threshold.
         log_if_slow("test_query", Duration::from_millis(600));
+    }
+
+    #[test]
+    fn test_log_if_slow_emits_structured_fields() {
+        let layer = CaptureLayer::default();
+        let captured = layer.captured.clone();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            temp_env::with_var("SLOW_QUERY_THRESHOLD_MS", Some("10"), || {
+                log_if_slow("list_events", Duration::from_millis(25));
+            });
+        });
+
+        let events = captured.lock().unwrap();
+        assert!(
+            !events.is_empty(),
+            "expected at least one warning event to be emitted"
+        );
+        let fields = &events[0];
+        assert_eq!(fields.get("query_name").map(String::as_str), Some("list_events"));
+        assert_eq!(fields.get("duration_ms").map(String::as_str), Some("25"));
+        assert_eq!(fields.get("threshold_ms").map(String::as_str), Some("10"));
     }
 
     #[tokio::test]
@@ -73,7 +141,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_timed_query_warns_when_threshold_exceeded() {
-        // Use a very low threshold so the sleep definitely triggers a warning.
         temp_env::with_var("SLOW_QUERY_THRESHOLD_MS", Some("1"), || async {
             let result = timed_query("slow_test_query", || async {
                 tokio::time::sleep(Duration::from_millis(5)).await;

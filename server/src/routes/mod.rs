@@ -72,6 +72,10 @@ use crate::handlers::{
 use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
+use crate::middleware::content_type::require_json_content_type;
+use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
+use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
+use crate::utils::rate_limit::RateLimitLayer;
 
 /// Sensitive routes that hit the database or expose internal state.
 /// Limited to 30 requests per IP per minute.
@@ -254,7 +258,8 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .merge(rates_route)
         .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
-        .layer(GovernorRateLimitLayer::new(100, Duration::from_secs(60)));
+        // Per-IP token-bucket rate limit (RATE_LIMIT_MAX / RATE_LIMIT_WINDOW).
+        .layer(RateLimitLayer::from_env());
 
     let api_routes = Router::new()
         .merge(sensitive_routes)

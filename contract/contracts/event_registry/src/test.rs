@@ -176,6 +176,32 @@ fn test_initialization_invalid_fee() {
 }
 
 #[test]
+fn test_initialization_zero_fee_is_allowed() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &0, &usdc_token);
+    assert_eq!(client.get_platform_fee(), 0);
+}
+
+#[test]
+fn test_initialization_explicit_fee_is_stored() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    assert_eq!(client.get_platform_fee(), 500);
+}
+
+#[test]
 fn test_initialization_invalid_address() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
