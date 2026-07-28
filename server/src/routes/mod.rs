@@ -124,7 +124,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
 
     // Spawn the Soroban event listener background task (Issue #490)
     let listener_config = ListenerConfig::from_env();
-    spawn_listener(pool.clone(), listener_config);
+    spawn_listener(pool.clone(), Some(redis.clone()), listener_config);
 
     // Auth routes — challenge-response JWT flow (Issue #484)
     let auth_routes = Router::new()
