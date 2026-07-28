@@ -139,7 +139,6 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     };
 
     // Organizer profile routes (Issue #486)
-    // Routes that use Redis caching use ProfileState; stats route keeps PgPool.
     let profile_routes = Router::new()
         .route(
             "/",
@@ -151,12 +150,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/transactions", get(list_my_transactions))
         .route("/:address", get(get_profile_by_address))
         .route("/:address/events", get(list_events_by_organizer))
-        .with_state(profile_state)
-        .merge(
-            Router::new()
-                .route("/:address/stats", get(get_organizer_stats))
-                .with_state(pool.clone()),
-        );
+        // #828: stats now caches in Redis, so it uses ProfileState like the
+        // rest of the profile routes rather than a PgPool-only sub-router.
+        .route("/:address/stats", get(get_organizer_stats))
+        .with_state(profile_state);
 
     // Admin sub-router — every request is recorded in audit_logs and requires admin auth.
     let admin_auth_state = AdminAuthState {
