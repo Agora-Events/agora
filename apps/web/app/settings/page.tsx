@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
+import { useAuth } from "@/hooks/useAuth";
 
 type SettingsTab = "profile" | "notifications" | "payment";
 
@@ -26,6 +27,7 @@ const tabs: { id: SettingsTab; label: string }[] = [
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { user, isAuthenticated, isLoading: isAuthLoading, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -61,10 +63,23 @@ export default function SettingsPage() {
     notifications.email !== initialNotifications.email ||
     notifications.inApp !== initialNotifications.inApp;
 
+  // Settings are personal — send signed-out visitors to the auth page.
   useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      router.replace("/auth");
+    }
+  }, [isAuthLoading, isAuthenticated, router]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const controller = new AbortController();
+
     const fetchProfile = async () => {
       try {
-        const response = await fetch("/api/profile");
+        const response = await fetch("/api/profile", {
+          signal: controller.signal,
+        });
         if (!response.ok) {
           throw new Error(`Failed to load profile: ${response.status}`);
         }
@@ -80,13 +95,15 @@ export default function SettingsPage() {
         if (loadedProfile.avatarUrl) {
           setAvatarPreview(loadedProfile.avatarUrl);
         }
-      } catch {
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
         setSaveError("Failed to load profile data");
       }
     };
 
     fetchProfile();
-  }, []);
+    return () => controller.abort();
+  }, [isAuthenticated]);
 
   const handleBeforeUnload = useCallback(
     (event: BeforeUnloadEvent) => {
@@ -188,11 +205,30 @@ export default function SettingsPage() {
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <div className="w-full max-w-3xl mx-auto px-4 py-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-ink-soft">Settings</h1>
-          <p className="text-muted-text mt-1">
-            Manage your account preferences
-          </p>
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-ink-soft">Settings</h1>
+            <p className="text-muted-text mt-1">
+              Manage your account preferences
+            </p>
+            {user && (
+              <p className="text-muted-text mt-1 text-sm break-all">
+                Signed in as{" "}
+                <span className="font-medium text-ink-soft">
+                  {user.email ?? user.walletAddress ?? user.id}
+                </span>
+              </p>
+            )}
+          </div>
+          {user && (
+            <Button
+              variant="secondary"
+              onClick={signOut}
+              className="shrink-0"
+            >
+              Sign out
+            </Button>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl border border-border-warm shadow-[_-4px_4px_0_rgba(0,0,0,1)] overflow-hidden">

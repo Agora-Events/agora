@@ -1150,6 +1150,14 @@ pub fn add_to_waitlist(env: &Env, event_id: &String, user: &Address) {
         .set(&DataKey::Waitlist(event_id.clone(), user.clone()), &true);
 }
 
+/// Remove a user from the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user). Storage type: Persistent
+pub fn remove_from_waitlist(env: &Env, event_id: &String, user: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Waitlist(event_id.clone(), user.clone()));
+}
+
 // ── Event Pause Storage ────────────────────────────────────────────────────────
 
 /// Returns whether an event is paused. Returns false if the pause status is not set (i.e., event is not paused).

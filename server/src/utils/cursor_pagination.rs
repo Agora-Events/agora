@@ -165,6 +165,13 @@ pub struct PastEventCursor {
     pub id: uuid::Uuid,
 }
 
+/// Cursor structure for event attendee listings ordered by (created_at ASC, id ASC).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AttendeeCursor {
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub id: uuid::Uuid,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

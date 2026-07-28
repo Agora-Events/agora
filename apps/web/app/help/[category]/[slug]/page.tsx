@@ -1,14 +1,52 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { getArticle, getArticlesByCategory } from "../../data";
 import { ClientSidebar } from "./client-sidebar";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import HelpCircleIcon from "@/public/icons/help-circle.svg";
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ category: string; slug: string }>;
+}): Promise<Metadata> {
+  const { category, slug } = await params;
+  const article = getArticle(category, slug);
+
+  if (!article) {
+    return {
+      title: "Article Not Found | Agora Help Center",
+    };
+  }
+
+  const title = `${article.title} | Help Center - Agora`;
+  const description = article.summary || article.content.slice(0, 160).replace(/[#*`]/g, "").trim();
+  const canonicalUrl = `https://agora.events/help/${category}/${slug}`;
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      title,
+      description,
+      url: canonicalUrl,
+      type: "article",
+      siteName: "Agora Events",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+    },
+  };
+}
 
 export default async function HelpArticlePage({
   params,
@@ -24,6 +62,12 @@ export default async function HelpArticlePage({
 
   const categoryArticles = getArticlesByCategory(category);
 
+  // "getting-started" -> "Getting Started"
+  const categoryLabel = category
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
   return (
     <main className="flex flex-col min-h-screen bg-[#FFFBE9]">
       <Navbar />
@@ -31,14 +75,20 @@ export default async function HelpArticlePage({
       {/* Breadcrumb & Header Banner */}
       <div className="bg-[#FDDA23] border-b-2 border-black pt-28 pb-8 px-4 md:px-8 shadow-[0px_4px_0px_0px_rgba(0,0,0,1)]">
         <div className="max-w-5xl mx-auto w-full flex flex-col gap-4">
-          <nav className="flex items-center gap-2 text-sm font-semibold text-black">
-            <Link href="/help" className="hover:underline flex items-center gap-1">
-              <Image src={HelpCircleIcon} alt="" width={16} height={16} />
-              Help Center
-            </Link>
-            <span>/</span>
-            <span className="capitalize">{category.replace("-", " ")}</span>
-          </nav>
+          <Breadcrumb
+            items={[
+              { label: "Home", href: "/" },
+              { label: "Help", href: "/help" },
+              // No /help/[category] index route exists yet, so this level is
+              // context only rather than a link to a 404.
+              { label: categoryLabel },
+              { label: article.title },
+            ]}
+            className="font-semibold"
+            linkClassName="text-black/70 hover:text-black"
+            separatorClassName="text-black/40"
+            currentClassName="text-black"
+          />
           <h1 className="text-3xl md:text-5xl font-black tracking-tight text-black">
             {article.title}
           </h1>

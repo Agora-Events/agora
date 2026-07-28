@@ -1,0 +1,255 @@
+openapi: 3.0.3
+info:
+  title: Agora Backend API
+  description: |
+    REST API for the Agora events platform.
+
+    All successful responses are wrapped in a standard envelope:
+    `{ "success": true, "data": ..., "message": "..." }`.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+
+tags:
+  - name: Health
+    description: Service health and readiness probes
+  - name: Events
+    description: Event discovery and event-scoped resources
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      description: Returns 200 when the API process is up.
+      responses:
+        '200':
+          description: API process is up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /api/v1/health/blockchain:
+    get:
+      tags: [Health]
+      summary: Blockchain connectivity check
+      description: Verifies the Soroban RPC endpoint is reachable.
+      responses:
+        '200':
+          description: Soroban RPC endpoint is reachable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /api/v1/health/db:
+    get:
+      tags: [Health]
+      summary: Database connectivity check
+      responses:
+        '200':
+          description: Database connection is working
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /api/v1/health/redis:
+    get:
+      tags: [Health]
+      summary: Redis connectivity check
+      responses:
+        '200':
+          description: Redis connection is working
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /api/v1/health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness check
+      description: Returns 200 once the service is ready to serve requests.
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /api/v1/events/{id}:
+    get:
+      tags: [Events]
+      summary: Get a single event by id
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: The event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/events/{id}/social-proof:
+    get:
+      tags: [Events]
+      summary: Get social proof signals for an event
+      description: |
+        Returns social proof signals for an event: number of ticket purchases
+        in the last 24 hours, average rating, waitlist count, and tickets
+        remaining. No authentication is required and the endpoint takes no
+        query parameters. The response is cached in Redis for 60 seconds.
+        Flagged or non-existent events return 404.
+      operationId: getEventSocialProof
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Social proof signals for the event
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/EventSocialProof'
+              example:
+                success: true
+                message: Social proof retrieved successfully
+                data:
+                  recent_purchases: 12
+                  average_rating: 4.5
+                  waitlist_count: 8
+                  tickets_remaining: 43
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/events/{id}/attendees/count:
+    get:
+      tags: [Events]
+      summary: Get attendee count for an event
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Attendee count and total ticket supply
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/AttendeeCount'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/events/{id}/share-link:
+    get:
+      tags: [Events]
+      summary: Get a canonical share URL for an event
+      description: |
+        Returns a canonical share URL for an event along with the event's
+        title and a truncated description (max 160 characters).
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Share link details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    EventId:
+      name: id
+      in: path
+      required: true
+      description: Event UUID
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    NotFound:
+      description: The requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ApiResponse:
+      type: object
+      description: Standard success envelope wrapping all API responses.
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+        data:
+          nullable: true
+      required: [success]
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+      required: [success]
+
+    EventSocialProof:
+      type: object
+      description: Social proof signals for an event.
+      properties:
+        recent_purchases:
+          type: integer
+          format: int64
+          description: Ticket purchases in the last 24 hours.
+        average_rating:
+          type: number
+          format: float
+          description: Average event rating.
+        waitlist_count:
+          type: integer
+          format: int64
+          description: Number of users on the event waitlist.
+        tickets_remaining:
+          type: integer
+          format: int64
+          description: Number of tickets still available.
+      required:
+        - recent_purchases
+        - average_rating
+        - waitlist_count
+        - tickets_remaining
+
+    AttendeeCount:
+      type: object
+      properties:
+        count:
+          type: integer
+          format: int64
+        total_tickets:
+          type: integer
+          format: int64
+      required: [count, total_tickets]

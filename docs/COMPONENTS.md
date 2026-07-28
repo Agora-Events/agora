@@ -69,53 +69,54 @@ import { Button } from "@/components/ui/button";
 
 ## EmptyState
 
-Displays a friendly empty state with an icon, title, description, and optional action button.
+<<<<<<< HEAD
+Displays a friendly empty state with an illustration or icon, title, description,
+and an optional action (button or link).
 
-**Note**: There are two implementations. The newer one (with icon prop) is recommended.
+**File:** `apps/web/components/ui/empty-state.tsx`
 
-### Props (Recommended Version - empty-state.tsx)
+### Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `icon` | `React.ReactNode` | (required) | Icon to display (e.g. `<img>`, `<Image />`, or any SVG element) |
 | `title` | `string` | (required) | Heading text |
-| `description` | `string` | (required) | Supporting message / body copy |
-| `action` | `{ label: string; onClick: () => void }` | — | Optional call-to-action button |
+| `description` | `string` | — | Supporting message / body copy |
+| `message` | `string` | — | Alias for `description` (legacy) |
+| `icon` | `React.ReactNode` | — | Custom icon node |
+| `illustrationSrc` | `string` | `"/icons/404-illustration.svg"` | Illustration when no `icon` is set |
+| `action` | `{ label: string; onClick?: () => void; href?: string }` | — | Optional call-to-action; renders as a `<Link>` when `href` is provided, or as a `<Button>` when `onClick` is provided |
+| `ctaLabel` | `string` | — | Optional link CTA label |
+| `ctaLink` | `string` | — | Optional link CTA href |
 
-### Example (Recommended)
+### Example
 
 ```tsx
 import { EmptyState } from "@/components/ui/empty-state";
 import Image from "next/image";
 
+// Icon + action button
 <EmptyState
   icon={
-    <Image 
-      src="/icons/404-illustration.svg" 
-      alt="No events" 
-      width={80} 
-      height={80} 
+    <Image
+      src="/icons/search.svg"
+      alt="Search"
+      width={32}
+      height={32}
     />
   }
   title="No events found"
-  description="Try adjusting your filters or check back later."
-  action={{ 
-    label: "Create Event", 
-    onClick: () => console.log("Create clicked!") 
-  }}
+  description="Try adjusting your filters to find what you're looking for."
+  action={{ label: "Clear Search", onClick: () => setSearch("") }}
+/>
+
+// Illustration + link CTA
+<EmptyState
+  title="No events found"
+  message="There are no events matching your current filters."
+  ctaLabel="Create an Event"
+  ctaLink="/events/create"
 />
 ```
-
-### Props (Legacy Version - EmptyState.tsx)
-
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `title` | `string` | (required) | Heading text |
-| `message` | `string` | (required) | Supporting message / body copy |
-| `ctaLabel` | `string` | — | Label for the optional call-to-action button |
-| `ctaLink` | `string` | — | Where the CTA button navigates to |
-| `illustrationSrc` | `string` | `"/icons/404-illustration.svg"` | Override the default illustration src |
-
 ---
 
 ## ErrorBanner

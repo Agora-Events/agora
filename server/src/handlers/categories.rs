@@ -279,8 +279,8 @@ pub const CANONICAL_CATEGORIES: &[(u32, &str, &str)] = &[
 ];
 
 /// Validates that the categories in the database match the contract's canonical list.
-/// Logs a warning if there is a mismatch. Should be called at server startup.
-pub async fn validate_categories_match_contract(pool: &PgPool) {
+/// Logs an error if there is a mismatch. Should be called at server startup.
+pub async fn validate_categories_match_contract(pool: &PgPool) -> bool {
     use sqlx::Row;
     match sqlx::query("SELECT name, slug FROM categories ORDER BY created_at ASC")
         .fetch_all(pool)
@@ -298,19 +298,22 @@ pub async fn validate_categories_match_contract(pool: &PgPool) {
                     "Database categories match the contract's canonical list ({} categories)",
                     db_names.len()
                 );
+                true
             } else {
-                tracing::warn!(
+                tracing::error!(
                     "Database categories mismatch detected! DB has {:?}, contract expects {:?}",
                     db_names,
                     canonical_names
                 );
+                false
             }
         }
         Err(e) => {
-            tracing::warn!(
-                "Could not validate categories against contract: {:?}.                  This is normal if the categories table has not been seeded yet.",
+            tracing::error!(
+                "Could not validate categories against contract: {:?}. This is normal if the categories table has not been seeded yet.",
                 e
             );
+            false
         }
     }
 }

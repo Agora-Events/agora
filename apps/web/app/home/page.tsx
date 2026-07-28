@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
@@ -15,6 +16,7 @@ import BubbleChatIcon from "@/public/icons/bubble-chat.svg";
 import ZeroIcon from "@/public/icons/zero.svg";
 import EmptyStateBg from "@/public/icons/empty-state-bg.svg";
 import useSWR from "swr";
+import { useAuth } from "@/hooks/useAuth";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -449,21 +451,37 @@ function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab,
 }
 
 export default function HomePage() {
+  const router = useRouter();
+  const {
+    walletAddress: userWallet,
+    isAuthenticated,
+    isLoading: isAuthLoading,
+  } = useAuth();
   const [myEventsTab, setMyEventsTab] = useState<MyEventsTab>("upcoming");
   const [forYouTab, setForYouTab] = useState<ForYouTab>("discover");
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  // Authenticated user's wallet address (placeholder logic for now)
-  const userWallet = "0xUSERWALLET"; 
+  // "My Events" is personal — signed-out visitors belong on the auth page.
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      router.replace("/auth");
+    }
+  }, [isAuthLoading, isAuthenticated, router]);
 
-  const { data, isLoading } = useSWR("/api/v1/events", fetcher);
+  const { data, isLoading: isEventsLoading } = useSWR(
+    isAuthenticated ? "/api/v1/events" : null,
+    fetcher,
+  );
+  const isLoading = isAuthLoading || isEventsLoading;
   const allEvents = data?.events || [];
-  
+
   const now = new Date().getTime();
 
   // Filter for 'My Events'
   const upcomingEvents = allEvents.filter((e: any) => new Date(e.start_time).getTime() > now); // assuming user has ticket logically mapped
-  const hostingEvents = allEvents.filter((e: any) => e.organizer_wallet === userWallet);
+  const hostingEvents = userWallet
+    ? allEvents.filter((e: any) => e.organizer_wallet === userWallet)
+    : [];
   const pastEvents = allEvents.filter((e: any) => new Date(e.end_time).getTime() < now);
 
   let displayedMyEvents = [];

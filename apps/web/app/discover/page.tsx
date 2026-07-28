@@ -6,7 +6,7 @@ import { CategorySection } from "@/components/events/category-section";
 import { PopularEventsSection } from "@/components/events/popular-events-section";
 import { OrganizerComponent } from "@/components/events/organizer-component";
 import { Footer } from "@/components/layout/footer";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { EmptyState } from "@/components/ui/empty-state";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 
 export default function DiscoverPage() {
@@ -62,9 +62,8 @@ export default function DiscoverPage() {
         <div className="px-4 lg:px-10 py-8">
           <EmptyState
             title="No events found"
-            message="There are no events matching your current filters. Try a different category or be the first to create one!"
-            ctaLabel="Create an Event"
-            ctaLink="/events/create"
+            description="There are no events matching your current filters. Try a different category or be the first to create one!"
+            action={{ label: "Create an Event", href: "/events/create" }}
           />
         </div>
       )}

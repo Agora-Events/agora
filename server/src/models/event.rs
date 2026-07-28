@@ -39,21 +39,19 @@ pub struct Event {
     pub created_at: DateTime<Utc>,
     /// Timestamp of the last update to this record. Managed by a DB trigger.
     pub updated_at: DateTime<Utc>,
-    /// Optional HTTPS URL for the event's banner/cover image.
-    pub image_url: Option<String>,
-    /// True when the event has no paid ticket tiers.
-    /// Populated after fetch via `populate_is_free`; never read from DB.
-    #[sqlx(skip)]
-    pub is_free: bool,
-    /// Number of tickets minted for this event. Loaded from DB for sorting; omitted from API.
-    #[serde(skip)]
+    /// Sum of `total_quantity` across all of this event's ticket tiers.
+    /// Defaults to `0` for queries that don't join `ticket_tiers`.
+    #[sqlx(default)]
+    pub total_tickets: i64,
+    /// Number of tickets already sold (`total_quantity - available_quantity`
+    /// summed across tiers). Defaults to `0` for queries that don't join
+    /// `ticket_tiers`.
+    #[sqlx(default)]
     pub minted_tickets: i64,
-    /// Tracks whether `populate_is_free` has been called for this event (Issue #886).
-    /// When `false` at serialization time a warning is emitted so log-based checks
-    /// can catch any code path that forgot to call `populate_is_free` before returning
-    /// event data to clients. Never serialized or read from the database.
-    #[sqlx(skip)]
-    #[serde(skip)]
+    pub image_url: Option<String>,
+    #[sqlx(default)]
+    pub is_free: bool,
+    #[sqlx(default)]
     pub is_free_populated: bool,
 }
 

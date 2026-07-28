@@ -6,7 +6,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 // Prevent default icon path issues with webpack
-delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
+delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)
+  ._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -21,16 +22,31 @@ const customIcon = new L.Icon({
   popupAnchor: [0, -40],
 });
 
-// Dynamically center the map when coordinates change
-function ChangeView({ center }: { center: [number, number] }) {
+/**
+ * Fallback coordinates used when geocoding returns no results.
+ * Defaults to a world-level view centred on 0, 0 (zoom 2).
+ */
+const FALLBACK_COORDS: [number, number] = [20, 0];
+const FALLBACK_ZOOM = 2;
+
+// Client-side in-process cache to avoid redundant proxy calls for the same
+// location string within a single page session.
+const geocodeCache = new Map<string, [number, number] | null>();
+
+// Dynamically centre the map when coordinates change
+function ChangeView({
+  center,
+  zoom,
+}: {
+  center: [number, number];
+  zoom: number;
+}) {
   const map = useMap();
   useEffect(() => {
-    map.setView(center, map.getZoom());
-  }, [center, map]);
+    map.setView(center, zoom);
+  }, [center, zoom, map]);
   return null;
 }
-
-const geocodeCache = new Map<string, [number, number] | null>();
 
 interface EventLocationMapProps {
   location: string;
@@ -38,8 +54,8 @@ interface EventLocationMapProps {
 
 export default function EventLocationMap({ location }: EventLocationMapProps) {
   const [coords, setCoords] = useState<[number, number] | null>(null);
+  const [isFallback, setIsFallback] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -47,56 +63,69 @@ export default function EventLocationMap({ location }: EventLocationMapProps) {
     async function geocodeLocation() {
       if (!location) {
         if (isMounted) {
-          setError(true);
+          setCoords(FALLBACK_COORDS);
+          setIsFallback(true);
           setIsLoading(false);
         }
         return;
       }
 
+      // Client-side cache hit
       if (geocodeCache.has(location)) {
         const cached = geocodeCache.get(location);
         if (isMounted) {
-          setCoords(cached || null);
-          setError(!cached);
+          if (cached) {
+            setCoords(cached);
+            setIsFallback(false);
+          } else {
+            setCoords(FALLBACK_COORDS);
+            setIsFallback(true);
+          }
           setIsLoading(false);
         }
         return;
       }
 
       try {
+        // Route through the server-side proxy — no direct Nominatim calls.
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-            location,
-          )}`,
-          {
-            headers: {
-              "User-Agent": "AgoraApp/1.0 (contact@agora-demo.com)",
-            },
-          },
+          `/api/geocode?location=${encodeURIComponent(location)}`,
         );
+
+        if (!response.ok) {
+          throw new Error(`Geocode proxy returned HTTP ${response.status}`);
+        }
+
         const data = await response.json();
 
-        if (data && data.length > 0) {
-          const lat = parseFloat(data[0].lat);
-          const lon = parseFloat(data[0].lon);
+        if (data.results && data.results.length > 0) {
+          const { lat, lon } = data.results[0];
           const newCoords: [number, number] = [lat, lon];
           geocodeCache.set(location, newCoords);
           if (isMounted) {
             setCoords(newCoords);
-            setError(false);
+            setIsFallback(false);
           }
         } else {
+          // No results — use city/world-level fallback map.
           geocodeCache.set(location, null);
-          if (isMounted) setError(true);
+          if (isMounted) {
+            setCoords(FALLBACK_COORDS);
+            setIsFallback(true);
+          }
         }
       } catch (err) {
         console.error("Geocoding error:", err);
-        if (isMounted) setError(true);
+        if (isMounted) {
+          setCoords(FALLBACK_COORDS);
+          setIsFallback(true);
+        }
       } finally {
         if (isMounted) setIsLoading(false);
       }
     }
 
+    // Debounce rapid prop changes (e.g. while the user types a location)
     const timeoutId = setTimeout(() => {
       geocodeLocation();
     }, 300);
@@ -117,21 +146,20 @@ export default function EventLocationMap({ location }: EventLocationMapProps) {
     );
   }
 
-  if (error || !coords) {
-    return (
-      <div className="w-full h-full bg-black/5 flex items-center justify-center">
-        <span className="text-black/50 font-medium font-heading">
-          Location not found
-        </span>
-      </div>
-    );
-  }
+  // coords is guaranteed non-null here (set to FALLBACK_COORDS on error)
+  const mapCoords = coords ?? FALLBACK_COORDS;
+  const mapZoom = isFallback ? FALLBACK_ZOOM : 13;
 
   return (
     <div className="w-full h-full relative z-0">
+      {isFallback && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 bg-white/90 rounded-full px-4 py-1 text-xs text-black/60 font-medium shadow-sm pointer-events-none">
+          Exact location unavailable — showing approximate area
+        </div>
+      )}
       <MapContainer
-        center={coords}
-        zoom={13}
+        center={mapCoords}
+        zoom={mapZoom}
         scrollWheelZoom={false}
         className="w-full h-full z-0!"
         style={{ zIndex: 0 }}
@@ -140,8 +168,9 @@ export default function EventLocationMap({ location }: EventLocationMapProps) {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <Marker position={coords} icon={customIcon} />
-        <ChangeView center={coords} />
+        {/* Only place a precise marker when we have real coordinates */}
+        {!isFallback && <Marker position={mapCoords} icon={customIcon} />}
+        <ChangeView center={mapCoords} zoom={mapZoom} />
       </MapContainer>
     </div>
   );

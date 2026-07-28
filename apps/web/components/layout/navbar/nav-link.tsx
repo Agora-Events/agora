@@ -19,7 +19,8 @@ export function NavLink({
     <Link
       href={href}
       aria-label={ariaLabel}
-      className={`flex items-center gap-1 text-[15px] font-medium transition-colors ${
+      aria-current={isActive ? "page" : undefined}
+      className={`flex items-center gap-1 text-[15px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
         isActive ? "text-accent" : "text-black hover:opacity-80"
       }`}
     >
