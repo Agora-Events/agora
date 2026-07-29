@@ -341,7 +341,12 @@ impl EventRegistry {
         }
     }
 
-    /// Update event status (only by organizer)
+        /// Returns the cumulative number of events ever registered on the platform.
+        pub fn get_global_event_count(env: Env) -> u32 {
+            storage::get_global_event_count(&env)
+        }
+
+        /// Update event status (only by organizer)
     pub fn update_event_status(
         env: Env,
         event_id: String,
