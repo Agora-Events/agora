@@ -9,6 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:ci": "vitest run --coverage --thresholds.coverageMap=80",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
     "postinstall": "node ../../scripts/fix-storybook-next.js",
     "storybook": "storybook dev -p 6006",
     "prebuild-storybook": "node ../../scripts/fix-storybook-next.js",
@@ -62,6 +64,7 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vite": "^7.0.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@playwright/test": "1.49.1"
   }
 }

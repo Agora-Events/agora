@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
@@ -285,6 +286,12 @@ export default function SettingsPage() {
                 {tab.label}
               </button>
             ))}
+            <Link
+              href="/settings/subscriptions"
+              className="flex-1 px-6 py-4 text-sm font-semibold text-center transition-colors text-muted-text hover:text-ink-soft"
+            >
+              Subscriptions
+            </Link>
           </div>
 
           <div className="p-6 md:p-8">
