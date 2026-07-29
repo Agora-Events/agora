@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import Colors from '@/constants/Colors';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Keypair, Networks, TransactionBuilder, Horizon } from '@stellar/stellar-sdk';
 import { StellarWalletManager } from '@/services/stellar';
+
+/** How often the entry QR payload is re-signed. */
+const QR_REFRESH_INTERVAL_MS = 15000;
 
 export default function TicketDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -23,6 +27,11 @@ export default function TicketDetailsScreen() {
   const [sellError, setSellError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Rotating entry QR payload (issue #1006). Regenerated on a timer so a
+  // screenshot of the code stops being valid shortly after it is taken.
+  const [qrPayload, setQrPayload] = useState<string | null>(null);
+  const qrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // MOCK Ticket Details (consistent with `tickets.tsx` style)
   const ticket = {
     id: id || 'T-1004',
@@ -31,6 +40,36 @@ export default function TicketDetailsScreen() {
     seat: 'General Admission',
     txHash: '0x3f...b82d',
   };
+
+  const generateDynamicPayload = useCallback(async () => {
+    if (!id) return;
+    try {
+      // The secret is read only for the signing step and never held in state.
+      const privateKey = await SecureStore.getItemAsync('privateKey');
+      if (!privateKey) return;
+
+      // System time so the payload still refreshes offline.
+      const timestamp = Math.floor(Date.now() / 1000);
+      const payload = { ticketId: String(id), timestamp };
+      const payloadString = JSON.stringify(payload);
+
+      const keypair = Keypair.fromSecret(privateKey);
+      const signature = keypair.sign(Buffer.from(payloadString)).toString('base64');
+
+      setQrPayload(JSON.stringify({ ...payload, signature }));
+    } catch (e) {
+      console.error('Error generating ticket payload', e);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    generateDynamicPayload();
+    qrTimerRef.current = setInterval(generateDynamicPayload, QR_REFRESH_INTERVAL_MS);
+
+    return () => {
+      if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+    };
+  }, [generateDynamicPayload]);
 
   const handleTransferSubmit = async () => {
     // Validate target string against Stellar public key constraints or email
@@ -148,6 +187,13 @@ export default function TicketDetailsScreen() {
         </View>
       </View>
 
+      <View style={styles.qrContainer}>
+        {/* Placeholder for the visual QR code; no QR library is available in
+            this app yet, so the signed payload is rendered directly. */}
+        <Text style={styles.qrPlaceholder}>[QR Code Placeholder]</Text>
+        <Text style={styles.payload}>{qrPayload}</Text>
+      </View>
+
       <View style={styles.actionsContainer}>
         <Button 
           title="Transfer Ticket" 
@@ -224,135 +270,6 @@ export default function TicketDetailsScreen() {
         </View>
       </Modal>
     </ScrollView>
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import { Keypair } from '@stellar/stellar-sdk';
-
-interface Ticket {
-  id: string;
-  eventName: string;
-  date: string;
-  venue: string;
-  seat: string;
-}
-
-export default function TicketDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [qrPayload, setQrPayload] = useState<string | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const fetchTicket = useCallback(async () => {
-    try {
-      // Offline support: try to load from cache first
-      const cached = await SecureStore.getItemAsync('ticket_cache');
-      let tickets: Ticket[] = cached ? JSON.parse(cached) : [];
-
-      // Try to fetch from API if online
-      try {
-        const response = await fetch('/api/profile');
-        if (response.ok) {
-          const data = await response.json();
-          tickets = data.tickets || [];
-          await SecureStore.setItemAsync('ticket_cache', JSON.stringify(tickets));
-        }
-      } catch (e) {
-        // Offline: continue with cached tickets
-      }
-
-      const found = tickets.find((t) => t.id === id);
-      if (found) {
-        setTicket(found);
-      }
-    } catch (e) {
-      console.error('Error fetching ticket', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
-
-  const generateDynamicPayload = useCallback(async () => {
-    if (!id) return;
-    try {
-      // Fetch private key from secure store ONLY for the signature process
-      const privateKey = await SecureStore.getItemAsync('privateKey');
-      if (!privateKey) {
-        console.error('No private key found');
-        return;
-      }
-
-      // Use system time (works offline)
-      const timestamp = Math.floor(Date.now() / 1000);
-      const payload = {
-        ticketId: id,
-        timestamp,
-      };
-
-      const payloadString = JSON.stringify(payload);
-      const keypair = Keypair.fromSecret(privateKey);
-      
-      // Cryptographic signature
-      const signatureBuffer = keypair.sign(Buffer.from(payloadString));
-      const signature = signatureBuffer.toString('base64');
-
-      setQrPayload(JSON.stringify({
-        ...payload,
-        signature
-      }));
-      
-      // Explicitly clear from memory by not keeping it in component state
-      // Garbage collection will handle the local variable cleanup.
-    } catch (e) {
-      console.error('Error generating payload', e);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    fetchTicket();
-  }, [fetchTicket]);
-
-  useEffect(() => {
-    if (ticket) {
-      // Apply a high screen brightness configuration when displaying the QR code
-      // Note: Mocked because no screen brightness library could be introduced per constraints.
-      console.log('Setting screen brightness to maximum');
-      
-      generateDynamicPayload();
-      timerRef.current = setInterval(() => {
-        generateDynamicPayload();
-      }, 15000);
-
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-        console.log('Restoring screen brightness');
-      };
-    }
-  }, [ticket, generateDynamicPayload]);
-
-  if (loading) {
-    return <ActivityIndicator style={styles.loader} />;
-  }
-
-  if (!ticket) {
-    return <Text style={styles.error}>Ticket not found.</Text>;
-  }
-
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{ticket.eventName}</Text>
-      <Text style={styles.detail}>Date: {ticket.date}</Text>
-      <Text style={styles.detail}>Venue: {ticket.venue}</Text>
-      <Text style={styles.detail}>Seat: {ticket.seat}</Text>
-      
-      <View style={styles.qrContainer}>
-        {/* Placeholder for visual QR Code, as a library could not be introduced per constraints */}
-        <Text style={styles.qrPlaceholder}>[QR Code Placeholder]</Text>
-        <Text style={styles.payload}>{qrPayload}</Text>
-      </View>
-    </View>
   );
 }
 
@@ -486,12 +403,28 @@ const styles = StyleSheet.create({
   cancelButton: {
     backgroundColor: '#2C2C2E',
   },
-  container: { flex: 1, padding: 20, alignItems: 'center', backgroundColor: '#fff' },
-  loader: { flex: 1, justifyContent: 'center' },
-  error: { marginTop: 20, fontSize: 16, color: 'red' },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
-  detail: { fontSize: 16, marginBottom: 5 },
-  qrContainer: { marginTop: 30, padding: 20, borderWidth: 1, borderColor: '#ccc', alignItems: 'center', width: '100%' },
-  qrPlaceholder: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
-  payload: { fontSize: 10, color: '#666', textAlign: 'center', marginTop: 10 }
+  // Entry-QR panel (issue #1006), restyled for this screen's dark surface.
+  qrContainer: {
+    marginBottom: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+    borderRadius: 12,
+    alignItems: 'center',
+    width: '100%',
+  },
+  qrPlaceholder: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
+    color: Colors.primaryText,
+  },
+  payload: {
+    fontSize: 10,
+    color: Colors.secondaryText,
+    textAlign: 'center',
+    marginTop: 10,
+  },
 });
+

@@ -99,17 +99,31 @@ function checkoutReducer(state: CheckoutState, action: CheckoutAction): Checkout
         ),
       };
 
-    case 'FAILURE':
+    case 'FAILURE': {
+      // A failure can land before any step goes active — the very first call
+      // throwing, for instance. Without a fallback the modal would show an
+      // error phase with every step still pending and no marker for where it
+      // broke, so the first unfinished step is flagged instead.
+      const hasExplicitTarget = state.steps.some(
+        (step) =>
+          (action.stepId != null && step.id === action.stepId) || step.status === 'active'
+      );
+      const firstUnfinishedIndex = state.steps.findIndex((step) => step.status !== 'done');
+
       return {
         ...state,
         phase: 'error',
         errorMessage: action.message,
-        steps: state.steps.map((step) => {
+        steps: state.steps.map((step, index) => {
           if (action.stepId && step.id === action.stepId) return { ...step, status: 'error' };
           if (step.status === 'active') return { ...step, status: 'error' };
+          if (!hasExplicitTarget && index === firstUnfinishedIndex) {
+            return { ...step, status: 'error' };
+          }
           return step;
         }),
       };
+    }
 
     case 'SUCCESS':
       return {
@@ -231,7 +245,7 @@ export function useTicketCheckout(): UseTicketCheckoutResult {
           paymentTxHash: purchaseResult.paymentTxHash,
         });
         ticketId = recorded.ticketId;
-      } catch (recordError) {
+      } catch (_recordError) {
         // The purchase is fully confirmed on-chain at this point — losing the
         // backend write is a data-sync problem, not a failed purchase. Surface
         // a receipt anyway so the buyer isn't told their money vanished, but
