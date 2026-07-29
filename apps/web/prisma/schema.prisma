@@ -40,6 +40,9 @@ model Ticket {
   buyerWallet String   // The person who paid for the ticket
   ownerWallet String   // The person who owns/receives the ticket (can be different from buyer)
   quantity    Int      @default(1)
+  utmSource   String?  @db.VarChar(255)
+  utmMedium   String?  @db.VarChar(255)
+  utmCampaign String?  @db.VarChar(255)
   createdAt   DateTime @default(now())
 }
 
