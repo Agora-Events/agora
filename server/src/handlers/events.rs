@@ -3589,6 +3589,144 @@ pub async fn get_event_counts(State(mut state): State<EventState>) -> Response {
     success(counts, "Event counts retrieved").into_response()
 }
 
+/// Query parameters for `GET /api/v1/events/map`.
+#[derive(Debug, Deserialize)]
+pub struct MapSearchParams {
+    /// Center latitude in decimal degrees.
+    pub latitude: f64,
+    /// Center longitude in decimal degrees.
+    pub longitude: f64,
+    /// Search radius in kilometres (default: 50, max: 500).
+    pub radius: Option<f64>,
+    /// Maximum results (default: 50, max: 200).
+    pub limit: Option<u32>,
+}
+
+/// A nearby event with computed distance from the query point.
+#[derive(Debug, Serialize)]
+pub struct MapEvent {
+    #[serde(flatten)]
+    pub event: Event,
+    /// Distance from the query point in kilometres.
+    pub distance_km: f64,
+}
+
+/// GET /api/v1/events/map
+///
+/// Returns upcoming events within a given radius of a geographic coordinate,
+/// sorted by distance ascending. Events without coordinates are excluded.
+///
+/// # Query Parameters
+/// - `latitude` (required): Center latitude in decimal degrees (-90 to 90).
+/// - `longitude` (required): Center longitude in decimal degrees (-180 to 180).
+/// - `radius` (optional): Search radius in kilometres (default: 50, max: 500).
+/// - `limit` (optional): Maximum results (default: 50, max: 200).
+///
+/// # Response
+/// Returns a list of nearby events with a `distance_km` field.
+pub async fn get_events_map(
+    State(state): State<EventState>,
+    Query(params): Query<MapSearchParams>,
+) -> Response {
+    let lat = params.latitude;
+    let lng = params.longitude;
+    let radius_km = params.radius.unwrap_or(50.0).clamp(1.0, 500.0);
+    let limit = (params.limit.unwrap_or(50) as i64).clamp(1, 200);
+
+    if !(-90.0..=90.0).contains(&lat) {
+        return AppError::ValidationError(
+            "latitude must be between -90 and 90".to_string(),
+        )
+        .into_response();
+    }
+    if !(-180.0..=180.0).contains(&lng) {
+        return AppError::ValidationError(
+            "longitude must be between -180 and 180".to_string(),
+        )
+        .into_response();
+    }
+
+    let rad_lat = lat.to_radians();
+    let rad_lng = lng.to_radians();
+
+    let query = r#"
+        SELECT e.*, (
+            6371 * ACOS(
+                LEAST(1.0, COS($1) * COS(RADIANS(e.latitude)) * COS(RADIANS(e.longitude) - $2)
+                      + SIN($1) * SIN(RADIANS(e.latitude)))
+            )
+        ) AS distance_km
+        FROM events e
+        WHERE e.latitude IS NOT NULL
+          AND e.longitude IS NOT NULL
+          AND e.is_flagged = FALSE
+          AND (e.end_time IS NULL OR e.end_time > NOW())
+          AND (
+              6371 * ACOS(
+                  LEAST(1.0, COS($1) * COS(RADIANS(e.latitude)) * COS(RADIANS(e.longitude) - $2)
+                        + SIN($1) * SIN(RADIANS(e.latitude)))
+              )
+          ) <= $3
+        ORDER BY distance_km ASC
+        LIMIT $4
+        "#;
+
+    let rows = match sqlx::query(query)
+        .bind(rad_lat)
+        .bind(rad_lng)
+        .bind(radius_km)
+        .bind(limit)
+        .fetch_all(&state.pool)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch map events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let mut events: Vec<MapEvent> = Vec::with_capacity(rows.len());
+    for row in rows {
+        use sqlx::Row;
+        let event = Event {
+            id: row.try_get("id")?,
+            organizer_id: row.try_get("organizer_id")?,
+            title: row.try_get("title")?,
+            description: row.try_get("description")?,
+            location: row.try_get("location")?,
+            start_time: row.try_get("start_time")?,
+            end_time: row.try_get("end_time")?,
+            is_flagged: row.try_get("is_flagged")?,
+            is_featured: row.try_get("is_featured")?,
+            sum_of_ratings: row.try_get("sum_of_ratings")?,
+            count_of_ratings: row.try_get("count_of_ratings")?,
+            created_at: row.try_get("created_at")?,
+            updated_at: row.try_get("updated_at")?,
+            image_url: row.try_get("image_url")?,
+            latitude: row.try_get("latitude")?,
+            longitude: row.try_get("longitude")?,
+            is_free: false,
+            is_free_populated: false,
+            total_tickets: 0,
+            minted_tickets: 0,
+        };
+        let distance_km: f64 = row.try_get("distance_km")?;
+        events.push(MapEvent {
+            event,
+            distance_km,
+        });
+    }
+
+    populate_is_free(
+        &mut events.iter_mut().map(|m| &mut m.event).collect::<Vec<&mut Event>>(),
+        &state.pool,
+    )
+    .await;
+
+    success(events, "Map events retrieved successfully").into_response()
+}
+
 /// GET /api/v1/events/:id/check-in-stats
 pub async fn get_checkin_stats(
     State(state): State<EventState>,
@@ -4214,6 +4352,8 @@ fn test_event_detail_tiers_omitted_when_none() {
         created_at: DateTime::default(),
         updated_at: DateTime::default(),
         image_url: None,
+        latitude: None,
+        longitude: None,
         is_free: false,
         minted_tickets: 0,
         total_tickets: 0,
@@ -4252,6 +4392,8 @@ fn test_event_detail_tiers_present_when_some() {
         created_at: DateTime::default(),
         updated_at: DateTime::default(),
         image_url: None,
+        latitude: None,
+        longitude: None,
         is_free: true,
         minted_tickets: 0,
         total_tickets: 0,
@@ -4464,10 +4606,17 @@ mod search_cache_tests {
             location: "Remote".to_string(),
             start_time: Utc::now(),
             end_time: None,
+            is_flagged: false,
+            is_featured: false,
             sum_of_ratings: 0,
             count_of_ratings: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            image_url: None,
+            latitude: None,
+            longitude: None,
+            is_free: false,
+            is_free_populated: false,
             total_tickets: 100,
             minted_tickets: 42,
         };

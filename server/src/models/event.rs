@@ -50,6 +50,10 @@ pub struct Event {
     pub minted_tickets: i64,
     pub image_url: Option<String>,
     #[sqlx(default)]
+    pub latitude: Option<f64>,
+    #[sqlx(default)]
+    pub longitude: Option<f64>,
+    #[sqlx(default)]
     pub is_free: bool,
     #[sqlx(default)]
     pub is_free_populated: bool,
@@ -104,6 +108,8 @@ impl Serialize for Event {
         state.serialize_field("created_at", &self.created_at)?;
         state.serialize_field("updated_at", &self.updated_at)?;
         state.serialize_field("image_url", &self.image_url)?;
+        state.serialize_field("latitude", &self.latitude)?;
+        state.serialize_field("longitude", &self.longitude)?;
         state.serialize_field("is_free", &self.is_free)?;
         state.serialize_field("average_rating", &self.average_rating())?;
         state.end()
@@ -165,6 +171,8 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -189,6 +197,8 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -215,6 +225,8 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -239,6 +251,8 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -267,6 +281,8 @@ mod tests {
             created_at: created,
             updated_at: updated,
             image_url: None,
+            latitude: None,
+            longitude: None,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -293,6 +309,8 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -319,6 +337,8 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
