@@ -36,28 +36,30 @@ use crate::config::{
     set_request_id_layer, Config,
 };
 use crate::middleware::catch_panic::catch_panic_layer;
+use crate::middleware::content_type::require_json_content_type;
+use crate::middleware::rate_limit::GovernorRateLimitLayer;
+use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
+use crate::utils::rate_limit::RateLimitLayer;
+
 use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories, CategoryState},
     events::{
-        export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
-        get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
-        list_event_attendees, list_event_ratings, list_event_tickets, list_events,
-        list_events_by_category, list_past_events, list_similar_events, list_ticket_tiers,
-        list_upcoming_events, search_events, set_event_featured, submit_event_rating,
-        toggle_event_flag, EventState,
+        export_attendees_csv, flag_event, get_attendee_count, get_checkin_stats, get_event,
+        get_event_counts, get_event_organizer, get_event_share_link, get_event_social_proof,
+        get_ratings_summary, list_event_attendees, list_event_ratings, list_event_tickets,
+        list_events, list_events_by_category, list_past_events, list_similar_events,
+        list_ticket_tiers, list_upcoming_events, search_events, set_event_featured,
+        submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
         health_check_redis,
     },
-    leaderboard::{get_leaderboard, LeaderboardState},
-    monitoring::{monitoring_dashboard, MonitoringState},
     profile::{
         delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
-        list_events_by_organizer, list_my_transactions, patch_profile, upsert_profile,
-        ProfileState,
+        list_events_by_organizer, list_my_transactions, patch_profile, upsert_profile, ProfileState,
     },
     qr_payload::{
         delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads,
@@ -72,7 +74,6 @@ use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
 use crate::middleware::content_type::require_json_content_type;
 use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
-use crate::middleware::rate_limit::GovernorRateLimitLayer;
 use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
 use crate::utils::rate_limit::RateLimitLayer;
 
@@ -85,15 +86,6 @@ const SENSITIVE_WINDOW: Duration = Duration::from_secs(60);
 const GENERAL_RATE_LIMIT: usize = 120;
 const GENERAL_WINDOW: Duration = Duration::from_secs(60);
 
-/// Creates the main application router with all routes and middleware
-///
-/// # Arguments
-/// * `pool` - PostgreSQL connection pool for database operations
-/// * `config` - Application configuration
-/// * `redis` - Redis cache client
-///
-/// # Returns
-/// A configured Axum Router with all routes and middleware applied
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -122,26 +114,22 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         base_url: config.base_url.clone(),
     };
 
-    let monitoring_state = MonitoringState {
-        pool: pool.clone(),
-        redis: redis.clone(),
-    };
-
-    let rates_state = RatesState {
-        redis: redis.clone(),
-        http: reqwest::Client::new(),
-    };
+    let rates_state = RatesState::new(redis.clone(), reqwest::Client::new());
 
     // Spawn the Soroban event listener background task (Issue #490)
     let listener_config = ListenerConfig::from_env();
-    spawn_listener(pool.clone(), listener_config);
+    spawn_listener(pool.clone(), Some(redis.clone()), listener_config);
 
-    // Auth routes — challenge-response JWT flow (Issue #484)
+    // Auth routes — challenge-response JWT flow (Issue #484, #875)
     let auth_routes = Router::new()
         .route("/nonce", post(request_nonce))
         .route("/verify", post(verify_signature))
         .route("/logout", post(logout))
-        .with_state(pool.clone());
+        .with_state(pool.clone())
+        .layer(RateLimitLayer::new(
+            config.auth_rate_limit_per_minute,
+            Duration::from_secs(60),
+        ));
 
     let profile_state = ProfileState {
         pool: pool.clone(),
@@ -149,7 +137,6 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     };
 
     // Organizer profile routes (Issue #486)
-    // Routes that use Redis caching use ProfileState; stats route keeps PgPool.
     let profile_routes = Router::new()
         .route(
             "/",
@@ -161,12 +148,8 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/transactions", get(list_my_transactions))
         .route("/:address", get(get_profile_by_address))
         .route("/:address/events", get(list_events_by_organizer))
-        .with_state(profile_state)
-        .merge(
-            Router::new()
-                .route("/:address/stats", get(get_organizer_stats))
-                .with_state(pool.clone()),
-        );
+        .route("/:address/stats", get(get_organizer_stats))
+        .with_state(profile_state);
 
     // Admin sub-router — every request is recorded in audit_logs and requires admin auth.
     let admin_auth_state = AdminAuthState {
@@ -176,6 +159,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     let admin_routes = Router::new()
         .route("/events/:id/toggle-flag", post(toggle_event_flag))
         .route("/events/:id/feature", patch(set_event_featured))
+        .route("/events/:id/flag", patch(flag_event))
         .route_layer(middleware::from_fn_with_state(
             admin_auth_state,
             require_admin_token,
@@ -246,36 +230,19 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
-        .route("/leaderboard", get(get_leaderboard))
-        .route("/monitoring", get(get_monitoring))
         .with_state(pool.clone())
         .merge(
             Router::new()
                 .route("/health/redis", get(health_check_redis))
                 .with_state(redis.clone()),
         )
-        .merge(
-            Router::new()
-                .route("/monitoring/dashboard", get(monitoring_dashboard))
-                .route_layer(middleware::from_fn_with_state(
-                    monitoring_auth_state,
-                    require_monitoring_token,
-                ))
-                .with_state(monitoring_state),
-        )
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
-
-    let leaderboard_state = LeaderboardState {
-        pool: pool.clone(),
-        redis: redis.clone(),
-    };
 
     // General endpoints — relaxed rate limit
     let general_routes = Router::new()
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
-        .route("/rates", get(get_rates))
         .with_state(pool)
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
@@ -295,7 +262,8 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .merge(rates_route)
         .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
-        .layer(GovernorRateLimitLayer::new(100, Duration::from_secs(60)));
+        // Per-IP token-bucket rate limit (RATE_LIMIT_MAX / RATE_LIMIT_WINDOW).
+        .layer(RateLimitLayer::from_env());
 
     let api_routes = Router::new()
         .merge(sensitive_routes)
@@ -327,7 +295,6 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .layer(middleware::from_fn(propagate_request_id))
         .layer(propagate_request_id_layer())
         .layer(set_request_id_layer())
-        // Outermost: convert uncaught panics into standardised ApiError JSON.
         .layer(catch_panic_layer())
 }
 
@@ -455,7 +422,6 @@ mod tests {
     #[tokio::test]
     async fn test_upload_image_route_exists_under_api_v1() {
         let router = test_router();
-        // POST /api/v1/upload/image should not 404 (method-not-allowed or ok, but not 404)
         let req = Request::builder()
             .method("POST")
             .uri("/api/v1/upload/image")
@@ -480,28 +446,16 @@ mod tests {
             get_status(router.clone(), "/health/db").await,
             StatusCode::NOT_FOUND
         );
-        assert_eq!(
-            get_status(router, "/health/ready").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_eq!(get_status(router, "/health/ready").await, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn test_api_without_version_returns_404() {
         let router = test_router();
-        assert_eq!(
-            get_status(router, "/api/health").await,
-            StatusCode::NOT_FOUND
-        );
+        assert_eq!(get_status(router, "/api/health").await, StatusCode::NOT_FOUND);
     }
 
-    // -----------------------------------------------------------------------
-    // Rate-limit integration tests
-    // -----------------------------------------------------------------------
-
     fn rate_limited_test_router(sensitive_max: usize, general_max: usize) -> Router {
-        use crate::utils::rate_limit::RateLimitLayer;
-
         let sensitive = Router::new()
             .route("/api/v1/health/db", get(|| async { "ok" }))
             .route("/api/v1/health/ready", get(|| async { "ok" }))

@@ -1,3 +1,5 @@
+// This is the canonical route for event creation.
+// The previous route at /create-event was removed to avoid duplication.
 import CreateEventForm from "@/components/events/create-event-form";
 import { Camera } from "@/components/ui/icons";
 

@@ -21,7 +21,7 @@ serde_json = "1.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Redis caching (exchange rate cache)
-redis = { version = "0.25", features = ["tokio-comp"] }
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 
 # Env handling (recommended)
 dotenvy = "0.15"
@@ -50,8 +50,6 @@ rand = "0.8"
 base64 = "0.21"
 hex = "0.4"
 
-# Redis for caching
-redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
 # Rate limiting (using built-in RateLimitLayer only; tower_governor requires axum 0.8)
 
@@ -75,6 +73,7 @@ axum-extra = { version = "0.12.6", features = ["cookie"] }
 
 # Prometheus metrics
 prometheus = { version = "0.13", features = ["process"] }
+dashmap = "6.2.1"
 
 # Currency conversion HTTP client already covered by reqwest above
 

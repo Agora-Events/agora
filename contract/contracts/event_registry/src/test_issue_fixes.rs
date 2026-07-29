@@ -459,3 +459,94 @@ fn test_set_resale_cap_bps_none_clears_cap() {
         .unwrap();
     assert_eq!(info.resale_cap_bps, None);
 }
+
+// ── Issue #888: has_valid_series_pass tests ─────────────────────────────────────
+
+#[test]
+fn test_has_valid_series_pass_returns_true_for_valid_pass() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+    let series_id = String::from_str(&env, "series_valid");
+
+    let args = create_series_args(&env, "series_valid", &organizer);
+    client.create_series(&args);
+
+    let pass_id = String::from_str(&env, "pass_valid");
+    let holder = Address::generate(&env);
+    let usage_limit = 5u32;
+    let expires_at = env.ledger().timestamp() + 1000;
+
+    client.issue_series_pass(&pass_id, &series_id, &holder, &usage_limit, &expires_at);
+
+    assert!(client.has_valid_series_pass(&holder, &series_id));
+}
+
+#[test]
+fn test_has_valid_series_pass_returns_false_if_no_pass() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let holder = Address::generate(&env);
+    let series_id = String::from_str(&env, "non_existent_series");
+
+    assert!(!client.has_valid_series_pass(&holder, &series_id));
+}
+
+#[test]
+fn test_has_valid_series_pass_returns_false_if_usage_limit_exceeded() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+    let series_id = String::from_str(&env, "series_usage_test");
+
+    let args = create_series_args(&env, "series_usage_test", &organizer);
+    client.create_series(&args);
+
+    let pass_id = String::from_str(&env, "pass_usage");
+    let holder = Address::generate(&env);
+    let usage_limit = 1u32;
+    let expires_at = env.ledger().timestamp() + 1000;
+
+    client.issue_series_pass(&pass_id, &series_id, &holder, &usage_limit, &expires_at);
+    assert!(client.has_valid_series_pass(&holder, &series_id));
+
+    // Increment usage to reach the limit
+    client.increment_series_pass_usage(&pass_id);
+    assert!(!client.has_valid_series_pass(&holder, &series_id));
+}
+
+#[test]
+fn test_has_valid_series_pass_returns_false_if_expired() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+    let series_id = String::from_str(&env, "series_expire_test");
+
+    let args = create_series_args(&env, "series_expire_test", &organizer);
+    client.create_series(&args);
+
+    let pass_id = String::from_str(&env, "pass_expired");
+    let holder = Address::generate(&env);
+    let usage_limit = 10u32;
+    let expires_at = 100u64;
+
+    // Set ledger timestamp past expires_at
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+        timestamp: 500u64,
+        protocol_version: 20,
+        sequence_number: 1,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.issue_series_pass(&pass_id, &series_id, &holder, &usage_limit, &expires_at);
+
+    assert!(!client.has_valid_series_pass(&holder, &series_id));
+}

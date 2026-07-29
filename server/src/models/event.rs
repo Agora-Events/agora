@@ -48,6 +48,11 @@ pub struct Event {
     /// `ticket_tiers`.
     #[sqlx(default)]
     pub minted_tickets: i64,
+    pub image_url: Option<String>,
+    #[sqlx(default)]
+    pub is_free: bool,
+    #[sqlx(default)]
+    pub is_free_populated: bool,
 }
 
 impl Event {

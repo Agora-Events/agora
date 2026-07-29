@@ -3,15 +3,27 @@ use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
 use sqlx::PgPool;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
+static CATEGORY_SYNC_STATUS: LazyLock<std::sync::Mutex<bool>> =
+    LazyLock::new(|| std::sync::Mutex::new(true));
+
+/// Update the category sync status. Called during startup after validation.
+pub fn set_category_sync_status(synced: bool) {
+    *CATEGORY_SYNC_STATUS.lock().unwrap() = synced;
+}
+
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct HealthResponse {
     status: &'static str,
     timestamp: String,
+    category_sync: bool,
+    database: &'static str,
+    redis: &'static str,
 }
 
 #[derive(Serialize)]
@@ -47,23 +59,34 @@ struct HealthBlockchainResponse {
         (status = 200, description = "API is healthy", body = HealthResponse)
     )
 )]
-pub async fn health_check(State(pool): State<PgPool>) -> Response {
-    match sqlx::query("SELECT 1").fetch_one(&pool).await {
-        Ok(_) => {
-            let payload = HealthResponse {
-                status: "ok",
-                timestamp: Utc::now().to_rfc3339(),
-            };
-            success(payload, "API is healthy").into_response()
-        }
-        Err(e) => {
-            tracing::error!("Health check failed: {:?}", e);
-            AppError::ExternalServiceError(format!(
-                "API is not ready: database is unreachable ({e})"
-            ))
-            .into_response()
-        }
+pub async fn health_check(State(pool): State<PgPool>, State(mut redis): State<crate::cache::RedisCache>) -> Response {
+    let category_sync = *CATEGORY_SYNC_STATUS.lock().unwrap();
+
+    // Probe database
+    let db_ok = sqlx::query("SELECT 1").fetch_one(&pool).await.is_ok();
+    // Probe redis
+    let redis_ok = redis.ping().await.is_ok();
+
+    if db_ok && redis_ok {
+        let payload = HealthResponse {
+            status: "ok",
+            timestamp: Utc::now().to_rfc3339(),
+            category_sync,
+            database: "ok",
+            redis: "ok",
+        };
+        return success(payload, "API is healthy").into_response();
     }
+
+    let db_status = if db_ok { "ok" } else { "unreachable" };
+    let redis_status = if redis_ok { "ok" } else { "unreachable" };
+
+    tracing::error!("Health check failed: database={}, redis={}", db_status, redis_status);
+    AppError::ExternalServiceError(format!(
+        "Service is not ready: database={}, redis={}",
+        db_status, redis_status
+    ))
+    .into_response()
 }
 
 /// GET /health/db – Database connectivity check.
@@ -206,6 +229,7 @@ mod tests {
         let payload = HealthResponse {
             status: "ok",
             timestamp: Utc::now().to_rfc3339(),
+            category_sync: true,
         };
         let resp = success(payload, "API is healthy").into_response();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -227,6 +251,7 @@ mod tests {
                 let payload = HealthResponse {
                     status: "ok",
                     timestamp: Utc::now().to_rfc3339(),
+                    category_sync: true,
                 };
                 success(payload, "API is healthy").into_response()
             }),

@@ -634,10 +634,12 @@ pub fn has_organizer_receipt(env: &Env, organizer: &Address, event_id: String) -
 }
 
 /// Retrieves all event_ids associated with an organizer by iterating through shards.
+/// If the caller is not the organizer, private events are filtered out (Issue #880).
 /// NOTE: For very large lists, this may exceed gas limits. Use shard-based iteration for scale.
-pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
+pub fn get_organizer_events(env: &Env, organizer: &Address, caller: &Address) -> Vec<String> {
     let count = get_organizer_event_count(env, organizer);
     let mut all_events = vec![env];
+    let is_owner = organizer == caller;
 
     if count == 0 {
         return all_events;
@@ -651,7 +653,16 @@ pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
             .get(&DataKey::OrganizerEventShard(organizer.clone(), i))
             .unwrap_or_else(|| vec![env]);
         for id in shard.iter() {
-            all_events.push_back(id);
+            // Filter out private events if caller is not the organizer
+            if is_owner {
+                all_events.push_back(id);
+            } else {
+                if let Some(event_info) = get_event(env, id.clone()) {
+                    if !event_info.is_private {
+                        all_events.push_back(id);
+                    }
+                }
+            }
         }
     }
     all_events
@@ -1148,6 +1159,14 @@ pub fn add_to_waitlist(env: &Env, event_id: &String, user: &Address) {
     env.storage()
         .persistent()
         .set(&DataKey::Waitlist(event_id.clone(), user.clone()), &true);
+}
+
+/// Remove a user from the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user). Storage type: Persistent
+pub fn remove_from_waitlist(env: &Env, event_id: &String, user: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Waitlist(event_id.clone(), user.clone()));
 }
 
 // ── Event Pause Storage ────────────────────────────────────────────────────────

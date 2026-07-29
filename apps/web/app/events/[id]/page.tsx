@@ -7,6 +7,7 @@ import { RegistrationBox } from "@/components/events/registration-box";
 import { notFound } from "next/navigation";
 import MapClient from "@/components/events/map-client";
 import { buildMetadata } from "@/components/layout/seo";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 export async function generateMetadata({
   params,
@@ -50,6 +51,15 @@ export default async function EventDetailPage({
       <Navbar />
 
       <div className="flex-1 w-full max-w-[1221px] mx-auto px-6 py-6 sm:py-12">
+        <Breadcrumb
+          className="mb-6 sm:mb-8"
+          items={[
+            { label: "Home", href: "/" },
+            { label: "Discover", href: "/discover" },
+            { label: event.title },
+          ]}
+        />
+
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-16">
           {/* LEFT COLUMN (Desktop) / TOP ITEMS (Mobile) */}
           <div className="lg:w-[55%] flex flex-col gap-8 lg:gap-10">

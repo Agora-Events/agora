@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
 import { motion, type Transition } from "framer-motion";
 import useSWR from "swr";
 import { fetchCategories, type DiscoverCategory } from "@/utils/api";
+import { CategoryChips } from "./category-chips";
 
-const defaultCategories = [
+const defaultCategories: DiscoverCategory[] = [
   { name: "Tech", icon: "/icons/Tech.svg", color: "#DBF4B9" },
   { name: "Party", icon: "/icons/party.svg", color: "#FFA4D5" },
   { name: "global", icon: "/icons/global.svg", color: "#B9C7FE" },
@@ -40,8 +42,6 @@ const item = {
   },
 };
 
-import { CategoryChips } from "./category-chips";
-
 type CategorySectionProps = {
   activeCategory: string;
   onCategoryChange: (category: string) => void;
@@ -49,30 +49,40 @@ type CategorySectionProps = {
 };
 
 export function CategorySection({ activeCategory, onCategoryChange, onError }: CategorySectionProps) {
-  // Use SWR for category fetching with automatic caching and revalidation
   const { data: categories, error, isLoading } = useSWR<DiscoverCategory[]>(
     "/api/events/discover/categories",
     () => fetchCategories(),
     {
-      // Revalidate on window focus to keep data fresh
       revalidateOnFocus: true,
-      // Revalidate on reconnect
       revalidateOnReconnect: true,
-      // Don't revalidate on mount if data is already cached
       revalidateIfStale: false,
-      // Keep previous data while revalidating
       keepPreviousData: true,
-      // Deduplicate requests within 2 seconds
       dedupingInterval: 2000,
     }
   );
 
-  // Handle errors from SWR
-  if (error && !categories) {
-    onError("Could not load categories");
-  }
+  // Fire onError once per error occurrence — not on every render.
+  useEffect(() => {
+    if (error) {
+      onError("Could not load categories");
+    }
+  }, [error, onError]);
 
-  const categoriesToRender = categories && categories.length > 0 ? categories : defaultCategories;
+  // While loading: show skeleton pills (pass empty array + isLoading=true).
+  // After load: use API data when available, otherwise fall back to defaults.
+  // If both are exhausted (error + no cache): still use defaults so the
+  // section never renders as an empty gap.
+  const loaded = !isLoading;
+  const apiCategories = categories && categories.length > 0 ? categories : null;
+  const categoriesToRender: DiscoverCategory[] = loaded
+    ? (apiCategories ?? defaultCategories)
+    : [];
+
+  // Hide the entire block only when loading has finished, the fetch failed,
+  // AND we somehow ended up with zero categories (shouldn't happen given the
+  // defaultCategories fallback above, but guards against future regressions).
+  const hasCategories = isLoading || categoriesToRender.length > 0;
+  if (!hasCategories) return null;
 
   return (
     <section className="px-4 bg-base pt-12 pb-6">
@@ -93,18 +103,24 @@ export function CategorySection({ activeCategory, onCategoryChange, onError }: C
         </motion.div>
 
         <motion.div variants={container} initial="hidden" animate="show">
-          <motion.h3
-            variants={item}
-            className="font-semibold text-xl mb-6 flex items-center gap-2"
-          >
-            Browse by Category
-          </motion.h3>
+          {/* Heading is suppressed while loading so it doesn't float above skeletons */}
+          {!isLoading && (
+            <motion.h3
+              variants={item}
+              className="font-semibold text-xl mb-6 flex items-center gap-2"
+            >
+              Browse by Category
+            </motion.h3>
+          )}
+          {isLoading && (
+            <div className="h-7 w-48 rounded-md bg-black/10 animate-pulse mb-6" />
+          )}
 
-          <CategoryChips 
-            categories={categoriesToRender} 
-            activeCategory={activeCategory} 
-            onCategoryChange={onCategoryChange} 
-            isLoading={isLoading} 
+          <CategoryChips
+            categories={categoriesToRender}
+            activeCategory={activeCategory}
+            onCategoryChange={onCategoryChange}
+            isLoading={isLoading}
           />
         </motion.div>
       </div>

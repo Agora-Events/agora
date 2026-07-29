@@ -71,6 +71,14 @@ async fn main() {
 
     tracing::info!("Migrations run successfully");
 
+    // Validate categories match contract (Issue #1076)
+    let categories_synced = crate::handlers::categories::validate_categories_match_contract(&pool)
+        .await;
+    crate::handlers::health::set_category_sync_status(categories_synced);
+    if !categories_synced {
+        tracing::error!("Category sync validation failed - database categories do not match contract canonical list");
+    }
+
     // Initialize Redis cache
     let redis = match agora_server::cache::RedisCache::new(&config.redis_url).await {
         Ok(redis) => {

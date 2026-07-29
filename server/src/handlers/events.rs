@@ -16,7 +16,9 @@ use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::cache::RedisCache;
+use crate::cache::{
+    RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL,
+};
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
@@ -224,6 +226,25 @@ pub struct ValidatedEventSort {
 }
 
 impl EventFilters {
+    /// True when no query filters are applied (eligible for the shared list cache).
+    fn is_unfiltered(&self) -> bool {
+        self.organizer_id.is_none()
+            && self.organizer_wallet.is_none()
+            && self.location.is_none()
+            && self.start_after.is_none()
+            && self.start_before.is_none()
+            && self.search.is_none()
+            && self.min_tickets_available.is_none()
+            && self.is_free.is_none()
+            && self.start_date.is_none()
+            && self.end_date.is_none()
+            && self.is_featured.is_none()
+            && self.followers_only.is_none()
+            && self.sort_by.is_none()
+            && self.sort_order.is_none()
+            && self.sort.is_none()
+    }
+
     /// Validate `sort_by` and `sort_order`, applying defaults when omitted.
     /// The `sort` field takes precedence when provided.
     pub fn validate_sort(&self) -> Result<ValidatedEventSort, String> {
@@ -960,6 +981,73 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_event_timestamps_end_time_before_start_time() {
+        let start = Utc::now();
+        let end = start - chrono::Duration::hours(1); // end before start
+        let result = validate_event_timestamps(start, Some(end));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("end_time must be strictly after start_time"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_end_time_equals_start_time() {
+        let start = Utc::now();
+        let end = start; // end equals start
+        let result = validate_event_timestamps(start, Some(end));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("end_time must be strictly after start_time"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_start_time_in_past() {
+        let start = Utc::now() - chrono::Duration::minutes(10); // 10 minutes ago
+        let end = Some(start + chrono::Duration::hours(2));
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("start_time must be in the future"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_start_time_in_grace_period() {
+        let start = Utc::now() - chrono::Duration::seconds(200); // 3.3 minutes ago (within grace period)
+        let end = Some(start + chrono::Duration::hours(2));
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_valid_future_timestamps() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let end = Some(start + chrono::Duration::hours(3));
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_no_end_time() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let result = validate_event_timestamps(start, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_duration_exceeds_max() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let end = Some(start + chrono::Duration::days(31)); // 31 days exceeds max
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("event duration must not exceed"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_duration_at_max() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let end = Some(start + chrono::Duration::days(30)); // exactly 30 days
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn test_ratings_summary_average_computed() {
         // 1×4 + 1×5 = 9 / 2 = 4.5
         let rows: Vec<(i16, i64)> = vec![(4, 1), (5, 1)];
@@ -1194,7 +1282,7 @@ pub struct SubmitEventRatingResponse {
 /// # Response
 /// Returns a cursor-paginated list of upcoming events with metadata
 pub async fn list_events(
-    State(state): State<EventState>,
+    State(mut state): State<EventState>,
     Query(pagination): Query<CursorParams>,
     Query(filters): Query<EventFilters>,
 ) -> Response {
@@ -1204,6 +1292,33 @@ pub async fn list_events(
         Ok(sort) => sort,
         Err(message) => return AppError::ValidationError(message).into_response(),
     };
+
+    // Serve the default (unfiltered, first-page) list from cache when available.
+    let use_list_cache = validated.cursor.is_none()
+        && filters.is_unfiltered()
+        && validated.limit == crate::utils::cursor_pagination::DEFAULT_PAGE_SIZE;
+    if use_list_cache {
+        match state
+            .redis
+            .get::<CursorResponse<Event>>(EVENTS_LIST_CACHE_KEY)
+            .await
+        {
+            Ok(Some(cached)) => {
+                tracing::debug!("Cache hit for {}", EVENTS_LIST_CACHE_KEY);
+                return success(cached, "Events retrieved successfully (cached)").into_response();
+            }
+            Ok(None) => {
+                tracing::debug!("Cache miss for {}", EVENTS_LIST_CACHE_KEY);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Redis error for {}, falling back to database: {:?}",
+                    EVENTS_LIST_CACHE_KEY,
+                    e
+                );
+            }
+        }
+    }
 
     // Decode cursor if provided
     let cursor = match validated.cursor {
@@ -1409,6 +1524,17 @@ pub async fn list_events(
     populate_is_free(&mut items, &state.pool).await;
 
     let response = CursorResponse::new(items, &validated, next_cursor);
+
+    if use_list_cache {
+        if let Err(e) = state
+            .redis
+            .set(EVENTS_LIST_CACHE_KEY, &response, EVENTS_LIST_CACHE_TTL)
+            .await
+        {
+            tracing::warn!("Failed to cache {}: {:?}", EVENTS_LIST_CACHE_KEY, e);
+        }
+    }
+
     let mut resp = success(response, "Events retrieved successfully").into_response();
     if let Ok(v) = HeaderValue::from_str(&total_count.to_string()) {
         resp.headers_mut().insert("X-Total-Count", v);
@@ -1576,6 +1702,7 @@ pub async fn get_event(
     }
 
     // Cache miss or error, fetch from database
+    let start = std::time::Instant::now();
     let event = match sqlx::query_as::<_, Event>(
         "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
@@ -1585,14 +1712,17 @@ pub async fn get_event(
     {
         Ok(Some(event)) => event,
         Ok(None) => {
+            log_if_slow("get_event", start.elapsed());
             return AppError::NotFound(format!("Event with id '{}' not found", event_id))
                 .into_response();
         }
         Err(e) => {
+            log_if_slow("get_event", start.elapsed());
             tracing::error!("Failed to fetch event: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
+    log_if_slow("get_event", start.elapsed());
 
     // Fetch organizer profile by wallet address (Issue #486)
     // Look up the organizer's Stellar wallet, then fetch their profile.
@@ -1742,6 +1872,9 @@ pub async fn list_similar_events(
 /// Maximum allowed length for an event title.
 pub const MAX_EVENT_TITLE_LENGTH: usize = 200;
 
+/// Maximum allowed length for an event description.
+pub const MAX_EVENT_DESCRIPTION_LENGTH: usize = 10000;
+
 /// Validates an event title for create/update requests.
 pub fn validate_event_title(title: &str) -> Result<(), String> {
     let trimmed = title.trim();
@@ -1753,6 +1886,19 @@ pub fn validate_event_title(title: &str) -> Result<(), String> {
             "title must not exceed {} characters",
             MAX_EVENT_TITLE_LENGTH
         ));
+    }
+    Ok(())
+}
+
+/// Validates an event description for create/update requests.
+pub fn validate_event_description(description: &Option<String>) -> Result<(), String> {
+    if let Some(ref desc) = description {
+        if desc.chars().count() > MAX_EVENT_DESCRIPTION_LENGTH {
+            return Err(format!(
+                "description must not exceed {} characters",
+                MAX_EVENT_DESCRIPTION_LENGTH
+            ));
+        }
     }
     Ok(())
 }
@@ -1807,6 +1953,13 @@ fn is_valid_email(email: &str) -> bool {
 
 const MAX_LOCATION_LENGTH: usize = 500;
 
+/// Maximum allowed event duration in days (30 days).
+const MAX_EVENT_DURATION_DAYS: i64 = 30;
+
+/// Grace period in seconds for start_time validation (5 minutes).
+/// Allows organizers to create events that start slightly in the past.
+const START_TIME_GRACE_PERIOD_SECONDS: i64 = 300;
+
 fn validate_event_location(location: &str) -> Result<(), AppError> {
     if location.trim().is_empty() {
         return Err(AppError::ValidationError(
@@ -1818,6 +1971,42 @@ fn validate_event_location(location: &str) -> Result<(), AppError> {
             "location must be at most {MAX_LOCATION_LENGTH} characters"
         )));
     }
+    Ok(())
+}
+
+/// Validates event timestamps for create/update requests.
+/// Ensures start_time is not too far in the past, end_time > start_time (if provided),
+/// and event duration does not exceed the maximum allowed.
+fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTime<Utc>>) -> Result<(), AppError> {
+    let now = Utc::now();
+    
+    // Check that start_time is not too far in the past (with grace period)
+    let grace_period = chrono::Duration::seconds(START_TIME_GRACE_PERIOD_SECONDS);
+    if start_time + grace_period < now {
+        return Err(AppError::ValidationError(
+            "start_time must be in the future or within the grace period".to_string(),
+        ));
+    }
+    
+    // If end_time is provided, validate it
+    if let Some(end) = end_time {
+        // end_time must be strictly after start_time
+        if end <= start_time {
+            return Err(AppError::ValidationError(
+                "end_time must be strictly after start_time".to_string(),
+            ));
+        }
+        
+        // Check event duration does not exceed maximum
+        let max_duration = chrono::Duration::days(MAX_EVENT_DURATION_DAYS);
+        if end - start_time > max_duration {
+            return Err(AppError::ValidationError(format!(
+                "event duration must not exceed {} days",
+                MAX_EVENT_DURATION_DAYS
+            )));
+        }
+    }
+    
     Ok(())
 }
 
@@ -1850,6 +2039,13 @@ pub async fn create_event(
     }
 
     if let Err(message) = validate_event_title(&payload.title) {
+        return AppError::ValidationError(message).into_response();
+    }
+
+    // Validate event timestamps
+    if let Err(e) = validate_event_timestamps(payload.start_time, payload.end_time) {
+        return e.into_response();
+    if let Err(message) = validate_event_description(&payload.description) {
         return AppError::ValidationError(message).into_response();
     }
 
@@ -1913,6 +2109,9 @@ pub async fn create_event(
         tracing::warn!("Cache warm-up failed for event {}: {:?}", event.id, e);
     }
 
+    // New events invalidate the shared list cache.
+    state.redis.invalidate_events_list().await;
+
     success(event, "Event created successfully").into_response()
 }
 
@@ -1930,6 +2129,7 @@ pub async fn submit_event_rating(
             .into_response();
     }
 
+    let start = std::time::Instant::now();
     let ticket = match sqlx::query_as::<_, (String, uuid::Uuid)>(
         r#"SELECT t.status, tt.event_id
            FROM tickets t
@@ -1942,10 +2142,12 @@ pub async fn submit_event_rating(
     {
         Ok(Some((status, ticket_event_id))) => (status, ticket_event_id),
         Ok(None) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             return AppError::NotFound(format!("Ticket with id '{}' not found", payload.ticket_id))
                 .into_response();
         }
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to fetch ticket for rating: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
@@ -1962,31 +2164,68 @@ pub async fn submit_event_rating(
     {
         Ok(exists) => exists,
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to check event existence for rating: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
     if !event_exists {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
             .into_response();
     }
 
     if ticket_event_id != event_id {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::Forbidden("Ticket does not belong to this event".to_string())
             .into_response();
     }
 
     if ticket_status != "used" {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::ValidationError(
             "Only attendees with a used ticket may leave a rating".to_string(),
         )
         .into_response();
     }
 
+    // Verify event has ended (if end_time is set). Ratings are only allowed after event end.
+    let maybe_end_time = match sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>(
+        "SELECT end_time FROM events WHERE id = $1 AND is_flagged = FALSE",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(opt) => opt,
+        Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
+            tracing::error!("Failed to fetch event end_time for rating: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if maybe_end_time.is_none() {
+        // event not found or flagged
+        log_if_slow("submit_event_rating", start.elapsed());
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id)).into_response();
+    }
+
+    if let Some(end_time) = maybe_end_time.unwrap() {
+        if end_time > Utc::now() {
+            log_if_slow("submit_event_rating", start.elapsed());
+            return AppError::ValidationError(
+                "Ratings may only be submitted after the event has ended".to_string(),
+            )
+            .into_response();
+        }
+    }
+
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to begin transaction: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
@@ -2001,16 +2240,16 @@ pub async fn submit_event_rating(
     {
         Ok(exists) => exists.is_some(),
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to verify existing rating: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
     if already_rated {
-        return AppError::ValidationError(
-            "Each attendee may only submit one rating per event".to_string(),
-        )
-        .into_response();
+        log_if_slow("submit_event_rating", start.elapsed());
+        return AppError::Conflict("Rating already submitted for this ticket".to_string())
+            .into_response();
     }
 
     if let Err(e) = sqlx::query(
@@ -2023,6 +2262,7 @@ pub async fn submit_event_rating(
     .execute(&mut *tx)
     .await
     {
+        log_if_slow("submit_event_rating", start.elapsed());
         tracing::error!("Failed to insert event rating: {:?}", e);
         return AppError::DatabaseError(e).into_response();
     }
@@ -2037,19 +2277,23 @@ pub async fn submit_event_rating(
     {
         Ok(Some(event)) => event,
         Ok(None) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             return AppError::NotFound(format!("Event with id '{}' not found", event_id))
                 .into_response();
         }
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to update event rating aggregates: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
     if let Err(e) = tx.commit().await {
+        log_if_slow("submit_event_rating", start.elapsed());
         tracing::error!("Failed to commit rating transaction: {:?}", e);
         return AppError::DatabaseError(e).into_response();
     }
+    log_if_slow("submit_event_rating", start.elapsed());
 
     let cache_key = format!("event:detail:{}", event_id);
     if let Err(e) = state.redis.delete(&cache_key).await {
@@ -2059,6 +2303,7 @@ pub async fn submit_event_rating(
             e
         );
     }
+    state.redis.invalidate_events_list().await;
 
     let response = SubmitEventRatingResponse {
         sum_of_ratings: updated_event.sum_of_ratings,
@@ -2394,6 +2639,7 @@ pub async fn toggle_event_flag(
     if let Err(e) = state.redis.delete(&cache_key).await {
         tracing::warn!("Failed to invalidate cache for event {}: {:?}", event_id, e);
     }
+    state.redis.invalidate_events_list().await;
 
     let mut response = success(
         json!({ "is_flagged": new_flagged }),
@@ -2451,6 +2697,7 @@ pub async fn set_event_featured(
             e
         );
     }
+    state.redis.invalidate_events_list().await;
 
     let mut response = success(
         json!({ "is_featured": updated }),
@@ -2461,6 +2708,60 @@ pub async fn set_event_featured(
     response
         .extensions_mut()
         .insert(AuditMetadata(json!({ "featured": updated })));
+
+    response
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FlagEventRequest {
+    pub flagged: bool,
+}
+
+/// Set or clear the flagged status of an event (admin only).
+///
+/// PATCH `/api/v1/admin/events/:id/flag`
+pub async fn flag_event(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Json(payload): Json<FlagEventRequest>,
+) -> Response {
+    let updated = match sqlx::query_as::<_, (bool,)>(
+        "UPDATE events SET is_flagged = $1 WHERE id = $2 RETURNING is_flagged",
+    )
+    .bind(payload.flagged)
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(row) => row.0,
+        Err(sqlx::Error::RowNotFound) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to update event flagged status: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!(
+            "Failed to invalidate cache for flagged update on event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    let mut response = success(
+        json!({ "is_flagged": updated }),
+        "Event flagged status updated successfully",
+    )
+    .into_response();
+
+    response
+        .extensions_mut()
+        .insert(AuditMetadata(json!({ "flagged": updated })));
 
     response
 }
@@ -3361,7 +3662,7 @@ pub async fn get_event_organizer(
     let wallet_address = match sqlx::query_scalar::<_, String>(
         "SELECT wallet_address FROM organizers WHERE id = $1",
     )
-    .bind(organizer_id)
+    .bind(event.organizer_id)
     .fetch_optional(&state.pool)
     .await
     {
@@ -3804,8 +4105,8 @@ pub async fn list_events_by_category(
     success(response, "Events in category retrieved successfully").into_response()
 }
 
-/// Response shape for a single ticket tier (Issue #853).
-#[derive(Debug, Serialize, sqlx::FromRow)]
+/// Response shape for a single ticket tier.
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct TicketTierResponse {
     pub id: Uuid,
     pub name: String,
@@ -3915,6 +4216,8 @@ fn test_event_detail_tiers_omitted_when_none() {
         image_url: None,
         is_free: false,
         minted_tickets: 0,
+        total_tickets: 0,
+        is_free_populated: true,
     };
 
     let detail = EventDetail {
@@ -3951,14 +4254,18 @@ fn test_event_detail_tiers_present_when_some() {
         image_url: None,
         is_free: true,
         minted_tickets: 0,
+        total_tickets: 0,
+        is_free_populated: true,
     };
 
     let tier = TicketTierResponse {
         id: Uuid::new_v4(),
         name: "VIP".to_string(),
         price: Decimal::new(0, 0),
-        quantity: 50,
-        sold: 5,
+        total_quantity: 50,
+        available_quantity: 45,
+        description: None,
+        created_at: chrono::Utc::now(),
     };
 
     let detail = EventDetail {
@@ -4009,6 +4316,24 @@ fn test_validate_event_title_rejects_too_long() {
     let title = "a".repeat(MAX_EVENT_TITLE_LENGTH + 1);
     let err = validate_event_title(&title).unwrap_err();
     assert!(err.contains("200"));
+}
+
+#[test]
+fn test_validate_event_description_accepts_max_length() {
+    let desc = Some("a".repeat(MAX_EVENT_DESCRIPTION_LENGTH));
+    assert!(validate_event_description(&desc).is_ok());
+}
+
+#[test]
+fn test_validate_event_description_rejects_too_long() {
+    let desc = Some("a".repeat(MAX_EVENT_DESCRIPTION_LENGTH + 1));
+    let err = validate_event_description(&desc).unwrap_err();
+    assert!(err.contains("10000"));
+}
+
+#[test]
+fn test_validate_event_description_allows_none() {
+    assert!(validate_event_description(&None).is_ok());
 }
 
 #[test]

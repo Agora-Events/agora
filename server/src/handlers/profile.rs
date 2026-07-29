@@ -33,12 +33,8 @@ use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
 
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::Instant;
 
 const PROFILE_CACHE_TTL: Duration = Duration::from_secs(600);
 
@@ -55,6 +51,69 @@ pub struct ProfileState {
 
 const MAX_DISPLAY_NAME: usize = 50;
 const MAX_BIO: usize = 500;
+const MAX_AVATAR_URL: usize = 2048;
+
+/// Social platforms accepted in the `socials` object (#877).
+///
+/// An allowlist rather than free-form keys: `socials` is typed `serde_json::Value`,
+/// so without one an organizer could store arbitrarily nested objects or arrays
+/// in a column the UI expects to render as a flat set of links.
+const ALLOWED_SOCIAL_KEYS: &[&str] = &[
+    "twitter",
+    "instagram",
+    "website",
+    "linkedin",
+    "facebook",
+    "youtube",
+    "tiktok",
+    "discord",
+    "telegram",
+    "github",
+];
+
+/// Maximum length of a single social handle or URL.
+const MAX_SOCIAL_VALUE: usize = 200;
+
+/// Validate the structure of the `socials` field (#877).
+///
+/// Must be a flat JSON object whose keys are known platforms and whose values
+/// are strings. Rejecting rather than silently stripping: an organizer who
+/// mistypes `twiter` should be told, not have the value quietly discarded and
+/// wonder later why their link never appeared.
+///
+/// `null` is allowed so a caller can clear the field.
+fn validate_socials(socials: &Value) -> Result<(), AppError> {
+    if socials.is_null() {
+        return Ok(());
+    }
+
+    let obj = socials.as_object().ok_or_else(|| {
+        AppError::ValidationError("socials must be a JSON object".to_string())
+    })?;
+
+    for (key, value) in obj {
+        if !ALLOWED_SOCIAL_KEYS.contains(&key.as_str()) {
+            return Err(AppError::ValidationError(format!(
+                "socials contains unsupported key \"{key}\" (allowed: {})",
+                ALLOWED_SOCIAL_KEYS.join(", ")
+            )));
+        }
+
+        let Some(text) = value.as_str() else {
+            return Err(AppError::ValidationError(format!(
+                "socials.{key} must be a string"
+            )));
+        };
+
+        if text.len() > MAX_SOCIAL_VALUE {
+            return Err(AppError::ValidationError(format!(
+                "socials.{key} must not exceed {MAX_SOCIAL_VALUE} characters"
+            )));
+        }
+    }
+
+    Ok(())
+}
 
 fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
     if req.display_name.trim().is_empty() {
@@ -74,14 +133,21 @@ fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
             ));
         }
     }
+    if let Some(ref avatar_url) = req.avatar_url {
+        if let Err(e) = validate_avatar_url(avatar_url) {
+            return Err(e);
+        }
+    }
+    validate_socials(&req.socials)?;
     Ok(())
 }
 
 fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
+    let has_socials = !req.socials.is_null();
     if req.display_name.is_none()
         && req.bio.is_none()
         && req.avatar_url.is_none()
-        && req.socials.is_none()
+        && !has_socials
     {
         return Err(AppError::ValidationError(
             "At least one profile field is required".to_string(),
@@ -109,6 +175,34 @@ fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
         }
     }
 
+    if let Some(ref avatar_url) = req.avatar_url {
+        if let Err(e) = validate_avatar_url(avatar_url) {
+            return Err(e);
+        }
+    }
+
+    validate_socials(&req.socials)?;
+
+    Ok(())
+}
+
+fn validate_avatar_url(url: &str) -> Result<(), AppError> {
+    if url.len() > MAX_AVATAR_URL {
+        return Err(AppError::ValidationError(format!(
+            "avatar_url must not exceed {MAX_AVATAR_URL} characters"
+        )));
+    }
+    if !url.starts_with("https://") {
+        return Err(AppError::ValidationError(
+            "avatar_url must start with https://".to_string(),
+        ));
+    }
+    // Basic URL validation without requiring the `url` crate
+    if !url.contains('.') || url.contains(' ') {
+        return Err(AppError::ValidationError(
+            "avatar_url must be a valid URL".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -129,7 +223,8 @@ pub struct PatchProfileRequest {
     pub bio: Option<String>,
     #[serde(alias = "avatarUrl")]
     pub avatar_url: Option<String>,
-    pub socials: Option<Value>,
+    #[serde(default)]
+    pub socials: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -206,6 +301,17 @@ pub async fn upsert_profile(
     };
 
     let cache_key = format!("profile:{address}");
+    // #828: the stats entry is derived from the same profile, so it has to be
+    // dropped here too — otherwise an updated profile keeps serving stats
+    // cached against the old one for up to 5 minutes.
+    if let Err(e) = state
+        .redis
+        .delete(&organizer_stats_cache_key(&address))
+        .await
+    {
+        tracing::warn!("Failed to invalidate organizer stats cache for {address}: {:?}", e);
+    }
+
     if let Err(e) = state.redis.delete(&cache_key).await {
         tracing::warn!("Failed to invalidate profile cache for {address}: {:?}", e);
     }
@@ -245,9 +351,9 @@ pub async fn patch_profile(
         if let Some(ref avatar_url) = payload.avatar_url {
             separated.push("avatar_url = ").push_bind(avatar_url);
         }
-        if let Some(ref socials) = payload.socials {
-            separated.push("socials = ").push_bind(socials);
-        }
+    if !payload.socials.is_null() {
+        separated.push("socials = ").push_bind(payload.socials);
+    }
 
         separated.push("updated_at = NOW()");
     }
@@ -272,6 +378,17 @@ pub async fn patch_profile(
     };
 
     let cache_key = format!("profile:{address}");
+    // #828: the stats entry is derived from the same profile, so it has to be
+    // dropped here too — otherwise an updated profile keeps serving stats
+    // cached against the old one for up to 5 minutes.
+    if let Err(e) = state
+        .redis
+        .delete(&organizer_stats_cache_key(&address))
+        .await
+    {
+        tracing::warn!("Failed to invalidate organizer stats cache for {address}: {:?}", e);
+    }
+
     if let Err(e) = state.redis.delete(&cache_key).await {
         tracing::warn!("Failed to invalidate profile cache for {address}: {:?}", e);
     }
@@ -322,6 +439,17 @@ pub async fn delete_profile(State(mut state): State<ProfileState>, headers: Head
     }
 
     let cache_key = format!("profile:{address}");
+    // #828: the stats entry is derived from the same profile, so it has to be
+    // dropped here too — otherwise an updated profile keeps serving stats
+    // cached against the old one for up to 5 minutes.
+    if let Err(e) = state
+        .redis
+        .delete(&organizer_stats_cache_key(&address))
+        .await
+    {
+        tracing::warn!("Failed to invalidate organizer stats cache for {address}: {:?}", e);
+    }
+
     if let Err(e) = state.redis.delete(&cache_key).await {
         tracing::warn!("Failed to invalidate profile cache for {address}: {:?}", e);
     }
@@ -486,15 +614,20 @@ async fn fetch_profile_by_address(
 // Organizer stats endpoint
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, Clone, FromRow)]
+#[derive(Serialize, Deserialize, Clone, FromRow)]
 struct OrganizerStats {
     pub total_events: i64,
     pub total_tickets_sold: i64,
     pub average_event_rating: f64,
 }
 
-static STATS_CACHE: Lazy<Mutex<HashMap<String, (Instant, OrganizerStats)>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+/// Redis key for an organizer's cached stats (#828).
+///
+/// Namespaced so the entry is identifiable in Redis and can be invalidated by
+/// exact key on profile update.
+fn organizer_stats_cache_key(address: &str) -> String {
+    format!("organizer_stats:{address}")
+}
 
 const STATS_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
@@ -515,20 +648,26 @@ fn organizer_stats_query() -> &'static str {
 /// `GET /api/v1/profile/:address/stats`
 ///
 /// Returns aggregate stats for an organizer: total events created, total tickets sold,
-/// and average event rating. Cached in-process for 5 minutes to avoid repeated DB hits.
+/// and average event rating.
+///
+/// Cached in Redis for 5 minutes (#828). Previously this used a process-local
+/// `HashMap` that was never pruned, so it grew without bound as distinct
+/// organizer addresses were queried — and behind a load balancer each process
+/// held its own copy, so an invalidation in one was invisible to the others and
+/// stale stats kept being served. Redis makes the cache shared and gives it a
+/// real eviction policy.
 pub async fn get_organizer_stats(
-    State(pool): State<PgPool>,
+    State(state): State<ProfileState>,
     Path(address): Path<String>,
 ) -> Response {
-    // Check in-memory cache first
-    {
-        let cache = STATS_CACHE.lock().unwrap();
-        if let Some((expiry, stats)) = cache.get(&address) {
-            if Instant::now() < *expiry {
-                return success(stats.clone(), "Organizer stats retrieved from cache")
-                    .into_response();
-            }
-        }
+    let mut redis = state.redis.clone();
+    let pool = state.pool;
+    let cache_key = organizer_stats_cache_key(&address);
+
+    // A cache read failure is not a request failure: fall through to the
+    // database rather than 500ing because Redis is briefly unavailable.
+    if let Ok(Some(stats)) = redis.get::<OrganizerStats>(&cache_key).await {
+        return success(stats, "Organizer stats retrieved from cache").into_response();
     }
 
     let stats: OrganizerStats = match sqlx::query_as(organizer_stats_query())
@@ -543,13 +682,10 @@ pub async fn get_organizer_stats(
         }
     };
 
-    // store in cache
-    {
-        let mut cache = STATS_CACHE.lock().unwrap();
-        cache.insert(
-            address.clone(),
-            (Instant::now() + STATS_CACHE_TTL, stats.clone()),
-        );
+    // Best-effort write: a cache miss on the next request is cheaper than
+    // failing a request that already has its answer.
+    if let Err(e) = redis.set(&cache_key, &stats, STATS_CACHE_TTL).await {
+        tracing::warn!("Failed to cache organizer stats for {address}: {e:?}");
     }
 
     success(stats, "Organizer stats retrieved successfully").into_response()
@@ -722,7 +858,7 @@ mod tests {
             display_name: None,
             bio: Some("Updated bio".to_string()),
             avatar_url: None,
-            socials: None,
+            socials: Value::Null,
         };
 
         assert!(validate_patch(&req).is_ok());
@@ -734,7 +870,7 @@ mod tests {
             display_name: None,
             bio: None,
             avatar_url: None,
-            socials: None,
+            socials: Value::Null,
         };
 
         let err = validate_patch(&req).unwrap_err();
@@ -747,7 +883,7 @@ mod tests {
             display_name: Some("   ".to_string()),
             bio: None,
             avatar_url: None,
-            socials: None,
+            socials: Value::Null,
         };
 
         let err = validate_patch(&req).unwrap_err();
@@ -867,37 +1003,54 @@ mod tests {
         assert!(query.contains("e.is_flagged = FALSE"));
     }
 
-    #[tokio::test]
-    async fn test_get_organizer_stats_cache_hit() {
-        use axum::extract::{Path, State};
-        // create a lazy pool; it won't hit the DB because the cache will short-circuit
-        let pool = sqlx::PgPool::connect_lazy("postgres://localhost/fake").unwrap();
-        let addr = "TEST-ADDR".to_string();
-        {
-            let mut cache = STATS_CACHE.lock().unwrap();
-            cache.insert(
-                addr.clone(),
-                (
-                    Instant::now() + Duration::from_secs(300),
-                    OrganizerStats {
-                        total_events: 2,
-                        total_tickets_sold: 100,
-                        average_event_rating: 4.5,
-                    },
-                ),
-            );
-        }
+    #[test]
+    fn test_validate_socials_accepts_known_string_keys() {
+        let v = serde_json::json!({ "twitter": "@agora", "website": "https://agora.dev" });
+        assert!(validate_socials(&v).is_ok());
+    }
 
-        let resp = get_organizer_stats(State(pool), Path(addr.clone())).await;
-        let http = resp.into_response();
-        let bytes = axum::body::to_bytes(http.into_body(), 1024 * 1024)
-            .await
-            .unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert!(v["success"].as_bool().unwrap());
-        assert_eq!(v["data"]["total_events"].as_i64().unwrap(), 2);
-        assert_eq!(v["data"]["total_tickets_sold"].as_i64().unwrap(), 100);
-        assert!((v["data"]["average_event_rating"].as_f64().unwrap() - 4.5).abs() < 1e-6);
+    #[test]
+    fn test_validate_socials_allows_null_to_clear() {
+        assert!(validate_socials(&serde_json::Value::Null).is_ok());
+    }
+
+    #[test]
+    fn test_validate_socials_rejects_non_object() {
+        // Previously any JSON was accepted, including arrays and scalars.
+        assert!(validate_socials(&serde_json::json!(["twitter"])).is_err());
+        assert!(validate_socials(&serde_json::json!("twitter")).is_err());
+    }
+
+    #[test]
+    fn test_validate_socials_rejects_unknown_key() {
+        // A mistyped platform is reported rather than silently dropped.
+        let err = validate_socials(&serde_json::json!({ "twiter": "@agora" })).unwrap_err();
+        assert!(format!("{err:?}").contains("twiter"));
+    }
+
+    #[test]
+    fn test_validate_socials_rejects_non_string_value() {
+        assert!(validate_socials(&serde_json::json!({ "twitter": 42 })).is_err());
+        // Nested objects were the main thing the untyped Value permitted.
+        assert!(validate_socials(&serde_json::json!({ "twitter": { "url": "x" } })).is_err());
+    }
+
+    #[test]
+    fn test_validate_socials_rejects_overlong_value() {
+        let long = "a".repeat(MAX_SOCIAL_VALUE + 1);
+        assert!(validate_socials(&serde_json::json!({ "website": long })).is_err());
+    }
+
+    #[test]
+    fn test_organizer_stats_cache_key_is_namespaced() {
+        // #828: the previous cache-hit test seeded a process-local HashMap,
+        // which no longer exists. Verifying a Redis hit needs a live Redis and
+        // belongs in an integration test, so what stays unit-testable is the
+        // key: it must be namespaced and address-scoped, since invalidation on
+        // profile update deletes by exact key.
+        let key = organizer_stats_cache_key("GABC123");
+        assert_eq!(key, "organizer_stats:GABC123");
+        assert_ne!(key, organizer_stats_cache_key("GXYZ789"));
     }
 
     #[test]

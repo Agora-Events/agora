@@ -1,13 +1,15 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useMemo, useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/navbar";
+import { useAuth } from "@/hooks/useAuth";
 import { Footer } from "@/components/layout/footer";
 import { ProfileSidebar } from "@/components/profile/profile-sidebar";
 import { EventCard } from "@/components/events/event-card";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 
 // Types for organizer profile
 interface OrganizerProfile {
@@ -137,36 +139,125 @@ function OrganizerProfileSection({ profile }: { profile: OrganizerProfile | null
   );
 }
 
+// ── Waitlist types & component ──────────────────────────────────────────────
+
+interface WaitlistEntry {
+  eventId: string;
+  eventTitle: string;
+  eventDate: string;
+  position: number;
+}
+
+function WaitlistSection() {
+  const [entries, setEntries] = useState<WaitlistEntry[]>([
+    // Mock data — replace with a real fetch once a /api/v1/profile/waitlist
+    // endpoint is added.
+    {
+      eventId: "evt-001",
+      eventTitle: "Stellar Consensus Summit 2026",
+      eventDate: "Sat, Aug 23 · 9:00 AM",
+      position: 4,
+    },
+    {
+      eventId: "evt-002",
+      eventTitle: "Web3 Design Conference",
+      eventDate: "Fri, Sep 12 · 2:00 PM",
+      position: 11,
+    },
+  ]);
+  const [leavingId, setLeavingId] = useState<string | null>(null);
+
+  const handleLeave = async (eventId: string, eventTitle: string) => {
+    setLeavingId(eventId);
+    try {
+      const res = await fetch(`/api/v1/events/${eventId}/waitlist`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Request failed (${res.status})`);
+      }
+      setEntries((prev) => prev.filter((e) => e.eventId !== eventId));
+      toast.success(`Removed from waitlist for "${eventTitle}"`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to leave waitlist");
+    } finally {
+      setLeavingId(null);
+    }
+  };
+
+  return (
+    <section className="bg-white rounded-2xl border border-border-warm shadow-sm overflow-hidden">
+      <div className="px-6 pt-6 pb-4 border-b border-border-warm">
+        <h2 className="text-lg font-semibold text-ink-soft">Waitlists</h2>
+        <p className="text-sm text-gray-500 mt-0.5">Events you&apos;re waiting on</p>
+      </div>
+
+      {entries.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 px-6 text-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-surface flex items-center justify-center text-2xl">
+            🎟️
+          </div>
+          <p className="font-semibold text-ink-soft">No active waitlists</p>
+          <p className="text-sm text-gray-500 max-w-xs">
+            When a sold-out event has a waitlist you join, it will appear here.
+          </p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border-warm">
+          {entries.map((entry) => (
+            <li
+              key={entry.eventId}
+              className="px-6 py-4 flex items-center justify-between gap-4 flex-wrap"
+            >
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <p className="font-semibold text-ink-deep truncate">{entry.eventTitle}</p>
+                <p className="text-sm text-gray-500">{entry.eventDate}</p>
+                <p className="text-xs font-bold text-muted-text mt-1">
+                  Position:{" "}
+                  <span className="text-ink-soft text-sm font-extrabold">
+                    #{entry.position}
+                  </span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleLeave(entry.eventId, entry.eventTitle)}
+                disabled={leavingId === entry.eventId}
+                aria-label={`Leave waitlist for ${entry.eventTitle}`}
+                className="shrink-0 px-4 py-2 rounded-full text-sm font-semibold border border-black/20 bg-white hover:bg-red-50 hover:border-error hover:text-error transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {leavingId === entry.eventId ? "Leaving…" : "Leave Waitlist"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function ProfileContent() {
   const searchParams = useSearchParams();
+  const { user, walletAddress } = useAuth();
   const isEmpty = searchParams.get("empty") === "1";
-  const profileAddress = searchParams.get("address") ?? "me";
-  const [profile, setProfile] = useState<OrganizerProfile | null>(null);
-  const [, setLoading] = useState(true);
-  const [, setError] = useState<string | null>(null);
+  const profileAddress = searchParams.get("address") ?? walletAddress ?? "me";
 
   const hostedEvents = isEmpty ? [] : HOSTED_EVENTS;
   const attendedEvents = isEmpty ? [] : ATTENDED_EVENTS;
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch("/api/profile");
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setProfile(data.profile);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load profile");
-      } finally {
-        setLoading(false);
-      }
+  // The signed-in user's organizer details come from the shared session so this
+  // page no longer issues its own /api/profile request.
+  const profile: OrganizerProfile | null = useMemo(() => {
+    if (!user || !user.displayName) return null;
+    return {
+      address: user.walletAddress ?? user.id,
+      displayName: user.displayName,
+      bio: user.bio ?? undefined,
+      avatarUrl: user.avatarUrl ?? undefined,
     };
-
-    fetchProfile();
-  }, []);
+  }, [user]);
 
   return (
     <div className="flex-1 w-full max-w-6xl mx-auto px-4 py-10">
@@ -224,6 +315,9 @@ function ProfileContent() {
               </div>
             )}
           </section>
+
+          {/* Waitlist section */}
+          <WaitlistSection />
         </div>
       </div>
     </div>

@@ -190,7 +190,7 @@ impl ListenerConfig {
 /// Spawn the Soroban event listener as a background task along with the worker pool.
 pub fn spawn_listener(pool: PgPool, config: ListenerConfig) {
     tokio::spawn(async move {
-        run_listener(pool, config).await;
+        run_listener(pool, redis, config).await;
     });
 }
 
@@ -227,7 +227,15 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
 
     let http = reqwest::Client::new();
     let mut cursor: Option<String> = None;
-    let mut start_ledger = Some(config.start_ledger);
+
+    if let Some(ref mut r) = redis {
+        if let Ok(Some(cached_cursor)) = r.get::<String>(CURSOR_CACHE_KEY).await {
+            tracing::info!("Loaded Soroban event cursor from Redis: {}", cached_cursor);
+            cursor = Some(cached_cursor);
+        }
+    }
+
+    let mut start_ledger = if cursor.is_none() { Some(config.start_ledger) } else { None };
     let mut current_backoff = POLL_INTERVAL;
 
     tracing::info!(
@@ -260,6 +268,12 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
                 if let Some(last) = result.events.last() {
                     cursor = Some(last.id.clone());
                     start_ledger = None;
+
+                    if let Some(ref mut r) = redis {
+                        if let Err(e) = r.set(CURSOR_CACHE_KEY, &last.id, Duration::from_secs(86400 * 30)).await {
+                            tracing::warn!("Failed to persist Soroban event cursor to Redis: {:?}", e);
+                        }
+                    }
                 }
 
                 current_backoff = POLL_INTERVAL;
@@ -629,6 +643,14 @@ async fn handle_event_registered(_pool: &PgPool, event: &SorobanEvent) -> Result
         return Ok(());
     }
 
+    if let Ok(uuid) = uuid::Uuid::parse_str(on_chain_event_id) {
+        sqlx::query("UPDATE events SET updated_at = NOW() WHERE id = $1")
+            .bind(uuid)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("DB error updating registered event: {e}"))?;
+    }
+
     tracing::info!(
         "On-chain event registered: event_id={} ledger={}",
         on_chain_event_id,
@@ -650,6 +672,14 @@ async fn handle_event_status_updated(_pool: &PgPool, event: &SorobanEvent) -> Re
 
     if on_chain_event_id.is_empty() {
         return Ok(());
+    }
+
+    if let Ok(uuid) = uuid::Uuid::parse_str(on_chain_event_id) {
+        sqlx::query("UPDATE events SET updated_at = NOW() WHERE id = $1")
+            .bind(uuid)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("DB error updating event status: {e}"))?;
     }
 
     tracing::info!(

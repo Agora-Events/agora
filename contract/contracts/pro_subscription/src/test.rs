@@ -653,3 +653,171 @@ fn test_cancel_subscription_unauthorized() {
 
     client.cancel_subscription(&organizer);
 }
+
+// ── Issue #876: Explicit Pro Subscription Test Suite ──────────────────────────
+
+#[test]
+fn test_issue_876_subscribe_success() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+    let months = 3u32;
+    let total_cost = monthly_price * (months as i128);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &total_cost);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &total_cost, &99999);
+
+    client.subscribe_pro(&organizer, &months);
+
+    let sub = client.get_subscription(&organizer).unwrap();
+    assert_eq!(sub.tier, SubscriptionTier::Pro);
+    assert!(sub.is_active);
+    assert_eq!(sub.amount_paid, total_cost);
+    assert_eq!(sub.expires_at, env.ledger().timestamp() + SECONDS_PER_MONTH * (months as u64));
+    assert!(client.is_pro_member(&organizer));
+}
+
+#[test]
+fn test_issue_876_renew_active_subscription() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &(monthly_price * 2));
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &(monthly_price * 2), &99999);
+
+    client.subscribe_pro(&organizer, &1u32);
+    let initial_expiry = client.get_subscription_expiry(&organizer).unwrap();
+
+    client.renew_subscription(&organizer, &1u32);
+    let renewed_expiry = client.get_subscription_expiry(&organizer).unwrap();
+
+    assert_eq!(renewed_expiry, initial_expiry + SECONDS_PER_MONTH);
+}
+
+#[test]
+fn test_issue_876_renew_expired_subscription() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &(monthly_price * 2));
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &(monthly_price * 2), &99999);
+
+    client.subscribe_pro(&organizer, &1u32);
+    let initial_sub = client.get_subscription(&organizer).unwrap();
+
+    // Advance time past initial expiry
+    env.ledger().set(LedgerInfo {
+        timestamp: initial_sub.expires_at + 1000,
+        protocol_version: 23,
+        sequence_number: 20,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    client.renew_subscription(&organizer, &1u32);
+    let renewed_sub = client.get_subscription(&organizer).unwrap();
+
+    assert_eq!(renewed_sub.expires_at, env.ledger().timestamp() + SECONDS_PER_MONTH);
+    assert!(client.is_pro_member(&organizer));
+}
+
+#[test]
+fn test_issue_876_is_pro_member_active() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+
+    client.subscribe_pro(&organizer, &1u32);
+    assert!(client.is_pro_member(&organizer));
+}
+
+#[test]
+fn test_issue_876_is_pro_member_expired() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+
+    client.subscribe_pro(&organizer, &1u32);
+    let sub = client.get_subscription(&organizer).unwrap();
+
+    env.ledger().set(LedgerInfo {
+        timestamp: sub.expires_at + 1,
+        protocol_version: 23,
+        sequence_number: 30,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    assert!(!client.is_pro_member(&organizer));
+}
+
+#[test]
+fn test_issue_876_admin_cancel_subscription() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+
+    client.subscribe_pro(&organizer, &1u32);
+    assert!(client.is_pro_member(&organizer));
+
+    client.cancel_subscription(&organizer);
+    assert!(!client.is_pro_member(&organizer));
+
+    let sub = client.get_subscription(&organizer).unwrap();
+    assert!(!sub.is_active);
+}
+
+#[test]
+fn test_issue_876_admin_update_price() {
+    let (_env, client, _admin, _platform_wallet, _usdc) = setup();
+    let new_price = 5_000_000i128;
+
+    client.update_pro_price(&new_price);
+    assert_eq!(client.get_pro_monthly_price(), new_price);
+}
+
+#[test]
+fn test_issue_876_admin_update_admin() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let new_admin = Address::generate(&env);
+
+    client.update_admin(&new_admin);
+    assert_eq!(client.get_admin(), Some(new_admin));
+}
+
+#[test]
+fn test_issue_876_admin_update_platform_wallet() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let new_wallet = Address::generate(&env);
+
+    client.update_platform_wallet(&new_wallet);
+    assert_eq!(client.get_platform_wallet(), Some(new_wallet));
+}
+
+#[test]
+fn test_issue_876_admin_update_payment_token() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let new_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    client.update_payment_token(&new_token);
+    assert_eq!(client.get_payment_token(), Some(new_token));
+}
