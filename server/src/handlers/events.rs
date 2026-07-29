@@ -1148,6 +1148,28 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_event_coordinates_accepts_none() {
+        assert!(validate_event_coordinates(None, None).is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_accepts_valid_pair() {
+        assert!(validate_event_coordinates(Some(6.5244), Some(3.3792)).is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_rejects_partial_pair() {
+        assert!(validate_event_coordinates(Some(6.5244), None).is_err());
+        assert!(validate_event_coordinates(None, Some(3.3792)).is_err());
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_rejects_out_of_range() {
+        assert!(validate_event_coordinates(Some(91.0), Some(0.0)).is_err());
+        assert!(validate_event_coordinates(Some(0.0), Some(181.0)).is_err());
+    }
+
+    #[test]
     fn test_build_event_where_clause_includes_is_featured() {
         let filters = EventFilters {
             organizer_id: None,
@@ -1916,6 +1938,10 @@ pub struct CreateEventRequest {
     pub image_url: Option<String>,
     /// Optional contact email for the event host.
     pub host_email: Option<String>,
+    /// Optional latitude in decimal degrees (-90 to 90) for map discovery.
+    pub latitude: Option<f64>,
+    /// Optional longitude in decimal degrees (-180 to 180) for map discovery.
+    pub longitude: Option<f64>,
 }
 
 const MAX_IMAGE_URL_LEN: usize = 2048;
@@ -1972,6 +1998,34 @@ fn validate_event_location(location: &str) -> Result<(), AppError> {
         )));
     }
     Ok(())
+}
+
+/// Validates optional event coordinates used for map-based discovery.
+/// Both must be present together; individually omitting either is allowed only
+/// when both are `None` (existing events without geocoding remain valid).
+fn validate_event_coordinates(
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+) -> Result<(), AppError> {
+    match (latitude, longitude) {
+        (None, None) => Ok(()),
+        (Some(_), None) | (None, Some(_)) => Err(AppError::ValidationError(
+            "latitude and longitude must both be provided together".to_string(),
+        )),
+        (Some(lat), Some(lng)) => {
+            if !(-90.0..=90.0).contains(&lat) {
+                return Err(AppError::ValidationError(
+                    "latitude must be between -90 and 90".to_string(),
+                ));
+            }
+            if !(-180.0..=180.0).contains(&lng) {
+                return Err(AppError::ValidationError(
+                    "longitude must be between -180 and 180".to_string(),
+                ));
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Validates event timestamps for create/update requests.
@@ -2045,13 +2099,18 @@ pub async fn create_event(
     // Validate event timestamps
     if let Err(e) = validate_event_timestamps(payload.start_time, payload.end_time) {
         return e.into_response();
+    }
     if let Err(message) = validate_event_description(&payload.description) {
         return AppError::ValidationError(message).into_response();
     }
 
+    if let Err(e) = validate_event_coordinates(payload.latitude, payload.longitude) {
+        return e.into_response();
+    }
+
     let event = match sqlx::query_as::<_, Event>(
-        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time, image_url, host_email)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time, image_url, host_email, latitude, longitude)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING *",
     )
     .bind(payload.organizer_id)
@@ -2062,6 +2121,8 @@ pub async fn create_event(
     .bind(payload.end_time)
     .bind(&payload.image_url)
     .bind(&payload.host_email)
+    .bind(payload.latitude)
+    .bind(payload.longitude)
     .fetch_one(&state.pool)
     .await
     {

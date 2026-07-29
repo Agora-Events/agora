@@ -17,6 +17,10 @@ model Event {
   description     String   @default("")
   startsAt        DateTime
   location        String
+  /// Optional WGS84 latitude for map discovery (-90 to 90).
+  latitude        Float?
+  /// Optional WGS84 longitude for map discovery (-180 to 180).
+  longitude       Float?
   category        String
   organizerName   String
   organizerWallet String

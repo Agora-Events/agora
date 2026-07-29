@@ -93,7 +93,7 @@ impl Serialize for Event {
             );
         }
 
-        let mut state = serializer.serialize_struct("Event", 15)?;
+        let mut state = serializer.serialize_struct("Event", 18)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("organizer_id", &self.organizer_id)?;
         state.serialize_field("title", &self.title)?;
@@ -173,6 +173,7 @@ mod tests {
             image_url: None,
             latitude: None,
             longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -199,6 +200,7 @@ mod tests {
             image_url: None,
             latitude: None,
             longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -227,6 +229,7 @@ mod tests {
             image_url: None,
             latitude: None,
             longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -253,6 +256,7 @@ mod tests {
             image_url: None,
             latitude: None,
             longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -283,6 +287,7 @@ mod tests {
             image_url: None,
             latitude: None,
             longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -311,6 +316,7 @@ mod tests {
             image_url: None,
             latitude: None,
             longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -339,6 +345,7 @@ mod tests {
             image_url: None,
             latitude: None,
             longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -397,5 +404,32 @@ mod tests {
     fn test_is_free_populated_flag_starts_false() {
         let event = make_event(Uuid::new_v4());
         assert!(!event.is_free_populated, "flag must default to false before populate_is_free");
+    }
+
+    // ── Issue #1136: event location coordinates ─────────────────────────────
+
+    #[test]
+    fn test_coordinates_default_none() {
+        let event = make_event(Uuid::new_v4());
+        assert!(event.latitude.is_none());
+        assert!(event.longitude.is_none());
+    }
+
+    #[test]
+    fn test_coordinates_serialize_when_set() {
+        let mut event = make_event(Uuid::new_v4());
+        event.latitude = Some(6.5244);
+        event.longitude = Some(3.3792);
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["latitude"], 6.5244);
+        assert_eq!(json["longitude"], 3.3792);
+    }
+
+    #[test]
+    fn test_coordinates_serialize_null_when_unset() {
+        let event = make_event(Uuid::new_v4());
+        let json = serde_json::to_value(&event).unwrap();
+        assert!(json["latitude"].is_null());
+        assert!(json["longitude"].is_null());
     }
 }
