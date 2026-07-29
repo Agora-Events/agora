@@ -27,6 +27,7 @@ pub enum AgoraEvent {
     ContractVerificationFailed,
     EventCancelled,
     CancellationRefundClaimed,
+    PoapMinted,
 }
 
 #[contracttype]
@@ -233,5 +234,18 @@ pub struct CancellationRefundClaimedEvent {
     pub event_id: String,
     pub buyer: Address,
     pub amount: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when a non-transferable POAP NFT is minted for a successful check-in.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoapMintedEvent {
+    /// The payment / ticket that triggered the mint.
+    pub payment_id: String,
+    pub event_id: String,
+    /// The attendee who earned the POAP.
+    pub attendee: Address,
+    /// Ledger timestamp at mint time.
     pub timestamp: u64,
 }

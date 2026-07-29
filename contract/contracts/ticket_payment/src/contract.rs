@@ -17,7 +17,8 @@ use crate::storage::{
     set_slippage_bps, set_total_governors, set_transfer_fee, set_usdc_token, set_withdrawal_cap,
     store_payment, store_validation_hash, subtract_from_active_escrow_by_token,
     subtract_from_active_escrow_total, subtract_from_total_fees_collected_by_token,
-    update_event_balance, verify_secret,
+    update_event_balance, verify_secret, get_poaps_by_attendee,
+    is_poap_minted as is_poap_minted_storage, mark_poap_minted,
 };
 use crate::types::{
     DataKey, DiscountData, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus,
@@ -32,7 +33,7 @@ use crate::{
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
         PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
         PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent, RevenueClaimedEvent,
-        TicketCheckedInEvent, TicketTransferredEvent,
+        TicketCheckedInEvent, TicketTransferredEvent, PoapMintedEvent,
     },
 };
 use soroban_sdk::{
@@ -1352,15 +1353,77 @@ impl TicketPaymentContract {
         env.events().publish(
             (AgoraEvent::TicketCheckedIn,),
             TicketCheckedInEvent {
-                payment_id,
-                event_id: payment.event_id,
-                attendee: payment.buyer_address,
+                payment_id: payment_id.clone(),
+                event_id: payment.event_id.clone(),
+                attendee: payment.buyer_address.clone(),
                 scanner,
                 timestamp: current_time,
             },
         );
 
+        // Automatically mint POAP NFT for attendee upon successful check-in
+        if !is_poap_minted_storage(&env, &payment_id) {
+            mark_poap_minted(&env, payment_id.clone(), &payment.buyer_address);
+            #[allow(deprecated)]
+            env.events().publish(
+                (AgoraEvent::PoapMinted,),
+                PoapMintedEvent {
+                    payment_id,
+                    event_id: payment.event_id,
+                    attendee: payment.buyer_address,
+                    timestamp: current_time,
+                },
+            );
+        }
+
         Ok(())
+    }
+
+    /// Mints a non-transferable POAP NFT for a successfully scanned/checked-in ticket.
+    /// Prevents duplicate minting.
+    pub fn mint_poap(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            return Err(TicketPaymentError::NotInitialized);
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        let payment = get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        if payment.status != PaymentStatus::CheckedIn {
+            return Err(TicketPaymentError::InvalidPaymentStatus);
+        }
+
+        if is_poap_minted_storage(&env, &payment_id) {
+            return Err(TicketPaymentError::TicketAlreadyUsed);
+        }
+
+        let current_time = env.ledger().timestamp();
+        mark_poap_minted(&env, payment_id.clone(), &payment.buyer_address);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::PoapMinted,),
+            PoapMintedEvent {
+                payment_id,
+                event_id: payment.event_id,
+                attendee: payment.buyer_address,
+                timestamp: current_time,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns true if a POAP has been minted for the given payment_id.
+    pub fn is_poap_minted(env: Env, payment_id: String) -> bool {
+        is_poap_minted_storage(&env, &payment_id)
+    }
+
+    /// Returns all POAP payment IDs earned by the given attendee.
+    pub fn get_attendee_poaps(env: Env, attendee: Address) -> Vec<String> {
+        get_poaps_by_attendee(&env, &attendee)
     }
     /// Returns the escrowed balance for an event.
     pub fn get_event_escrow_balance(env: Env, event_id: String) -> crate::types::EventBalance {

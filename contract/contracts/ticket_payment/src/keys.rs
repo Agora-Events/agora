@@ -58,4 +58,10 @@ pub enum DataKey {
     ValidationHash(String),
     /// Per-event affiliate commission rate: (event_id, affiliate_addr) -> rate_bps (u32)
     AffiliateRate(String, Address),
+    /// Tracks whether a POAP has been minted for a given payment_id (Persistent)
+    PoapMinted(String),
+    /// Sharded index of POAP payment_ids per attendee address (Persistent)
+    PoapsByAttendee(Address, u32),
+    /// Total number of POAPs minted for an attendee (Persistent)
+    PoapsByAttendeeCount(Address),
 }
