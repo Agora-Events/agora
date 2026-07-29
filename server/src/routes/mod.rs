@@ -59,11 +59,12 @@ use crate::handlers::{
     },
     profile::{
         delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
-        list_events_by_organizer, list_my_transactions, patch_profile, upsert_profile, ProfileState,
+        get_wallet_tickets, list_events_by_organizer, list_my_transactions, patch_profile,
+        upsert_profile, ProfileState,
     },
     qr_payload::{
-        delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads,
-        mark_qr_used, verify_qr_payload,
+        delete_qr_payload, generate_attendee_qr, generate_qr_payload, list_event_qr_codes,
+        list_qr_payloads, mark_qr_used, verify_qr_payload,
     },
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
@@ -146,6 +147,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
                 .delete(delete_profile),
         )
         .route("/transactions", get(list_my_transactions))
+        .route("/tickets", get(get_wallet_tickets))
         .route("/:address", get(get_profile_by_address))
         .route("/:address/events", get(list_events_by_organizer))
         .route("/:address/stats", get(get_organizer_stats))
@@ -175,6 +177,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // QR payload routes for cryptographically signed QR codes
     let qr_routes = Router::new()
         .route("/generate", post(generate_qr_payload))
+        .route("/attendee", post(generate_attendee_qr))
         .route("/verify", post(verify_qr_payload))
         .route("/mark-used/:id", post(mark_qr_used))
         .route("/list", get(list_qr_payloads))
