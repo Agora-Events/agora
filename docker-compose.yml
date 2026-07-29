@@ -1,17 +1,37 @@
 services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: agora_server
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgres://user:password@postgres:5432/agora
+      REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+
   postgres:
     image: postgres:latest
     container_name: agora_postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: ${POSTGRES_DB:-agora}
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: agora
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - agora_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-agora}"]
+      test: ["CMD-SHELL", "pg_isready -U user -d agora"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -19,81 +39,23 @@ services:
   redis:
     image: redis:7
     container_name: agora_redis
-    command: redis-server --appendonly yes
     ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data:/data
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  stellar-rpc:
-    image: stellar/quickstart:latest
-    container_name: agora_stellar_rpc
-    environment:
-      - STELLAR_CORE_URL=http://localhost:11626
-      - HORIZON_URL=http://localhost:8000
-      - NETWORK_PASSPHRASE=Test SDF Network ; September 2015
-      - NODE_IS_VALIDATOR=false
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: agora_jaeger
     ports:
-      - "${STELLAR_RPC_PORT:-8000}:8000"
-      - "${STELLAR_CORE_PORT:-11626}:11626"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
-
-  backend:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-    container_name: agora_backend
+      - "16686:16686" # Jaeger UI
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
     environment:
-      PORT: 3001
-      DATABASE_URL: postgres://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-agora}
-      REDIS_URL: redis://redis:6379
-      SOROBAN_RPC_URL: http://stellar-rpc:8000/soroban/rpc
-      RUST_LOG: ${RUST_LOG:-info}
-    ports:
-      - "${BACKEND_PORT:-3001}:3001"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      stellar-rpc:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/api/v1/health >/dev/null"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
-  frontend:
-    build:
-      context: ./apps/web
-      dockerfile: Dockerfile
-    container_name: agora_frontend
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api/v1}
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:3000 >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+      COLLECTOR_OTLP_ENABLED: "true"
 
 volumes:
-  postgres_data:
-  redis_data:
+  agora_postgres_data:

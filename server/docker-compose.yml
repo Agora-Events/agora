@@ -8,6 +8,7 @@ services:
       PORT: 3001
       DATABASE_URL: postgres://user:password@postgres:5432/agora
       REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     ports:
       - "3001:3001"
     depends_on:
@@ -15,6 +16,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:3001/api/v1/health >/dev/null"]
       interval: 30s
@@ -49,6 +52,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: agora_jaeger
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
 
 volumes:
   agora_postgres_data:

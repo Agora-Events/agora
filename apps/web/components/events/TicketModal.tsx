@@ -109,8 +109,8 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
         recipientWallet?: string;
       } = {
         eventId: event.id.toString(),
-        quantity,
-        buyerWallet: "G...MOCK_WALLET_ADDRESS",
+        quantity: quantity,
+        buyerWallet: "GBUYERMOCKADDRESS1234567890STEL",
       };
 
       if (isGiftMode && recipientWallet.trim()) {
@@ -125,6 +125,21 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to purchase ticket");
+
+      // Client-side XDR signature prompt via Freighter (Issue #1086)
+      if (data.transactionXdr && data.requiresSignature) {
+        try {
+          const freighter = await import("@stellar/freighter-api");
+          if (await freighter.isConnected()) {
+            toast.info("Please sign the transaction in your Freighter wallet...");
+            await freighter.signTransaction(data.transactionXdr, {
+              networkPassphrase: process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015",
+            });
+          }
+        } catch (signErr) {
+          console.warn("Freighter wallet interaction:", signErr);
+        }
+      }
 
       setPurchasedTicket({ id: data.ticketId });
       setView("purchased");
