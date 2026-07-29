@@ -2248,10 +2248,8 @@ pub async fn submit_event_rating(
 
     if already_rated {
         log_if_slow("submit_event_rating", start.elapsed());
-        return AppError::ValidationError(
-            "Each attendee may only submit one rating per event".to_string(),
-        )
-        .into_response();
+        return AppError::Conflict("Rating already submitted for this ticket".to_string())
+            .into_response();
     }
 
     if let Err(e) = sqlx::query(
