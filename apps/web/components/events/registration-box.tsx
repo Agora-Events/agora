@@ -7,6 +7,7 @@ import { TicketModal } from "./TicketModal";
 import { Button } from "@/components/ui/button";
 import { TicketAvailabilityDisplay } from "./ticket-availability-display";
 import { parsePriceValue } from "@/lib/validation";
+import { trackFunnelEvent } from "@/utils/funnel-analytics";
 
 interface RegistrationBoxProps {
   event: {
@@ -36,6 +37,7 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
       typeof window !== "undefined" && localStorage.getItem("token");
 
     if (isAuthenticated) {
+      void trackFunnelEvent("checkout_started", event.id);
       setIsModalOpen(true);
     } else {
       router.push("/auth");

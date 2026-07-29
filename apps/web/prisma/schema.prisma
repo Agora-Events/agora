@@ -29,6 +29,7 @@ model Event {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   tickets         Ticket[]
+  analyticsEvents AnalyticsEvent[]
 }
 
 model Ticket {
@@ -39,6 +40,9 @@ model Ticket {
   buyerWallet String   // The person who paid for the ticket
   ownerWallet String   // The person who owns/receives the ticket (can be different from buyer)
   quantity    Int      @default(1)
+  utmSource   String?  @db.VarChar(255)
+  utmMedium   String?  @db.VarChar(255)
+  utmCampaign String?  @db.VarChar(255)
   createdAt   DateTime @default(now())
 }
 
@@ -52,4 +56,14 @@ model OrganizerProfile {
   socials     Json     @default("{}")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type      String   @db.VarChar(32)
+  createdAt DateTime @default(now())
+
+  @@index([eventId, type, createdAt])
 }

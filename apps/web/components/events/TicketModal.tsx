@@ -8,6 +8,7 @@ import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2, Gift } from "@/compon
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { CheckoutAttribution, getCheckoutAttribution } from "@/utils/attribution";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,11 +108,14 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
         quantity: number;
         buyerWallet: string;
         recipientWallet?: string;
+        attribution?: CheckoutAttribution;
       } = {
         eventId: event.id.toString(),
         quantity: quantity,
         buyerWallet: "GBUYERMOCKADDRESS1234567890STEL",
       };
+
+      requestBody.attribution = getCheckoutAttribution();
 
       if (isGiftMode && recipientWallet.trim()) {
         requestBody.recipientWallet = recipientWallet.trim();

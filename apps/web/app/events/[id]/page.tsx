@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 import MapClient from "@/components/events/map-client";
 import { buildMetadata } from "@/components/layout/seo";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { EventPageView } from "@/components/analytics/event-page-view";
 
 export async function generateMetadata({
   params,
@@ -48,6 +49,7 @@ export default async function EventDetailPage({
 
   return (
     <main className="flex flex-col min-h-screen bg-base">
+      <EventPageView eventId={event.id} />
       <Navbar />
 
       <div className="flex-1 w-full max-w-[1221px] mx-auto px-6 py-6 sm:py-12">
