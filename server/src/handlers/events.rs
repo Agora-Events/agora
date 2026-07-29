@@ -2190,6 +2190,38 @@ pub async fn submit_event_rating(
         .into_response();
     }
 
+    // Verify event has ended (if end_time is set). Ratings are only allowed after event end.
+    let maybe_end_time = match sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>(
+        "SELECT end_time FROM events WHERE id = $1 AND is_flagged = FALSE",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(opt) => opt,
+        Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
+            tracing::error!("Failed to fetch event end_time for rating: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if maybe_end_time.is_none() {
+        // event not found or flagged
+        log_if_slow("submit_event_rating", start.elapsed());
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id)).into_response();
+    }
+
+    if let Some(end_time) = maybe_end_time.unwrap() {
+        if end_time > Utc::now() {
+            log_if_slow("submit_event_rating", start.elapsed());
+            return AppError::ValidationError(
+                "Ratings may only be submitted after the event has ended".to_string(),
+            )
+            .into_response();
+        }
+    }
+
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(e) => {
