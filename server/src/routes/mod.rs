@@ -120,12 +120,16 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     let listener_config = ListenerConfig::from_env();
     spawn_listener(pool.clone(), Some(redis.clone()), listener_config);
 
-    // Auth routes — challenge-response JWT flow (Issue #484)
+    // Auth routes — challenge-response JWT flow (Issue #484, #875)
     let auth_routes = Router::new()
         .route("/nonce", post(request_nonce))
         .route("/verify", post(verify_signature))
         .route("/logout", post(logout))
-        .with_state(pool.clone());
+        .with_state(pool.clone())
+        .layer(RateLimitLayer::new(
+            config.auth_rate_limit_per_minute,
+            Duration::from_secs(60),
+        ));
 
     let profile_state = ProfileState {
         pool: pool.clone(),

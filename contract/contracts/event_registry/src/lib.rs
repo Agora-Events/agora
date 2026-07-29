@@ -110,6 +110,26 @@ impl EventRegistry {
     ) -> Option<SeriesPass> {
         storage::get_holder_series_pass(&env, &holder, series_id)
     }
+
+    /// Check if a holder has a valid pass for a given series.
+    /// Returns true only if a pass exists, usage limit has not been reached, and the pass has not expired.
+    pub fn has_valid_series_pass(
+        env: Env,
+        holder: Address,
+        series_id: String,
+    ) -> bool {
+        if let Some(pass) = storage::get_holder_series_pass(&env, &holder, series_id) {
+            if pass.usage_limit > 0 && pass.usage_count >= pass.usage_limit {
+                return false;
+            }
+            if pass.expires_at > 0 && env.ledger().timestamp() >= pass.expires_at {
+                return false;
+            }
+            true
+        } else {
+            false
+        }
+    }
     /// Initializes the contract configuration. Can only be called once.
     /// Sets up initial admin with multi-sig configuration (threshold = 1 for single admin).
     /// The `usdc_token` address is automatically added to the payment token whitelist.
