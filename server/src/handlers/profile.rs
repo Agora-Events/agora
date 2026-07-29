@@ -1095,3 +1095,120 @@ mod tests {
         assert!(value.get("created_at").is_some());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Wallet Ticket Aggregation (#1122)
+// ---------------------------------------------------------------------------
+
+/// A single ticket enriched with its event details, returned by
+/// `GET /api/v1/profile/tickets`.
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct WalletTicket {
+    pub id: Uuid,
+    pub status: String,
+    pub ticket_tier_id: Option<Uuid>,
+    pub ticket_tier_name: Option<String>,
+    pub ticket_price: Option<rust_decimal::Decimal>,
+    pub event_id: Option<Uuid>,
+    pub event_title: Option<String>,
+    pub event_location: Option<String>,
+    pub event_start_time: Option<DateTime<Utc>>,
+    pub event_image_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Response shape for `GET /api/v1/profile/tickets`.
+///
+/// Tickets are split into two collections:
+/// - `upcoming` – tickets for events that have not yet started, sorted
+///   soonest-first.
+/// - `past` – tickets for events that have already started, sorted most-recent
+///   first.
+///
+/// Empty wallets receive `{ "upcoming": [], "past": [] }` with a 200 status.
+#[derive(Debug, Serialize)]
+pub struct WalletTicketsResponse {
+    pub upcoming: Vec<WalletTicket>,
+    pub past: Vec<WalletTicket>,
+}
+
+/// `GET /api/v1/profile/tickets`
+///
+/// Aggregates all tickets that belong to the authenticated wallet address and
+/// groups them into upcoming and past collections.
+///
+/// # Authentication
+/// Requires a valid JWT (`Authorization: Bearer <token>` or `auth_token` cookie).
+///
+/// # Response
+/// ```json
+/// {
+///   "upcoming": [ { "id": "...", "status": "active", "event_title": "...", ... } ],
+///   "past":     [ { "id": "...", "status": "used",   "event_title": "...", ... } ]
+/// }
+/// ```
+pub async fn get_wallet_tickets(
+    State(state): State<ProfileState>,
+    headers: HeaderMap,
+) -> Response {
+    let address = match extract_auth(&headers) {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+
+    // Single query: fetch all tickets for this wallet address joined with their
+    // event and ticket-tier information. We bring back everything in one round
+    // trip and split on the application side.
+    let tickets = match sqlx::query_as::<_, WalletTicket>(
+        r#"
+        SELECT
+            t.id,
+            t.status,
+            t.ticket_tier_id,
+            tt.name        AS ticket_tier_name,
+            tt.price       AS ticket_price,
+            t.event_id,
+            e.title        AS event_title,
+            e.location     AS event_location,
+            e.start_time   AS event_start_time,
+            e.image_url    AS event_image_url,
+            t.created_at
+        FROM tickets t
+        LEFT JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
+        LEFT JOIN events        e  ON e.id  = t.event_id
+        WHERE
+            t.owner_wallet = $1
+            OR t.buyer_wallet = $1
+        ORDER BY e.start_time ASC NULLS LAST
+        "#,
+    )
+    .bind(&address)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch wallet tickets for {address}: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let now = Utc::now();
+
+    let (mut upcoming, mut past): (Vec<WalletTicket>, Vec<WalletTicket>) =
+        tickets.into_iter().partition(|t| {
+            t.event_start_time
+                .map(|start| start >= now)
+                .unwrap_or(true) // tickets without an event date are treated as upcoming
+        });
+
+    // Upcoming: soonest first (already ordered by query).
+    // Past: most-recent first — reverse the chronological order.
+    past.sort_by(|a, b| {
+        b.event_start_time
+            .cmp(&a.event_start_time)
+    });
+
+    let response = WalletTicketsResponse { upcoming, past };
+    success(response, "Wallet tickets retrieved successfully").into_response()
+}

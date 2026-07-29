@@ -337,7 +337,7 @@ export async function pollTransactionUntilFinal(
     let response: rpc.Api.GetTransactionResponse;
     try {
       response = await server.getTransaction(hash);
-    } catch (error) {
+    } catch (_error) {
       // Transient network hiccup while polling — keep retrying rather than
       // failing the whole checkout on one dropped request.
       await delay(intervalMs);

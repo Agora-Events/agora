@@ -47,10 +47,10 @@ use crate::handlers::{
     events::{
         export_attendees_csv, flag_event, get_attendee_count, get_checkin_stats, get_event,
         get_event_counts, get_event_organizer, get_event_share_link, get_event_social_proof,
-        get_ratings_summary, list_event_attendees, list_event_ratings, list_event_tickets,
-        list_events, list_events_by_category, list_past_events, list_similar_events,
-        list_ticket_tiers, list_upcoming_events, search_events, set_event_featured,
-        submit_event_rating, toggle_event_flag, EventState,
+        get_events_map, get_ratings_summary, list_event_attendees, list_event_ratings,
+        list_event_tickets, list_events, list_events_by_category, list_past_events,
+        list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
+        set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{
@@ -59,11 +59,12 @@ use crate::handlers::{
     },
     profile::{
         delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
-        list_events_by_organizer, list_my_transactions, patch_profile, upsert_profile, ProfileState,
+        get_wallet_tickets, list_events_by_organizer, list_my_transactions, patch_profile,
+        upsert_profile, ProfileState,
     },
     qr_payload::{
-        delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads,
-        mark_qr_used, verify_qr_payload,
+        delete_qr_payload, generate_attendee_qr, generate_qr_payload, list_event_qr_codes,
+        list_qr_payloads, mark_qr_used, verify_qr_payload,
     },
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
@@ -146,6 +147,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
                 .delete(delete_profile),
         )
         .route("/transactions", get(list_my_transactions))
+        .route("/tickets", get(get_wallet_tickets))
         .route("/:address", get(get_profile_by_address))
         .route("/:address/events", get(list_events_by_organizer))
         .route("/:address/stats", get(get_organizer_stats))
@@ -175,6 +177,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // QR payload routes for cryptographically signed QR codes
     let qr_routes = Router::new()
         .route("/generate", post(generate_qr_payload))
+        .route("/attendee", post(generate_attendee_qr))
         .route("/verify", post(verify_qr_payload))
         .route("/mark-used/:id", post(mark_qr_used))
         .route("/list", get(list_qr_payloads))
@@ -184,6 +187,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // Event routes with Redis caching
     let event_routes = Router::new()
         .route("/", get(list_events))
+        .route("/map", get(get_events_map))
         .route("/count", get(get_event_counts))
         .route("/past", get(list_past_events))
         .route("/upcoming", get(list_upcoming_events))

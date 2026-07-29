@@ -9,59 +9,46 @@ import OrderSummaryCard from '@/components/checkout/OrderSummaryCard';
 import CheckoutProgressModal from '@/components/checkout/CheckoutProgressModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useTicketCheckout } from '@/hooks/useTicketCheckout';
-import type { TicketTierOption } from '@/types/checkout';
+import { useLiveTicketInventory } from '@/hooks/useLiveTicketInventory';
+import { getTiersForEvent } from '@/lib/ticketTiers';
 
 const MAX_TICKETS_PER_ORDER = 10;
-
-/**
- * Ticket tier catalogue keyed by event id. The event/pricing endpoints this
- * would normally come from aren't wired up in the mobile client yet, so this
- * mirrors the mock-data convention already used by `app/event/[id].tsx` and
- * `app/ticket/[id].tsx` until a real `/api/events/:id/tiers` call replaces it.
- */
-const MOCK_TIERS_BY_EVENT: Record<string, TicketTierOption[]> = {
-  '1': [
-    { id: 'tier-ga', name: 'General Admission', priceUsdc: 150, remaining: 340 },
-    { id: 'tier-vip', name: 'VIP', description: 'Front-row seating + backstage pass', priceUsdc: 450, remaining: 12 },
-  ],
-  '2': [
-    { id: 'tier-ga', name: 'General Admission', priceUsdc: 80, remaining: 500 },
-    { id: 'tier-pro', name: 'Pro Pass', description: 'Includes workshop access', priceUsdc: 220, remaining: 45 },
-  ],
-  '3': [
-    { id: 'tier-ga', name: 'General Admission', priceUsdc: 60, remaining: 800 },
-    { id: 'tier-early', name: 'Early Bird', priceUsdc: 45, remaining: 0 },
-  ],
-};
-
-const DEFAULT_TIERS: TicketTierOption[] = [
-  { id: 'tier-ga', name: 'General Admission', priceUsdc: 100, remaining: 200 },
-];
-
-function getTiersForEvent(eventId: string | undefined): TicketTierOption[] {
-  if (!eventId) return DEFAULT_TIERS;
-  return MOCK_TIERS_BY_EVENT[eventId] ?? DEFAULT_TIERS;
-}
 
 export default function CheckoutScreen() {
   const params = useLocalSearchParams<{ eventId?: string; eventTitle?: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const checkout = useTicketCheckout();
 
   const eventId = params.eventId ?? '1';
   const eventTitle = params.eventTitle ?? 'Agora Event';
 
-  const tiers = useMemo(() => getTiersForEvent(eventId), [eventId]);
-  const firstAvailableTier = tiers.find((t) => t.remaining !== 0) ?? tiers[0];
+  const baseTiers = useMemo(() => getTiersForEvent(eventId), [eventId]);
+
+  // Live inventory: `tiers` is `baseTiers` with any remaining counts pushed
+  // by the server applied on top (issue #1010).
+  const { tiers, isLive } = useLiveTicketInventory({
+    eventId,
+    tiers: baseTiers,
+    token: token ?? undefined,
+  });
+
+  const firstAvailableTier = baseTiers.find((t) => t.remaining !== 0) ?? baseTiers[0];
 
   const [selectedTierId, setSelectedTierId] = useState<string>(firstAvailableTier?.id ?? '');
   const [quantity, setQuantity] = useState(1);
 
   const selectedTier = tiers.find((t) => t.id === selectedTierId) ?? null;
+  const isSelectedSoldOut = selectedTier?.remaining === 0;
   const maxQuantity = selectedTier?.remaining != null
     ? Math.max(1, Math.min(MAX_TICKETS_PER_ORDER, selectedTier.remaining))
     : MAX_TICKETS_PER_ORDER;
+
+  // A tier can sell out while the user is choosing a quantity; clamp rather
+  // than letting them submit an order larger than what is left.
+  React.useEffect(() => {
+    setQuantity((current) => Math.min(current, maxQuantity));
+  }, [maxQuantity]);
 
   const isModalVisible = checkout.phase === 'in-progress' || checkout.phase === 'error';
 
@@ -73,6 +60,10 @@ export default function CheckoutScreen() {
   const handleConfirm = async () => {
     if (!selectedTier) {
       Alert.alert('Select a ticket tier', 'Please choose a ticket tier before continuing.');
+      return;
+    }
+    if (isSelectedSoldOut) {
+      Alert.alert('Tier sold out', 'This ticket tier just sold out. Please choose another tier.');
       return;
     }
     if (!user?.walletAddress || user.walletAddress === 'GDAGORA...') {
@@ -110,6 +101,18 @@ export default function CheckoutScreen() {
       <Text style={styles.heading}>Select Tickets</Text>
       <Text style={styles.subheading}>{eventTitle}</Text>
 
+      {isLive ? (
+        <Text testID="live-inventory-indicator" style={styles.liveBadge}>
+          ● Live availability
+        </Text>
+      ) : null}
+
+      {isSelectedSoldOut ? (
+        <Text testID="tier-sold-out-notice" style={styles.soldOutNotice}>
+          This tier just sold out. Choose another tier to continue.
+        </Text>
+      ) : null}
+
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Ticket Tier</Text>
         <TierSelector
@@ -129,7 +132,7 @@ export default function CheckoutScreen() {
               onChange={setQuantity}
               min={1}
               max={maxQuantity}
-              disabled={checkout.isSubmitting}
+              disabled={checkout.isSubmitting || isSelectedSoldOut}
             />
           </View>
         </View>
@@ -149,9 +152,15 @@ export default function CheckoutScreen() {
 
       <Button
         testID="checkout-confirm-button"
-        title={checkout.isSubmitting ? 'Processing...' : 'Confirm & Pay with USDC'}
+        title={
+          isSelectedSoldOut
+            ? 'Sold Out'
+            : checkout.isSubmitting
+              ? 'Processing...'
+              : 'Confirm & Pay with USDC'
+        }
         onPress={handleConfirm}
-        disabled={!selectedTier || checkout.isSubmitting}
+        disabled={!selectedTier || checkout.isSubmitting || isSelectedSoldOut}
         loading={checkout.isSubmitting}
         style={styles.confirmButton}
       />
@@ -211,6 +220,17 @@ const styles = StyleSheet.create({
   },
   confirmButton: {
     marginTop: 4,
+  },
+  liveBadge: {
+    fontSize: 11,
+    color: Colors.primaryText,
+    marginTop: -18,
+    marginBottom: 18,
+  },
+  soldOutNotice: {
+    fontSize: 12,
+    color: Colors.primaryText,
+    marginBottom: 16,
   },
   disclaimer: {
     color: Colors.secondaryText,
