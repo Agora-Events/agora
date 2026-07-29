@@ -63,12 +63,14 @@ beforeEach(() => {
 
 describe('CheckoutScreen', () => {
   it('defaults to the first available tier and shows a matching order summary', () => {
-    const { getByText, getAllByText } = render(<CheckoutScreen />);
+    const { getAllByText } = render(<CheckoutScreen />);
 
     // Event 1's mock catalogue: General Admission (150 USDC, first / default), VIP (450 USDC).
     // "General Admission" appears twice: once as the selected TierSelector
     // card, once as the OrderSummaryCard's tier name line.
-    expect(getByText('Stellar Meridian 2026')).toBeTruthy();
+    // The event title also appears twice: as the screen subheading and as the
+    // OrderSummaryCard heading.
+    expect(getAllByText('Stellar Meridian 2026').length).toBe(2);
     expect(getAllByText('General Admission').length).toBe(2);
     // quantity defaults to 1, so unit price === subtotal === total === "150.00 USDC"
     expect(getAllByText('150.00 USDC').length).toBeGreaterThanOrEqual(2);
