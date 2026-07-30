@@ -7,18 +7,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
-import { Button } from "@/components/ui/button";
-import { ChatSidebar } from "@/components/layout/chat-sidebar";
+import { UpcomingEventsEmptyState } from "@/components/empty-state/upcoming-events-empty-state";
 import CalendarIcon from "@/public/icons/calendar.svg";
 import HostingIcon from "@/public/icons/ticket-star.svg";
 import PastIcon from "@/public/icons/camera-smile-01.svg";
 import BubbleChatIcon from "@/public/icons/bubble-chat.svg";
-import ZeroIcon from "@/public/icons/zero.svg";
-import EmptyStateBg from "@/public/icons/empty-state-bg.svg";
-import useSWR from "swr";
-import { useAuth } from "@/hooks/useAuth";
-
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 type MyEventsTab = "upcoming" | "hosting" | "past";
 type ForYouTab = "discover" | "following";
@@ -36,6 +29,185 @@ const myEventsTabs: { id: MyEventsTab; label: string; icon?: string }[] = [
 const forYouTabs: { id: ForYouTab; label: string }[] = [
   { id: "discover", label: "Discover" },
   { id: "following", label: "Following" },
+];
+
+// Mock data types
+interface TimelineEvent {
+  id: number;
+  date: string;
+  day: string;
+  time: string;
+  title: string;
+  location: string;
+  imageUrl: string;
+  isFree: boolean;
+  price?: string;
+  attendees: number;
+  status?: string;
+}
+
+interface GridEvent {
+  id: number;
+  title: string;
+  date: string;
+  location: string;
+  price: string;
+  imageUrl: string;
+  color: string;
+}
+
+// Mock data for My Events (Timeline)
+const upcomingEvents: TimelineEvent[] = [];
+
+const hostingEvents: TimelineEvent[] = [
+  {
+    id: 4,
+    date: "15 Mar, Sunday",
+    day: "Sunday",
+    time: "19:00 - 21:00 UTC",
+    title: "Agora Community AMA",
+    location: "Twitter Spaces",
+    imageUrl: "/images/event4.png",
+    isFree: true,
+    attendees: 342,
+  },
+  {
+    id: 5,
+    date: "22 Mar, Sunday",
+    day: "Sunday",
+    time: "15:00 - 18:00 UTC",
+    title: "NFT Ticketing Workshop",
+    location: "Virtual",
+    imageUrl: "/images/event5.png",
+    isFree: false,
+    price: "$50.00",
+    attendees: 78,
+  },
+];
+
+const pastEvents: TimelineEvent[] = [
+  {
+    id: 6,
+    date: "28 Feb, Saturday",
+    day: "Saturday",
+    time: "16:00 - 18:00 UTC",
+    title: "Crypto Trading Basics",
+    location: "Discord",
+    imageUrl: "/images/event6.png",
+    isFree: true,
+    attendees: 210,
+    status: "finished",
+  },
+  {
+    id: 7,
+    date: "20 Feb, Friday",
+    day: "Friday",
+    time: "12:00 - 14:00 UTC",
+    title: "DeFi Yield Strategies",
+    location: "Virtual",
+    imageUrl: "/images/event1.png",
+    isFree: false,
+    price: "$30.00",
+    attendees: 445,
+    status: "finished",
+  },
+];
+
+// Mock data for For You (Grid)
+const discoverEvents: GridEvent[] = [
+  {
+    id: 8,
+    title: "Stellar Consensus Protocol",
+    date: "Apr 15, 2026",
+    location: "Austin, TX",
+    price: "$0.00",
+    imageUrl: "/images/event2.png",
+    color: "bg-[#E8D5F7]",
+  },
+  {
+    id: 9,
+    title: "Real Estate Outlook 2026",
+    date: "Apr 20, 2026",
+    location: "New York, NY",
+    price: "$45.00",
+    imageUrl: "/images/event3.png",
+    color: "bg-[#F7D5D5]",
+  },
+  {
+    id: 10,
+    title: "Web3 Marketing Summit",
+    date: "May 5, 2026",
+    location: "London, UK",
+    price: "$0.00",
+    imageUrl: "/images/event4.png",
+    color: "bg-[#D5F7E8]",
+  },
+  {
+    id: 11,
+    title: "AI & Blockchain Convergence",
+    date: "May 12, 2026",
+    location: "San Francisco, CA",
+    price: "$75.00",
+    imageUrl: "/images/event5.png",
+    color: "bg-[#F7ECD5]",
+  },
+  {
+    id: 12,
+    title: "Developer Workshop Series",
+    date: "May 18, 2026",
+    location: "Virtual",
+    price: "$0.00",
+    imageUrl: "/images/event6.png",
+    color: "bg-[#D5E8F7]",
+  },
+  {
+    id: 13,
+    title: "Crypto Investment Forum",
+    date: "Jun 2, 2026",
+    location: "Singapore",
+    price: "$120.00",
+    imageUrl: "/images/event1.png",
+    color: "bg-[#F5D5F7]",
+  },
+];
+
+const followingEvents: GridEvent[] = [
+  {
+    id: 14,
+    title: "Stellar East Africa Meetup",
+    date: "Apr 10, 2026",
+    location: "Nairobi, Kenya",
+    price: "$0.00",
+    imageUrl: "/images/event3.png",
+    color: "bg-[#F7D5E8]",
+  },
+  {
+    id: 15,
+    title: "Women in Web3 Panel",
+    date: "Apr 25, 2026",
+    location: "Virtual",
+    price: "$0.00",
+    imageUrl: "/images/event2.png",
+    color: "bg-[#E8F7D5]",
+  },
+  {
+    id: 16,
+    title: "Smart Contract Security",
+    date: "May 8, 2026",
+    location: "Berlin, Germany",
+    price: "$35.00",
+    imageUrl: "/images/event5.png",
+    color: "bg-[#D5F5F7]",
+  },
+  {
+    id: 17,
+    title: "Community Builder Workshop",
+    date: "May 20, 2026",
+    location: "Toronto, Canada",
+    price: "$0.00",
+    imageUrl: "/images/event4.png",
+    color: "bg-[#F7E8D5]",
+  },
 ];
 
 function AnimatedToggle<T extends string>({
@@ -334,80 +506,32 @@ function EventCardSkeleton() {
 }
 
 // My Events Section Content
-function MyEventsContent({ activeTab, events, isLoading }: { activeTab: MyEventsTab, events: any[], isLoading: boolean }) {
-  if (isLoading) {
-    return (
-      <div className="pt-4 space-y-13.25">
-        <EventCardSkeleton />
-        <EventCardSkeleton />
-      </div>
-    );
+function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
+  let events: TimelineEvent[] = [];
+  const isUpcomingTab = activeTab === "upcoming";
+
+  switch (activeTab) {
+    case "upcoming":
+      events = upcomingEvents;
+      break;
+    case "hosting":
+      events = hostingEvents;
+      break;
+    case "past":
+      events = pastEvents;
+      break;
   }
 
   if (events.length === 0) {
-    if (activeTab === "hosting") {
-      return (
-        <div className="w-full max-w-121.5 bg-surface h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10">
-          <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
-            <Image
-              src={EmptyStateBg}
-              alt="Empty State Background"
-              width={224}
-              height={224}
-              className="object-cover w-full h-full rounded-4xl"
-            />
-            <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-black/7 -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
-              <Image
-                src="/icons/megaphone.svg"
-                alt="Start Hosting"
-                width={64}
-                height={64}
-                className="object-contain w-full h-full"
-              />
-            </div>
-          </div>
-          <div className="flex flex-col items-center gap-4">
-            <p className="text-xl font-medium leading-5.5 text-center text-ink-deep/36">
-              You haven&apos;t created any events yet
-            </p>
-            <Link href="/create-event">
-              <Button variant="primary" className="rounded-full">
-                Start Hosting
-              </Button>
-            </Link>
-          </div>
-        </div>
-      );
+    if (isUpcomingTab) {
+      return <UpcomingEventsEmptyState />;
     }
 
     return (
-      <div className="w-full max-w-121.5 bg-surface h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10 text-ink-deep/36">
-        <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
-          <Image
-            src={EmptyStateBg}
-            alt="Empty State Background"
-            width={224}
-            height={224}
-            className="object-cover w-full h-full rounded-4xl"
-          />
-          <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-black/7 -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
-            <Image
-              src={ZeroIcon}
-              alt="Nothing Here, Yet"
-              width={16}
-              height={16}
-              className="object-center w-full h-full"
-            />
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-4">
-          <p className="text-xl font-medium leading-5.5 text-center">Nothing Here, Yet</p>
-          <Link href="/discover">
-            <Button variant="primary" className="rounded-full">
-              Discover Events
-            </Button>
-          </Link>
-        </div>
+      <div className="flex min-h-[15rem] items-center justify-center rounded-[2rem] border border-dashed border-black/20 bg-white/60 px-6 text-center">
+        <p className="text-base font-medium text-black/55">
+          No events found in this section.
+        </p>
       </div>
     );
   }
@@ -541,3 +665,4 @@ export default function HomePage() {
     </div>
   );
 }
+
