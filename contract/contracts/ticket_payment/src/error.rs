@@ -52,6 +52,11 @@ pub enum TicketPaymentError {
     OraclePriceStale = 56,
     CannotRemoveLastGovernor = 57,
     InvalidFeePercent = 58,
+    EventEnded = 59,
+    NonTransferable = 60,
+    InvalidSecret = 61,
+    DiscountExpired = 62,
+    DiscountMaxUsesReached = 63,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -120,6 +125,11 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             56 => TicketPaymentError::OraclePriceStale,
             57 => TicketPaymentError::CannotRemoveLastGovernor,
             58 => TicketPaymentError::InvalidFeePercent,
+            59 => TicketPaymentError::EventEnded,
+            60 => TicketPaymentError::NonTransferable,
+            61 => TicketPaymentError::InvalidSecret,
+            62 => TicketPaymentError::DiscountExpired,
+            63 => TicketPaymentError::DiscountMaxUsesReached,
             _ => TicketPaymentError::ArithmeticError,
         }
     }

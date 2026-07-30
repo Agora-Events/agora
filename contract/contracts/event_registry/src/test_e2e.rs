@@ -49,6 +49,14 @@ fn make_event_args(
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
     }
 }
 
@@ -64,6 +72,8 @@ fn single_tier(env: &Env, tier_limit: i128) -> Map<String, TicketTier> {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     tiers
@@ -101,7 +111,7 @@ fn test_e2e_complete_event_lifecycle() {
     assert!(info.is_active);
 
     // Cancel (irreversible)
-    client.cancel_event(&String::from_str(&env, "evt_1"));
+    client.cancel_event(&String::from_str(&env, "evt_1"), &None);
     let info = client.get_event(&String::from_str(&env, "evt_1")).unwrap();
     assert!(!info.is_active);
     assert_eq!(info.status, EventStatus::Cancelled);
@@ -111,8 +121,8 @@ fn test_e2e_complete_event_lifecycle() {
     assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 
     // Cancel again should fail
-    let result = client.try_cancel_event(&String::from_str(&env, "evt_1"));
-    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCancelled)));
+    let result = client.try_cancel_event(&String::from_str(&env, "evt_1"), &None);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCanceled)));
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +149,8 @@ fn test_e2e_zero_max_supply_means_unlimited() {
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
     let args = make_event_args(&env, "evt_unlim", &organizer, 0, tiers);
@@ -153,6 +165,7 @@ fn test_e2e_zero_max_supply_means_unlimited() {
         client.increment_inventory(
             &String::from_str(&env, "evt_unlim"),
             &String::from_str(&env, "tier_1"),
+            &Address::generate(&env),
             &1,
         );
     }
@@ -186,6 +199,7 @@ fn test_e2e_inventory_limits_enforced() {
         client.increment_inventory(
             &String::from_str(&env, "evt_cap"),
             &String::from_str(&env, "tier_1"),
+            &Address::generate(&env),
             &1,
         );
     }
@@ -199,6 +213,7 @@ fn test_e2e_inventory_limits_enforced() {
     let result = client.try_increment_inventory(
         &String::from_str(&env, "evt_cap"),
         &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
         &1,
     );
     assert_eq!(result, Err(Ok(EventRegistryError::MaxSupplyExceeded)));
@@ -228,17 +243,19 @@ fn test_e2e_tier_supply_limits() {
         client.increment_inventory(
             &String::from_str(&env, "evt_tier"),
             &String::from_str(&env, "tier_1"),
+            &Address::generate(&env),
             &1,
         );
     }
 
-    // 4th fails with TierSupplyExceeded
+    // 4th fails with TierSoldOut
     let result = client.try_increment_inventory(
         &String::from_str(&env, "evt_tier"),
         &String::from_str(&env, "tier_1"),
+        &Address::generate(&env),
         &1,
     );
-    assert_eq!(result, Err(Ok(EventRegistryError::TierSupplyExceeded)));
+    assert_eq!(result, Err(Ok(EventRegistryError::TierSoldOut)));
 }
 
 // ---------------------------------------------------------------------------
@@ -304,23 +321,23 @@ fn test_e2e_inventory_decrement_after_increment() {
     let tier_id = String::from_str(&env, "tier_1");
 
     // Increment 3
-    client.increment_inventory(&event_id, &tier_id, &3);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &3);
     let info = client.get_event(&event_id).unwrap();
     assert_eq!(info.current_supply, 3);
 
     // Decrement 1
-    client.decrement_inventory(&event_id, &tier_id);
+    client.decrement_inventory(&event_id, &tier_id, &Address::generate(&env));
     let info = client.get_event(&event_id).unwrap();
     assert_eq!(info.current_supply, 2);
 
     // Decrement to 0
-    client.decrement_inventory(&event_id, &tier_id);
-    client.decrement_inventory(&event_id, &tier_id);
+    client.decrement_inventory(&event_id, &tier_id, &Address::generate(&env));
+    client.decrement_inventory(&event_id, &tier_id, &Address::generate(&env));
     let info = client.get_event(&event_id).unwrap();
     assert_eq!(info.current_supply, 0);
 
     // Further decrement should fail (underflow)
-    let result = client.try_decrement_inventory(&event_id, &tier_id);
+    let result = client.try_decrement_inventory(&event_id, &tier_id, &Address::generate(&env));
     assert_eq!(result, Err(Ok(EventRegistryError::SupplyUnderflow)));
 }
 
@@ -352,17 +369,17 @@ fn test_e2e_min_goal_tracking() {
     assert_eq!(info.min_sales_target, 10);
 
     // Increment 5 - goal still not met
-    client.increment_inventory(&event_id, &tier_id, &5);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     let info = client.get_event(&event_id).unwrap();
     assert!(!info.goal_met);
 
     // Increment 5 more - goal should be met
-    client.increment_inventory(&event_id, &tier_id, &5);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &5);
     let info = client.get_event(&event_id).unwrap();
     assert!(info.goal_met);
 
     // Further increments keep it met
-    client.increment_inventory(&event_id, &tier_id, &1);
+    client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1);
     let info = client.get_event(&event_id).unwrap();
     assert!(info.goal_met);
 }

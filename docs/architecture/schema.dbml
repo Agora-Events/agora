@@ -1,0 +1,49 @@
+//// ------------------------------------------------------
+//// THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+//// ------------------------------------------------------
+
+Table Event {
+  id String [pk]
+  title String [not null]
+  description String [not null, default: '']
+  startsAt DateTime [not null]
+  location String [not null]
+  category String [not null]
+  organizerName String [not null]
+  organizerWallet String [not null]
+  imageUrl String [not null, default: '/images/event1.png']
+  ticketPrice Float [not null, default: 0]
+  totalTickets Int [not null, default: 100]
+  mintedTickets Int [not null, default: 0]
+  followersOnly Boolean [not null, default: false]
+  hostEmail String [not null]
+  createdAt DateTime [default: `now()`, not null]
+  updatedAt DateTime [not null]
+  tickets Ticket [not null]
+}
+
+Table Ticket {
+  id String [pk]
+  stellarId String [unique]
+  eventId String [not null]
+  event Event [not null]
+  buyerWallet String [not null]
+  ownerWallet String [not null]
+  quantity Int [not null, default: 1]
+  createdAt DateTime [default: `now()`, not null]
+}
+
+Table OrganizerProfile {
+  address String [pk]
+  displayName String [not null]
+  bio String
+  avatarUrl String
+  socials Json [not null, default: '{}']
+  createdAt DateTime [default: `now()`, not null]
+  updatedAt DateTime [not null]
+
+  Note: 'Organizer brand profile keyed by Stellar wallet address.
+Issue #486: Organizer Profile Management'
+}
+
+Ref: Ticket.eventId > Event.id

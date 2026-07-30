@@ -2,6 +2,10 @@
 pub mod contract;
 pub mod error;
 pub mod events;
+pub mod governance;
+pub mod interfaces;
+pub mod keys;
+pub mod payment_types;
 pub mod storage;
 pub mod types;
 

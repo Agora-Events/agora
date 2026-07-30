@@ -162,11 +162,26 @@ pub fn increment_series_pass_usage(env: &Env, pass_id: String) -> Option<SeriesP
 const SHARD_SIZE: u32 = 50;
 
 fn sync_active_event_count(env: &Env, existing: Option<&EventInfo>, updated: &EventInfo) {
+    // Private events are excluded from the global active event counter.
+    if updated.is_private {
+        // If the event was previously public and is now private, undo any active count.
+        if let Some(prev) = existing {
+            if !prev.is_private && prev.is_active {
+                decrement_global_active_event_count(env);
+            }
+        }
+        return;
+    }
+
     match existing {
         Some(previous) if previous.is_active && !updated.is_active => {
             decrement_global_active_event_count(env);
         }
         Some(previous) if !previous.is_active && updated.is_active => {
+            increment_global_active_event_count(env);
+        }
+        // Transitioning from private to public: treat as a fresh active event if active.
+        Some(previous) if previous.is_private && updated.is_active => {
             increment_global_active_event_count(env);
         }
         None if updated.is_active => {
@@ -417,8 +432,10 @@ pub fn store_event(env: &Env, event_info: EventInfo) {
             .persistent()
             .set(&DataKey::OrganizerEvent(organizer, event_id), &true);
 
-        // Increment global event counter
-        increment_global_event_count(env);
+        // Increment global event counter only for public events.
+        if !event_info.is_private {
+            increment_global_event_count(env);
+        }
     }
 }
 
@@ -445,7 +462,7 @@ pub fn remove_event(env: &Env, event_id: String) {
     if let Some(event_info) = get_event(env, event_id.clone()) {
         let organizer = event_info.organizer_address;
 
-        if event_info.is_active {
+        if event_info.is_active && !event_info.is_private {
             decrement_global_active_event_count(env);
         }
 
@@ -617,10 +634,12 @@ pub fn has_organizer_receipt(env: &Env, organizer: &Address, event_id: String) -
 }
 
 /// Retrieves all event_ids associated with an organizer by iterating through shards.
+/// If the caller is not the organizer, private events are filtered out (Issue #880).
 /// NOTE: For very large lists, this may exceed gas limits. Use shard-based iteration for scale.
-pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
+pub fn get_organizer_events(env: &Env, organizer: &Address, caller: &Address) -> Vec<String> {
     let count = get_organizer_event_count(env, organizer);
     let mut all_events = vec![env];
+    let is_owner = organizer == caller;
 
     if count == 0 {
         return all_events;
@@ -634,7 +653,16 @@ pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
             .get(&DataKey::OrganizerEventShard(organizer.clone(), i))
             .unwrap_or_else(|| vec![env]);
         for id in shard.iter() {
-            all_events.push_back(id);
+            // Filter out private events if caller is not the organizer
+            if is_owner {
+                all_events.push_back(id);
+            } else {
+                if let Some(event_info) = get_event(env, id.clone()) {
+                    if !event_info.is_private {
+                        all_events.push_back(id);
+                    }
+                }
+            }
         }
     }
     all_events
@@ -785,6 +813,37 @@ pub fn set_organizer_stake(env: &Env, stake: &OrganizerStake) {
         .set(&DataKey::OrganizerStake(stake.organizer.clone()), stake);
 }
 
+/// Sets the contract administrator address for organizer whitelisting.
+pub fn set_contract_admin(env: &Env, admin: &Address) {
+    env.storage().instance().set(&DataKey::ContractAdmin, admin);
+}
+
+/// Retrieves the contract administrator address for organizer whitelisting.
+pub fn get_contract_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::ContractAdmin)
+}
+
+/// Approves or removes an organizer from the whitelist.
+pub fn set_approved_organizer(env: &Env, organizer: &Address, approved: bool) {
+    if approved {
+        env.storage()
+            .instance()
+            .set(&DataKey::ApprovedOrganizer(organizer.clone()), &true);
+    } else {
+        env.storage()
+            .instance()
+            .remove(&DataKey::ApprovedOrganizer(organizer.clone()));
+    }
+}
+
+/// Checks if an organizer is approved.
+pub fn is_approved_organizer(env: &Env, addr: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::ApprovedOrganizer(addr.clone()))
+        .unwrap_or(false)
+}
+
 /// Removes an organizer's stake record (used on unstake).
 pub fn remove_organizer_stake(env: &Env, organizer: &Address) {
     env.storage()
@@ -902,6 +961,52 @@ pub fn is_token_whitelisted(env: &Env, token: &Address) -> bool {
         .unwrap_or(false)
 }
 
+// ── Event-Specific Token Whitelist ─────────────────────────────────────────────
+
+/// Adds a token address to the event-specific payment token whitelist.
+pub fn add_event_token_whitelist(env: &Env, event_id: String, token: &Address) {
+    env.storage().persistent().set(
+        &DataKey::EventTokenWhitelist(event_id, token.clone()),
+        &true,
+    );
+}
+
+/// Removes a token address from the event-specific payment token whitelist.
+pub fn remove_event_token_whitelist(env: &Env, event_id: String, token: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventTokenWhitelist(event_id, token.clone()));
+}
+
+/// Returns true if the given token address is whitelisted for payments to a specific event.
+pub fn is_event_token_whitelisted(env: &Env, event_id: String, token: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventTokenWhitelist(event_id, token.clone()))
+        .unwrap_or(false)
+}
+
+/// Returns true if the given token address is accepted for payments to the event,
+/// checking either event-specific whitelist or global whitelist based on event configuration.
+pub fn is_token_accepted_for_event(
+    env: &Env,
+    _event_id: String,
+    token: &Address,
+    use_global_whitelist: bool,
+    accepted_tokens: &Vec<Address>,
+) -> bool {
+    if use_global_whitelist {
+        // Use global whitelist
+        is_token_whitelisted(env, token)
+    } else if accepted_tokens.is_empty() {
+        // No specific tokens configured, fall back to global whitelist
+        is_token_whitelisted(env, token)
+    } else {
+        // Check if token is in event-specific whitelist
+        accepted_tokens.contains(token)
+    }
+}
+
 // ── Global Counters ──────────────────────────────────────────────────────────
 
 /// Returns the total number of events ever registered on the platform.
@@ -968,4 +1073,195 @@ pub fn subtract_from_global_tickets_sold(env: &Env, quantity: i128) {
         &DataKey::GlobalTicketsSold,
         &(current.saturating_sub(quantity)),
     );
+}
+
+/// Returns the number of tickets a user has purchased for a specific event tier.
+pub fn get_user_ticket_count(
+    env: &Env,
+    event_id: &String,
+    tier_id: &String,
+    user: &Address,
+) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::UserTicketCount(
+            event_id.clone(),
+            tier_id.clone(),
+            user.clone(),
+        ))
+        .unwrap_or(0)
+}
+
+/// Sets the number of tickets a user has purchased for a specific event tier.
+pub fn set_user_ticket_count(
+    env: &Env,
+    event_id: &String,
+    tier_id: &String,
+    user: &Address,
+    count: u32,
+) {
+    env.storage().persistent().set(
+        &DataKey::UserTicketCount(event_id.clone(), tier_id.clone(), user.clone()),
+        &count,
+    );
+}
+
+/// Adds `quantity` to the user's ticket count for a specific event tier.
+pub fn add_to_user_ticket_count(
+    env: &Env,
+    event_id: &String,
+    tier_id: &String,
+    user: &Address,
+    quantity: u32,
+) {
+    let current = get_user_ticket_count(env, event_id, tier_id, user);
+    set_user_ticket_count(
+        env,
+        event_id,
+        tier_id,
+        user,
+        current.saturating_add(quantity),
+    );
+}
+
+/// Subtracts `quantity` from the user's ticket count for a specific event tier.
+pub fn subtract_from_user_ticket_count(
+    env: &Env,
+    event_id: &String,
+    tier_id: &String,
+    user: &Address,
+    quantity: u32,
+) {
+    let current = get_user_ticket_count(env, event_id, tier_id, user);
+    set_user_ticket_count(
+        env,
+        event_id,
+        tier_id,
+        user,
+        current.saturating_sub(quantity),
+    );
+}
+
+// ── Waitlist Storage ──────────────────────────────────────────────────────────
+
+/// Check if a user is already on the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user). Storage type: Persistent
+pub fn is_on_waitlist(env: &Env, event_id: &String, user: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Waitlist(event_id.clone(), user.clone()))
+        .unwrap_or(false)
+}
+
+/// Add a user to the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user) -> true. Storage type: Persistent
+pub fn add_to_waitlist(env: &Env, event_id: &String, user: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Waitlist(event_id.clone(), user.clone()), &true);
+}
+
+/// Remove a user from the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user). Storage type: Persistent
+pub fn remove_from_waitlist(env: &Env, event_id: &String, user: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Waitlist(event_id.clone(), user.clone()));
+}
+
+// ── Event Pause Storage ────────────────────────────────────────────────────────
+
+/// Returns whether an event is paused. Returns false if the pause status is not set (i.e., event is not paused).
+/// Storage key: DataKey::EventPaused(event_id). Storage type: Persistent
+pub fn is_event_paused(env: &Env, event_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&DataKey::EventPaused(event_id.clone()))
+        .unwrap_or(false)
+}
+
+/// Sets the pause status for an event.
+/// Storage key: DataKey::EventPaused(event_id). Storage type: Persistent
+pub fn set_event_paused(env: &Env, event_id: &String, is_paused: bool) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventPaused(event_id.clone()), &is_paused);
+}
+
+// ── Category Index Storage ─────────────────────────────────────────────────────
+
+/// Appends `event_id` to the index list for `category_id`.
+/// Storage key: DataKey::CategoryEvents(category_id). Storage type: Persistent
+pub fn index_event_category(env: &Env, category_id: u32, event_id: String) {
+    let key = DataKey::CategoryEvents(category_id);
+    let mut ids: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| vec![env]);
+    ids.push_back(event_id);
+    env.storage().persistent().set(&key, &ids);
+}
+
+/// Returns all event IDs tagged with `category_id`.
+/// Storage key: DataKey::CategoryEvents(category_id). Storage type: Persistent
+pub fn get_events_by_category(env: &Env, category_id: u32) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::CategoryEvents(category_id))
+        .unwrap_or_else(|| vec![env])
+}
+
+// ── Event Team Role Storage ────────────────────────────────────────────────────
+
+/// Sets the role for a team member on a specific event.
+/// Storage key: DataKey::EventTeamRole(event_id, member_address). Storage type: Persistent
+pub fn set_event_team_role(
+    env: &Env,
+    event_id: &String,
+    member: &Address,
+    role: crate::types::Role,
+) {
+    env.storage().persistent().set(
+        &DataKey::EventTeamRole(event_id.clone(), member.clone()),
+        &role,
+    );
+}
+
+/// Gets the role for a team member on a specific event.
+/// Returns None if the member has no role assigned.
+/// Storage key: DataKey::EventTeamRole(event_id, member_address). Storage type: Persistent
+pub fn get_event_team_role(
+    env: &Env,
+    event_id: &String,
+    member: &Address,
+) -> Option<crate::types::Role> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventTeamRole(event_id.clone(), member.clone()))
+}
+
+/// Removes a team member's role from an event.
+/// Storage key: DataKey::EventTeamRole(event_id, member_address). Storage type: Persistent
+pub fn remove_event_team_role(env: &Env, event_id: &String, member: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventTeamRole(event_id.clone(), member.clone()));
+}
+
+/// Checks if a member has a specific role or higher for an event.
+/// Role hierarchy: Admin > Manager > Scanner
+/// Returns true if the member has the required role or a higher role.
+pub fn has_event_role(
+    env: &Env,
+    event_id: &String,
+    member: &Address,
+    required_role: crate::types::Role,
+) -> bool {
+    if let Some(member_role) = get_event_team_role(env, event_id, member) {
+        // Check role hierarchy: Admin (1) > Manager (2) > Scanner (3)
+        (member_role as u32) <= (required_role as u32)
+    } else {
+        false
+    }
 }

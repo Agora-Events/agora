@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
@@ -224,6 +225,7 @@ function AnimatedToggle<T extends string>({
     <div className="inline-flex w-fit items-center bg-white rounded-full p-1 sm:p-1.5 ">
       {tabs.map((tab) => (
         <button
+          type="button"
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
           className="relative px-3 transition-all ease-in-out sm:px-5 py-1.5 sm:py-2 text-[13px] sm:text-[15px] font-medium  duration-200 z-10  flex items-center justify-center gap-2.5 flex-row"
@@ -231,7 +233,7 @@ function AnimatedToggle<T extends string>({
           {activeTab === tab.id && (
             <motion.div
               layoutId={layoutId}
-              className="absolute inset-0 bg-[#FFEFD3] rounded-full"
+              className="absolute inset-0 bg-surface rounded-full"
               transition={{
                 type: "spring",
                 stiffness: 400,
@@ -269,6 +271,7 @@ function SectionHeader<T extends string>({
   onTabChange,
   layoutId,
   hasNotifications = false,
+  onChatClick,
 }: {
   title: string;
   tabs: { id: T; label: string }[];
@@ -276,10 +279,11 @@ function SectionHeader<T extends string>({
   onTabChange: (tab: T) => void;
   layoutId: string;
   hasNotifications?: boolean;
+  onChatClick?: () => void;
 }) {
   return (
     <div className="flex flex-col  gap-3 sm:gap-8 mb-6 sm:mb-8">
-      <h2 className="text-[24px] sm:text-[28px] lg:text-[3.6rem] leading-16.5 tracking-[0px] font-semibold text-[#131517] italic">
+      <h2 className="text-[24px] sm:text-[28px] lg:text-[3.6rem] leading-16.5 tracking-[0px] font-semibold text-ink-deep italic">
         {title}
       </h2>
       <div className="flex justify-between items-end">
@@ -290,18 +294,20 @@ function SectionHeader<T extends string>({
           layoutId={layoutId}
         />
         {hasNotifications && (
-          <div className="w-13.75 h-13.75 rounded-full bg-[#FFEFD3] flex items-center justify-center  relative">
-            <div className="absolute -top-1 right-1 rounded-full size-4.75 bg-[#F90B0B] text-white flex items-center justify-center">
-              <p>1</p>
+          <button type="button" onClick={onChatClick} aria-label="Open messages">
+            <div className="w-13.75 h-13.75 rounded-full bg-surface flex items-center justify-center  relative">
+              <div className="absolute -top-1 right-1 rounded-full size-4.75 bg-error text-white flex items-center justify-center">
+                <p>1</p>
+              </div>
+              <Image
+                src={BubbleChatIcon}
+                alt="chat"
+                width={24}
+                height={24}
+                className="object-contain w-6 h-6 mx-auto"
+              />
             </div>
-            <Image
-              src={BubbleChatIcon}
-              alt="chat"
-              width={24}
-              height={24}
-              className="object-contain w-6 h-6 mx-auto"
-            />
-          </div>
+          </button>
         )}
       </div>
     </div>
@@ -309,11 +315,11 @@ function SectionHeader<T extends string>({
 }
 
 // Timeline Event Card Component
-function TimelineEventCard({ event }: { event: TimelineEvent }) {
+function TimelineEventCard({ event }: { event: any }) {
   const locationImageSrc =
-    event.location.toLowerCase().includes("discord") ||
-    event.location.toLowerCase().includes("virtual") ||
-    event.location.toLowerCase().includes("twitter")
+    (event.location || "").toLowerCase().includes("discord") ||
+    (event.location || "").toLowerCase().includes("virtual") ||
+    (event.location || "").toLowerCase().includes("twitter")
       ? "/icons/discord.svg"
       : "/icons/location.svg";
 
@@ -322,7 +328,7 @@ function TimelineEventCard({ event }: { event: TimelineEvent }) {
       {/* Timeline Column */}
       <div className="flex  w-39 max-w-39 shrink-0  mb-3">
         <span className="text-[1.625rem] text-left font-medium text-black  leading-10.25">
-          {event.date}
+          {event.date || "TBD"}
         </span>
       </div>
 
@@ -332,20 +338,20 @@ function TimelineEventCard({ event }: { event: TimelineEvent }) {
         <div className="h-full  flex flex-col gap-2">
           <div className="rounded-full size-4.25 bg-black opacity-50" />
           <div className="h-full w-0 border-[1.5px] border-dashed border-black  mx-auto flex-1 relative">
-            <div className="absolute w-1 h-full -left-0.5  bg-linear-to-b from-transparent to-[#FFFBE9] z-20" />
+            <div className="absolute w-1 h-full -left-0.5  bg-linear-to-b from-transparent to-base z-20" />
           </div>
         </div>
         {/* Event Card */}
         <Link href={`/events/${event.id}`} className="   h-full flex-1">
-          <div className="bg-[#FFEFD3] rounded-xl  shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] p-9.5 overflow-hidden transition-all ease-in-out hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
+          <div className="bg-surface rounded-xl  shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] p-9.5 overflow-hidden transition-all ease-in-out hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
             <div className="flex flex-col sm:flex-row gap-6">
               {/* Left side - Image */}
               <div className="w-full flex-1 ">
                 <Image
-                  src={event.imageUrl}
+                  src={event.imageUrl || "/images/event1.png"}
                   width={400}
                   height={140}
-                  alt={event.title}
+                  alt={event.title || "Event"}
                   className="object-cover w-full h-full"
                 />
               </div>
@@ -355,37 +361,33 @@ function TimelineEventCard({ event }: { event: TimelineEvent }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="text-[15px] text-black font-light leading-7.5 tracking-[0%] mb-4.5">
-                      {event.time}
+                      {event.time || "12:00 UTC"}
                     </p>
                     <h3 className="text-[1.2rem] font-semibold text-black leading-5.5 line-clamp-2 mb-4.5">
                       {event.title}
                     </h3>
                   </div>
-                  {/* <span className="text-[12px] sm:text-[14px] font-semibold text-black shrink-0">
-                    {event.isFree ? "Free" : event.price}
-                  </span> */}
                 </div>
 
                 <div className="">
                   <div className="flex items-center gap-1.5 text-black/70">
                     <Image
                       src={locationImageSrc}
-                      alt="location"
+                      alt="Location"
                       width={16}
                       height={16}
                       className="object-contain"
                     />
                     <span className="text-[12px] text-black ">
-                      {event.location}
+                      {event.location || "Virtual"}
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between mt-2 sm:mt-3">
                     <div className="flex items-center gap-1.5 sm:gap-2">
-                      {/* barge */}
                       {event.status && (
                         <div
-                          className={`capitalize rounded-lg p-2.5 ${event.status === "going" ? "bg-[#DAFFB5] text-black" : event.status === "finished" ? "bg-[#FFFBE9] text-black" : ""} w-20.5 text-center text-xs font-medium`}
+                          className={`capitalize rounded-lg p-2.5 ${event.status === "going" ? "bg-success-light text-black" : event.status === "finished" ? "bg-base text-black" : ""} w-20.5 text-center text-xs font-medium`}
                         >
                           {event.status}
                         </div>
@@ -396,20 +398,18 @@ function TimelineEventCard({ event }: { event: TimelineEvent }) {
                             key={i}
                             className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 border-white overflow-hidden bg-gray-300"
                           >
-                            {
-                              <Image
-                                src="/images/pfp.png"
-                                width={24}
-                                height={24}
-                                alt="attendee"
-                                className="object-cover w-full h-full"
-                              />
-                            }
+                            <Image
+                              src="/images/pfp.png"
+                              width={24}
+                              height={24}
+                              alt="attendee"
+                              className="object-cover w-full h-full"
+                            />
                           </div>
                         ))}
                       </div>
                       <span className="text-[11px] sm:text-[12px] text-black/60">
-                        {event.attendees} going
+                        {event.attendees || 0} going
                       </span>
                     </div>
 
@@ -436,19 +436,20 @@ function TimelineEventCard({ event }: { event: TimelineEvent }) {
 }
 
 // Grid Event Card Component
-function GridEventCard({ event }: { event: GridEvent }) {
+function GridEventCard({ event }: { event: any }) {
+  const color = event.color || "bg-[#E8D5F7]";
   return (
     <Link href={`/events/${event.id}`} className="block">
       <div
-        className={`${event.color} rounded-xl border border-black shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] overflow-hidden transition-transform hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]`}
+        className={`${color} rounded-xl border border-black shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] overflow-hidden transition-transform hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]`}
       >
         {/* Image */}
         <div className="h-[120px] sm:h-[140px] overflow-hidden">
           <Image
-            src={event.imageUrl}
+            src={event.imageUrl || "/images/event2.png"}
             width={400}
             height={140}
-            alt={event.title}
+            alt={event.title || "Event"}
             className="object-cover w-full h-full"
           />
         </div>
@@ -460,7 +461,7 @@ function GridEventCard({ event }: { event: GridEvent }) {
           </h3>
 
           <p className="text-[11px] sm:text-[12px] text-black/60 mb-1">
-            {event.date}
+            {event.date || "TBD"}
           </p>
 
           <div className="flex items-center gap-1 text-black/70 mb-2 sm:mb-3">
@@ -472,13 +473,13 @@ function GridEventCard({ event }: { event: GridEvent }) {
               className="object-contain w-3 h-3 sm:w-[14px] sm:h-[14px]"
             />
             <span className="text-[11px] sm:text-[12px] line-clamp-1">
-              {event.location}
+              {event.location || "Virtual"}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-[12px] sm:text-[13px] font-medium text-black">
-              {event.price === "$0.00" ? "Free" : event.price}
+              {event.price === "$0.00" || !event.price ? "Free" : event.price}
             </span>
             <div className="flex items-center gap-1 text-black text-[11px] sm:text-[12px] font-medium">
               <span className="hidden sm:inline">View</span>
@@ -494,6 +495,13 @@ function GridEventCard({ event }: { event: GridEvent }) {
         </div>
       </div>
     </Link>
+  );
+}
+
+function EventCardSkeleton() {
+  return (
+    <div className="min-h-[200px] rounded-xl border-2 border-black/20 bg-black/5 animate-pulse flex items-center justify-center">
+    </div>
   );
 }
 
@@ -538,16 +546,15 @@ function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
 }
 
 // For You Section Content
-function ForYouContent({ activeTab }: { activeTab: ForYouTab }) {
-  let events: GridEvent[] = [];
-
-  switch (activeTab) {
-    case "discover":
-      events = discoverEvents;
-      break;
-    case "following":
-      events = followingEvents;
-      break;
+function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab, events: any[], isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
+        <EventCardSkeleton />
+        <EventCardSkeleton />
+        <EventCardSkeleton />
+      </div>
+    );
   }
 
   if (events.length === 0) {
@@ -568,11 +575,54 @@ function ForYouContent({ activeTab }: { activeTab: ForYouTab }) {
 }
 
 export default function HomePage() {
+  const router = useRouter();
+  const {
+    walletAddress: userWallet,
+    isAuthenticated,
+    isLoading: isAuthLoading,
+  } = useAuth();
   const [myEventsTab, setMyEventsTab] = useState<MyEventsTab>("upcoming");
   const [forYouTab, setForYouTab] = useState<ForYouTab>("discover");
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // "My Events" is personal — signed-out visitors belong on the auth page.
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      router.replace("/auth");
+    }
+  }, [isAuthLoading, isAuthenticated, router]);
+
+  const { data, isLoading: isEventsLoading } = useSWR(
+    isAuthenticated ? "/api/v1/events" : null,
+    fetcher,
+  );
+  const isLoading = isAuthLoading || isEventsLoading;
+  const allEvents = data?.events || [];
+
+  const now = new Date().getTime();
+
+  // Filter for 'My Events'
+  const upcomingEvents = allEvents.filter((e: any) => new Date(e.start_time).getTime() > now); // assuming user has ticket logically mapped
+  const hostingEvents = userWallet
+    ? allEvents.filter((e: any) => e.organizer_wallet === userWallet)
+    : [];
+  const pastEvents = allEvents.filter((e: any) => new Date(e.end_time).getTime() < now);
+
+  let displayedMyEvents = [];
+  if (myEventsTab === "upcoming") displayedMyEvents = upcomingEvents;
+  else if (myEventsTab === "hosting") displayedMyEvents = hostingEvents;
+  else if (myEventsTab === "past") displayedMyEvents = pastEvents;
+
+  // Filter for 'For You'
+  const discoverEvents = allEvents.slice(0, 6); // simple pagination mock
+  const followingEvents = allEvents.slice(0, 4);
+
+  let displayedForYouEvents = [];
+  if (forYouTab === "discover") displayedForYouEvents = discoverEvents;
+  else if (forYouTab === "following") displayedForYouEvents = followingEvents;
 
   return (
-    <div className="min-h-screen bg-[#FFFDF0]">
+    <div className="min-h-screen bg-base-alt">
       <Navbar />
 
       <main className="w-full max-w-304.5 mx-auto px-3 sm:px-4 lg:px-6 xl:px-0 pt-6 sm:pt-22.5 pb-12 sm:pb-20">
@@ -585,8 +635,17 @@ export default function HomePage() {
             onTabChange={setMyEventsTab}
             layoutId="my-events-toggle"
             hasNotifications={true}
+            onChatClick={() => setIsChatOpen((prev) => !prev)}
           />
-          <MyEventsContent activeTab={myEventsTab} />
+
+          {/* Chat Sidebar (shown when toggled) */}
+          {isChatOpen && (
+            <div className="flex justify-end mb-4">
+              <ChatSidebar onNewChat={() => setIsChatOpen(false)} />
+            </div>
+          )}
+
+          <MyEventsContent activeTab={myEventsTab} events={displayedMyEvents} isLoading={isLoading} />
         </section>
 
         {/* For You Section */}
@@ -598,7 +657,7 @@ export default function HomePage() {
             onTabChange={setForYouTab}
             layoutId="for-you-toggle"
           />
-          <ForYouContent activeTab={forYouTab} />
+          <ForYouContent activeTab={forYouTab} events={displayedForYouEvents} isLoading={isLoading} />
         </section>
       </main>
 
