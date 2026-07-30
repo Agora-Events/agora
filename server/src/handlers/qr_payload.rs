@@ -95,6 +95,68 @@ pub struct VerifyQrResponse {
     pub message: String,
 }
 
+/// Request body for verifying a ticket scan payload
+#[derive(Debug, Deserialize)]
+pub struct ScanTicketRequest {
+    /// The QR payload to verify
+    pub payload: QrPayload,
+    /// Base64-encoded signature
+    pub signature: String,
+    /// Hex-encoded public key for verification
+    pub public_key: String,
+}
+
+/// Response for ticket scan verification
+#[derive(Debug, Serialize)]
+pub struct ScanTicketResponse {
+    /// Whether the payload is valid
+    pub valid: bool,
+    /// Whether the ticket has been scanned as part of this request
+    pub scanned: bool,
+    /// The scanned ticket UUID
+    pub ticket_id: Uuid,
+    /// Current ticket status
+    pub ticket_status: String,
+    /// Timestamp when the ticket was scanned
+    pub scanned_at: Option<DateTime<Utc>>,
+    /// Verification message
+    pub message: String,
+}
+
+fn verify_payload_signature(
+    payload: &QrPayload,
+    signature: &str,
+    public_key: &str,
+) -> Result<(), AppError> {
+    let payload_json = serde_json::to_string(payload).map_err(|e| {
+        AppError::ValidationError(format!("Invalid payload format: {}", e))
+    })?;
+
+    let signature_bytes = general_purpose::STANDARD
+        .decode(signature)
+        .map_err(|e| AppError::ValidationError(format!("Invalid signature encoding: {}", e)))?;
+
+    let signature = Signature::from_slice(&signature_bytes).map_err(|e| {
+        AppError::ValidationError(format!("Invalid signature format: {}", e))
+    })?;
+
+    let public_key_bytes = hex::decode(public_key)
+        .map_err(|e| AppError::ValidationError(format!("Invalid public key encoding: {}", e)))?;
+
+    let public_key_array: [u8; 32] = public_key_bytes
+        .try_into()
+        .map_err(|_| AppError::ValidationError("Public key must be 32 bytes".to_string()))?;
+
+    let verifying_key = VerifyingKey::from_bytes(&public_key_array)
+        .map_err(|e| AppError::ValidationError(format!("Invalid public key: {}", e)))?;
+
+    verifying_key
+        .verify(payload_json.as_bytes(), &signature)
+        .map_err(|_| AppError::ValidationError("Invalid signature".to_string()))?;
+
+    Ok(())
+}
+
 /// Generate a cryptographically signed QR payload
 ///
 /// # Endpoint
@@ -255,51 +317,12 @@ pub async fn verify_qr_payload(
         }
     };
 
-    // Decode signature from base64
-    let signature_bytes = match general_purpose::STANDARD.decode(&request.signature) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            return AppError::ValidationError(format!("Invalid signature encoding: {}", e))
-                .into_response();
-        }
-    };
-
-    let signature = match Signature::from_slice(&signature_bytes) {
-        Ok(sig) => sig,
-        Err(e) => {
-            return AppError::ValidationError(format!("Invalid signature format: {}", e))
-                .into_response();
-        }
-    };
-
-    // Decode public key from hex
-    let public_key_bytes = match hex::decode(&request.public_key) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            return AppError::ValidationError(format!("Invalid public key encoding: {}", e))
-                .into_response();
-        }
-    };
-
-    let public_key_array: [u8; 32] = match public_key_bytes.try_into() {
-        Ok(arr) => arr,
-        Err(_) => {
-            return AppError::ValidationError("Public key must be 32 bytes".to_string())
-                .into_response();
-        }
-    };
-
-    let verifying_key = match VerifyingKey::from_bytes(&public_key_array) {
-        Ok(key) => key,
-        Err(e) => {
-            return AppError::ValidationError(format!("Invalid public key: {}", e)).into_response();
-        }
-    };
-
-    // Verify signature
-    let is_valid = verifying_key
-        .verify(payload_json.as_bytes(), &signature)
-        .is_ok();
+    let is_valid = verify_payload_signature(
+        &request.payload,
+        &request.signature,
+        &request.public_key,
+    )
+    .is_ok();
 
     // Check expiration
     let is_expired = request.payload.expires_at < Utc::now();
@@ -342,6 +365,214 @@ pub async fn verify_qr_payload(
     };
 
     success(response, "Verification complete").into_response()
+}
+
+/// Verify and scan a ticket by its ticket ID
+///
+/// # Endpoint
+/// POST `/api/v1/tickets/:id/scan`
+///
+/// # Request Body
+/// ```json
+/// {
+///   "payload": { ... },
+///   "signature": "base64_signature",
+///   "public_key": "hex_public_key"
+/// }
+/// ```
+///
+/// # Response
+/// Returns the ticket scan verification result and updated scan state.
+pub async fn scan_ticket(
+    State(pool): State<PgPool>,
+    Path(ticket_id): Path<Uuid>,
+    Json(request): Json<ScanTicketRequest>,
+) -> Response {
+    if request.payload.qr_type != "ticket" {
+        return AppError::ValidationError("Payload qr_type must be 'ticket'".to_string())
+            .into_response();
+    }
+
+    let payload_ticket_id = match request
+        .payload
+        .data
+        .get("ticket_id")
+        .and_then(|value| value.as_str())
+    {
+        Some(id) => match Uuid::parse_str(id) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                return AppError::ValidationError(
+                    "Payload ticket_id must be a valid UUID".to_string(),
+                )
+                .into_response();
+            }
+        },
+        None => {
+            return AppError::ValidationError("Payload must include a ticket_id".to_string())
+                .into_response();
+        }
+    };
+
+    if payload_ticket_id != ticket_id {
+        return AppError::ValidationError(
+            "Payload ticket_id does not match requested ticket".to_string(),
+        )
+        .into_response();
+    }
+
+    let wallet_address = match request
+        .payload
+        .data
+        .get("wallet_address")
+        .and_then(|value| value.as_str())
+    {
+        Some(address) if !address.trim().is_empty() => address.trim().to_string(),
+        _ => {
+            return AppError::ValidationError(
+                "Payload must include wallet_address".to_string(),
+            )
+            .into_response();
+        }
+    };
+
+    if let Err(err) = verify_payload_signature(
+        &request.payload,
+        &request.signature,
+        &request.public_key,
+    ) {
+        return err.into_response();
+    }
+
+    if request.payload.expires_at < Utc::now() {
+        return AppError::ValidationError("Payload has expired".to_string()).into_response();
+    }
+
+    let ticket = match sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+        r#"
+        SELECT status, owner_wallet, buyer_wallet
+        FROM tickets
+        WHERE id = $1
+        "#,
+    )
+    .bind(ticket_id)
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(Some(record)) => record,
+        Ok(None) => {
+            return AppError::NotFound(format!("Ticket with id '{}' not found", ticket_id))
+                .into_response();
+        }
+        Err(e) => return AppError::DatabaseError(e).into_response(),
+    };
+
+    let (ticket_status, owner_wallet, buyer_wallet) = ticket;
+    if ticket_status == "Revoked" {
+        return AppError::Conflict("Ticket has been revoked".to_string()).into_response();
+    }
+
+    let wallet_matches = owner_wallet
+        .as_deref()
+        .map(|owner| owner == wallet_address)
+        .unwrap_or(false)
+        || buyer_wallet
+            .as_deref()
+            .map(|buyer| buyer == wallet_address)
+            .unwrap_or(false);
+
+    if !wallet_matches {
+        return AppError::Forbidden(
+            "Payload wallet_address does not match ticket ownership".to_string(),
+        )
+        .into_response();
+    }
+
+    let (is_used, expires_at) = match sqlx::query_as::<_, (bool, DateTime<Utc>)>(
+        r#"
+        SELECT is_used, expires_at
+        FROM qr_payloads
+        WHERE id = $1 AND ticket_id = $2
+        "#,
+    )
+    .bind(&request.payload.id)
+    .bind(ticket_id)
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(Some(record)) => record,
+        Ok(None) => {
+            return AppError::NotFound(
+                "QR payload not found or not associated with this ticket".to_string(),
+            )
+            .into_response();
+        }
+        Err(e) => return AppError::DatabaseError(e).into_response(),
+    };
+
+    if is_used {
+        return AppError::Conflict("QR payload has already been used".to_string()).into_response();
+    }
+
+    if expires_at < Utc::now() {
+        return AppError::ValidationError("QR payload has expired".to_string()).into_response();
+    }
+
+    if ticket_status == "Scanned" || ticket_status == "used" {
+        return AppError::Conflict("Ticket has already been scanned".to_string()).into_response();
+    }
+
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => return AppError::DatabaseError(e).into_response(),
+    };
+
+    let now = Utc::now();
+
+    if let Err(e) = sqlx::query(
+        r#"
+        UPDATE qr_payloads
+        SET is_used = TRUE, used_at = $1
+        WHERE id = $2
+        "#,
+    )
+    .bind(now)
+    .bind(&request.payload.id)
+    .execute(&mut tx)
+    .await
+    {
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    if let Err(e) = sqlx::query(
+        r#"
+        UPDATE tickets
+        SET status = 'Scanned', scanned_at = $1
+        WHERE id = $2
+        "#,
+    )
+    .bind(now)
+    .bind(ticket_id)
+    .execute(&mut tx)
+    .await
+    {
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    if let Err(e) = tx.commit().await {
+        return AppError::DatabaseError(e).into_response();
+    }
+
+    let response = ScanTicketResponse {
+        valid: true,
+        scanned: true,
+        ticket_id,
+        ticket_status: "Scanned".to_string(),
+        scanned_at: Some(now),
+        message: "Ticket scan verified successfully".to_string(),
+    };
+
+    success(response, "Ticket scan verified successfully").into_response()
 }
 
 /// Mark a QR payload as used
@@ -752,7 +983,7 @@ pub async fn generate_attendee_qr(
             SELECT 1 FROM tickets
             WHERE id = $1
               AND (owner_wallet = $2 OR buyer_wallet = $2)
-              AND status != 'cancelled'
+              AND status NOT IN ('cancelled', 'Revoked')
         )
         "#,
     )
