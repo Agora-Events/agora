@@ -1,15 +1,29 @@
 use axum::{extract::State, response::IntoResponse, response::Response};
 use chrono::Utc;
 use serde::Serialize;
+use serde_json::json;
 use sqlx::PgPool;
+use std::sync::LazyLock;
+use std::time::Duration;
 
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
-#[derive(Serialize)]
-struct HealthResponse {
+static CATEGORY_SYNC_STATUS: LazyLock<std::sync::Mutex<bool>> =
+    LazyLock::new(|| std::sync::Mutex::new(true));
+
+/// Update the category sync status. Called during startup after validation.
+pub fn set_category_sync_status(synced: bool) {
+    *CATEGORY_SYNC_STATUS.lock().unwrap() = synced;
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct HealthResponse {
     status: &'static str,
     timestamp: String,
+    category_sync: bool,
+    database: &'static str,
+    redis: &'static str,
 }
 
 #[derive(Serialize)]
@@ -26,27 +40,53 @@ struct HealthReadyResponse {
     database: &'static str,
 }
 
+#[derive(Serialize)]
+struct HealthBlockchainResponse {
+    status: &'static str,
+    blockchain: &'static str,
+    soroban_rpc: String,
+    timestamp: String,
+}
+
 /// GET /health – Combined check for API and Database.
 ///
 /// Returns 200 when both the API process and the database are healthy.
 /// On failure it returns a structured JSON 503 error (via [`AppError`]).
-pub async fn health_check(State(pool): State<PgPool>) -> Response {
-    match sqlx::query("SELECT 1").fetch_one(&pool).await {
-        Ok(_) => {
-            let payload = HealthResponse {
-                status: "ok",
-                timestamp: Utc::now().to_rfc3339(),
-            };
-            success(payload, "API is healthy").into_response()
-        }
-        Err(e) => {
-            tracing::error!("Health check failed: {:?}", e);
-            AppError::ExternalServiceError(format!(
-                "API is not ready: database is unreachable ({e})"
-            ))
-            .into_response()
-        }
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "API is healthy", body = HealthResponse)
+    )
+)]
+pub async fn health_check(State(pool): State<PgPool>, State(mut redis): State<crate::cache::RedisCache>) -> Response {
+    let category_sync = *CATEGORY_SYNC_STATUS.lock().unwrap();
+
+    // Probe database
+    let db_ok = sqlx::query("SELECT 1").fetch_one(&pool).await.is_ok();
+    // Probe redis
+    let redis_ok = redis.ping().await.is_ok();
+
+    if db_ok && redis_ok {
+        let payload = HealthResponse {
+            status: "ok",
+            timestamp: Utc::now().to_rfc3339(),
+            category_sync,
+            database: "ok",
+            redis: "ok",
+        };
+        return success(payload, "API is healthy").into_response();
     }
+
+    let db_status = if db_ok { "ok" } else { "unreachable" };
+    let redis_status = if redis_ok { "ok" } else { "unreachable" };
+
+    tracing::error!("Health check failed: database={}, redis={}", db_status, redis_status);
+    AppError::ExternalServiceError(format!(
+        "Service is not ready: database={}, redis={}",
+        db_status, redis_status
+    ))
+    .into_response()
 }
 
 /// GET /health/db – Database connectivity check.
@@ -93,11 +133,95 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
     }
 }
 
+/// GET /health/blockchain – Soroban RPC connectivity check.
+///
+/// Returns 200 when the configured Soroban RPC endpoint is reachable.
+/// On failure the response uses [`AppError`] for a consistent error schema.
+pub async fn health_check_blockchain() -> Response {
+    let soroban_rpc_url = std::env::var("SOROBAN_RPC_URL")
+        .unwrap_or_else(|_| "https://soroban-testnet.stellar.org".to_string());
+
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return AppError::ExternalServiceError(format!(
+                "Failed to initialize Soroban RPC probe client: {error}"
+            ))
+            .into_response();
+        }
+    };
+
+    let response = client
+        .post(&soroban_rpc_url)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": "health-check",
+            "method": "getHealth",
+        }))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let payload = HealthBlockchainResponse {
+                status: "ok",
+                blockchain: "soroban",
+                soroban_rpc: soroban_rpc_url,
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "Soroban RPC is reachable").into_response()
+        }
+        Ok(resp) => AppError::ExternalServiceError(format!(
+            "Soroban RPC health check failed with HTTP status {}",
+            resp.status()
+        ))
+        .into_response(),
+        Err(error) => {
+            AppError::ExternalServiceError(format!("Soroban RPC health check failed: {error}"))
+                .into_response()
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct HealthRedisResponse {
+    status: &'static str,
+    timestamp: String,
+}
+
+/// GET /health/redis – Redis connectivity check.
+///
+/// Returns 200 when Redis is reachable.
+/// Returns a structured JSON error (via [`AppError`]) when it is not.
+pub async fn health_check_redis(State(mut redis): State<crate::cache::RedisCache>) -> Response {
+    // Perform a basic Redis command to verify connectivity
+    match redis.ping().await {
+        Ok(_) => {
+            let payload = HealthRedisResponse {
+                status: "ok",
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "Redis is healthy").into_response()
+        }
+        Err(e) => AppError::ExternalServiceError(format!("Redis health check failed: {e}"))
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils::error::AppError;
-    use axum::http::StatusCode;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        routing::get,
+        Router,
+    };
+    use tower::ServiceExt;
 
     #[tokio::test]
     async fn test_health_response_ok_status() {
@@ -105,6 +229,7 @@ mod tests {
         let payload = HealthResponse {
             status: "ok",
             timestamp: Utc::now().to_rfc3339(),
+            category_sync: true,
         };
         let resp = success(payload, "API is healthy").into_response();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -116,5 +241,39 @@ mod tests {
         let err = AppError::ExternalServiceError("database is unreachable".to_string());
         let resp = err.into_response();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn test_health_endpoint_returns_200_with_expected_json() {
+        let router = Router::new().route(
+            "/health",
+            get(|| async {
+                let payload = HealthResponse {
+                    status: "ok",
+                    timestamp: Utc::now().to_rfc3339(),
+                    category_sync: true,
+                };
+                success(payload, "API is healthy").into_response()
+            }),
+        );
+
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["success"], true);
+        assert_eq!(json["message"], "API is healthy");
+        assert_eq!(json["data"]["status"], "ok");
+        assert!(json["data"]["timestamp"].is_string());
     }
 }

@@ -1,3 +1,14 @@
+//! # Agora Server Main Entry Point
+//!
+//! This module contains the main entry point for the Agora events platform server.
+//! It initializes and configures all necessary services including:
+//! - Database connectivity and migrations
+//! - HTTP server with routing
+//! - Logging and configuration management
+//! - CORS and security middleware
+//!
+//! The server is built using Axum framework and connects to a PostgreSQL database.
+
 use axum::Router;
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
@@ -6,16 +17,44 @@ use tokio::net::TcpListener;
 
 use agora_server::config::request_id::REQUEST_ID_HEADER;
 use agora_server::config::Config;
-use agora_server::routes::create_routes;
 use agora_server::utils::logging::init_logging;
 
+/// Main application entry point.
+///
+/// Initializes the server by:
+/// 1. Loading environment variables from .env file
+/// 2. Setting up structured logging
+/// 3. Loading configuration from environment
+/// 4. Establishing database connection pool
+/// 5. Running database migrations
+/// 6. Starting the HTTP server with configured routes
 #[tokio::main]
 async fn main() {
     dotenv().ok();
     init_logging();
 
-    let config = Config::from_env().expect("Failed to load configuration");
+    let config = Config::from_env().unwrap_or_else(|e| {
+        eprintln!("ERROR: Failed to load configuration: {e}");
+        std::process::exit(1);
+    });
+
+    if let Err(e) = config.validate() {
+        eprintln!("ERROR: Invalid configuration:\n{e}");
+        tracing::error!("Server startup aborted due to configuration errors:\n{e}");
+        std::process::exit(1);
+    }
+
     tracing::info!("Starting server in {} mode", config.rust_env);
+    tracing::info!("Configuration: PORT={}", config.port);
+    tracing::info!("Configuration: RUST_ENV={}", config.rust_env);
+    tracing::info!("Configuration: RUST_LOG={}", config.rust_log);
+    tracing::info!(
+        "Configuration: CORS_ALLOWED_ORIGINS={}",
+        config.cors_allowed_origins
+    );
+    tracing::info!("Configuration: SOROBAN_RPC_URL={}", config.soroban_rpc_url);
+    tracing::info!("Configuration: REDIS_URL={}", config.redis_url);
+    // Note: DATABASE_URL is strictly excluded from logging for security reasons.
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -32,10 +71,57 @@ async fn main() {
 
     tracing::info!("Migrations run successfully");
 
-    let app: Router = create_routes(pool.clone());
+    // Validate categories match contract (Issue #1076)
+    let categories_synced = crate::handlers::categories::validate_categories_match_contract(&pool)
+        .await;
+    crate::handlers::health::set_category_sync_status(categories_synced);
+    if !categories_synced {
+        tracing::error!("Category sync validation failed - database categories do not match contract canonical list");
+    }
+
+    // Initialize Redis cache
+    let redis = match agora_server::cache::RedisCache::new(&config.redis_url).await {
+        Ok(redis) => {
+            tracing::info!("Successfully connected to Redis at {}", config.redis_url);
+            redis
+        }
+        Err(e) => {
+            tracing::error!("Failed to connect to Redis: {:?}", e);
+            tracing::warn!("Continuing without Redis cache - performance may be degraded");
+            panic!("Redis connection required for caching");
+        }
+    };
+
+    let app: Router =
+        agora_server::routes::create_routes(pool.clone(), config.clone(), redis).await;
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("🚀 Server running at http://localhost:{}", config.port);
     tracing::info!("Request IDs will be set via '{REQUEST_ID_HEADER}' header");
+
+    // Spawn periodic background task to clean up old nonces (Issue #823)
+    let cleanup_pool = pool.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15 * 60)); // 15 minutes
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic cleanup of jwt_nonces...");
+            match sqlx::query(
+                "DELETE FROM jwt_nonces WHERE expires_at < NOW() OR (used = TRUE AND created_at < NOW() - INTERVAL '7 days')"
+            )
+            .execute(&cleanup_pool)
+            .await
+            {
+                Ok(result) => {
+                    if result.rows_affected() > 0 {
+                        tracing::info!("Cleaned up {} expired/used nonces.", result.rows_affected());
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to clean up jwt_nonces: {:?}", e);
+                }
+            }
+        }
+    });
 
     let listener = TcpListener::bind(addr)
         .await

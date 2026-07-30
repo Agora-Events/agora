@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAM_ID.com.agora.events",
+        "paths": [
+          "/events/*",
+          "/organizers/*",
+          "/tickets/*"
+        ]
+      }
+    ]
+  }
+}

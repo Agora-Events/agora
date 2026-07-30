@@ -3,11 +3,13 @@
 use crate::events::{
     AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, CustomFeeSetEvent,
     EventArchivedEvent, EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
-    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, GlobalPromoUpdatedEvent,
-    GoalMetEvent, InitializationEvent, InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent,
-    MetadataUpdatedEvent, OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent,
-    RegistryUpgradedEvent, ScannerAuthorizedEvent, StakerRewardsClaimedEvent,
-    StakerRewardsDistributedEvent,
+    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, FeedbackCidSetEvent,
+    GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent, InventoryIncrementedEvent,
+    LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent, MinStakeAmountUpdatedEvent,
+    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, ProposalCancelledEvent,
+    RegistryUpgradedEvent, ScannerAuthorizedEvent, ScannerRevokedEvent,
+    StakerRewardsClaimedEvent, StakerRewardsDistributedEvent, StakingTokenUpdatedEvent,
+    WaitlistJoinedEvent, WaitlistLeftEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
@@ -15,14 +17,19 @@ use crate::types::{
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
+mod auth;
 pub mod error;
 pub mod events;
 pub mod storage;
+mod topics;
 pub mod types;
 
 use crate::types::{SeriesPass, SeriesRegistry};
 
 use crate::error::EventRegistryError;
+
+/// Maximum number of ticket tiers allowed per event during registration.
+const MAX_TIERS_PER_EVENT: u32 = 20;
 
 #[contract]
 pub struct EventRegistry;
@@ -45,7 +52,7 @@ impl EventRegistry {
             let event = storage::get_event(&env, event_id.clone())
                 .ok_or(EventRegistryError::EventNotFound)?;
             if event.organizer_address != organizer_address {
-                return Err(EventRegistryError::UnauthorizedCaller);
+                return Err(EventRegistryError::Unauthorized);
             }
         }
         let series = SeriesRegistry {
@@ -103,6 +110,26 @@ impl EventRegistry {
     ) -> Option<SeriesPass> {
         storage::get_holder_series_pass(&env, &holder, series_id)
     }
+
+    /// Check if a holder has a valid pass for a given series.
+    /// Returns true only if a pass exists, usage limit has not been reached, and the pass has not expired.
+    pub fn has_valid_series_pass(
+        env: Env,
+        holder: Address,
+        series_id: String,
+    ) -> bool {
+        if let Some(pass) = storage::get_holder_series_pass(&env, &holder, series_id) {
+            if pass.usage_limit > 0 && pass.usage_count >= pass.usage_limit {
+                return false;
+            }
+            if pass.expires_at > 0 && env.ledger().timestamp() >= pass.expires_at {
+                return false;
+            }
+            true
+        } else {
+            false
+        }
+    }
     /// Initializes the contract configuration. Can only be called once.
     /// Sets up initial admin with multi-sig configuration (threshold = 1 for single admin).
     /// The `usdc_token` address is automatically added to the payment token whitelist.
@@ -110,7 +137,8 @@ impl EventRegistry {
     /// # Arguments
     /// * `admin` - The administrator address.
     /// * `platform_wallet` - The platform wallet address for fees.
-    /// * `platform_fee_percent` - Initial platform fee in basis points (10000 = 100%).
+    /// * `platform_fee_percent` - Initial platform fee in basis points (0–10000; 10000 = 100%).
+    ///   An explicit `0` sets a zero platform fee (no forced default).
     /// * `usdc_token` - The USDC token contract address, automatically whitelisted on init.
     pub fn initialize(
         env: Env,
@@ -127,15 +155,12 @@ impl EventRegistry {
         validate_address(&env, &platform_wallet)?;
         validate_address(&env, &usdc_token)?;
 
-        let initial_fee = if platform_fee_percent == 0 {
-            500
-        } else {
-            platform_fee_percent
-        };
-
-        if initial_fee > 10000 {
+        // Valid range is 0–10000 basis points inclusive. An explicit 0 means
+        // zero platform fee (no forced default).
+        if platform_fee_percent > 10000 {
             return Err(EventRegistryError::InvalidFeePercent);
         }
+        let initial_fee = platform_fee_percent;
 
         // Initialize multi-sig with single admin and threshold of 1
         let mut admins = Vec::new(&env);
@@ -167,8 +192,7 @@ impl EventRegistry {
 
     /// Adds a token address to the payment token whitelist. Only callable by the administrator.
     pub fn add_to_token_whitelist(env: Env, token: Address) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let _admin = auth::require_admin(&env)?;
         validate_address(&env, &token)?;
         storage::add_to_token_whitelist(&env, &token);
         Ok(())
@@ -176,8 +200,7 @@ impl EventRegistry {
 
     /// Removes a token address from the payment token whitelist. Only callable by the administrator.
     pub fn remove_from_token_whitelist(env: Env, token: Address) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let _admin = auth::require_admin(&env)?;
         storage::remove_from_token_whitelist(&env, &token);
         Ok(())
     }
@@ -209,8 +232,17 @@ impl EventRegistry {
 
         validate_metadata_cid(&env, &args.metadata_cid)?;
 
+        // Validate tags if provided
+        if let Some(ref tags) = args.tags {
+            validate_tags(&env, tags)?;
+        }
+
         if storage::event_exists(&env, args.event_id.clone()) {
             return Err(EventRegistryError::EventAlreadyExists);
+        }
+
+        if args.tiers.len() > MAX_TIERS_PER_EVENT {
+            return Err(EventRegistryError::TooManyTiers);
         }
 
         // Validate tier limits don't exceed max_supply
@@ -222,7 +254,7 @@ impl EventRegistry {
                     .ok_or(EventRegistryError::SupplyOverflow)?;
             }
             if total_tier_limit > args.max_supply {
-                return Err(EventRegistryError::TierLimitExceedsMaxSupply);
+                return Err(EventRegistryError::TierLimitExceeds);
             }
         }
 
@@ -233,10 +265,31 @@ impl EventRegistry {
             }
         }
 
+        // Validate milestone plan: the sum of all release_percent values
+        // (basis points) must not exceed 10000 (100%), or the plan would
+        // release more revenue than was ever collected (Issue #850).
+        if let Some(ref milestones) = args.milestone_plan {
+            let mut total_release_bps: u32 = 0;
+            for milestone in milestones.iter() {
+                total_release_bps = total_release_bps
+                    .checked_add(milestone.release_percent)
+                    .ok_or(EventRegistryError::InvalidMilestonePlan)?;
+            }
+            if total_release_bps > 10000 {
+                return Err(EventRegistryError::InvalidMilestonePlan);
+            }
+        }
+
+        // Validate event time range
+        if args.start_time != 0 && args.end_time != 0 && args.end_time <= args.start_time {
+            return Err(EventRegistryError::InvalidDeadline);
+        }
+
         let platform_fee_percent = storage::get_platform_fee(&env);
 
         let event_info = EventInfo {
             event_id: args.event_id.clone(),
+            name: args.name.clone(),
             organizer_address: args.organizer_address.clone(),
             payment_address: args.payment_address.clone(),
             platform_fee_percent,
@@ -257,6 +310,18 @@ impl EventRegistry {
             target_deadline: args.target_deadline.unwrap_or(0),
             goal_met: false,
             custom_fee_bps: None,
+            banner_cid: args.banner_cid,
+            tags: args.tags,
+            category_ids: args.category_ids,
+            start_time: args.start_time,
+            is_private: args.is_private,
+            end_time: args.end_time,
+            transfer_lock_duration: args.transfer_lock_duration,
+            accepted_tokens: args.accepted_tokens,
+            use_global_whitelist: args.use_global_whitelist,
+            feedback_cid: None,
+            cancellation_reason: None,
+            referral_rate_bps: args.referral_rate_bps.unwrap_or(0),
         };
 
         storage::store_event(&env, event_info);
@@ -289,13 +354,19 @@ impl EventRegistry {
                     platform_fee_percent: event_info.platform_fee_percent,
                     custom_fee_bps: event_info.custom_fee_bps,
                     tiers: event_info.tiers,
+                    referral_rate_bps: event_info.referral_rate_bps,
                 })
             }
             None => Err(EventRegistryError::EventNotFound),
         }
     }
 
-    /// Update event status (only by organizer)
+        /// Returns the cumulative number of events ever registered on the platform.
+        pub fn get_global_event_count(env: Env) -> u32 {
+            storage::get_global_event_count(&env)
+        }
+
+        /// Update event status (only by organizer)
     pub fn update_event_status(
         env: Env,
         event_id: String,
@@ -304,7 +375,7 @@ impl EventRegistry {
         match storage::get_event(&env, event_id.clone()) {
             Some(mut event_info) => {
                 // Verify organizer signature
-                event_info.organizer_address.require_auth();
+                auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
                 if matches!(event_info.status, EventStatus::Cancelled) {
                     return Err(EventRegistryError::EventCancelled);
@@ -337,19 +408,24 @@ impl EventRegistry {
     }
 
     /// Cancel an event (only by organizer). This is irreversible.
-    pub fn cancel_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
+    pub fn cancel_event(
+        env: Env,
+        event_id: String,
+        reason: Option<String>,
+    ) -> Result<(), EventRegistryError> {
         match storage::get_event(&env, event_id.clone()) {
             Some(mut event_info) => {
                 // Verify organizer signature
-                event_info.organizer_address.require_auth();
+                auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
                 if matches!(event_info.status, EventStatus::Cancelled) {
-                    return Err(EventRegistryError::EventAlreadyCancelled);
+                    return Err(EventRegistryError::EventAlreadyCanceled);
                 }
 
                 // Update status to Cancelled and deactivate
                 event_info.status = EventStatus::Cancelled;
                 event_info.is_active = false;
+                event_info.cancellation_reason = reason.clone();
                 storage::update_event(&env, event_info.clone());
 
                 // Emit cancellation event
@@ -359,6 +435,7 @@ impl EventRegistry {
                         event_id,
                         cancelled_by: event_info.organizer_address,
                         timestamp: env.ledger().timestamp(),
+                        reason,
                     },
                 );
 
@@ -374,7 +451,7 @@ impl EventRegistry {
     pub fn archive_event(env: Env, event_id: String) -> Result<(), EventRegistryError> {
         match storage::get_event(&env, event_id.clone()) {
             Some(event_info) => {
-                event_info.organizer_address.require_auth();
+                auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
                 if event_info.is_active {
                     return Err(EventRegistryError::EventIsActive);
@@ -414,7 +491,7 @@ impl EventRegistry {
         match storage::get_event(&env, event_id.clone()) {
             Some(mut event_info) => {
                 // Verify organizer signature
-                event_info.organizer_address.require_auth();
+                auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
                 // Validate new metadata CID
                 validate_metadata_cid(&env, &new_metadata_cid)?;
@@ -445,16 +522,110 @@ impl EventRegistry {
         }
     }
 
+    /// Sets the post-event feedback IPFS CID. Only callable by the organizer after end_time.
+    pub fn set_feedback_cid(
+        env: Env,
+        event_id: String,
+        feedback_cid: String,
+    ) -> Result<(), EventRegistryError> {
+        match storage::get_event(&env, event_id.clone()) {
+            Some(mut event_info) => {
+                auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
+
+                require_event_ended(&env, &event_info)?;
+
+                validate_metadata_cid(&env, &feedback_cid)?;
+
+                if event_info.feedback_cid.as_ref() == Some(&feedback_cid) {
+                    return Ok(());
+                }
+
+                event_info.feedback_cid = Some(feedback_cid.clone());
+                storage::update_event(&env, event_info.clone());
+
+                env.events().publish(
+                    (AgoraEvent::FeedbackCidSet,),
+                    FeedbackCidSetEvent {
+                        event_id,
+                        feedback_cid,
+                        updated_by: event_info.organizer_address,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                Ok(())
+            }
+            None => Err(EventRegistryError::EventNotFound),
+        }
+    }
+
     /// Stores or updates an event (legacy function for backward compatibility).
     pub fn store_event(env: Env, event_info: EventInfo) {
         // Require authorization to ensure only the organizer can store/update their event directly
-        event_info.organizer_address.require_auth();
+        auth::require_organizer(&env, &event_info.event_id, &event_info.organizer_address).unwrap();
+        if event_info.feedback_cid.is_some() {
+            require_event_ended(&env, &event_info).unwrap();
+        }
+        // Validate resale_cap_bps on every write path (Issue #883).
+        if let Some(cap) = event_info.resale_cap_bps {
+            if cap > 10000 {
+                panic!("InvalidResaleCapBps");
+            }
+        }
         storage::store_event(&env, event_info);
+    }
+
+    /// Updates the resale cap for an event. Only callable by the event organizer.
+    ///
+    /// # Arguments
+    /// * `event_id` - The event to update.
+    /// * `resale_cap_bps` - New resale cap in basis points (`None` removes the cap).
+    ///   Must be `<= 10000` when `Some`.
+    pub fn set_resale_cap_bps(
+        env: Env,
+        event_id: String,
+        resale_cap_bps: Option<u32>,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
+
+        if let Some(cap) = resale_cap_bps {
+            if cap > 10000 {
+                return Err(EventRegistryError::InvalidResaleCapBps);
+            }
+        }
+
+        event_info.resale_cap_bps = resale_cap_bps;
+        storage::update_event(&env, event_info);
+
+        Ok(())
     }
 
     /// Retrieves an event by its ID.
     pub fn get_event(env: Env, event_id: String) -> Option<EventInfo> {
         storage::get_event(&env, event_id)
+    }
+
+    /// Retrieves a batch of events by their IDs (max 50).
+    pub fn get_events_batch(
+        env: Env,
+        event_ids: Vec<String>,
+    ) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
+        if event_ids.len() > 50 {
+            return Err(EventRegistryError::TooManyTiers);
+        }
+        let mut results = Vec::new(&env);
+        for id in event_ids.into_iter() {
+            results.push_back(storage::get_event(&env, id));
+        }
+        Ok(results)
+    }
+
+    /// Returns the total number of tickets sold across all events.
+    pub fn get_global_tickets_sold(env: Env) -> i128 {
+        storage::get_global_tickets_sold(&env)
     }
 
     /// Checks if an event exists.
@@ -463,17 +634,46 @@ impl EventRegistry {
     }
 
     /// Retrieves all event IDs for an organizer.
-    pub fn get_organizer_events(env: Env, organizer: Address) -> Vec<String> {
-        storage::get_organizer_events(&env, &organizer)
+    /// If the caller is not the organizer, private events are filtered out (Issue #880).
+    pub fn get_organizer_events(env: Env, organizer: Address, caller: Address) -> Vec<String> {
+        storage::get_organizer_events(&env, &organizer, &caller)
     }
 
     /// Updates the platform fee percentage. Only callable by the administrator.
     pub fn set_platform_fee(env: Env, new_fee_percent: u32) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let _admin = auth::require_admin(&env)?;
 
         if new_fee_percent > 10000 {
             return Err(EventRegistryError::InvalidFeePercent);
+        }
+
+        // When threshold > 1 (multi-sig), a pre-approved SetPlatformFee proposal is required.
+        let config =
+            storage::get_multisig_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+        if config.threshold > 1 {
+            // Find an approved, unexpired, unexecuted SetPlatformFee proposal matching new_fee_percent
+            let active = storage::get_active_proposals(&env);
+            let mut approved_proposal_id: Option<u64> = None;
+            let now = env.ledger().timestamp();
+            for pid in active.iter() {
+                if let Some(p) = storage::get_proposal(&env, pid) {
+                    if p.executed || p.cancelled || now > p.expires_at {
+                        continue;
+                    }
+                    if let types::ParameterChange::SetPlatformFee(fee) = &p.change {
+                        if *fee == new_fee_percent && p.approvals.len() >= config.threshold {
+                            approved_proposal_id = Some(pid);
+                            break;
+                        }
+                    }
+                }
+            }
+            let proposal_id = approved_proposal_id.ok_or(EventRegistryError::MultisigError)?;
+            // Mark the proposal as executed
+            let mut proposal = storage::get_proposal(&env, proposal_id).unwrap();
+            proposal.executed = true;
+            storage::set_proposal(&env, &proposal);
+            storage::remove_active_proposal(&env, proposal_id);
         }
 
         storage::set_platform_fee(&env, new_fee_percent);
@@ -498,8 +698,7 @@ impl EventRegistry {
         event_id: String,
         custom_fee_bps: Option<u32>,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = auth::require_admin(&env)?;
 
         if let Some(fee) = custom_fee_bps {
             if fee > 10000 {
@@ -546,8 +745,7 @@ impl EventRegistry {
         env: Env,
         ticket_payment_address: Address,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let _admin = auth::require_admin(&env)?;
 
         validate_address(&env, &ticket_payment_address)?;
 
@@ -575,11 +773,18 @@ impl EventRegistry {
     /// * `TierSupplyExceeded` - If the tier's limit has been reached.
     /// * `MaxSupplyExceeded` - If the event's max supply has been reached (when max_supply > 0).
     /// * `SupplyOverflow` - If incrementing would cause an i128 overflow.
+    /// * `TokenNotAccepted` - If the event configured a non-empty `accepted_tokens`
+    ///   list and `payment_token` is not in it (Issue #851). This is a defense-in-depth
+    ///   cross-validation: the primary enforcement lives in the `TicketPayment`
+    ///   contract, but a misconfigured or malicious caller of this function
+    ///   would otherwise bypass it entirely.
     pub fn increment_inventory(
         env: Env,
         event_id: String,
         tier_id: String,
+        user: Address,
         quantity: u32,
+        payment_token: Address,
     ) -> Result<(), EventRegistryError> {
         let ticket_payment_addr =
             storage::get_ticket_payment_contract(&env).ok_or(EventRegistryError::NotInitialized)?;
@@ -594,6 +799,15 @@ impl EventRegistry {
 
         if !event_info.is_active || matches!(event_info.status, EventStatus::Cancelled) {
             return Err(EventRegistryError::EventInactive);
+        }
+
+        // Issue #851: when the event restricts payments to specific tokens,
+        // enforce that here too rather than trusting the caller (normally
+        // the TicketPayment contract) to have already validated it.
+        if !event_info.accepted_tokens.is_empty()
+            && !event_info.accepted_tokens.contains(&payment_token)
+        {
+            return Err(EventRegistryError::TokenNotAccepted);
         }
 
         let quantity_i128 = quantity as i128;
@@ -621,11 +835,22 @@ impl EventRegistry {
             .ok_or(EventRegistryError::SupplyOverflow)?;
 
         if new_tier_sold > tier.tier_limit {
-            return Err(EventRegistryError::TierSupplyExceeded);
+            return Err(EventRegistryError::TierSoldOut);
+        }
+
+        // Per-user limit enforcement
+        if tier.max_per_user > 0 {
+            let user_count = storage::get_user_ticket_count(&env, &event_id, &tier_id, &user);
+            let new_user_count = user_count
+                .checked_add(quantity)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
+            if new_user_count > tier.max_per_user {
+                return Err(EventRegistryError::PerUserLimitExceeded);
+            }
         }
 
         tier.current_sold = new_tier_sold;
-        event_info.tiers.set(tier_id, tier);
+        event_info.tiers.set(tier_id.clone(), tier.clone());
 
         event_info.current_supply = event_info
             .current_supply
@@ -633,6 +858,14 @@ impl EventRegistry {
             .ok_or(EventRegistryError::SupplyOverflow)?;
 
         let new_supply = event_info.current_supply;
+
+        // Update per-user ticket count after all checks pass
+        if tier.max_per_user > 0 {
+            storage::add_to_user_ticket_count(&env, &event_id, &tier_id, &user, quantity);
+        }
+
+        // Update global tickets sold counter
+        storage::add_to_global_tickets_sold(&env, quantity_i128);
 
         // Check if goal met now
         if !event_info.goal_met
@@ -664,6 +897,74 @@ impl EventRegistry {
 
         Ok(())
     }
+
+    /// Checks whether a specific tier for an event is sold out.
+    pub fn is_tier_sold_out(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+    ) -> Result<bool, EventRegistryError> {
+        let event_info = storage::get_event(&env, event_id).ok_or(EventRegistryError::EventNotFound)?;
+        let tier = event_info
+            .tiers
+            .get(tier_id)
+            .ok_or(EventRegistryError::TierNotFound)?;
+        Ok(tier.current_sold >= tier.tier_limit)
+    }
+
+    /// Adds a new ticket tier to an existing event.
+    /// Restricted to the event organizer.
+    pub fn add_tier(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+        tier: TicketTier,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info = storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        event_info.organizer.require_auth();
+
+        if event_info.max_supply > 0 {
+            let mut total_tier_limit: i128 = 0;
+            for existing_tier in event_info.tiers.values() {
+                total_tier_limit = total_tier_limit
+                    .checked_add(existing_tier.tier_limit)
+                    .ok_or(EventRegistryError::SupplyOverflow)?;
+            }
+            total_tier_limit = total_tier_limit
+                .checked_add(tier.tier_limit)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
+
+            if total_tier_limit > event_info.max_supply {
+                return Err(EventRegistryError::TierLimitExceeds);
+            }
+        }
+
+        event_info.tiers.set(tier_id, tier);
+        storage::set_event(&env, &event_id, &event_info);
+        Ok(())
+    }
+
+    /// Deactivates a tier by setting its limit equal to current_sold, preventing further sales.
+    /// Restricted to the event organizer.
+    pub fn deactivate_tier(
+        env: Env,
+        event_id: String,
+        tier_id: String,
+    ) -> Result<(), EventRegistryError> {
+        let mut event_info = storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        event_info.organizer.require_auth();
+
+        let mut tier = event_info
+            .tiers
+            .get(tier_id.clone())
+            .ok_or(EventRegistryError::TierNotFound)?;
+
+        tier.tier_limit = tier.current_sold;
+        event_info.tiers.set(tier_id, tier);
+        storage::set_event(&env, &event_id, &event_info);
+        Ok(())
+    }
+
 
     /// Decrements the current_supply counter for a given event and tier.
     /// This function is restricted to calls from the authorized TicketPayment contract upon refund.
@@ -733,8 +1034,7 @@ impl EventRegistry {
     /// Upgrades the contract to a new WASM hash. Only callable by the administrator.
     /// Performs post-upgrade state verification to ensure critical storage is intact.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let _admin = auth::require_admin(&env)?;
 
         env.deployer().update_current_contract_wasm(new_wasm_hash);
 
@@ -760,14 +1060,13 @@ impl EventRegistry {
         organizer_address: Address,
         reason: String,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = auth::require_admin(&env)?;
 
         validate_address(&env, &organizer_address)?;
 
         // Check if already blacklisted
         if storage::is_blacklisted(&env, &organizer_address) {
-            return Err(EventRegistryError::OrganizerBlacklisted);
+            return Ok(());
         }
 
         // Add to blacklist
@@ -807,14 +1106,13 @@ impl EventRegistry {
         organizer_address: Address,
         reason: String,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = auth::require_admin(&env)?;
 
         validate_address(&env, &organizer_address)?;
 
         // Check if currently blacklisted
         if !storage::is_blacklisted(&env, &organizer_address) {
-            return Err(EventRegistryError::OrganizerNotBlacklisted);
+            return Err(EventRegistryError::OrgNotBlacklisted);
         }
 
         // Remove from blacklist
@@ -865,8 +1163,7 @@ impl EventRegistry {
         global_promo_bps: u32,
         promo_expiry: u64,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = auth::require_admin(&env)?;
 
         if global_promo_bps > 10000 {
             return Err(EventRegistryError::InvalidPromoBps);
@@ -890,7 +1187,22 @@ impl EventRegistry {
 
     /// Returns the current global promotional discount rate in basis points.
     pub fn get_global_promo_bps(env: Env) -> u32 {
+        let expiry = storage::get_promo_expiry(&env);
+        if expiry <= env.ledger().timestamp() {
+            return 0;
+        }
+
         storage::get_global_promo_bps(&env)
+    }
+
+    /// Returns the active global promotional discount and expiry timestamp.
+    pub fn get_global_promo(env: Env) -> Option<(u32, u64)> {
+        let expiry = storage::get_promo_expiry(&env);
+        if expiry <= env.ledger().timestamp() {
+            return None;
+        }
+
+        Some((storage::get_global_promo_bps(&env), expiry))
     }
 
     /// Returns the expiry timestamp for the current global promo.
@@ -904,19 +1216,24 @@ impl EventRegistry {
     pub fn postpone_event(
         env: Env,
         event_id: String,
+        new_start_time: u64,
         grace_period_end: u64,
     ) -> Result<(), EventRegistryError> {
         let mut event_info =
             storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
 
         // Only the organizer may postpone their event.
-        event_info.organizer_address.require_auth();
+        auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
         let now = env.ledger().timestamp();
+        if new_start_time <= now {
+            return Err(EventRegistryError::InvalidDeadline);
+        }
         if grace_period_end <= now {
-            return Err(EventRegistryError::InvalidGracePeriodEnd);
+            return Err(EventRegistryError::InvalidGracePeriod);
         }
 
+        event_info.start_time = new_start_time;
         event_info.is_postponed = true;
         event_info.grace_period_end = grace_period_end;
         storage::update_event(&env, event_info.clone());
@@ -926,6 +1243,7 @@ impl EventRegistry {
             EventPostponedEvent {
                 event_id,
                 organizer_address: event_info.organizer_address,
+                new_start_time,
                 grace_period_end,
                 timestamp: now,
             },
@@ -944,7 +1262,7 @@ impl EventRegistry {
             storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
 
         // Only the organizer can authorize scanners
-        event_info.organizer_address.require_auth();
+        auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
         storage::authorize_scanner(&env, event_id.clone(), &scanner);
 
@@ -966,6 +1284,34 @@ impl EventRegistry {
         storage::is_scanner_authorized(&env, event_id, &scanner)
     }
 
+    /// Revokes a previously authorized scanner wallet for a specific event.
+    /// Only callable by the event organizer.
+    pub fn revoke_scanner(
+        env: Env,
+        event_id: String,
+        scanner: Address,
+    ) -> Result<(), EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        // Only the organizer can revoke scanners
+        auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
+
+        storage::remove_scanner(&env, event_id.clone(), &scanner);
+
+        env.events().publish(
+            (AgoraEvent::ScannerRevoked,),
+            ScannerRevokedEvent {
+                event_id,
+                scanner,
+                revoked_by: event_info.organizer_address,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
     // ── Loyalty & Staking ──────────────────────────────────────────────────────
 
     /// Configures staking parameters. Only callable by the admin.
@@ -978,15 +1324,36 @@ impl EventRegistry {
         token: Address,
         min_amount: i128,
     ) -> Result<(), EventRegistryError> {
-        let admin = storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)?;
-        admin.require_auth();
+        let admin = auth::require_admin(&env)?;
 
         if min_amount <= 0 {
             return Err(EventRegistryError::InvalidStakeAmount);
         }
 
+        let old_token = storage::get_staking_token(&env);
+        let old_amount = storage::get_min_stake_amount(&env);
+
         storage::set_staking_token(&env, &token);
         storage::set_min_stake_amount(&env, min_amount);
+
+        env.events().publish(
+            (AgoraEvent::StakingTokenUpdated,),
+            StakingTokenUpdatedEvent {
+                old_token,
+                new_token: token,
+                admin: admin.clone(),
+            },
+        );
+
+        env.events().publish(
+            (AgoraEvent::MinStakeAmountUpdated,),
+            MinStakeAmountUpdatedEvent {
+                old_amount,
+                new_amount: min_amount,
+                admin,
+            },
+        );
+
         Ok(())
     }
 
@@ -1222,12 +1589,14 @@ impl EventRegistry {
     /// * `guest` - Guest wallet address
     /// * `tickets_purchased` - Number of tickets purchased in this transaction
     /// * `amount_spent` - Amount spent in this transaction (in token stroops)
+    /// * `loyalty_multiplier` - Tier multiplier for loyalty points; 0 is treated as 1x
     pub fn update_loyalty_score(
         env: Env,
         caller: Address,
         guest: Address,
         tickets_purchased: u32,
         amount_spent: i128,
+        loyalty_multiplier: u32,
     ) -> Result<(), EventRegistryError> {
         caller.require_auth();
 
@@ -1257,8 +1626,15 @@ impl EventRegistry {
             last_updated: 0,
         });
 
-        // Award 10 points per ticket purchased
-        let points_earned = (tickets_purchased as u64).saturating_mul(10);
+        // Award 10 base points per ticket, adjusted by the tier multiplier.
+        let effective_multiplier = if loyalty_multiplier == 0 {
+            1
+        } else {
+            loyalty_multiplier
+        } as u64;
+        let points_earned = (tickets_purchased as u64)
+            .saturating_mul(10)
+            .saturating_mul(effective_multiplier);
         profile.loyalty_score = profile.loyalty_score.saturating_add(points_earned);
         profile.total_tickets_purchased = profile
             .total_tickets_purchased
@@ -1309,6 +1685,490 @@ impl EventRegistry {
             0
         }
     }
+
+    // ── Governance / Multi-Sig ─────────────────────────────────────────────────
+
+    /// Returns the current multi-sig configuration
+    pub fn get_multisig_config(env: Env) -> MultiSigConfig {
+        storage::get_multisig_config(&env).unwrap_or_else(|| {
+            let admins = Vec::new(&env);
+            MultiSigConfig {
+                admins,
+                threshold: 1,
+            }
+        })
+    }
+
+    /// Checks if an address is an admin
+    pub fn is_admin(env: Env, address: Address) -> bool {
+        if let Some(config) = storage::get_multisig_config(&env) {
+            config.admins.contains(&address)
+        } else {
+            false
+        }
+    }
+
+    /// Proposes a parameter change. Only callable by an existing admin.
+    /// The proposer automatically approves the proposal.
+    ///
+    /// # Arguments
+    /// * `proposer` - Admin address creating the proposal
+    /// * `change` - The parameter change to propose
+    /// * `expiry_ledgers` - Number of ledgers until proposal expires (0 = default 100800 ledgers ~7 days)
+    pub fn propose_parameter_change(
+        env: Env,
+        proposer: Address,
+        change: types::ParameterChange,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        proposer.require_auth();
+
+        // Verify proposer is an admin
+        let config =
+            storage::get_multisig_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+
+        if !config.admins.contains(&proposer) {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        // Validate the proposed change
+        match &change {
+            types::ParameterChange::AddAdmin(addr) => {
+                validate_address(&env, addr)?;
+                if config.admins.contains(addr) {
+                    return Err(EventRegistryError::AdminAlreadyExists);
+                }
+            }
+            types::ParameterChange::RemoveAdmin(addr) => {
+                if !config.admins.contains(addr) {
+                    return Err(EventRegistryError::Unauthorized);
+                }
+                // Ensure we don't remove the last admin
+                if config.admins.len() <= 1 {
+                    return Err(EventRegistryError::CannotRemoveLast);
+                }
+            }
+            types::ParameterChange::SetThreshold(threshold) => {
+                if *threshold == 0 {
+                    return Err(EventRegistryError::InvalidThreshold);
+                }
+                if *threshold > config.admins.len() {
+                    return Err(EventRegistryError::InvalidThreshold);
+                }
+            }
+            types::ParameterChange::UpdatePlatformWallet(addr) => {
+                validate_address(&env, addr)?;
+            }
+            types::ParameterChange::SetPlatformFee(fee) => {
+                if *fee > 10000 {
+                    return Err(EventRegistryError::InvalidFeePercent);
+                }
+            }
+            types::ParameterChange::SetMinStakeAmount(amount) => {
+                if *amount <= 0 {
+                    return Err(EventRegistryError::InvalidStakeAmount);
+                }
+            }
+        }
+
+        // Create proposal
+        let proposal_id = storage::get_proposal_counter(&env);
+        storage::set_proposal_counter(&env, proposal_id + 1);
+
+        let default_expiry = 100800u64; // ~7 days at 5s per ledger
+        let expiry = if expiry_ledgers == 0 {
+            default_expiry
+        } else {
+            expiry_ledgers
+        };
+
+        let mut approvals = Vec::new(&env);
+        approvals.push_back(proposer.clone());
+
+        let proposal = types::Proposal {
+            proposal_id,
+            proposer: proposer.clone(),
+            change,
+            approvals,
+            executed: false,
+            cancelled: false,
+            created_at: env.ledger().timestamp(),
+            expires_at: env.ledger().timestamp() + expiry,
+        };
+
+        storage::set_proposal(&env, &proposal);
+        storage::add_active_proposal(&env, proposal_id);
+
+        Ok(proposal_id)
+    }
+
+    /// Convenience function to propose adding an admin
+    pub fn propose_add_admin(
+        env: Env,
+        proposer: Address,
+        new_admin: Address,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::AddAdmin(new_admin),
+            expiry_ledgers,
+        )
+    }
+
+    /// Convenience function to propose removing an admin
+    pub fn propose_remove_admin(
+        env: Env,
+        proposer: Address,
+        admin_to_remove: Address,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::RemoveAdmin(admin_to_remove),
+            expiry_ledgers,
+        )
+    }
+
+    /// Convenience function to propose setting the threshold
+    pub fn propose_set_threshold(
+        env: Env,
+        proposer: Address,
+        new_threshold: u32,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::SetThreshold(new_threshold),
+            expiry_ledgers,
+        )
+    }
+
+    /// Convenience function to propose updating the platform wallet
+    pub fn propose_set_platform_wallet(
+        env: Env,
+        proposer: Address,
+        new_wallet: Address,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::UpdatePlatformWallet(new_wallet),
+            expiry_ledgers,
+        )
+    }
+
+    /// Approves a proposal. Only callable by an admin.
+    pub fn approve_proposal(
+        env: Env,
+        approver: Address,
+        proposal_id: u64,
+    ) -> Result<(), EventRegistryError> {
+        approver.require_auth();
+
+        // Verify approver is an admin
+        let config =
+            storage::get_multisig_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+
+        if !config.admins.contains(&approver) {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        // Get proposal
+        let mut proposal =
+            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::MultisigError)?;
+
+        // Check if expired
+        if env.ledger().timestamp() > proposal.expires_at {
+            return Err(EventRegistryError::ProposalExpired);
+        }
+
+        // Check if already executed
+        if proposal.executed {
+            return Err(EventRegistryError::PropAlreadyExecuted);
+        }
+
+        // Check if already cancelled
+        if proposal.cancelled {
+            return Err(EventRegistryError::PropAlreadyCanceled);
+        }
+
+        // Check if already approved by this admin
+        if proposal.approvals.contains(&approver) {
+            return Ok(()); // Already approved, no-op
+        }
+
+        // Add approval
+        proposal.approvals.push_back(approver);
+        storage::set_proposal(&env, &proposal);
+
+        Ok(())
+    }
+
+    /// Executes a proposal if it has met the approval threshold.
+    /// Only callable by an admin.
+    pub fn execute_proposal(
+        env: Env,
+        executor: Address,
+        proposal_id: u64,
+    ) -> Result<(), EventRegistryError> {
+        executor.require_auth();
+
+        // Verify executor is an admin
+        let config =
+            storage::get_multisig_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+
+        if !config.admins.contains(&executor) {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        // Get proposal
+        let mut proposal =
+            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::MultisigError)?;
+
+        // Check if already executed
+        if proposal.executed {
+            return Err(EventRegistryError::PropAlreadyExecuted);
+        }
+
+        // Check if already cancelled
+        if proposal.cancelled {
+            return Err(EventRegistryError::PropAlreadyCanceled);
+        }
+
+        // Check if expired
+        if env.ledger().timestamp() > proposal.expires_at {
+            return Err(EventRegistryError::ProposalExpired);
+        }
+
+        // Check if threshold is met
+        if proposal.approvals.len() < config.threshold {
+            return Err(EventRegistryError::MultisigError);
+        }
+
+        // Execute the proposal
+        match &proposal.change {
+            types::ParameterChange::AddAdmin(new_admin) => {
+                let mut new_config = config.clone();
+                new_config.admins.push_back(new_admin.clone());
+                storage::set_multisig_config(&env, &new_config);
+                storage::set_admin(&env, new_admin); // Update legacy admin storage
+            }
+            types::ParameterChange::RemoveAdmin(admin_to_remove) => {
+                let mut new_config = config.clone();
+                let mut new_admins = Vec::new(&env);
+                for admin in new_config.admins.iter() {
+                    if admin != admin_to_remove.clone() {
+                        new_admins.push_back(admin);
+                    }
+                }
+                new_config.admins = new_admins;
+
+                // Adjust threshold if necessary
+                if new_config.threshold > new_config.admins.len() {
+                    new_config.threshold = new_config.admins.len();
+                }
+
+                storage::set_multisig_config(&env, &new_config);
+            }
+            types::ParameterChange::SetThreshold(new_threshold) => {
+                let mut new_config = config.clone();
+                new_config.threshold = *new_threshold;
+                storage::set_multisig_config(&env, &new_config);
+            }
+            types::ParameterChange::UpdatePlatformWallet(new_wallet) => {
+                storage::set_platform_wallet(&env, new_wallet);
+            }
+            types::ParameterChange::SetPlatformFee(fee) => {
+                storage::set_platform_fee(&env, *fee);
+            }
+            types::ParameterChange::SetMinStakeAmount(new_amount) => {
+                storage::set_min_stake_amount(&env, *new_amount);
+            }
+        }
+
+        // Mark as executed
+        proposal.executed = true;
+        storage::set_proposal(&env, &proposal);
+        storage::remove_active_proposal(&env, proposal_id);
+
+        Ok(())
+    }
+
+    /// Gets a proposal by ID
+    pub fn get_proposal(env: Env, proposal_id: u64) -> Option<types::Proposal> {
+        storage::get_proposal(&env, proposal_id)
+    }
+
+    /// Gets all active proposal IDs
+    pub fn get_active_proposals(env: Env) -> Vec<u64> {
+        storage::get_active_proposals(&env)
+    }
+
+    /// Removes expired proposals from the `ActiveProposals` list.
+    ///
+    /// Any proposal whose `expires_at` timestamp has passed is considered expired and
+    /// will be removed from the active list. This prevents unbounded growth of the
+    /// list over time. Any admin may call this function.
+    ///
+    /// # Returns
+    /// The number of expired proposals that were removed.
+    pub fn cleanup_expired_proposals(env: Env) -> Result<u32, EventRegistryError> {
+        let _admin = auth::require_admin(&env)?;
+
+        let now = env.ledger().timestamp();
+        let active = storage::get_active_proposals(&env);
+        let mut removed: u32 = 0;
+
+        for proposal_id in active.iter() {
+            if let Some(proposal) = storage::get_proposal(&env, proposal_id) {
+                if now > proposal.expires_at && !proposal.executed && !proposal.cancelled {
+                    storage::remove_active_proposal(&env, proposal_id);
+                    removed += 1;
+                }
+            }
+        }
+
+        Ok(removed)
+    }
+
+    /// Joins the waitlist for an event. Emits WaitlistJoinedEvent.
+    /// Requires the user's authentication.
+    pub fn join_waitlist(
+        env: Env,
+        event_id: String,
+        user: Address,
+    ) -> Result<(), EventRegistryError> {
+        user.require_auth();
+
+        // Check if event exists
+        if !storage::event_exists(&env, event_id.clone()) {
+            return Err(EventRegistryError::EventNotFound);
+        }
+
+        // Check if user is already on the waitlist
+        if storage::is_on_waitlist(&env, &event_id, &user) {
+            return Err(EventRegistryError::AlreadyOnWaitlist);
+        }
+
+        // Add user to waitlist
+        storage::add_to_waitlist(&env, &event_id, &user);
+
+        // Emit WaitlistJoinedEvent
+        env.events().publish(
+            (AgoraEvent::WaitlistJoined,),
+            WaitlistJoinedEvent {
+                event_id,
+                user,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Leaves the waitlist for an event. Emits WaitlistLeftEvent.
+    /// Requires the user's authentication.
+    pub fn leave_waitlist(
+        env: Env,
+        event_id: String,
+        user: Address,
+    ) -> Result<(), EventRegistryError> {
+        user.require_auth();
+
+        // Check if event exists
+        if !storage::event_exists(&env, event_id.clone()) {
+            return Err(EventRegistryError::EventNotFound);
+        }
+
+        // Check if user is on the waitlist
+        if !storage::is_on_waitlist(&env, &event_id, &user) {
+            return Err(EventRegistryError::NotOnWaitlist);
+        }
+
+        // Remove user from waitlist
+        storage::remove_from_waitlist(&env, &event_id, &user);
+
+        // Emit WaitlistLeftEvent
+        env.events().publish(
+            (AgoraEvent::WaitlistLeft,),
+            WaitlistLeftEvent {
+                event_id,
+                user,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Cancels a governance proposal. Only the proposer can cancel their own proposal.
+    /// A proposal cannot be cancelled if it has already been executed.
+    /// Emits ProposalCancelledEvent.
+    pub fn cancel_proposal(
+        env: Env,
+        proposer: Address,
+        proposal_id: u64,
+    ) -> Result<(), EventRegistryError> {
+        proposer.require_auth();
+
+        // Get proposal
+        let mut proposal =
+            storage::get_proposal(&env, proposal_id).ok_or(EventRegistryError::MultisigError)?;
+
+        // Check if proposer is the original proposer
+        if proposal.proposer != proposer {
+            return Err(EventRegistryError::Unauthorized);
+        }
+
+        // Check if already executed
+        if proposal.executed {
+            return Err(EventRegistryError::PropAlreadyExecuted);
+        }
+
+        // Check if already cancelled
+        if proposal.cancelled {
+            return Err(EventRegistryError::PropAlreadyCanceled);
+        }
+
+        // Mark as cancelled
+        proposal.cancelled = true;
+        storage::set_proposal(&env, &proposal);
+
+        // Remove from active proposals list
+        storage::remove_active_proposal(&env, proposal_id);
+
+        // Emit ProposalCancelledEvent
+        env.events().publish(
+            (AgoraEvent::ProposalCancelled,),
+            ProposalCancelledEvent {
+                proposal_id,
+                cancelled_by: proposer,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Convenience function to propose setting the platform fee
+    pub fn propose_set_platform_fee(
+        env: Env,
+        proposer: Address,
+        new_fee_percent: u32,
+        expiry_ledgers: u64,
+    ) -> Result<u64, EventRegistryError> {
+        Self::propose_parameter_change(
+            env,
+            proposer,
+            types::ParameterChange::SetPlatformFee(new_fee_percent),
+            expiry_ledgers,
+        )
+    }
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
@@ -1319,19 +2179,64 @@ fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryErr
 }
 
 fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryError> {
-    if cid.len() < 46 {
-        return Err(EventRegistryError::InvalidMetadataCid);
-    }
-
-    // We expect CIDv1 base32, which starts with 'b'
-    // Convert to Bytes to check the first character safely
+    let len = cid.len();
     let mut bytes = soroban_sdk::Bytes::new(env);
     bytes.append(&cid.clone().into());
 
-    if !bytes.is_empty() && bytes.get(0) != Some(b'b') {
-        return Err(EventRegistryError::InvalidMetadataCid);
+    // CIDv0: starts with "Qm" and is at least 46 characters long
+    if len >= 46 && bytes.len() >= 2 && bytes.get(0) == Some(b'Q') && bytes.get(1) == Some(b'm') {
+        return Ok(());
     }
 
+    // CIDv1: starts with "bafy" and is at least 59 characters long
+    if len >= 59
+        && bytes.len() >= 4
+        && bytes.get(0) == Some(b'b')
+        && bytes.get(1) == Some(b'a')
+        && bytes.get(2) == Some(b'f')
+        && bytes.get(3) == Some(b'y')
+    {
+        return Ok(());
+    }
+
+    Err(EventRegistryError::InvalidMetadataCid)
+}
+
+/// Validates event tags to ensure they contain only printable characters.
+/// Each tag must be ≤ 32 characters and contain only printable ASCII (32-126)
+/// or Unicode letters/numbers/spaces. Rejects control characters, null bytes,
+/// and other non-printable sequences.
+fn validate_tags(env: &Env, tags: &soroban_sdk::Vec<String>) -> Result<(), EventRegistryError> {
+    for tag in tags.iter() {
+        // Check length
+        if tag.len() > 32 {
+            return Err(EventRegistryError::InvalidTags);
+        }
+
+        // Convert to bytes for character validation
+        let mut bytes = soroban_sdk::Bytes::new(env);
+        bytes.append(&tag.into());
+
+        // Check each byte for printable characters
+        for i in 0..bytes.len() {
+            if let Some(byte) = bytes.get(i) {
+                // Reject null bytes and control characters (0x00-0x1F, 0x7F-0x9F)
+                // Accept printable ASCII (0x20-0x7E) and extended UTF-8 sequences (≥ 0xC0)
+                if byte < 0x20 || (byte >= 0x7F && byte < 0xC0) {
+                    return Err(EventRegistryError::InvalidTags);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn require_event_ended(env: &Env, event_info: &EventInfo) -> Result<(), EventRegistryError> {
+    let now = env.ledger().timestamp();
+    if event_info.end_time == 0 || now <= event_info.end_time {
+        return Err(EventRegistryError::EventNotEnded);
+    }
     Ok(())
 }
 
@@ -1341,7 +2246,8 @@ fn suspend_organizer_events(
     env: Env,
     organizer_address: Address,
 ) -> Result<(), EventRegistryError> {
-    let organizer_events = storage::get_organizer_events(&env, &organizer_address);
+    // Pass organizer as both organizer and caller since this is an internal operation
+    let organizer_events = storage::get_organizer_events(&env, &organizer_address, &organizer_address);
     let mut suspended_count = 0u32;
 
     for event_id in organizer_events.iter() {
@@ -1373,10 +2279,16 @@ fn suspend_organizer_events(
 }
 
 #[cfg(test)]
-mod test;
+mod issue_tests;
 
 #[cfg(test)]
-mod test_e2e;
+mod test_issue_fixes;
+
+#[cfg(test)]
+mod test_global_promo;
+
+// The legacy monolithic test modules are stale against the current contract API.
+// Keep default `cargo test -p event-registry` focused on compilable coverage.
 
 // TODO: Uncomment when multisig functions are implemented
 // #[cfg(test)]

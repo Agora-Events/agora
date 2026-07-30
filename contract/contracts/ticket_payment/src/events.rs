@@ -24,6 +24,10 @@ pub enum AgoraEvent {
     ProposalCreated,
     ProposalVoted,
     GovernanceActionExecuted,
+    ContractVerificationFailed,
+    EventCancelled,
+    CancellationRefundClaimed,
+    PoapMinted,
 }
 
 #[contracttype]
@@ -158,6 +162,7 @@ pub struct PartialRefundProcessedEvent {
 pub struct TicketCheckedInEvent {
     pub payment_id: String,
     pub event_id: String,
+    pub attendee: Address,
     pub scanner: Address,
     pub timestamp: u64,
 }
@@ -204,5 +209,43 @@ pub struct ProposalVotedEvent {
 pub struct GovernanceActionExecutedEvent {
     pub proposal_id: u64,
     pub change: crate::types::ParameterChange,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractVerificationFailedEvent {
+    pub missing_key: String,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventCancelledEvent {
+    pub event_id: String,
+    pub organizer: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CancellationRefundClaimedEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub buyer: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when a non-transferable POAP NFT is minted for a successful check-in.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoapMintedEvent {
+    /// The payment / ticket that triggered the mint.
+    pub payment_id: String,
+    pub event_id: String,
+    /// The attendee who earned the POAP.
+    pub attendee: Address,
+    /// Ledger timestamp at mint time.
     pub timestamp: u64,
 }

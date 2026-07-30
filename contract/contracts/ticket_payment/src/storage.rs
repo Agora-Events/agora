@@ -1,5 +1,10 @@
-use crate::types::{DataKey, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus};
-use soroban_sdk::{vec, Address, Env, String, Vec};
+use crate::{
+    error::TicketPaymentError,
+    types::{
+        DataKey, DiscountData, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus,
+    },
+};
+use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
 
@@ -27,6 +32,14 @@ pub fn store_payment(env: &Env, payment: Payment) {
             payment.buyer_address.clone(),
             payment.payment_id.clone(),
         );
+
+        // Index by status
+        add_payment_to_status_index(
+            env,
+            payment.event_id.clone(),
+            payment.status.clone(),
+            payment.payment_id.clone(),
+        );
     }
 }
 
@@ -42,10 +55,22 @@ pub fn update_payment_status(
     confirmed_at: Option<u64>,
 ) {
     if let Some(mut payment) = get_payment(env, payment_id.clone()) {
-        payment.status = status;
+        let old_status = payment.status.clone();
+        payment.status = status.clone();
         payment.confirmed_at = confirmed_at;
-        let key = DataKey::Payment(payment_id);
+        let key = DataKey::Payment(payment_id.clone());
         env.storage().persistent().set(&key, &payment);
+
+        // Update status index if status changed
+        if old_status != status {
+            update_payment_status_index(
+                env,
+                payment.event_id.clone(),
+                old_status,
+                status,
+                payment_id,
+            );
+        }
     }
 }
 
@@ -147,6 +172,18 @@ pub fn get_event_registry(env: &Env) -> Address {
         .expect("Event registry not set")
 }
 
+pub fn set_pro_subscription_contract(env: &Env, address: Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ProSubscriptionContract, &address);
+}
+
+pub fn get_pro_subscription_contract(env: &Env) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ProSubscriptionContract)
+}
+
 pub fn set_initialized(env: &Env, value: bool) {
     env.storage()
         .persistent()
@@ -224,17 +261,16 @@ pub fn set_event_balance(env: &Env, event_id: String, balance: EventBalance) {
         .set(&DataKey::Balances(event_id), &balance);
 }
 
-pub fn set_transfer_fee(env: &Env, event_id: String, fee: i128) {
+pub fn set_transfer_fee(env: &Env, event_id: String, fee: u32) {
     env.storage()
         .persistent()
         .set(&DataKey::TransferFee(event_id), &fee);
 }
 
-pub fn get_transfer_fee(env: &Env, event_id: String) -> i128 {
+pub fn get_transfer_fee(env: &Env, event_id: String) -> Option<u32> {
     env.storage()
         .persistent()
         .get(&DataKey::TransferFee(event_id))
-        .unwrap_or(0)
 }
 
 pub fn add_payment_to_event_index(env: &Env, event_id: String, payment_id: String) {
@@ -560,6 +596,19 @@ pub fn set_event_dispute_status(env: &Env, event_id: String, disputed: bool) {
         .set(&DataKey::DisputeStatus(event_id), &disputed);
 }
 
+pub fn is_event_cancelled_for_refund(env: &Env, event_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventCancelledForRefund(event_id.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_event_cancelled_for_refund(env: &Env, event_id: &String) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventCancelledForRefund(event_id.clone()), &true);
+}
+
 // ── Oracle configuration ──────────────────────────────────────────────────────
 
 pub fn set_oracle_address(env: &Env, address: &Address) {
@@ -572,8 +621,13 @@ pub fn get_oracle_address(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&DataKey::OracleAddress)
 }
 
-pub fn set_slippage_bps(env: &Env, bps: u32) {
+pub fn set_slippage_bps(env: &Env, bps: u32) -> Result<(), TicketPaymentError> {
+    if bps > 5000 {
+        return Err(TicketPaymentError::InvalidSlippageBps);
+    }
+
     env.storage().persistent().set(&DataKey::SlippageBps, &bps);
+    Ok(())
 }
 
 pub fn get_slippage_bps(env: &Env) -> u32 {
@@ -662,3 +716,233 @@ pub fn increment_proposal_count(env: &Env) -> u64 {
         .set(&DataKey::ProposalCount, &count);
     count
 }
+
+// ── Payment Status Index ──────────────────────────────────────────────────────
+
+/// Adds a payment to the status index for an event
+pub fn add_payment_to_status_index(
+    env: &Env,
+    event_id: String,
+    status: PaymentStatus,
+    payment_id: String,
+) {
+    // Check if already indexed
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKey::EventPaymentStatusEntry(
+            event_id.clone(),
+            status.clone(),
+            payment_id.clone(),
+        ))
+    {
+        return;
+    }
+
+    // Get current list for this event and status
+    let mut payment_ids: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::EventPaymentStatus(
+            event_id.clone(),
+            status.clone(),
+        ))
+        .unwrap_or_else(|| vec![env]);
+
+    // Add payment_id to the list
+    payment_ids.push_back(payment_id.clone());
+
+    // Store updated list
+    env.storage().persistent().set(
+        &DataKey::EventPaymentStatus(event_id.clone(), status.clone()),
+        &payment_ids,
+    );
+
+    // Mark as indexed
+    env.storage().persistent().set(
+        &DataKey::EventPaymentStatusEntry(event_id, status, payment_id),
+        &true,
+    );
+}
+
+/// Removes a payment from the status index (used when status changes)
+pub fn remove_payment_from_status_index(
+    env: &Env,
+    event_id: String,
+    status: PaymentStatus,
+    payment_id: String,
+) {
+    // Get current list for this event and status
+    let payment_ids: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::EventPaymentStatus(
+            event_id.clone(),
+            status.clone(),
+        ))
+        .unwrap_or_else(|| vec![env]);
+
+    // Filter out the payment_id
+    let mut new_payment_ids = vec![env];
+    for id in payment_ids.iter() {
+        if id != payment_id {
+            new_payment_ids.push_back(id);
+        }
+    }
+
+    // Store updated list
+    env.storage().persistent().set(
+        &DataKey::EventPaymentStatus(event_id.clone(), status.clone()),
+        &new_payment_ids,
+    );
+
+    // Remove index marker
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventPaymentStatusEntry(
+            event_id, status, payment_id,
+        ));
+}
+
+/// Updates the status index when a payment status changes
+pub fn update_payment_status_index(
+    env: &Env,
+    event_id: String,
+    old_status: PaymentStatus,
+    new_status: PaymentStatus,
+    payment_id: String,
+) {
+    // Remove from old status index
+    remove_payment_from_status_index(env, event_id.clone(), old_status, payment_id.clone());
+
+    // Add to new status index
+    add_payment_to_status_index(env, event_id, new_status, payment_id);
+}
+
+/// Gets all payment IDs for an event with a specific status
+pub fn get_payments_by_status(env: &Env, event_id: String, status: PaymentStatus) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventPaymentStatus(event_id, status))
+        .unwrap_or_else(|| vec![env])
+}
+
+/// Stores the SHA-256 hash of the ticket secret for a payment.
+pub fn store_validation_hash(env: &Env, payment_id: &String, hash: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ValidationHash(payment_id.clone()), hash);
+}
+
+/// Retrieves the stored validation hash for a payment.
+pub fn get_validation_hash(env: &Env, payment_id: &String) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ValidationHash(payment_id.clone()))
+}
+
+/// Verifies that `raw_secret` hashes to the stored validation hash.
+pub fn verify_secret(env: &Env, payment_id: &String, raw_secret: &Bytes) -> bool {
+    match get_validation_hash(env, payment_id) {
+        Some(stored_hash) => {
+            let computed: BytesN<32> = env.crypto().sha256(raw_secret).into();
+            computed == stored_hash
+        }
+        None => false,
+    }
+}
+
+// ── Per-event discount codes ──────────────────────────────────────────────────
+
+pub fn set_discount_code(env: &Env, event_id: String, code: String, data: &DiscountData) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DiscountCode(event_id, code), data);
+}
+
+pub fn get_discount_code(env: &Env, event_id: &String, code: &String) -> Option<DiscountData> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DiscountCode(event_id.clone(), code.clone()))
+}
+
+// ── Affiliate commission rates ────────────────────────────────────────────────
+
+/// Sets a per-event affiliate commission rate in basis points.
+/// Only rates in [1, 10000] are meaningful; 0 means "use default".
+pub fn set_affiliate_rate(env: &Env, event_id: String, affiliate: &Address, rate_bps: u32) {
+    env.storage().persistent().set(
+        &DataKey::AffiliateRate(event_id, affiliate.clone()),
+        &rate_bps,
+    );
+}
+
+/// Returns the affiliate-specific commission rate for (event_id, affiliate), if set.
+pub fn get_affiliate_rate(env: &Env, event_id: &String, affiliate: &Address) -> Option<u32> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AffiliateRate(event_id.clone(), affiliate.clone()))
+}
+
+// ---------------------------------------------------------------------------
+// POAP (Proof of Attendance Protocol) storage helpers
+// ---------------------------------------------------------------------------
+
+/// Returns true if a POAP has already been minted for this payment_id.
+pub fn is_poap_minted(env: &Env, payment_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&DataKey::PoapMinted(payment_id.clone()))
+        .unwrap_or(false)
+}
+
+/// Marks the payment as having had its POAP minted, and adds the payment_id
+/// to the per-attendee sharded index.
+pub fn mark_poap_minted(env: &Env, payment_id: String, attendee: &Address) {
+    // Guard: idempotent
+    let key = DataKey::PoapMinted(payment_id.clone());
+    env.storage().persistent().set(&key, &true);
+
+    // Append to attendee index (sharded, same pattern as buyer payments)
+    let count_key = DataKey::PoapsByAttendeeCount(attendee.clone());
+    let count: u32 = env
+        .storage()
+        .persistent()
+        .get(&count_key)
+        .unwrap_or(0u32);
+    let shard = count / SHARD_SIZE;
+    let shard_key = DataKey::PoapsByAttendee(attendee.clone(), shard);
+    let mut ids: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&shard_key)
+        .unwrap_or_else(|| vec![env]);
+    ids.push_back(payment_id);
+    env.storage().persistent().set(&shard_key, &ids);
+    env.storage().persistent().set(&count_key, &(count + 1));
+}
+
+/// Returns all POAP payment_ids earned by `attendee` across all shards.
+pub fn get_poaps_by_attendee(env: &Env, attendee: &Address) -> Vec<String> {
+    let count_key = DataKey::PoapsByAttendeeCount(attendee.clone());
+    let count: u32 = env
+        .storage()
+        .persistent()
+        .get(&count_key)
+        .unwrap_or(0u32);
+    if count == 0 {
+        return vec![env];
+    }
+    let total_shards = (count + SHARD_SIZE - 1) / SHARD_SIZE;
+    let mut all: Vec<String> = vec![env];
+    for shard in 0..total_shards {
+        let shard_key = DataKey::PoapsByAttendee(attendee.clone(), shard);
+        if let Some(ids) = env.storage().persistent().get::<_, Vec<String>>(&shard_key) {
+            for id in ids.iter() {
+                all.push_back(id);
+            }
+        }
+    }
+    all
+}
+

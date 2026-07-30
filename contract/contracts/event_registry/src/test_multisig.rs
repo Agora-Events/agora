@@ -42,7 +42,7 @@ fn test_create_proposal_add_admin() {
     let proposal_id = client.propose_add_admin(&admin1, &admin2, &0);
 
     // Verify proposal was created
-    let proposal = client.get_proposal(&proposal_id);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
     assert_eq!(proposal.proposal_id, proposal_id);
     assert_eq!(proposal.proposer, admin1);
     assert_eq!(proposal.approvals.len(), 1); // Proposer auto-approves
@@ -65,7 +65,7 @@ fn test_execute_proposal_single_admin() {
     assert!(client.is_admin(&admin2));
 
     // Verify proposal was marked as executed
-    let proposal = client.get_proposal(&proposal_id);
+    let proposal = client.get_proposal(&proposal_id).unwrap();
     assert!(proposal.executed);
 }
 
@@ -172,7 +172,7 @@ fn test_remove_admin_with_multisig() {
 }
 
 #[test]
-#[should_panic(expected = "CannotRemoveLastAdmin")]
+#[should_panic(expected = "Error(Contract, #35)")]
 fn test_cannot_remove_last_admin() {
     let (env, client, admin1, _, _) = create_test_env();
     let platform_wallet = Address::generate(&env);
@@ -185,7 +185,7 @@ fn test_cannot_remove_last_admin() {
 }
 
 #[test]
-#[should_panic(expected = "AdminAlreadyExists")]
+#[should_panic(expected = "Error(Contract, #33)")]
 fn test_cannot_add_duplicate_admin() {
     let (env, client, admin1, _, _) = create_test_env();
     let platform_wallet = Address::generate(&env);
@@ -198,7 +198,7 @@ fn test_cannot_add_duplicate_admin() {
 }
 
 #[test]
-#[should_panic(expected = "AlreadyApproved")]
+#[should_panic(expected = "Error(Contract, #45)")]
 fn test_cannot_approve_twice() {
     let (env, client, admin1, admin2, admin3) = create_test_env();
     let platform_wallet = Address::generate(&env);
@@ -222,7 +222,7 @@ fn test_cannot_approve_twice() {
 }
 
 #[test]
-#[should_panic(expected = "ProposalAlreadyExecuted")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_cannot_execute_twice() {
     let (env, client, admin1, admin2, _) = create_test_env();
     let platform_wallet = Address::generate(&env);
@@ -239,7 +239,7 @@ fn test_cannot_execute_twice() {
 }
 
 #[test]
-#[should_panic(expected = "InvalidThreshold")]
+#[should_panic(expected = "Error(Contract, #36)")]
 fn test_invalid_threshold_too_high() {
     let (env, client, admin1, _, _) = create_test_env();
     let platform_wallet = Address::generate(&env);
@@ -252,7 +252,7 @@ fn test_invalid_threshold_too_high() {
 }
 
 #[test]
-#[should_panic(expected = "InvalidThreshold")]
+#[should_panic(expected = "Error(Contract, #36)")]
 fn test_invalid_threshold_zero() {
     let (env, client, admin1, _, _) = create_test_env();
     let platform_wallet = Address::generate(&env);
@@ -348,4 +348,49 @@ fn test_threshold_adjustment_on_admin_removal() {
     let config = client.get_multisig_config();
     assert_eq!(config.admins.len(), 2);
     assert_eq!(config.threshold, 2);
+}
+
+#[test]
+fn test_set_multisig_config_valid() {
+    let (env, client, admin1, admin2, admin3) = create_test_env();
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // Set a new multi-sig config with 3 admins and threshold of 2
+    let new_admins = soroban_sdk::vec![&env, admin1.clone(), admin2.clone(), admin3.clone()];
+    client.set_multisig_config(&admin1, &new_admins, &2);
+
+    let config = client.get_multisig_config();
+    assert_eq!(config.admins.len(), 3);
+    assert_eq!(config.threshold, 2);
+    assert!(client.is_admin(&admin1));
+    assert!(client.is_admin(&admin2));
+    assert!(client.is_admin(&admin3));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #36)")]
+fn test_set_multisig_config_invalid_threshold_zero() {
+    let (env, client, admin1, admin2, _) = create_test_env();
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // threshold = 0 should fail
+    let new_admins = soroban_sdk::vec![&env, admin1.clone(), admin2.clone()];
+    client.set_multisig_config(&admin1, &new_admins, &0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #36)")]
+fn test_set_multisig_config_invalid_threshold_too_high() {
+    let (env, client, admin1, admin2, _) = create_test_env();
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // threshold = 5 > 2 admins should fail
+    let new_admins = soroban_sdk::vec![&env, admin1.clone(), admin2.clone()];
+    client.set_multisig_config(&admin1, &new_admins, &5);
 }
