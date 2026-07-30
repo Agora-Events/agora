@@ -12,9 +12,9 @@ SELECT
     COALESCE(t.event_id, tt.event_id) AS event_id,
     e.organizer_id,
     COUNT(*)::bigint AS tickets_sold,
-    COUNT(*) FILTER (WHERE t.status = 'active')::bigint AS active_tickets,
-    COUNT(*) FILTER (WHERE t.status = 'used')::bigint AS used_tickets,
-    COUNT(*) FILTER (WHERE t.status = 'cancelled')::bigint AS cancelled_tickets
+    COUNT(*) FILTER (WHERE t.status IN ('active', 'Unused'))::bigint AS active_tickets,
+    COUNT(*) FILTER (WHERE t.status IN ('used', 'Scanned'))::bigint AS used_tickets,
+    COUNT(*) FILTER (WHERE t.status IN ('cancelled', 'Revoked'))::bigint AS cancelled_tickets
 FROM tickets t
 LEFT JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
 JOIN events e ON e.id = COALESCE(t.event_id, tt.event_id)

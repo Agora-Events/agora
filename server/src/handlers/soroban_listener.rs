@@ -583,7 +583,7 @@ async fn handle_ticket_purchased(pool: &PgPool, event: &SorobanEvent) -> Result<
     match sqlx::query(
         r#"
         INSERT INTO tickets (stellar_id, event_id, buyer_wallet, owner_wallet, status)
-        VALUES ($1, $2::uuid, $3, $4, 'active')
+        VALUES ($1, $2::uuid, $3, $4, 'Unused')
         ON CONFLICT (stellar_id) DO NOTHING
         "#,
     )
@@ -616,7 +616,7 @@ async fn handle_ticket_refunded(pool: &PgPool, event: &SorobanEvent) -> Result<(
         .and_then(|v| v.as_str())
         .unwrap_or(&event.id);
 
-    match sqlx::query("UPDATE tickets SET status = 'cancelled' WHERE stellar_id = $1")
+    match sqlx::query("UPDATE tickets SET status = 'Revoked' WHERE stellar_id = $1")
         .bind(stellar_id)
         .execute(pool)
         .await

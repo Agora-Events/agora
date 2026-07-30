@@ -11,5 +11,6 @@ This document summarizes the public backend endpoints available.
 | GET | `/api/v1/events` | None | `?category=...` | List of events | - |
 | GET | `/api/v1/events/map` | None | `?latitude&longitude&radius&limit` | Nearby events with `distance_km` | 400 |
 | POST | `/api/v1/events` | Bearer+CSRF | Event JSON | Created event | 400, 401, 403 |
+| POST | `/api/v1/tickets/:id/scan` | None | `{ "payload": { ... }, "signature": "...", "public_key": "..." }` | Scan verification result | 400, 403, 404, 409 |
 
 *(This file is maintained manually for quick reference. For a comprehensive machine-readable API, see `/openapi.json`)*

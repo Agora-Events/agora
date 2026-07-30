@@ -64,7 +64,7 @@ use crate::handlers::{
     },
     qr_payload::{
         delete_qr_payload, generate_attendee_qr, generate_qr_payload, list_event_qr_codes,
-        list_qr_payloads, mark_qr_used, verify_qr_payload,
+        list_qr_payloads, mark_qr_used, scan_ticket, verify_qr_payload,
     },
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
@@ -214,6 +214,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/:id/qr-codes", get(list_event_qr_codes))
         .with_state(pool.clone());
 
+    // Ticket scan routes for organiser verification
+    let ticket_routes = Router::new()
+        .route("/:id/scan", post(scan_ticket))
+        .with_state(pool.clone());
+
     // Category routes — listing is Redis-cached (Issue #583); the single-item
     // lookup keeps the bare PgPool state.
     let category_state = CategoryState {
@@ -258,6 +263,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     let public_api_routes = Router::new()
         .nest("/events", event_routes)
         .nest("/events", event_qr_routes)
+        .nest("/tickets", ticket_routes)
         .nest("/categories", category_routes)
         .nest("/auth", auth_routes)
         .nest("/profile", profile_routes)

@@ -2318,10 +2318,10 @@ pub async fn submit_event_rating(
             .into_response();
     }
 
-    if ticket_status != "used" {
+    if ticket_status != "Scanned" {
         log_if_slow("submit_event_rating", start.elapsed());
         return AppError::ValidationError(
-            "Only attendees with a used ticket may leave a rating".to_string(),
+            "Only attendees with a scanned ticket may leave a rating".to_string(),
         )
         .into_response();
     }
@@ -3871,7 +3871,7 @@ pub async fn get_checkin_stats(
     let row = sqlx::query(
         r#"
         SELECT
-            COUNT(*) FILTER (WHERE status = 'used') AS checked_in,
+            COUNT(*) FILTER (WHERE status IN ('used', 'Scanned')) AS checked_in,
             COUNT(*) AS total_sold
         FROM tickets
         WHERE event_id = $1
