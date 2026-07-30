@@ -5,9 +5,15 @@
  * single path:
  *
  * ```ts
- * import { TicketCard } from "@/components/wallet";
+ * import { TicketCard, PastEventsSection, PoapCard } from "@/components/wallet";
  * ```
  */
 
 export { TicketCard } from "./TicketCard";
 export type { TicketCardProps, TicketStatus } from "./TicketCard";
+
+export { PoapCard } from "./PoapCard";
+export type { PoapCollectible, PoapCardProps } from "./PoapCard";
+
+export { PastEventsSection } from "./PastEventsSection";
+export type { PastEventsSectionProps } from "./PastEventsSection";

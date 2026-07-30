@@ -1,6 +1,7 @@
 "use client";
 
 import useSWR from "swr";
+import type { PoapCollectible } from "@/components/wallet/PoapCard";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,11 +19,14 @@ export interface WalletTicket {
   event_start_time: string | null;
   event_image_url: string | null;
   created_at: string;
+  poap_minted?: boolean;
+  poap_id?: string;
 }
 
 export interface WalletTicketsData {
   upcoming: WalletTicket[];
   past: WalletTicket[];
+  poaps?: PoapCollectible[];
 }
 
 interface ApiResponse {
@@ -52,10 +56,10 @@ async function fetchWalletTickets(url: string): Promise<WalletTicketsData> {
 
 /**
  * Fetches the authenticated user's wallet tickets, split into upcoming and
- * past collections.
+ * past collections alongside earned POAP collectibles.
  *
  * @example
- * const { upcoming, past, isLoading, error } = useWalletTickets();
+ * const { upcoming, past, poaps, isLoading, error } = useWalletTickets();
  */
 export function useWalletTickets() {
   const { data, error, isLoading, mutate } = useSWR<WalletTicketsData>(
@@ -70,6 +74,7 @@ export function useWalletTickets() {
   return {
     upcoming: data?.upcoming ?? [],
     past: data?.past ?? [],
+    poaps: data?.poaps ?? [],
     isLoading,
     error: error as Error | undefined,
     mutate,

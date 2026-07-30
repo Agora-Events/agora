@@ -5,8 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
-import { TicketCard } from "@/components/wallet/TicketCard";
-import { EventCardSkeleton } from "@/components/events/event-card-skeleton";
+import { TicketCard, PastEventsSection } from "@/components/wallet";
 import { useWalletTickets } from "@/hooks/useWalletTickets";
 import { useAuth } from "@/hooks/useAuth";
 import type { WalletTicket } from "@/hooks/useWalletTickets";
@@ -77,7 +76,7 @@ function EmptyTickets({
 }
 
 // ---------------------------------------------------------------------------
-// Section component
+// Section component for Upcoming Tickets
 // ---------------------------------------------------------------------------
 
 function TicketSection({
@@ -148,7 +147,7 @@ function TicketSection({
 
 function WalletContent() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  const { upcoming, past, isLoading: ticketsLoading } = useWalletTickets();
+  const { upcoming, past, poaps, isLoading: ticketsLoading } = useWalletTickets();
 
   const isLoading = authLoading || ticketsLoading;
 
@@ -169,7 +168,7 @@ function WalletContent() {
           Sign in to view your tickets
         </h2>
         <p className="text-muted-text text-sm max-w-sm mb-6">
-          Connect your wallet to see your upcoming events and past tickets.
+          Connect your wallet to see your upcoming events, past tickets, and POAP collectibles.
         </p>
         <Link
           href="/auth"
@@ -204,14 +203,11 @@ function WalletContent() {
         emptySubtext="You don't have any upcoming events. Discover what's on near you."
       />
 
-      {/* Past events */}
-      <TicketSection
-        title="Past Events"
-        subtitle="Events you've already attended"
+      {/* Past events & POAP collectibles section (#1128) */}
+      <PastEventsSection
         tickets={past}
+        poaps={poaps}
         isLoading={isLoading}
-        emptyHeading="No past events"
-        emptySubtext="Tickets for events you've attended will appear here."
       />
     </div>
   );
@@ -224,8 +220,8 @@ function WalletContent() {
 /**
  * /wallet
  *
- * Main attendee dashboard for viewing upcoming and past tickets.
- * Issue #1123
+ * Main attendee dashboard for viewing upcoming tickets, past events, and earned POAP collectibles.
+ * Issues #1123, #1128
  */
 export default function WalletPage() {
   return (

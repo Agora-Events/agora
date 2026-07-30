@@ -178,6 +178,9 @@ impl MockEventRegistry {
     pub fn get_promo_expiry(_env: Env) -> u64 {
         0
     }
+    pub fn is_scanner_authorized(_env: Env, _event_id: String, _scanner: Address) -> bool {
+        true
+    }
 }
 
 // Another Mock for different fee
@@ -10182,3 +10185,72 @@ fn test_claim_revenue_milestone_met() {
         expected
     );
 }
+
+#[test]
+fn test_poap_minting_and_duplicate_prevention() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let usdc = Address::generate(&env);
+    let platform = Address::generate(&env);
+
+    let registry_id = env.register(MockEventRegistry, ());
+    client.initialize(&admin, &usdc, &platform, &registry_id);
+
+    let buyer = Address::generate(&env);
+    let (secret, hash) = test_secret(&env);
+    let payment_id = String::from_str(&env, "poap_pay_1");
+    let event_id = String::from_str(&env, "event_1");
+
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: event_id.clone(),
+        buyer_address: buyer.clone(),
+        owner_address: buyer.clone(),
+        ticket_tier_id: String::from_str(&env, "tier_1"),
+        token_address: usdc.clone(),
+        amount: 1000,
+        platform_fee: 50,
+        organizer_amount: 950,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx1"),
+        created_at: 100,
+        confirmed_at: Some(100),
+        refunded_amount: 0,
+        is_soulbound: false,
+        last_checked_in_at: 0,
+        referral_amount: 0,
+        referrer: None,
+    };
+
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+        store_validation_hash(&env, &payment_id, &hash);
+    });
+
+    assert!(!client.is_poap_minted(&payment_id));
+
+    // Attempting to mint POAP before check-in should fail
+    let res = client.try_mint_poap(&payment_id);
+    assert!(res.is_err());
+
+    // Scanner check-in
+    let scanner = Address::generate(&env);
+    client.check_in(&payment_id, &scanner, &None, &None, &secret);
+
+    // Auto-minted on check_in
+    assert!(client.is_poap_minted(&payment_id));
+
+    let poaps = client.get_attendee_poaps(&buyer);
+    assert_eq!(poaps.len(), 1);
+    assert_eq!(poaps.get(0).unwrap(), payment_id);
+
+    // Duplicate mint attempt via mint_poap fails
+    let res2 = client.try_mint_poap(&payment_id);
+    assert!(res2.is_err());
+}
+
