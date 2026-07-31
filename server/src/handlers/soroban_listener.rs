@@ -11,6 +11,7 @@
 //! - Jobs exceeding `MAX_JOB_RETRIES` are pushed to a Dead-Letter Queue (`soroban:dead_letter_queue`)
 //!   and logged at `error!` level.
 
+use crate::cache::RedisCache;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -188,13 +189,13 @@ impl ListenerConfig {
 // ---------------------------------------------------------------------------
 
 /// Spawn the Soroban event listener as a background task along with the worker pool.
-pub fn spawn_listener(pool: PgPool, config: ListenerConfig) {
+pub fn spawn_listener(pool: PgPool, redis: Option<RedisCache>, config: ListenerConfig) {
     tokio::spawn(async move {
         run_listener(pool, redis, config).await;
     });
 }
 
-async fn run_listener(pool: PgPool, config: ListenerConfig) {
+async fn run_listener(pool: PgPool, mut redis: Option<RedisCache>, config: ListenerConfig) {
     if config.ticket_payment_contract_id.is_empty() && config.event_registry_contract_id.is_empty()
     {
         tracing::info!(
@@ -235,7 +236,11 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
         }
     }
 
-    let mut start_ledger = if cursor.is_none() { Some(config.start_ledger) } else { None };
+    let mut start_ledger = if cursor.is_none() {
+        Some(config.start_ledger)
+    } else {
+        None
+    };
     let mut current_backoff = POLL_INTERVAL;
 
     tracing::info!(
@@ -270,8 +275,14 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
                     start_ledger = None;
 
                     if let Some(ref mut r) = redis {
-                        if let Err(e) = r.set(CURSOR_CACHE_KEY, &last.id, Duration::from_secs(86400 * 30)).await {
-                            tracing::warn!("Failed to persist Soroban event cursor to Redis: {:?}", e);
+                        if let Err(e) = r
+                            .set(CURSOR_CACHE_KEY, &last.id, Duration::from_secs(86400 * 30))
+                            .await
+                        {
+                            tracing::warn!(
+                                "Failed to persist Soroban event cursor to Redis: {:?}",
+                                e
+                            );
                         }
                     }
                 }
@@ -310,7 +321,7 @@ async fn push_job(
     job_tx: &mpsc::Sender<SorobanJob>,
 ) {
     if let Some(client) = redis_client {
-        if let Ok(mut conn) = client.get_tokio_connection().await {
+        if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
             if let Ok(json) = serde_json::to_string(job) {
                 let res: Result<(), redis::RedisError> = redis::cmd("RPUSH")
                     .arg(JOB_QUEUE_KEY)
@@ -327,7 +338,11 @@ async fn push_job(
 
     // Fallback to MPSC channel
     if let Err(e) = job_tx.send(job.clone()).await {
-        tracing::error!("Failed to enqueue job {} to internal channel: {:?}", job.id, e);
+        tracing::error!(
+            "Failed to enqueue job {} to internal channel: {:?}",
+            job.id,
+            e
+        );
     }
 }
 
@@ -346,7 +361,7 @@ async fn run_worker(
 
         // 1. Try popping from Redis BLPOP if connected
         if let Some(ref client) = redis_client {
-            if let Ok(mut conn) = client.get_tokio_connection().await {
+            if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
                 let res: Result<Option<(String, String)>, redis::RedisError> = redis::cmd("BLPOP")
                     .arg(JOB_QUEUE_KEY)
                     .arg(2) // 2 second timeout
@@ -402,7 +417,7 @@ async fn run_worker(
 
                     // Re-enqueue for retry
                     if let Some(ref client) = redis_client {
-                        if let Ok(mut conn) = client.get_tokio_connection().await {
+                        if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
                             if let Ok(json) = serde_json::to_string(&job) {
                                 let _: Result<(), _> = redis::cmd("RPUSH")
                                     .arg(JOB_QUEUE_KEY)
@@ -423,7 +438,7 @@ async fn run_worker(
                     );
 
                     if let Some(ref client) = redis_client {
-                        if let Ok(mut conn) = client.get_tokio_connection().await {
+                        if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
                             if let Ok(json) = serde_json::to_string(&job) {
                                 let _: Result<(), _> = redis::cmd("RPUSH")
                                     .arg(DEAD_LETTER_QUEUE_KEY)
@@ -437,6 +452,8 @@ async fn run_worker(
             }
         }
     }
+}
+
 /// Returns true when a poll returned a full page, indicating more events may
 /// be available beyond the current cursor and the listener should retry
 /// immediately without waiting for [`POLL_INTERVAL`].
@@ -632,7 +649,7 @@ async fn handle_ticket_refunded(pool: &PgPool, event: &SorobanEvent) -> Result<(
     }
 }
 
-async fn handle_event_registered(_pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+async fn handle_event_registered(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
     let data = &event.value;
     let on_chain_event_id = data
         .get("event_id")
@@ -659,7 +676,7 @@ async fn handle_event_registered(_pool: &PgPool, event: &SorobanEvent) -> Result
     Ok(())
 }
 
-async fn handle_event_status_updated(_pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+async fn handle_event_status_updated(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
     let data = &event.value;
     let on_chain_event_id = data
         .get("event_id")
@@ -795,7 +812,9 @@ mod tests {
 
     #[test]
     fn test_immediate_retry_when_full_page_returned() {
-        assert!(should_immediately_fetch_next_page(MAX_EVENTS_PER_POLL as usize));
+        assert!(should_immediately_fetch_next_page(
+            MAX_EVENTS_PER_POLL as usize
+        ));
         assert!(!should_immediately_fetch_next_page(
             (MAX_EVENTS_PER_POLL as usize) - 1
         ));

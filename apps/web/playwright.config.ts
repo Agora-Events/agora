@@ -19,8 +19,6 @@ export default defineConfig({
 
   use: {
     baseURL: "http://localhost:3000",
-    // Disable animations so snapshots are deterministic.
-    reducedMotion: "reduce",
     // Give components time to finish painting before taking a screenshot.
     actionTimeout: 10_000,
     screenshot: "only-on-failure",

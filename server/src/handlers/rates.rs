@@ -113,12 +113,9 @@ impl CircuitBreaker {
             let now = unix_now();
             // CAS: only set `opened_at` when it is currently zero (not already
             // open) to avoid resetting the timer mid-open window.
-            let _ = self.opened_at.compare_exchange(
-                0,
-                now,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            );
+            let _ = self
+                .opened_at
+                .compare_exchange(0, now, Ordering::AcqRel, Ordering::Relaxed);
             tracing::warn!(
                 failures = new_count,
                 reset_in_secs = CIRCUIT_BREAKER_RESET_SECS,
@@ -265,13 +262,13 @@ pub async fn get_rates(
         );
 
         if let Ok(Some(stale_rate)) = state.redis.get::<ExchangeRate>(&stale_key).await {
-            let mut resp =
-                success(stale_rate, "Stale exchange rate served (circuit breaker open)")
-                    .into_response();
-            resp.headers_mut().insert(
-                "X-Rate-Source",
-                HeaderValue::from_static("stale-cache"),
-            );
+            let mut resp = success(
+                stale_rate,
+                "Stale exchange rate served (circuit breaker open)",
+            )
+            .into_response();
+            resp.headers_mut()
+                .insert("X-Rate-Source", HeaderValue::from_static("stale-cache"));
             return resp;
         }
 
@@ -292,11 +289,8 @@ pub async fn get_rates(
             let rate_value = match provider_data.rates.get(&quote) {
                 Some(r) => *r,
                 None => {
-                    return AppError::NotFound(format!(
-                        "No rate available for {}/{}",
-                        base, quote
-                    ))
-                    .into_response();
+                    return AppError::NotFound(format!("No rate available for {}/{}", base, quote))
+                        .into_response();
                 }
             };
 
@@ -323,20 +317,15 @@ pub async fn get_rates(
 
             // Fall back to stale cache even before the breaker has opened.
             if let Ok(Some(stale_rate)) = state.redis.get::<ExchangeRate>(&stale_key).await {
-                let mut resp =
-                    success(stale_rate, "Stale exchange rate served (upstream error)")
-                        .into_response();
-                resp.headers_mut().insert(
-                    "X-Rate-Source",
-                    HeaderValue::from_static("stale-cache"),
-                );
+                let mut resp = success(stale_rate, "Stale exchange rate served (upstream error)")
+                    .into_response();
+                resp.headers_mut()
+                    .insert("X-Rate-Source", HeaderValue::from_static("stale-cache"));
                 return resp;
             }
 
-            AppError::ExternalServiceError(
-                "Unable to reach exchange rate provider".to_string(),
-            )
-            .into_response()
+            AppError::ExternalServiceError("Unable to reach exchange rate provider".to_string())
+                .into_response()
         }
     }
 }
@@ -377,7 +366,10 @@ async fn fetch_with_backoff(
         match resp {
             Ok(r) if r.status() == reqwest::StatusCode::TOO_MANY_REQUESTS => {
                 last_err = format!("HTTP 429 rate-limited on attempt {}", attempt + 1);
-                tracing::warn!(attempt = attempt + 1, "Exchange rate provider returned 429 — backing off");
+                tracing::warn!(
+                    attempt = attempt + 1,
+                    "Exchange rate provider returned 429 — backing off"
+                );
             }
             Ok(r) if !r.status().is_success() => {
                 last_err = format!("HTTP {} on attempt {}", r.status(), attempt + 1);
@@ -479,7 +471,10 @@ mod tests {
         for _ in 0..(CIRCUIT_BREAKER_THRESHOLD - 1) {
             cb.record_failure();
         }
-        assert!(!cb.is_open(), "breaker should remain closed below threshold");
+        assert!(
+            !cb.is_open(),
+            "breaker should remain closed below threshold"
+        );
     }
 
     #[test]

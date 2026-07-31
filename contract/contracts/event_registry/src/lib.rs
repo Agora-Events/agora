@@ -7,13 +7,13 @@ use crate::events::{
     GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent, InventoryIncrementedEvent,
     LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent, MinStakeAmountUpdatedEvent,
     OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, ProposalCancelledEvent,
-    RegistryUpgradedEvent, ScannerAuthorizedEvent, ScannerRevokedEvent,
-    StakerRewardsClaimedEvent, StakerRewardsDistributedEvent, StakingTokenUpdatedEvent,
-    WaitlistJoinedEvent, WaitlistLeftEvent,
+    RegistryUpgradedEvent, ScannerAuthorizedEvent, ScannerRevokedEvent, StakerRewardsClaimedEvent,
+    StakerRewardsDistributedEvent, StakingTokenUpdatedEvent, WaitlistJoinedEvent,
+    WaitlistLeftEvent,
 };
 use crate::types::{
     BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
-    MultiSigConfig, OrganizerStake, PaymentInfo,
+    MultiSigConfig, OrganizerStake, PaymentInfo, TicketTier,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
@@ -113,11 +113,7 @@ impl EventRegistry {
 
     /// Check if a holder has a valid pass for a given series.
     /// Returns true only if a pass exists, usage limit has not been reached, and the pass has not expired.
-    pub fn has_valid_series_pass(
-        env: Env,
-        holder: Address,
-        series_id: String,
-    ) -> bool {
+    pub fn has_valid_series_pass(env: Env, holder: Address, series_id: String) -> bool {
         if let Some(pass) = storage::get_holder_series_pass(&env, &holder, series_id) {
             if pass.usage_limit > 0 && pass.usage_count >= pass.usage_limit {
                 return false;
@@ -130,6 +126,20 @@ impl EventRegistry {
             false
         }
     }
+
+    /// Records a redemption/check-in against a series pass, incrementing its
+    /// usage count. Returns `EventNotFound` if the pass doesn't exist or its
+    /// usage limit has already been reached (mirrors `storage::increment_series_pass_usage`,
+    /// which was previously only reachable internally, not as a contract call).
+    pub fn increment_series_pass_usage(
+        env: Env,
+        pass_id: String,
+    ) -> Result<(), EventRegistryError> {
+        storage::increment_series_pass_usage(&env, pass_id)
+            .map(|_| ())
+            .ok_or(EventRegistryError::EventNotFound)
+    }
+
     /// Initializes the contract configuration. Can only be called once.
     /// Sets up initial admin with multi-sig configuration (threshold = 1 for single admin).
     /// The `usdc_token` address is automatically added to the payment token whitelist.
@@ -361,12 +371,12 @@ impl EventRegistry {
         }
     }
 
-        /// Returns the cumulative number of events ever registered on the platform.
-        pub fn get_global_event_count(env: Env) -> u32 {
-            storage::get_global_event_count(&env)
-        }
+    /// Returns the cumulative number of events ever registered on the platform.
+    pub fn get_global_event_count(env: Env) -> u32 {
+        storage::get_global_event_count(&env)
+    }
 
-        /// Update event status (only by organizer)
+    /// Update event status (only by organizer)
     pub fn update_event_status(
         env: Env,
         event_id: String,
@@ -904,7 +914,8 @@ impl EventRegistry {
         event_id: String,
         tier_id: String,
     ) -> Result<bool, EventRegistryError> {
-        let event_info = storage::get_event(&env, event_id).ok_or(EventRegistryError::EventNotFound)?;
+        let event_info =
+            storage::get_event(&env, event_id).ok_or(EventRegistryError::EventNotFound)?;
         let tier = event_info
             .tiers
             .get(tier_id)
@@ -920,8 +931,9 @@ impl EventRegistry {
         tier_id: String,
         tier: TicketTier,
     ) -> Result<(), EventRegistryError> {
-        let mut event_info = storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
-        event_info.organizer.require_auth();
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        event_info.organizer_address.require_auth();
 
         if event_info.max_supply > 0 {
             let mut total_tier_limit: i128 = 0;
@@ -940,7 +952,7 @@ impl EventRegistry {
         }
 
         event_info.tiers.set(tier_id, tier);
-        storage::set_event(&env, &event_id, &event_info);
+        storage::update_event(&env, event_info);
         Ok(())
     }
 
@@ -951,8 +963,9 @@ impl EventRegistry {
         event_id: String,
         tier_id: String,
     ) -> Result<(), EventRegistryError> {
-        let mut event_info = storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
-        event_info.organizer.require_auth();
+        let mut event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        event_info.organizer_address.require_auth();
 
         let mut tier = event_info
             .tiers
@@ -961,10 +974,9 @@ impl EventRegistry {
 
         tier.tier_limit = tier.current_sold;
         event_info.tiers.set(tier_id, tier);
-        storage::set_event(&env, &event_id, &event_info);
+        storage::update_event(&env, event_info);
         Ok(())
     }
-
 
     /// Decrements the current_supply counter for a given event and tier.
     /// This function is restricted to calls from the authorized TicketPayment contract upon refund.
@@ -2222,7 +2234,7 @@ fn validate_tags(env: &Env, tags: &soroban_sdk::Vec<String>) -> Result<(), Event
             if let Some(byte) = bytes.get(i) {
                 // Reject null bytes and control characters (0x00-0x1F, 0x7F-0x9F)
                 // Accept printable ASCII (0x20-0x7E) and extended UTF-8 sequences (≥ 0xC0)
-                if byte < 0x20 || (byte >= 0x7F && byte < 0xC0) {
+                if byte < 0x20 || (0x7F..0xC0).contains(&byte) {
                     return Err(EventRegistryError::InvalidTags);
                 }
             }
@@ -2247,7 +2259,8 @@ fn suspend_organizer_events(
     organizer_address: Address,
 ) -> Result<(), EventRegistryError> {
     // Pass organizer as both organizer and caller since this is an internal operation
-    let organizer_events = storage::get_organizer_events(&env, &organizer_address, &organizer_address);
+    let organizer_events =
+        storage::get_organizer_events(&env, &organizer_address, &organizer_address);
     let mut suspended_count = 0u32;
 
     for event_id in organizer_events.iter() {

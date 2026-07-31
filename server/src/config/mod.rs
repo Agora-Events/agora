@@ -353,6 +353,13 @@ mod tests {
             jwt_secret: "a".repeat(JWT_SECRET_MIN_BYTES),
             monitoring_token: None,
             admin_token: None,
+            auth_rate_limit_per_minute: 10,
+            allowed_upload_mime_types: vec![
+                "image/jpeg".to_string(),
+                "image/png".to_string(),
+                "image/webp".to_string(),
+                "image/gif".to_string(),
+            ],
         }
     }
 
@@ -885,6 +892,13 @@ mod tests {
             base_url: String::new(),
             monitoring_token: None,
             admin_token: None,
+            auth_rate_limit_per_minute: 10,
+            allowed_upload_mime_types: vec![
+                "image/jpeg".to_string(),
+                "image/png".to_string(),
+                "image/webp".to_string(),
+                "image/gif".to_string(),
+            ],
         };
 
         let err = cfg.validate().unwrap_err();

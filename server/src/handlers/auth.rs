@@ -143,10 +143,8 @@ pub async fn request_nonce(
 
     // Validate that the address is a valid Stellar public key
     if validate_stellar_address(&payload.address).is_err() {
-        return AppError::ValidationError(
-            "address must be a valid Stellar public key".to_string(),
-        )
-        .into_response();
+        return AppError::ValidationError("address must be a valid Stellar public key".to_string())
+            .into_response();
     }
 
     // Generate a 32-byte random nonce encoded as hex
@@ -367,8 +365,16 @@ pub async fn logout() -> Response {
 mod tests {
     use super::*;
 
+    /// `jwt_secret()` reads `JWT_SECRET` from the process environment and
+    /// panics if it's unset — correct for a real server, but tests need to
+    /// set it themselves since nothing else in `cargo test --lib` does.
+    fn ensure_test_jwt_secret() {
+        std::env::set_var("JWT_SECRET", "test-secret-for-unit-tests-only-32b");
+    }
+
     #[test]
     fn test_issue_and_verify_jwt() {
+        ensure_test_jwt_secret();
         let address = "GABC123XYZ";
         let token = issue_jwt(address).expect("should issue JWT");
         let claims = verify_jwt(&token).expect("should verify JWT");
@@ -377,6 +383,7 @@ mod tests {
 
     #[test]
     fn test_verify_invalid_jwt() {
+        ensure_test_jwt_secret();
         let result = verify_jwt("not.a.valid.token");
         assert!(result.is_err());
     }
@@ -390,6 +397,7 @@ mod tests {
 
     #[test]
     fn test_extract_auth_valid_token() {
+        ensure_test_jwt_secret();
         let address = "GTEST456";
         let token = issue_jwt(address).unwrap();
         let mut headers = axum::http::HeaderMap::new();
@@ -414,9 +422,16 @@ mod tests {
 
     #[test]
     fn test_validate_stellar_address_valid() {
-        // A valid Stellar public key (G... format, 56 chars)
-        let address = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYMY";
-        assert!(validate_stellar_address(address).is_ok());
+        // Compute a real, correctly-checksummed Stellar public key rather
+        // than hand-typing one — a single wrong character silently produces
+        // an invalid strkey (wrong CRC16), which is exactly what this test
+        // is supposed to catch, not accidentally exercise.
+        let strkey_pk = Strkey::PublicKeyEd25519(stellar_strkey::ed25519::PublicKey([0u8; 32]));
+        // `Strkey` has an inherent `to_string()` returning a `heapless::String`
+        // (shadowing the std `ToString` blanket impl) — go through `format!`
+        // to force a real `std::String` via the `Display` impl instead.
+        let address = format!("{}", strkey_pk);
+        assert!(validate_stellar_address(&address).is_ok());
     }
 
     #[test]

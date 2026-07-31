@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { ChatSidebar } from "@/components/layout/chat-sidebar";
+import { useAuth } from "@/hooks/useAuth";
 import { UpcomingEventsEmptyState } from "@/components/empty-state/upcoming-events-empty-state";
 import CalendarIcon from "@/public/icons/calendar.svg";
 import HostingIcon from "@/public/icons/ticket-star.svg";
@@ -55,63 +58,6 @@ interface GridEvent {
   imageUrl: string;
   color: string;
 }
-
-// Mock data for My Events (Timeline)
-const upcomingEvents: TimelineEvent[] = [];
-
-const hostingEvents: TimelineEvent[] = [
-  {
-    id: 4,
-    date: "15 Mar, Sunday",
-    day: "Sunday",
-    time: "19:00 - 21:00 UTC",
-    title: "Agora Community AMA",
-    location: "Twitter Spaces",
-    imageUrl: "/images/event4.png",
-    isFree: true,
-    attendees: 342,
-  },
-  {
-    id: 5,
-    date: "22 Mar, Sunday",
-    day: "Sunday",
-    time: "15:00 - 18:00 UTC",
-    title: "NFT Ticketing Workshop",
-    location: "Virtual",
-    imageUrl: "/images/event5.png",
-    isFree: false,
-    price: "$50.00",
-    attendees: 78,
-  },
-];
-
-const pastEvents: TimelineEvent[] = [
-  {
-    id: 6,
-    date: "28 Feb, Saturday",
-    day: "Saturday",
-    time: "16:00 - 18:00 UTC",
-    title: "Crypto Trading Basics",
-    location: "Discord",
-    imageUrl: "/images/event6.png",
-    isFree: true,
-    attendees: 210,
-    status: "finished",
-  },
-  {
-    id: 7,
-    date: "20 Feb, Friday",
-    day: "Friday",
-    time: "12:00 - 14:00 UTC",
-    title: "DeFi Yield Strategies",
-    location: "Virtual",
-    imageUrl: "/images/event1.png",
-    isFree: false,
-    price: "$30.00",
-    attendees: 445,
-    status: "finished",
-  },
-];
 
 // Mock data for For You (Grid)
 const discoverEvents: GridEvent[] = [
@@ -506,20 +452,24 @@ function EventCardSkeleton() {
 }
 
 // My Events Section Content
-function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
-  let events: TimelineEvent[] = [];
+function MyEventsContent({
+  activeTab,
+  events,
+  isLoading,
+}: {
+  activeTab: MyEventsTab;
+  events: any[];
+  isLoading: boolean;
+}) {
   const isUpcomingTab = activeTab === "upcoming";
 
-  switch (activeTab) {
-    case "upcoming":
-      events = upcomingEvents;
-      break;
-    case "hosting":
-      events = hostingEvents;
-      break;
-    case "past":
-      events = pastEvents;
-      break;
+  if (isLoading) {
+    return (
+      <div className="pt-4 space-y-13.25">
+        <EventCardSkeleton />
+        <EventCardSkeleton />
+      </div>
+    );
   }
 
   if (events.length === 0) {
@@ -573,6 +523,8 @@ function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab,
     </div>
   );
 }
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 export default function HomePage() {
   const router = useRouter();

@@ -432,7 +432,7 @@ export default function SubscriptionsPage() {
                   <SkeletonCard rows={3} />
                   <SkeletonCard rows={3} />
                 </div>
-              ) : data?.seriesPasses.length === 0 ? (
+              ) : (data?.seriesPasses ?? []).length === 0 ? (
                 <div className="rounded-2xl border-2 border-dashed border-black/20 p-10 flex flex-col items-center text-center gap-4">
                   <span className="text-4xl" aria-hidden="true">🎟️</span>
                   <div>
@@ -455,7 +455,7 @@ export default function SubscriptionsPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
-                  {data.seriesPasses.map((pass) => (
+                  {(data?.seriesPasses ?? []).map((pass) => (
                     <PassCard key={pass.id} pass={pass} />
                   ))}
                 </div>

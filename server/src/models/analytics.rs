@@ -51,9 +51,7 @@ pub struct EventRevenueSummary {
 ///
 /// Intended to be called from a scheduled job (cron / background worker).
 /// Uses `REFRESH MATERIALIZED VIEW CONCURRENTLY` so readers are not blocked.
-pub async fn refresh_analytics_materialized_views(
-    pool: &sqlx::PgPool,
-) -> Result<(), sqlx::Error> {
+pub async fn refresh_analytics_materialized_views(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
     sqlx::query("SELECT refresh_analytics_materialized_views()")
         .execute(pool)
         .await?;

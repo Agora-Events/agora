@@ -33,8 +33,7 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let status =
-            StatusCode::from_u16(self.code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let status = StatusCode::from_u16(self.code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         (status, axum::Json(self)).into_response()
     }
 }
@@ -467,10 +466,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         let json = body_json(resp).await;
         assert_eq!(json["code"], 409);
-        assert_eq!(
-            json["message"],
-            "The referenced resource does not exist"
-        );
+        assert_eq!(json["message"], "The referenced resource does not exist");
     }
 
     // -----------------------------------------------------------------------

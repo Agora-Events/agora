@@ -72,9 +72,9 @@ async fn main() {
     tracing::info!("Migrations run successfully");
 
     // Validate categories match contract (Issue #1076)
-    let categories_synced = crate::handlers::categories::validate_categories_match_contract(&pool)
-        .await;
-    crate::handlers::health::set_category_sync_status(categories_synced);
+    let categories_synced =
+        agora_server::handlers::categories::validate_categories_match_contract(&pool).await;
+    agora_server::handlers::health::set_category_sync_status(categories_synced);
     if !categories_synced {
         tracing::error!("Category sync validation failed - database categories do not match contract canonical list");
     }

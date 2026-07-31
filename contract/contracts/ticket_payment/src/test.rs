@@ -168,7 +168,7 @@ impl MockEventRegistry {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -257,7 +257,7 @@ impl MockEventRegistry2 {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -344,7 +344,7 @@ impl MockAuctionEventRegistry {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -376,7 +376,7 @@ impl MockEventRegistryNotFound {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -1305,7 +1305,7 @@ impl MockEventRegistryMaxSupply {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         panic!("MaxSupplyExceeded");
     }
@@ -1437,7 +1437,7 @@ impl MockEventRegistryWithInventory {
         _tier_id: String,
         _user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
@@ -1699,7 +1699,7 @@ impl MockEventRegistryWithMilestones {
         _tier_id: String,
         _user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
@@ -2134,7 +2134,7 @@ impl MockEventRegistryEarlyBird {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -2700,7 +2700,7 @@ impl MockEventRegistryWithOrganizer {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -3102,7 +3102,7 @@ impl MockPlatformRegistryE2E {
         tier_id: String,
         _user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         let mut event = env
             .storage()
@@ -3594,7 +3594,7 @@ impl MockEventRegistryRefund {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -3682,7 +3682,7 @@ impl MockEventRegistryWithResaleCap {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -3989,7 +3989,7 @@ impl MockRegistryZeroCap {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -4662,7 +4662,7 @@ impl MockEventRegistryUsdPriced {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -5417,7 +5417,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -5566,7 +5566,7 @@ impl MockEventRegistryWithLoyalty {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -5663,7 +5663,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -5912,7 +5912,7 @@ impl MockEventRegistryCustomFee {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -6062,7 +6062,7 @@ impl MockEventRegistryHighPrice {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -6191,7 +6191,7 @@ impl MockEventRegistryRefundDeadline {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -6824,7 +6824,7 @@ impl MockEventRegistryForDust {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -7054,7 +7054,7 @@ impl MockEventRegistryEnforceMaxPerUser {
         _tier_id: String,
         user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         // Track purchases per user in instance storage keyed by Address.
         let current: u32 = env.storage().instance().get(&user).unwrap_or(0u32);
@@ -7174,7 +7174,7 @@ impl MockEventRegistryUnlimitedPerUser {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         // Unlimited: accept any increments
     }
@@ -7419,7 +7419,7 @@ impl MockEventRegistryForReferral {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -7514,7 +7514,7 @@ impl MockEventRegistryFullLoyaltyDiscount {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -8806,7 +8806,7 @@ impl MockTransferLockRegistry {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -9715,7 +9715,7 @@ impl MockRegistryNoScanner {
         _tier_id: String,
         _buyer: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _buyer: Address) {}
@@ -9811,7 +9811,7 @@ impl MockRegistryWithScanner {
         _tier_id: String,
         _buyer: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _buyer: Address) {}
@@ -10077,7 +10077,7 @@ impl MockRegistryMilestone {
         _tier_id: String,
         _buyer: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _buyer: Address) {}
@@ -10253,4 +10253,3 @@ fn test_poap_minting_and_duplicate_prevention() {
     let res2 = client.try_mint_poap(&payment_id);
     assert!(res2.is_err());
 }
-

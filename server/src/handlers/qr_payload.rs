@@ -128,17 +128,15 @@ fn verify_payload_signature(
     signature: &str,
     public_key: &str,
 ) -> Result<(), AppError> {
-    let payload_json = serde_json::to_string(payload).map_err(|e| {
-        AppError::ValidationError(format!("Invalid payload format: {}", e))
-    })?;
+    let payload_json = serde_json::to_string(payload)
+        .map_err(|e| AppError::ValidationError(format!("Invalid payload format: {}", e)))?;
 
     let signature_bytes = general_purpose::STANDARD
         .decode(signature)
         .map_err(|e| AppError::ValidationError(format!("Invalid signature encoding: {}", e)))?;
 
-    let signature = Signature::from_slice(&signature_bytes).map_err(|e| {
-        AppError::ValidationError(format!("Invalid signature format: {}", e))
-    })?;
+    let signature = Signature::from_slice(&signature_bytes)
+        .map_err(|e| AppError::ValidationError(format!("Invalid signature format: {}", e)))?;
 
     let public_key_bytes = hex::decode(public_key)
         .map_err(|e| AppError::ValidationError(format!("Invalid public key encoding: {}", e)))?;
@@ -308,8 +306,10 @@ pub async fn verify_qr_payload(
     State(pool): State<PgPool>,
     Json(request): Json<VerifyQrRequest>,
 ) -> Response {
-    // Serialize payload for verification
-    let payload_json = match serde_json::to_string(&request.payload) {
+    // Serialize payload for verification (sanity-checks it's well-formed; the
+    // JSON string itself isn't needed downstream — signature verification
+    // works directly off the deserialized struct).
+    let _payload_json = match serde_json::to_string(&request.payload) {
         Ok(json) => json,
         Err(e) => {
             return AppError::ValidationError(format!("Invalid payload format: {}", e))
@@ -317,12 +317,8 @@ pub async fn verify_qr_payload(
         }
     };
 
-    let is_valid = verify_payload_signature(
-        &request.payload,
-        &request.signature,
-        &request.public_key,
-    )
-    .is_ok();
+    let is_valid =
+        verify_payload_signature(&request.payload, &request.signature, &request.public_key).is_ok();
 
     // Check expiration
     let is_expired = request.payload.expires_at < Utc::now();
@@ -429,18 +425,14 @@ pub async fn scan_ticket(
     {
         Some(address) if !address.trim().is_empty() => address.trim().to_string(),
         _ => {
-            return AppError::ValidationError(
-                "Payload must include wallet_address".to_string(),
-            )
-            .into_response();
+            return AppError::ValidationError("Payload must include wallet_address".to_string())
+                .into_response();
         }
     };
 
-    if let Err(err) = verify_payload_signature(
-        &request.payload,
-        &request.signature,
-        &request.public_key,
-    ) {
+    if let Err(err) =
+        verify_payload_signature(&request.payload, &request.signature, &request.public_key)
+    {
         return err.into_response();
     }
 
@@ -538,7 +530,7 @@ pub async fn scan_ticket(
     )
     .bind(now)
     .bind(&request.payload.id)
-    .execute(&mut tx)
+    .execute(&mut *tx)
     .await
     {
         return AppError::DatabaseError(e).into_response();
@@ -553,7 +545,7 @@ pub async fn scan_ticket(
     )
     .bind(now)
     .bind(ticket_id)
-    .execute(&mut tx)
+    .execute(&mut *tx)
     .await
     {
         return AppError::DatabaseError(e).into_response();
@@ -1010,7 +1002,7 @@ pub async fn generate_attendee_qr(
     let qr_id = Uuid::new_v4().to_string();
     let nonce = Uuid::new_v4().to_string();
     let created_at = Utc::now();
-    let lifetime_secs = request.expires_in_seconds.unwrap_or(300).max(60).min(86400);
+    let lifetime_secs = request.expires_in_seconds.unwrap_or(300).clamp(60, 86400);
     let expires_at = created_at + Duration::seconds(lifetime_secs);
 
     let payload = QrPayload {

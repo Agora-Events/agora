@@ -5,20 +5,19 @@ use crate::storage::{
     get_admin, get_bulk_refund_index, get_daily_withdrawn_amount, get_discount_code,
     get_event_balance, get_event_payments, get_event_registry, get_highest_bid, get_oracle_address,
     get_partial_refund_index, get_partial_refund_percentage, get_payment, get_platform_wallet,
-    get_pro_subscription_contract, get_proposal, get_slippage_bps,
+    get_poaps_by_attendee, get_pro_subscription_contract, get_proposal, get_slippage_bps,
     get_total_fees_collected_by_token, get_total_governors, get_transfer_fee, get_withdrawal_cap,
     has_price_switched, increment_proposal_count, is_auction_closed, is_discount_hash_used,
     is_discount_hash_valid, is_event_disputed, is_governor, is_initialized, is_paused,
-    is_token_whitelisted, mark_discount_hash_used, remove_payment_from_buyer_index,
-    remove_token_from_whitelist, set_admin, set_auction_closed, set_bulk_refund_index,
-    set_discount_code, set_event_dispute_status, set_event_registry, set_governor, set_highest_bid,
-    set_initialized, set_is_paused, set_oracle_address, set_partial_refund_index,
-    set_partial_refund_percentage, set_platform_wallet, set_price_switched, set_proposal,
-    set_slippage_bps, set_total_governors, set_transfer_fee, set_usdc_token, set_withdrawal_cap,
-    store_payment, store_validation_hash, subtract_from_active_escrow_by_token,
-    subtract_from_active_escrow_total, subtract_from_total_fees_collected_by_token,
-    update_event_balance, verify_secret, get_poaps_by_attendee,
-    is_poap_minted as is_poap_minted_storage, mark_poap_minted,
+    is_poap_minted as is_poap_minted_storage, is_token_whitelisted, mark_discount_hash_used,
+    mark_poap_minted, remove_payment_from_buyer_index, remove_token_from_whitelist, set_admin,
+    set_auction_closed, set_bulk_refund_index, set_discount_code, set_event_dispute_status,
+    set_event_registry, set_governor, set_highest_bid, set_initialized, set_is_paused,
+    set_oracle_address, set_partial_refund_index, set_partial_refund_percentage,
+    set_platform_wallet, set_price_switched, set_proposal, set_slippage_bps, set_total_governors,
+    set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment, store_validation_hash,
+    subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
+    subtract_from_total_fees_collected_by_token, update_event_balance, verify_secret,
 };
 use crate::types::{
     DataKey, DiscountData, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus,
@@ -32,8 +31,8 @@ use crate::{
         DiscountCodeAppliedEvent, DisputeStatusChangedEvent, FeeSettledEvent,
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
         PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
-        PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent, RevenueClaimedEvent,
-        TicketCheckedInEvent, TicketTransferredEvent, PoapMintedEvent,
+        PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
+        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{
@@ -1389,7 +1388,8 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::ContractPaused);
         }
 
-        let payment = get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+        let payment =
+            get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
 
         if payment.status != PaymentStatus::CheckedIn {
             return Err(TicketPaymentError::InvalidPaymentStatus);

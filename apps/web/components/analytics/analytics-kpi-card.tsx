@@ -86,6 +86,11 @@ export function useAnalytics(options: UseAnalyticsOptions = {}) {
       return;
     }
 
+    // Captured with an explicit `string` type so the nested fetchAnalytics
+    // closure below doesn't lose the narrowing from the guard above — a
+    // `function` declaration's captured variables aren't re-narrowed by TS.
+    const currentEventId: string = eventId;
+
     let cancelled = false;
 
     async function fetchAnalytics() {
@@ -93,7 +98,7 @@ export function useAnalytics(options: UseAnalyticsOptions = {}) {
       setError(null);
 
       try {
-        const res = await fetch(`/api/v1/events/${encodeURIComponent(eventId)}/analytics`);
+        const res = await fetch(`/api/v1/events/${encodeURIComponent(currentEventId)}/analytics`);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body.error || `Request failed with status ${res.status}`);

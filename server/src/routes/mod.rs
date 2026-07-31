@@ -37,7 +37,6 @@ use crate::config::{
 };
 use crate::middleware::catch_panic::catch_panic_layer;
 use crate::middleware::content_type::require_json_content_type;
-use crate::middleware::rate_limit::GovernorRateLimitLayer;
 use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
 use crate::utils::rate_limit::RateLimitLayer;
 
@@ -73,10 +72,6 @@ use crate::handlers::{
 use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
-use crate::middleware::content_type::require_json_content_type;
-use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
-use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
-use crate::utils::rate_limit::RateLimitLayer;
 
 /// Sensitive routes that hit the database or expose internal state.
 /// Limited to 30 requests per IP per minute.
@@ -235,7 +230,6 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         );
 
     let sensitive_routes = Router::new()
-        .route("/health", get(health_check))
         .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
@@ -244,6 +238,14 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
             Router::new()
                 .route("/health/redis", get(health_check_redis))
                 .with_state(redis.clone()),
+        )
+        .merge(
+            Router::new()
+                .route("/health", get(health_check))
+                .with_state(crate::handlers::health::HealthState {
+                    pool: pool.clone(),
+                    redis: redis.clone(),
+                }),
         )
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
 
@@ -456,13 +458,19 @@ mod tests {
             get_status(router.clone(), "/health/db").await,
             StatusCode::NOT_FOUND
         );
-        assert_eq!(get_status(router, "/health/ready").await, StatusCode::NOT_FOUND);
+        assert_eq!(
+            get_status(router, "/health/ready").await,
+            StatusCode::NOT_FOUND
+        );
     }
 
     #[tokio::test]
     async fn test_api_without_version_returns_404() {
         let router = test_router();
-        assert_eq!(get_status(router, "/api/health").await, StatusCode::NOT_FOUND);
+        assert_eq!(
+            get_status(router, "/api/health").await,
+            StatusCode::NOT_FOUND
+        );
     }
 
     fn rate_limited_test_router(sensitive_max: usize, general_max: usize) -> Router {

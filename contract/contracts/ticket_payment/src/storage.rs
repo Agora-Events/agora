@@ -905,11 +905,7 @@ pub fn mark_poap_minted(env: &Env, payment_id: String, attendee: &Address) {
 
     // Append to attendee index (sharded, same pattern as buyer payments)
     let count_key = DataKey::PoapsByAttendeeCount(attendee.clone());
-    let count: u32 = env
-        .storage()
-        .persistent()
-        .get(&count_key)
-        .unwrap_or(0u32);
+    let count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0u32);
     let shard = count / SHARD_SIZE;
     let shard_key = DataKey::PoapsByAttendee(attendee.clone(), shard);
     let mut ids: Vec<String> = env
@@ -925,15 +921,11 @@ pub fn mark_poap_minted(env: &Env, payment_id: String, attendee: &Address) {
 /// Returns all POAP payment_ids earned by `attendee` across all shards.
 pub fn get_poaps_by_attendee(env: &Env, attendee: &Address) -> Vec<String> {
     let count_key = DataKey::PoapsByAttendeeCount(attendee.clone());
-    let count: u32 = env
-        .storage()
-        .persistent()
-        .get(&count_key)
-        .unwrap_or(0u32);
+    let count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0u32);
     if count == 0 {
         return vec![env];
     }
-    let total_shards = (count + SHARD_SIZE - 1) / SHARD_SIZE;
+    let total_shards = count.div_ceil(SHARD_SIZE);
     let mut all: Vec<String> = vec![env];
     for shard in 0..total_shards {
         let shard_key = DataKey::PoapsByAttendee(attendee.clone(), shard);
@@ -945,4 +937,3 @@ pub fn get_poaps_by_attendee(env: &Env, attendee: &Address) -> Vec<String> {
     }
     all
 }
-

@@ -87,9 +87,9 @@ fn validate_socials(socials: &Value) -> Result<(), AppError> {
         return Ok(());
     }
 
-    let obj = socials.as_object().ok_or_else(|| {
-        AppError::ValidationError("socials must be a JSON object".to_string())
-    })?;
+    let obj = socials
+        .as_object()
+        .ok_or_else(|| AppError::ValidationError("socials must be a JSON object".to_string()))?;
 
     for (key, value) in obj {
         if !ALLOWED_SOCIAL_KEYS.contains(&key.as_str()) {
@@ -134,9 +134,7 @@ fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
         }
     }
     if let Some(ref avatar_url) = req.avatar_url {
-        if let Err(e) = validate_avatar_url(avatar_url) {
-            return Err(e);
-        }
+        validate_avatar_url(avatar_url)?;
     }
     validate_socials(&req.socials)?;
     Ok(())
@@ -144,11 +142,7 @@ fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
 
 fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
     let has_socials = !req.socials.is_null();
-    if req.display_name.is_none()
-        && req.bio.is_none()
-        && req.avatar_url.is_none()
-        && !has_socials
-    {
+    if req.display_name.is_none() && req.bio.is_none() && req.avatar_url.is_none() && !has_socials {
         return Err(AppError::ValidationError(
             "At least one profile field is required".to_string(),
         ));
@@ -176,9 +170,7 @@ fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
     }
 
     if let Some(ref avatar_url) = req.avatar_url {
-        if let Err(e) = validate_avatar_url(avatar_url) {
-            return Err(e);
-        }
+        validate_avatar_url(avatar_url)?;
     }
 
     validate_socials(&req.socials)?;
@@ -309,7 +301,10 @@ pub async fn upsert_profile(
         .delete(&organizer_stats_cache_key(&address))
         .await
     {
-        tracing::warn!("Failed to invalidate organizer stats cache for {address}: {:?}", e);
+        tracing::warn!(
+            "Failed to invalidate organizer stats cache for {address}: {:?}",
+            e
+        );
     }
 
     if let Err(e) = state.redis.delete(&cache_key).await {
@@ -351,9 +346,9 @@ pub async fn patch_profile(
         if let Some(ref avatar_url) = payload.avatar_url {
             separated.push("avatar_url = ").push_bind(avatar_url);
         }
-    if !payload.socials.is_null() {
-        separated.push("socials = ").push_bind(payload.socials);
-    }
+        if !payload.socials.is_null() {
+            separated.push("socials = ").push_bind(payload.socials);
+        }
 
         separated.push("updated_at = NOW()");
     }
@@ -386,7 +381,10 @@ pub async fn patch_profile(
         .delete(&organizer_stats_cache_key(&address))
         .await
     {
-        tracing::warn!("Failed to invalidate organizer stats cache for {address}: {:?}", e);
+        tracing::warn!(
+            "Failed to invalidate organizer stats cache for {address}: {:?}",
+            e
+        );
     }
 
     if let Err(e) = state.redis.delete(&cache_key).await {
@@ -447,7 +445,10 @@ pub async fn delete_profile(State(mut state): State<ProfileState>, headers: Head
         .delete(&organizer_stats_cache_key(&address))
         .await
     {
-        tracing::warn!("Failed to invalidate organizer stats cache for {address}: {:?}", e);
+        tracing::warn!(
+            "Failed to invalidate organizer stats cache for {address}: {:?}",
+            e
+        );
     }
 
     if let Err(e) = state.redis.delete(&cache_key).await {
@@ -1147,10 +1148,7 @@ pub struct WalletTicketsResponse {
 ///   "past":     [ { "id": "...", "status": "used",   "event_title": "...", ... } ]
 /// }
 /// ```
-pub async fn get_wallet_tickets(
-    State(state): State<ProfileState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn get_wallet_tickets(State(state): State<ProfileState>, headers: HeaderMap) -> Response {
     let address = match extract_auth(&headers) {
         Ok(a) => a,
         Err(e) => return e.into_response(),
@@ -1195,19 +1193,14 @@ pub async fn get_wallet_tickets(
 
     let now = Utc::now();
 
-    let (mut upcoming, mut past): (Vec<WalletTicket>, Vec<WalletTicket>) =
+    let (upcoming, mut past): (Vec<WalletTicket>, Vec<WalletTicket>) =
         tickets.into_iter().partition(|t| {
-            t.event_start_time
-                .map(|start| start >= now)
-                .unwrap_or(true) // tickets without an event date are treated as upcoming
+            t.event_start_time.map(|start| start >= now).unwrap_or(true) // tickets without an event date are treated as upcoming
         });
 
     // Upcoming: soonest first (already ordered by query).
     // Past: most-recent first — reverse the chronological order.
-    past.sort_by(|a, b| {
-        b.event_start_time
-            .cmp(&a.event_start_time)
-    });
+    past.sort_by(|a, b| b.event_start_time.cmp(&a.event_start_time));
 
     let response = WalletTicketsResponse { upcoming, past };
     success(response, "Wallet tickets retrieved successfully").into_response()

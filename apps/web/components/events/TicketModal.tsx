@@ -381,8 +381,8 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                     All tickets for this event have been claimed.
                   </p>
                   <p className="text-sm text-black/60 leading-relaxed">
-                    Join the waitlist and we'll notify you automatically if a
-                    spot becomes available. You won't be charged anything now.
+                    Join the waitlist and we&apos;ll notify you automatically if a
+                    spot becomes available. You won&apos;t be charged anything now.
                   </p>
 
                   {/* What happens section */}

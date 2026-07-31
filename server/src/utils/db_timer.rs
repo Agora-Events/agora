@@ -128,7 +128,10 @@ mod tests {
             "expected at least one warning event to be emitted"
         );
         let fields = &events[0];
-        assert_eq!(fields.get("query_name").map(String::as_str), Some("list_events"));
+        assert_eq!(
+            fields.get("query_name").map(String::as_str),
+            Some("list_events")
+        );
         assert_eq!(fields.get("duration_ms").map(String::as_str), Some("25"));
         assert_eq!(fields.get("threshold_ms").map(String::as_str), Some("10"));
     }

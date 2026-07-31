@@ -567,17 +567,3 @@ pub struct WaitlistLeftEvent {
     /// The ledger timestamp when the user left the waitlist.
     pub timestamp: u64,
 }
-
-/// Emitted when a user leaves the waitlist for an event.
-///
-/// Published with topic `(AgoraEvent::WaitlistLeft,)`.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WaitlistLeftEvent {
-    /// The unique identifier of the event.
-    pub event_id: String,
-    /// The address of the user who left the waitlist.
-    pub user: Address,
-    /// The ledger timestamp when the user left the waitlist.
-    pub timestamp: u64,
-}

@@ -656,11 +656,9 @@ pub fn get_organizer_events(env: &Env, organizer: &Address, caller: &Address) ->
             // Filter out private events if caller is not the organizer
             if is_owner {
                 all_events.push_back(id);
-            } else {
-                if let Some(event_info) = get_event(env, id.clone()) {
-                    if !event_info.is_private {
-                        all_events.push_back(id);
-                    }
+            } else if let Some(event_info) = get_event(env, id.clone()) {
+                if !event_info.is_private {
+                    all_events.push_back(id);
                 }
             }
         }
