@@ -1200,7 +1200,7 @@ pub async fn get_wallet_tickets(State(state): State<ProfileState>, headers: Head
 
     // Upcoming: soonest first (already ordered by query).
     // Past: most-recent first — reverse the chronological order.
-    past.sort_by(|a, b| b.event_start_time.cmp(&a.event_start_time));
+    past.sort_by_key(|b| std::cmp::Reverse(b.event_start_time));
 
     let response = WalletTicketsResponse { upcoming, past };
     success(response, "Wallet tickets retrieved successfully").into_response()
