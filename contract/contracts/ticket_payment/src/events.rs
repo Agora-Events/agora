@@ -28,6 +28,9 @@ pub enum AgoraEvent {
     EventCancelled,
     CancellationRefundClaimed,
     PoapMinted,
+    ResaleListed,
+    ResaleCancelled,
+    ResalePurchased,
 }
 
 #[contracttype]
@@ -247,5 +250,47 @@ pub struct PoapMintedEvent {
     /// The attendee who earned the POAP.
     pub attendee: Address,
     /// Ledger timestamp at mint time.
+    pub timestamp: u64,
+}
+
+/// Emitted when a ticket holder lists their ticket on the secondary market.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResaleListedEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub seller: Address,
+    /// Asking price in token base units.
+    pub price: i128,
+    /// The cap this listing was validated against, so indexers can show
+    /// how much headroom the organizer allows without re-reading the registry.
+    pub max_price: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when a seller withdraws their own listing before it sells.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResaleCancelledEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub seller: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted on a completed atomic resale: payment settled and ownership moved.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResalePurchasedEvent {
+    pub payment_id: String,
+    pub event_id: String,
+    pub seller: Address,
+    pub buyer: Address,
+    /// Gross price paid by the buyer.
+    pub price: i128,
+    /// Portion routed to the organizer as a royalty.
+    pub royalty: i128,
+    /// Net proceeds received by the seller (`price - royalty`).
+    pub seller_proceeds: i128,
     pub timestamp: u64,
 }

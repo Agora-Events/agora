@@ -1977,6 +1977,85 @@ impl TicketPaymentContract {
         Ok(())
     }
 
+    // ── Secondary market ─────────────────────────────────────────────────
+    //
+    // Thin entry points over `crate::resale`, which holds the pricing rules,
+    // royalty split and atomic settlement logic. See that module for the
+    // anti-scalping model and how it relates to the off-chain E2EE handover
+    // of the ticket's check-in secret.
+
+    /// Lists a confirmed ticket on the secondary market at `price_usdc`
+    /// (token base units). Authorized by the current holder; rejected if the
+    /// price exceeds the event's resale ceiling.
+    pub fn list_for_resale(
+        env: Env,
+        payment_id: String,
+        price_usdc: i128,
+    ) -> Result<crate::resale::ResaleListing, TicketPaymentError> {
+        crate::resale::list_for_resale(&env, payment_id, price_usdc)
+    }
+
+    /// Withdraws an active listing. Only the seller may cancel.
+    pub fn cancel_resale_listing(
+        env: Env,
+        payment_id: String,
+    ) -> Result<(), TicketPaymentError> {
+        crate::resale::cancel_resale_listing(&env, payment_id)
+    }
+
+    /// Buys a listed ticket. Settles payment, organizer royalty and ownership
+    /// transfer in a single atomic invocation. Requires the buyer to have
+    /// approved this contract for the listing price first.
+    pub fn purchase_resale_ticket(
+        env: Env,
+        payment_id: String,
+        buyer: Address,
+    ) -> Result<crate::resale::ResaleListing, TicketPaymentError> {
+        crate::resale::purchase_resale_ticket(&env, payment_id, buyer)
+    }
+
+    /// Returns the listing for a ticket, if one has ever been created.
+    /// Cancelled and sold listings are retained for history.
+    pub fn get_resale_listing(
+        env: Env,
+        payment_id: String,
+    ) -> Option<crate::resale::ResaleListing> {
+        crate::resale::get_listing(&env, &payment_id)
+    }
+
+    /// Sets the organizer royalty applied to resales of this event's tickets.
+    /// Organizer-only; capped at `MAX_RESALE_ROYALTY_BPS`.
+    pub fn set_resale_royalty_bps(
+        env: Env,
+        event_id: String,
+        royalty_bps: u32,
+    ) -> Result<(), TicketPaymentError> {
+        crate::resale::set_royalty_bps(&env, &event_id, royalty_bps)
+    }
+
+    /// Returns the royalty rate in bps used for this event's resales.
+    pub fn get_resale_royalty_bps(env: Env, event_id: String) -> u32 {
+        crate::resale::get_royalty_bps(&env, &event_id)
+    }
+
+    /// Returns the highest price `payment_id` may currently be listed at.
+    /// Useful for client-side validation before building a listing tx.
+    pub fn get_max_resale_price(
+        env: Env,
+        payment_id: String,
+    ) -> Result<i128, TicketPaymentError> {
+        let payment =
+            get_payment(&env, payment_id).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
+        let event_info = match registry_client.try_get_event(&payment.event_id) {
+            Ok(Ok(Some(info))) => info,
+            _ => return Err(TicketPaymentError::EventNotFound),
+        };
+
+        crate::resale::max_resale_price(payment.amount, event_info.resale_cap_bps)
+    }
+
     /// Triggers a bulk refund for a cancelled event. Processes in batches.
     pub fn trigger_bulk_refund(
         env: Env,
@@ -2666,7 +2745,7 @@ fn validate_address(env: &Env, address: &Address) -> Result<(), TicketPaymentErr
 }
 
 /// Validates that a transfer recipient is neither the zero address nor the contract itself.
-fn validate_recipient(env: &Env, address: &Address) -> Result<(), TicketPaymentError> {
+pub(crate) fn validate_recipient(env: &Env, address: &Address) -> Result<(), TicketPaymentError> {
     if address == &env.current_contract_address() || is_zero_address(env, address) {
         return Err(TicketPaymentError::InvalidAddress);
     }
