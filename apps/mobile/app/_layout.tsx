@@ -148,6 +148,15 @@ function AppNavigation() {
             headerShadowVisible: false,
           }}
         />
+        <Stack.Screen
+          name="organizer/dashboard"
+          options={{
+            title: 'Organizer Dashboard',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
         <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
       </Stack>
     </NavThemeProvider>
