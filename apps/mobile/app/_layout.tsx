@@ -90,6 +90,16 @@ function AppNavigation() {
           }}
         />
         <Stack.Screen
+          name="checkout/waiting-room"
+          options={{
+            presentation: 'modal',
+            title: 'Virtual Waiting Room',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
           name="event/[id]"
           options={{
             presentation: 'modal',

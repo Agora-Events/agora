@@ -8,6 +8,7 @@ pub mod profile;
 pub mod qr_payload;
 pub mod rates;
 pub mod soroban_listener;
+pub mod waiting_room;
 pub mod ws;
 
 use axum::{extract::Path, response::IntoResponse, response::Response};

@@ -50,6 +50,13 @@ rand = "0.8"
 base64 = "0.21"
 hex = "0.4"
 
+# SHA-256 for the waiting-room proof-of-work challenge (Issue #1187)
+sha2 = "0.10"
+
+# Streaming (SSE) support for the waiting-room queue position stream (Issue #1187)
+async-stream = "0.3"
+futures-util = "0.3"
+
 
 # Rate limiting (using built-in RateLimitLayer only; tower_governor requires axum 0.8)
 
