@@ -73,10 +73,10 @@ use crate::handlers::{
     },
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
-use crate::services::queue::QueueEngine;
 use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
+use crate::services::queue::QueueEngine;
 
 /// Sensitive routes that hit the database or expose internal state.
 /// Limited to 30 requests per IP per minute.

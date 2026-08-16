@@ -332,10 +332,7 @@ impl QueueEngine {
             status: QueueStatusKind::Waiting,
             position: Some(position),
             queue_size,
-            estimated_wait_seconds: Some(estimated_wait_seconds(
-                position,
-                rate_per_minute,
-            )),
+            estimated_wait_seconds: Some(estimated_wait_seconds(position, rate_per_minute)),
             grant_token: None,
         })
     }
@@ -386,7 +383,11 @@ impl QueueEngine {
     /// Spawn the background admission worker. Runs `tick`-periodically,
     /// draining every active event queue at its token-bucket rate and issuing
     /// signed grants with the given TTL.
-    pub fn spawn_admission_worker(engine: std::sync::Arc<Self>, tick: StdDuration, grant_ttl_minutes: i64) {
+    pub fn spawn_admission_worker(
+        engine: std::sync::Arc<Self>,
+        tick: StdDuration,
+        grant_ttl_minutes: i64,
+    ) {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tick);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -581,10 +582,7 @@ mod tests {
         let claims = verify_grant_token(&token).expect("grant should verify");
         assert_eq!(claims.sub, "GCLIENT123");
         assert_eq!(claims.purpose, GRANT_PURPOSE);
-        assert_eq!(
-            claims.event_id,
-            "550e8400-e29b-41d4-a716-446655440000"
-        );
+        assert_eq!(claims.event_id, "550e8400-e29b-41d4-a716-446655440000");
         assert!(claims.exp > claims.iat);
         assert!(!claims.jti.is_empty());
     }

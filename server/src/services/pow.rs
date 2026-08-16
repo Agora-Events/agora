@@ -108,7 +108,10 @@ mod tests {
     fn test_verify_pow_deterministic() {
         let challenge = generate_challenge();
         let nonce = solve_pow(&challenge, 4).unwrap();
-        assert_eq!(verify_pow(&challenge, &nonce, 4), verify_pow(&challenge, &nonce, 4));
+        assert_eq!(
+            verify_pow(&challenge, &nonce, 4),
+            verify_pow(&challenge, &nonce, 4)
+        );
         // A different challenge must not accept the same nonce.
         let other = generate_challenge();
         assert_ne!(challenge, other);

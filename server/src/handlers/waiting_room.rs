@@ -92,8 +92,10 @@ impl WaitingRoomConfig {
                 "WAITING_ROOM_ADMISSION_RATE_PER_MINUTE",
                 DEFAULT_ADMISSION_RATE_PER_MINUTE,
             ),
-            grant_ttl_minutes: env_u64("WAITING_ROOM_GRANT_TTL_MINUTES", DEFAULT_GRANT_TTL_MINUTES as u64)
-                as i64,
+            grant_ttl_minutes: env_u64(
+                "WAITING_ROOM_GRANT_TTL_MINUTES",
+                DEFAULT_GRANT_TTL_MINUTES as u64,
+            ) as i64,
             challenge_ttl_seconds: env_u64(
                 "WAITING_ROOM_CHALLENGE_TTL_SECONDS",
                 DEFAULT_CHALLENGE_TTL_SECONDS,
@@ -150,11 +152,8 @@ pub async fn request_challenge(
     Json(payload): Json<ChallengeRequest>,
 ) -> Response {
     if payload.event_id.trim().is_empty() {
-        return ApiError::new(
-            axum::http::StatusCode::BAD_REQUEST,
-            "event_id is required",
-        )
-        .into_response();
+        return ApiError::new(axum::http::StatusCode::BAD_REQUEST, "event_id is required")
+            .into_response();
     }
 
     let challenge = pow::generate_challenge();
@@ -240,7 +239,11 @@ pub async fn join_queue(
         .into_response();
     }
 
-    if !pow::verify_pow(&payload.challenge, &payload.nonce, state.config.pow_difficulty) {
+    if !pow::verify_pow(
+        &payload.challenge,
+        &payload.nonce,
+        state.config.pow_difficulty,
+    ) {
         return ApiError::new(
             axum::http::StatusCode::UNPROCESSABLE_ENTITY,
             "Proof-of-work solution is incorrect",
