@@ -56,6 +56,10 @@ use crate::handlers::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
         health_check_redis,
     },
+    marketplace::{
+        cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
+        get_listing, list_listings, list_offers, register_push_token, MarketplaceState,
+    },
     profile::{
         delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
         get_wallet_tickets, list_events_by_organizer, list_my_transactions, patch_profile,
@@ -242,6 +246,34 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/:id/scan", post(scan_ticket))
         .with_state(pool.clone());
 
+    // Secondary ticket market (Issue #1184). The key-envelope endpoints relay
+    // seller-sealed ticket secrets; see `handlers::marketplace` for the trust
+    // model. Push delivery is the first consumer of `NotificationService`.
+    let mut notification_service = crate::notifications::NotificationService::new();
+    notification_service.register(crate::notifications::push::ExpoPushProvider::new(
+        reqwest::Client::new(),
+    ));
+    let marketplace_state = MarketplaceState {
+        pool: pool.clone(),
+        notifications: std::sync::Arc::new(notification_service),
+    };
+    let marketplace_routes = Router::new()
+        .route("/listings", get(list_listings).post(create_listing))
+        .route(
+            "/listings/:payment_id",
+            get(get_listing).delete(cancel_listing),
+        )
+        .route(
+            "/listings/:payment_id/offers",
+            get(list_offers).post(create_offer),
+        )
+        .route(
+            "/listings/:payment_id/key-envelope",
+            get(get_key_envelope).post(create_key_envelope),
+        )
+        .route("/push-token", post(register_push_token))
+        .with_state(marketplace_state);
+
     // Category routes — listing is Redis-cached (Issue #583); the single-item
     // lookup keeps the bare PgPool state.
     let category_state = CategoryState {
@@ -294,6 +326,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/events", event_routes)
         .nest("/events", event_qr_routes)
         .nest("/tickets", ticket_routes)
+        .nest("/marketplace", marketplace_routes)
         .nest("/categories", category_routes)
         .nest("/auth", auth_routes)
         .nest("/profile", profile_routes)

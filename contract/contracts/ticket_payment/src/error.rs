@@ -57,6 +57,10 @@ pub enum TicketPaymentError {
     InvalidSecret = 61,
     DiscountExpired = 62,
     DiscountMaxUsesReached = 63,
+    ResaleListingNotFound = 64,
+    ResaleListingNotActive = 65,
+    TicketAlreadyListed = 66,
+    InvalidRoyaltyBps = 67,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -130,6 +134,10 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             61 => TicketPaymentError::InvalidSecret,
             62 => TicketPaymentError::DiscountExpired,
             63 => TicketPaymentError::DiscountMaxUsesReached,
+            64 => TicketPaymentError::ResaleListingNotFound,
+            65 => TicketPaymentError::ResaleListingNotActive,
+            66 => TicketPaymentError::TicketAlreadyListed,
+            67 => TicketPaymentError::InvalidRoyaltyBps,
             _ => TicketPaymentError::ArithmeticError,
         }
     }

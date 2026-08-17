@@ -3,6 +3,7 @@ pub mod categories;
 pub mod events;
 pub mod health;
 pub mod leaderboard;
+pub mod marketplace;
 pub mod monitoring;
 pub mod profile;
 pub mod qr_payload;

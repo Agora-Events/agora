@@ -64,4 +64,8 @@ pub enum DataKey {
     PoapsByAttendee(Address, u32),
     /// Total number of POAPs minted for an attendee (Persistent)
     PoapsByAttendeeCount(Address),
+    /// Active secondary-market listing: payment_id -> ResaleListing (Persistent)
+    ResaleListing(String),
+    /// Per-event resale royalty paid to the organizer: event_id -> rate_bps (u32) (Persistent)
+    ResaleRoyaltyBps(String),
 }
