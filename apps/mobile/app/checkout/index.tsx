@@ -15,13 +15,21 @@ import { getTiersForEvent } from '@/lib/ticketTiers';
 const MAX_TICKETS_PER_ORDER = 10;
 
 export default function CheckoutScreen() {
-  const params = useLocalSearchParams<{ eventId?: string; eventTitle?: string }>();
+  const params = useLocalSearchParams<{
+    eventId?: string;
+    eventTitle?: string;
+    /** Signed checkout access grant issued by the waiting room (Issue #1187). */
+    grantToken?: string;
+  }>();
   const router = useRouter();
   const { user, token } = useAuth();
   const checkout = useTicketCheckout();
 
   const eventId = params.eventId ?? '1';
   const eventTitle = params.eventTitle ?? 'Agora Event';
+  // Received when the user was admitted through the virtual waiting room.
+  // Server-side checkout endpoints can verify it with the waiting-room API.
+  const grantToken = params.grantToken;
 
   const baseTiers = useMemo(() => getTiersForEvent(eventId), [eventId]);
 
@@ -82,6 +90,7 @@ export default function CheckoutScreen() {
       unitPriceUsdc: selectedTier.priceUsdc,
       quantity,
       buyerPublicKey: user.walletAddress,
+      grantToken,
     });
   };
 
@@ -165,6 +174,20 @@ export default function CheckoutScreen() {
         style={styles.confirmButton}
       />
 
+      <Button
+        testID="checkout-queue-link"
+        title="High demand? Join the virtual queue"
+        variant="outline"
+        onPress={() =>
+          router.push({
+            pathname: '/checkout/waiting-room',
+            params: { eventId, eventTitle },
+          })
+        }
+        disabled={checkout.isSubmitting}
+        style={styles.queueLink}
+      />
+
       <Text style={styles.disclaimer}>
         You will be asked to approve a USDC spending allowance, then submit the ticket purchase.
         Both transactions run on Stellar Testnet via {'\n'}soroban-testnet.stellar.org.
@@ -220,6 +243,9 @@ const styles = StyleSheet.create({
   },
   confirmButton: {
     marginTop: 4,
+  },
+  queueLink: {
+    marginTop: 12,
   },
   liveBadge: {
     fontSize: 11,

@@ -67,11 +67,16 @@ use crate::handlers::{
     },
     rates::{get_rates, RatesState},
     soroban_listener::{spawn_listener, ListenerConfig},
+    waiting_room::{
+        join_queue, queue_status, queue_stream, request_challenge, WaitingRoomConfig,
+        WaitingRoomState,
+    },
     ws::{ws_purchases_handler, PurchaseBroadcaster},
 };
 use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
+use crate::services::queue::QueueEngine;
 
 /// Sensitive routes that hit the database or expose internal state.
 /// Limited to 30 requests per IP per minute.
@@ -103,6 +108,16 @@ pub struct ApiDoc;
 
 pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
+
+    // Virtual waiting room (Issue #1187): queue engine + background admission
+    // worker. Admission rate / PoW difficulty / grant TTL are env-tunable.
+    let waiting_room_config = WaitingRoomConfig::from_env();
+    let waiting_room_engine = std::sync::Arc::new(QueueEngine::new(redis.clone()));
+    QueueEngine::spawn_admission_worker(
+        waiting_room_engine.clone(),
+        Duration::from_millis(waiting_room_config.tick_interval_ms),
+        waiting_room_config.grant_ttl_minutes,
+    );
 
     let event_state = EventState {
         pool: pool.clone(),
@@ -168,6 +183,19 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     let ws_routes = Router::new()
         .route("/purchases", get(ws_purchases_handler))
         .with_state(broadcaster);
+
+    // Virtual waiting room routes (Issue #1187)
+    let waiting_room_state = WaitingRoomState {
+        engine: waiting_room_engine,
+        pool: pool.clone(),
+        config: waiting_room_config,
+    };
+    let waiting_room_routes = Router::new()
+        .route("/challenge", post(request_challenge))
+        .route("/join", post(join_queue))
+        .route("/status", get(queue_status))
+        .route("/stream", get(queue_stream))
+        .with_state(waiting_room_state);
 
     // QR payload routes for cryptographically signed QR codes
     let qr_routes = Router::new()
@@ -270,6 +298,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/auth", auth_routes)
         .nest("/profile", profile_routes)
         .nest("/ws", ws_routes)
+        .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
         .merge(rates_route)
         .layer(middleware::from_fn(require_json_content_type))

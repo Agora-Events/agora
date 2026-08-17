@@ -6,4 +6,5 @@ pub mod middleware;
 pub mod models;
 pub mod notifications;
 pub mod routes;
+pub mod services;
 pub mod utils;
