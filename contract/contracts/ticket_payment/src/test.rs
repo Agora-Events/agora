@@ -10318,7 +10318,10 @@ fn test_list_for_resale_at_cap_succeeds() {
     assert_eq!(listing.seller, seller);
     assert_eq!(listing.price, 1100_0000000);
     assert_eq!(listing.max_price, 1100_0000000);
-    assert_eq!(listing.royalty_bps, crate::resale::DEFAULT_RESALE_ROYALTY_BPS);
+    assert_eq!(
+        listing.royalty_bps,
+        crate::resale::DEFAULT_RESALE_ROYALTY_BPS
+    );
     assert_eq!(listing.status, crate::resale::ResaleStatus::Active);
     assert_eq!(client.get_max_resale_price(&payment_id), 1100_0000000);
 }
@@ -10341,10 +10344,7 @@ fn test_list_for_resale_above_cap_rejected() {
 
     // One stroop over the ceiling.
     let result = client.try_list_for_resale(&payment_id, &1100_0000001);
-    assert_eq!(
-        result,
-        Err(Ok(TicketPaymentError::ResalePriceExceedsCap.into()))
-    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::ResalePriceExceedsCap)));
 
     // Nothing should have been written for a rejected listing.
     assert!(client.get_resale_listing(&payment_id).is_none());
@@ -10365,10 +10365,7 @@ fn test_list_for_resale_falls_back_to_default_cap() {
     assert_eq!(client.get_max_resale_price(&payment_id), 110);
 
     let result = client.try_list_for_resale(&payment_id, &111);
-    assert_eq!(
-        result,
-        Err(Ok(TicketPaymentError::ResalePriceExceedsCap.into()))
-    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::ResalePriceExceedsCap)));
 
     let listing = client.list_for_resale(&payment_id, &110);
     assert_eq!(listing.max_price, 110);
@@ -10392,10 +10389,7 @@ fn test_double_listing_rejected() {
 
     client.list_for_resale(&payment_id, &1000_0000000);
     let result = client.try_list_for_resale(&payment_id, &1050_0000000);
-    assert_eq!(
-        result,
-        Err(Ok(TicketPaymentError::TicketAlreadyListed.into()))
-    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::TicketAlreadyListed)));
 }
 
 #[test]
@@ -10422,10 +10416,7 @@ fn test_cancel_then_relist() {
 
     // Cancelling twice is not allowed…
     let result = client.try_cancel_resale_listing(&payment_id);
-    assert_eq!(
-        result,
-        Err(Ok(TicketPaymentError::ResaleListingNotActive.into()))
-    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::ResaleListingNotActive)));
 
     // …but the ticket is free to be listed again.
     let relisted = client.list_for_resale(&payment_id, &900_0000000);
@@ -10461,8 +10452,8 @@ fn test_purchase_resale_ticket_settles_atomically() {
     let listing = client.purchase_resale_ticket(&payment_id, &buyer);
 
     // 5% default royalty on 1100 USDC = 55 USDC to the organizer.
-    let expected_royalty = price * crate::resale::DEFAULT_RESALE_ROYALTY_BPS as i128
-        / MAX_BPS as i128;
+    let expected_royalty =
+        price * crate::resale::DEFAULT_RESALE_ROYALTY_BPS as i128 / MAX_BPS as i128;
     assert_eq!(listing.status, crate::resale::ResaleStatus::Sold);
     assert_eq!(usdc.balance(&buyer), 0);
     assert_eq!(usdc.balance(&seller), price - expected_royalty);
@@ -10500,15 +10491,18 @@ fn test_purchase_resale_requires_allowance() {
 
     // No approve() call — settlement must refuse rather than half-execute.
     let result = client.try_purchase_resale_ticket(&payment_id, &buyer);
-    assert_eq!(
-        result,
-        Err(Ok(TicketPaymentError::InsufficientAllowance.into()))
-    );
+    assert_eq!(result, Err(Ok(TicketPaymentError::InsufficientAllowance)));
 
     // The listing is untouched and the ticket still belongs to the seller.
     let listing = client.get_resale_listing(&payment_id).unwrap();
     assert_eq!(listing.status, crate::resale::ResaleStatus::Active);
-    assert_eq!(client.get_payment_status(&payment_id).unwrap().buyer_address, seller);
+    assert_eq!(
+        client
+            .get_payment_status(&payment_id)
+            .unwrap()
+            .buyer_address,
+        seller
+    );
 }
 
 #[test]
@@ -10530,7 +10524,7 @@ fn test_seller_cannot_buy_own_listing() {
     client.list_for_resale(&payment_id, &1000_0000000);
 
     let result = client.try_purchase_resale_ticket(&payment_id, &seller);
-    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress.into())));
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
 }
 
 #[test]
@@ -10548,9 +10542,9 @@ fn test_resale_royalty_bps_is_configurable_and_bounded() {
     client.set_resale_royalty_bps(&event_id, &250);
     assert_eq!(client.get_resale_royalty_bps(&event_id), 250);
 
-    let result = client
-        .try_set_resale_royalty_bps(&event_id, &(crate::resale::MAX_RESALE_ROYALTY_BPS + 1));
-    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidRoyaltyBps.into())));
+    let result =
+        client.try_set_resale_royalty_bps(&event_id, &(crate::resale::MAX_RESALE_ROYALTY_BPS + 1));
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidRoyaltyBps)));
 
     // The rejected write must not have clobbered the accepted one.
     assert_eq!(client.get_resale_royalty_bps(&event_id), 250);
@@ -10615,5 +10609,5 @@ fn test_soulbound_ticket_cannot_be_listed() {
     env.as_contract(&client.address, || store_payment(&env, payment));
 
     let result = client.try_list_for_resale(&payment_id, &1000_0000000);
-    assert_eq!(result, Err(Ok(TicketPaymentError::NonTransferable.into())));
+    assert_eq!(result, Err(Ok(TicketPaymentError::NonTransferable)));
 }

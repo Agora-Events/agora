@@ -39,7 +39,9 @@ impl ExpoPushProvider {
     pub fn new(client: reqwest::Client) -> Self {
         Self {
             client,
-            access_token: std::env::var("EXPO_ACCESS_TOKEN").ok().filter(|t| !t.is_empty()),
+            access_token: std::env::var("EXPO_ACCESS_TOKEN")
+                .ok()
+                .filter(|t| !t.is_empty()),
         }
     }
 }
@@ -68,10 +70,9 @@ impl NotificationProvider for ExpoPushProvider {
             request = request.bearer_auth(token);
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|e| NotificationError::DeliveryFailed(format!("Expo push request failed: {e}")))?;
+        let response = request.send().await.map_err(|e| {
+            NotificationError::DeliveryFailed(format!("Expo push request failed: {e}"))
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();

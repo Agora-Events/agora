@@ -128,8 +128,10 @@ pub struct ResaleListingView {
 impl From<ResaleListingRow> for ResaleListingView {
     fn from(listing: ResaleListingRow) -> Self {
         // Mirrors `resale::split_proceeds`: royalty rounds down, dust to seller.
-        let royalty_stroops =
-            listing.price_stroops.saturating_mul(listing.royalty_bps as i64) / MAX_BPS;
+        let royalty_stroops = listing
+            .price_stroops
+            .saturating_mul(listing.royalty_bps as i64)
+            / MAX_BPS;
         let seller_proceeds_stroops = listing.price_stroops - royalty_stroops;
         let headroom_stroops = listing.max_price_stroops - listing.price_stroops;
 
@@ -247,7 +249,9 @@ fn validate_b64_max(field: &str, value: &str, max_len: usize) -> Result<(), AppE
         .map_err(|_| AppError::ValidationError(format!("{field} must be valid base64")))?;
 
     if decoded.is_empty() {
-        return Err(AppError::ValidationError(format!("{field} must not be empty")));
+        return Err(AppError::ValidationError(format!(
+            "{field} must not be empty"
+        )));
     }
     if decoded.len() > max_len {
         return Err(AppError::ValidationError(format!(
@@ -273,13 +277,11 @@ fn validate_identifier(field: &str, value: &str) -> Result<(), AppError> {
 
 /// Loads a listing or returns a 404.
 async fn load_listing(pool: &PgPool, payment_id: &str) -> Result<ResaleListingRow, AppError> {
-    sqlx::query_as::<_, ResaleListingRow>(
-        "SELECT * FROM resale_listings WHERE payment_id = $1",
-    )
-    .bind(payment_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("No resale listing for ticket '{payment_id}'")))
+    sqlx::query_as::<_, ResaleListingRow>("SELECT * FROM resale_listings WHERE payment_id = $1")
+        .bind(payment_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("No resale listing for ticket '{payment_id}'")))
 }
 
 /// Loads a listing and asserts the caller owns it.
@@ -338,10 +340,8 @@ pub async fn create_listing(
     .await
     {
         Ok(Some(_)) => {
-            return AppError::Forbidden(
-                "This ticket is listed by a different seller".to_string(),
-            )
-            .into_response()
+            return AppError::Forbidden("This ticket is listed by a different seller".to_string())
+                .into_response()
         }
         Ok(None) => {}
         Err(e) => return AppError::DatabaseError(e).into_response(),
@@ -384,11 +384,7 @@ pub async fn create_listing(
         }
     };
 
-    (
-        StatusCode::CREATED,
-        Json(ResaleListingView::from(listing)),
-    )
-        .into_response()
+    (StatusCode::CREATED, Json(ResaleListingView::from(listing))).into_response()
 }
 
 fn validate_create_listing(payload: &CreateListingRequest) -> Result<(), AppError> {
@@ -477,11 +473,9 @@ pub async fn get_listing(
     Path(payment_id): Path<String>,
 ) -> Response {
     match load_listing(&state.pool, &payment_id).await {
-        Ok(listing) => success(
-            ResaleListingView::from(listing),
-            "Resale listing retrieved",
-        )
-        .into_response(),
+        Ok(listing) => {
+            success(ResaleListingView::from(listing), "Resale listing retrieved").into_response()
+        }
         Err(e) => e.into_response(),
     }
 }
@@ -512,12 +506,11 @@ pub async fn cancel_listing(
         .into_response();
     }
 
-    if let Err(e) = sqlx::query(
-        "UPDATE resale_listings SET status = 'cancelled' WHERE payment_id = $1",
-    )
-    .bind(&payment_id)
-    .execute(&state.pool)
-    .await
+    if let Err(e) =
+        sqlx::query("UPDATE resale_listings SET status = 'cancelled' WHERE payment_id = $1")
+            .bind(&payment_id)
+            .execute(&state.pool)
+            .await
     {
         tracing::error!("Failed to cancel resale listing: {:?}", e);
         return AppError::DatabaseError(e).into_response();
@@ -735,10 +728,8 @@ pub async fn create_key_envelope(
     .await
     {
         Ok(0) => {
-            return AppError::ValidationError(
-                "That buyer has no offer on this listing".to_string(),
-            )
-            .into_response()
+            return AppError::ValidationError("That buyer has no offer on this listing".to_string())
+                .into_response()
         }
         Ok(_) => {}
         Err(e) => return AppError::DatabaseError(e).into_response(),
@@ -911,10 +902,8 @@ pub async fn register_push_token(
         return e.into_response();
     }
     if !matches!(payload.platform.as_str(), "ios" | "android" | "web") {
-        return AppError::ValidationError(
-            "platform must be one of: ios, android, web".to_string(),
-        )
-        .into_response();
+        return AppError::ValidationError("platform must be one of: ios, android, web".to_string())
+            .into_response();
     }
 
     if let Err(e) = sqlx::query(
@@ -1021,10 +1010,12 @@ mod tests {
     fn rejects_empty_and_oversized_ciphertext() {
         assert!(validate_b64_max("c", "", MAX_CIPHERTEXT_BYTES).is_err());
         assert!(validate_b64_max("c", &b64(&[0u8; 32]), MAX_CIPHERTEXT_BYTES).is_ok());
-        assert!(
-            validate_b64_max("c", &b64(&vec![0u8; MAX_CIPHERTEXT_BYTES + 1]), MAX_CIPHERTEXT_BYTES)
-                .is_err()
-        );
+        assert!(validate_b64_max(
+            "c",
+            &b64(&vec![0u8; MAX_CIPHERTEXT_BYTES + 1]),
+            MAX_CIPHERTEXT_BYTES
+        )
+        .is_err());
     }
 
     #[test]

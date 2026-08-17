@@ -1996,10 +1996,7 @@ impl TicketPaymentContract {
     }
 
     /// Withdraws an active listing. Only the seller may cancel.
-    pub fn cancel_resale_listing(
-        env: Env,
-        payment_id: String,
-    ) -> Result<(), TicketPaymentError> {
+    pub fn cancel_resale_listing(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
         crate::resale::cancel_resale_listing(&env, payment_id)
     }
 
@@ -2040,12 +2037,8 @@ impl TicketPaymentContract {
 
     /// Returns the highest price `payment_id` may currently be listed at.
     /// Useful for client-side validation before building a listing tx.
-    pub fn get_max_resale_price(
-        env: Env,
-        payment_id: String,
-    ) -> Result<i128, TicketPaymentError> {
-        let payment =
-            get_payment(&env, payment_id).ok_or(TicketPaymentError::PaymentNotFound)?;
+    pub fn get_max_resale_price(env: Env, payment_id: String) -> Result<i128, TicketPaymentError> {
+        let payment = get_payment(&env, payment_id).ok_or(TicketPaymentError::PaymentNotFound)?;
 
         let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
         let event_info = match registry_client.try_get_event(&payment.event_id) {

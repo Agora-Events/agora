@@ -52,13 +52,13 @@ use crate::handlers::{
         set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
-    marketplace::{
-        cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
-        get_listing, list_listings, list_offers, register_push_token, MarketplaceState,
-    },
     health::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
         health_check_redis,
+    },
+    marketplace::{
+        cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
+        get_listing, list_listings, list_offers, register_push_token, MarketplaceState,
     },
     profile::{
         delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,

@@ -41,9 +41,7 @@ use soroban_sdk::{contracttype, token, Address, Env, String};
 
 use crate::contract::{event_registry, validate_recipient};
 use crate::error::TicketPaymentError;
-use crate::events::{
-    AgoraEvent, ResaleCancelledEvent, ResaleListedEvent, ResalePurchasedEvent,
-};
+use crate::events::{AgoraEvent, ResaleCancelledEvent, ResaleListedEvent, ResalePurchasedEvent};
 use crate::storage::{
     add_payment_to_buyer_index, add_to_total_volume_processed, get_event_registry, get_payment,
     is_event_disputed, is_initialized, is_paused, remove_payment_from_buyer_index,
@@ -105,10 +103,9 @@ pub fn get_listing(env: &Env, payment_id: &String) -> Option<ResaleListing> {
 }
 
 fn set_listing(env: &Env, listing: &ResaleListing) {
-    env.storage().persistent().set(
-        &DataKey::ResaleListing(listing.payment_id.clone()),
-        listing,
-    );
+    env.storage()
+        .persistent()
+        .set(&DataKey::ResaleListing(listing.payment_id.clone()), listing);
 }
 
 pub fn get_royalty_bps(env: &Env, event_id: &String) -> u32 {
@@ -235,7 +232,8 @@ pub fn list_for_resale(
         return Err(TicketPaymentError::InvalidPrice);
     }
 
-    let payment = get_payment(env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+    let payment =
+        get_payment(env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
 
     // Only a live, unused ticket can be sold on. `CheckedIn` is explicitly
     // excluded: the ticket has already been consumed at the gate.
@@ -359,7 +357,8 @@ pub fn purchase_resale_ticket(
 
     buyer.require_auth();
 
-    let mut payment = get_payment(env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+    let mut payment =
+        get_payment(env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
     if payment.status != PaymentStatus::Confirmed {
         return Err(TicketPaymentError::InvalidPaymentStatus);
     }
