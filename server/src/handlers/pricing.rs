@@ -43,9 +43,6 @@ const DEFAULT_SERIES_POINTS: usize = 50;
 /// Maximum data points allowed in a single series request.
 const MAX_SERIES_POINTS: usize = 200;
 
-/// Basis-point denominator (mirrors the on-chain constant).
-const MAX_BPS: u64 = 10_000;
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Handler State
 // ──────────────────────────────────────────────────────────────────────────────
@@ -167,8 +164,7 @@ pub async fn get_dutch_auction_price(
     let points = params
         .points
         .unwrap_or(DEFAULT_SERIES_POINTS)
-        .min(MAX_SERIES_POINTS)
-        .max(2);
+        .clamp(2, MAX_SERIES_POINTS);
 
     let series = build_dutch_series(
         params.start_price,
@@ -179,11 +175,7 @@ pub async fn get_dutch_auction_price(
         params.exponential,
     );
 
-    let seconds_remaining = if now >= params.end_time {
-        0
-    } else {
-        params.end_time - now
-    };
+    let seconds_remaining = params.end_time.saturating_sub(now);
 
     let response = DutchAuctionPriceResponse {
         current_price_stroops: current_price,
@@ -332,8 +324,7 @@ pub async fn get_bonding_curve_series(
     let points = params
         .points
         .unwrap_or(DEFAULT_SERIES_POINTS)
-        .min(MAX_SERIES_POINTS)
-        .max(2);
+        .clamp(2, MAX_SERIES_POINTS);
 
     let cache_key = format!(
         "pricing:bc:series:{:.6}:{}:{}:{}:{}",
