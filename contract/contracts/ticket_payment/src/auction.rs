@@ -38,8 +38,8 @@
 
 #![allow(dead_code)]
 
-use soroban_sdk::{contracttype, Address, BytesN, Env, String};
 use soroban_sdk::xdr::ToXdr;
+use soroban_sdk::{contracttype, Address, BytesN, Env, String};
 
 use crate::error::TicketPaymentError;
 use crate::keys::PricingKey;
@@ -99,9 +99,10 @@ pub fn set_dutch_auction(
     tier_id: &String,
     config: &DutchAuctionConfig,
 ) {
-    env.storage()
-        .persistent()
-        .set(&PricingKey::DutchAuction(event_id.clone(), tier_id.clone()), config);
+    env.storage().persistent().set(
+        &PricingKey::DutchAuction(event_id.clone(), tier_id.clone()),
+        config,
+    );
 }
 
 /// Retrieve the Dutch auction config for an (event_id, tier_id) pair, if any.
@@ -279,8 +280,8 @@ pub fn commit_purchase(
         return Err(TicketPaymentError::InvalidSlippageBps);
     }
 
-    let cfg = get_dutch_auction(env, event_id, tier_id)
-        .ok_or(TicketPaymentError::AuctionNotActive)?;
+    let cfg =
+        get_dutch_auction(env, event_id, tier_id).ok_or(TicketPaymentError::AuctionNotActive)?;
 
     let now = env.ledger().timestamp();
     if now >= cfg.end_time {
@@ -353,8 +354,8 @@ pub fn reveal_purchase(
     }
 
     // Check the current auction price is still within the buyer's slippage tolerance.
-    let cfg = get_dutch_auction(env, event_id, tier_id)
-        .ok_or(TicketPaymentError::AuctionNotActive)?;
+    let cfg =
+        get_dutch_auction(env, event_id, tier_id).ok_or(TicketPaymentError::AuctionNotActive)?;
 
     let current_price = current_dutch_price(&cfg, now);
 
@@ -478,12 +479,7 @@ mod tests {
         let p_exp = current_dutch_price_exponential(&cfg_exp, 500);
 
         // Exponential decay keeps price higher at the midpoint
-        assert!(
-            p_exp > p_lin,
-            "exp={} should be > lin={}",
-            p_exp,
-            p_lin
-        );
+        assert!(p_exp > p_lin, "exp={} should be > lin={}", p_exp, p_lin);
     }
 
     #[test]

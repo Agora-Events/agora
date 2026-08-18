@@ -84,9 +84,10 @@ pub fn set_bonding_curve(
     tier_id: &String,
     config: &BondingCurveConfig,
 ) {
-    env.storage()
-        .persistent()
-        .set(&PricingKey::BondingCurve(event_id.clone(), tier_id.clone()), config);
+    env.storage().persistent().set(
+        &PricingKey::BondingCurve(event_id.clone(), tier_id.clone()),
+        config,
+    );
 }
 
 /// Retrieve the bonding curve config for an (event_id, tier_id) pair, if any.
@@ -111,9 +112,7 @@ pub fn get_bonding_curve(
 /// - `b_exponent` in `[1, MAX_EXPONENT]`
 /// - `c_base` >= 0
 /// - `initial_supply` > 0
-pub fn validate_bonding_curve_config(
-    cfg: &BondingCurveConfig,
-) -> Result<(), TicketPaymentError> {
+pub fn validate_bonding_curve_config(cfg: &BondingCurveConfig) -> Result<(), TicketPaymentError> {
     if cfg.a_scaled <= 0 {
         return Err(TicketPaymentError::InvalidPrice);
     }
@@ -371,9 +370,7 @@ mod tests {
         // summing 5 individual spot prices (within integer rounding).
         let cfg = linear_cfg(1, 100_000, 20);
         let bulk_cost = bonding_curve_integral_cost(&cfg, 20, 5).unwrap();
-        let sequential_cost: i128 = (16..=20)
-            .map(|s| bonding_curve_price(&cfg, s))
-            .sum();
+        let sequential_cost: i128 = (16..=20).map(|s| bonding_curve_price(&cfg, s)).sum();
         // They may differ slightly due to integral vs Riemann sum, but should
         // be within a few stroops.
         let diff = (bulk_cost - sequential_cost).abs();
