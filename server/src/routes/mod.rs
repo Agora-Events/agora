@@ -60,6 +60,9 @@ use crate::handlers::{
         cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
         get_listing, list_listings, list_offers, register_push_token, MarketplaceState,
     },
+    pricing::{
+        get_bonding_curve_price, get_bonding_curve_series, get_dutch_auction_price, PricingState,
+    },
     profile::{
         delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
         get_wallet_tickets, list_events_by_organizer, list_my_transactions, patch_profile,
@@ -70,9 +73,6 @@ use crate::handlers::{
         list_qr_payloads, mark_qr_used, scan_ticket, verify_qr_payload,
     },
     rates::{get_rates, RatesState},
-    pricing::{
-        get_bonding_curve_price, get_bonding_curve_series, get_dutch_auction_price, PricingState,
-    },
     soroban_listener::{spawn_listener, ListenerConfig},
     waiting_room::{
         join_queue, queue_status, queue_stream, request_challenge, WaitingRoomConfig,
