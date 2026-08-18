@@ -399,8 +399,10 @@ pub(crate) fn compute_dutch_price(
     let spread = (start_price - reserve_price) as f64;
 
     let price = if exponential {
-        let remaining_frac = (total - elapsed) / total;
-        reserve_price as f64 + spread * remaining_frac * remaining_frac
+        // Concave approximation: 2f - f² stays above linear f at every interior point.
+        // At midpoint (f=0.5): factor = 0.75 vs linear 0.5, so price is higher.
+        let f = (total - elapsed) / total;
+        reserve_price as f64 + spread * (2.0 * f - f * f)
     } else {
         start_price as f64 - (elapsed / total) * spread
     };
