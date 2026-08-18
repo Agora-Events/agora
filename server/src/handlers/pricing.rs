@@ -129,10 +129,8 @@ pub async fn get_dutch_auction_price(
         .into_response();
     }
     if params.end_time <= params.start_time {
-        return AppError::ValidationError(
-            "end_time must be greater than start_time".to_string(),
-        )
-        .into_response();
+        return AppError::ValidationError("end_time must be greater than start_time".to_string())
+            .into_response();
     }
 
     let now = params.current_time.unwrap_or_else(unix_now);
@@ -148,7 +146,11 @@ pub async fn get_dutch_auction_price(
         now / 15, // 15-second bucket
     );
 
-    if let Ok(Some(cached)) = state.redis.get::<DutchAuctionPriceResponse>(&cache_key).await {
+    if let Ok(Some(cached)) = state
+        .redis
+        .get::<DutchAuctionPriceResponse>(&cache_key)
+        .await
+    {
         return success(cached, "Dutch auction price (cached)").into_response();
     }
 
@@ -280,7 +282,11 @@ pub async fn get_bonding_curve_price(
 
     let cache_key = format!(
         "pricing:bc:{}:{:.6}:{}:{}:{}:{}",
-        params.a, params.b, params.c, params.initial_supply, params.remaining_supply,
+        params.a,
+        params.b,
+        params.c,
+        params.initial_supply,
+        params.remaining_supply,
         // no time component; supply-based pricing is deterministic
         ""
     );

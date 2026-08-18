@@ -206,13 +206,15 @@ pub fn current_dutch_price_linear(cfg: &DutchAuctionConfig, now: u64) -> i128 {
 }
 
 /// Compute the current ticket price for a Dutch auction using **exponential**
-/// decay approximated via first-order Taylor expansion suitable for on-chain use.
+/// decay approximated via a concave polynomial suitable for on-chain use.
 ///
-/// Approximation: `P(t) ≈ P_reserve + (P_start - P_reserve) * (1 - elapsed/total)`
-/// scaled by a decay factor of 2× (price halves over the full duration).
+/// Approximation: uses `2f - f²` where `f = (total - elapsed) / total`.
+/// This is a concave function that stays **above** the linear decay at every
+/// interior point, matching the expectation that exponential decay starts
+/// slowly and accelerates near the auction end.
 ///
-/// For a tighter approximation: the remaining fraction is computed as
-/// `(total - elapsed) / total`, then squared (polynomial approximation of e^{-λt}).
+/// At the midpoint (`f = 0.5`): factor = `2*0.5 - 0.5² = 0.75` vs linear `0.5`,
+/// so the price is higher than linear at the same elapsed time.
 pub fn current_dutch_price_exponential(cfg: &DutchAuctionConfig, now: u64) -> i128 {
     if now >= cfg.end_time {
         return cfg.reserve_price;
@@ -224,18 +226,17 @@ pub fn current_dutch_price_exponential(cfg: &DutchAuctionConfig, now: u64) -> i1
     let elapsed = (now - cfg.start_time) as i128;
     let total = (cfg.end_time - cfg.start_time) as i128;
 
-    // remaining_fraction = (total - elapsed) / total
-    // Approximate e^{-λt} with (remaining_fraction)^2 for a gentler initial
-    // decline and sharper price drop near the auction end.
+    // f = remaining / total  (scaled to avoid division precision loss)
     let scale: i128 = 1_000_000;
     let remaining = total - elapsed;
-    // fraction = remaining / total, scaled
-    let fraction_scaled = remaining * scale / total;
-    // squared approximation
-    let exp_factor = fraction_scaled * fraction_scaled / scale;
+    let f = remaining * scale / total; // f ∈ [0, scale]
+
+    // Concave factor: 2f - f² (all scaled)
+    // = (2 * f - f * f / scale) where f is already in [0, scale]
+    let factor = 2 * f - f * f / scale;
 
     let spread = cfg.start_price - cfg.reserve_price;
-    cfg.reserve_price + (spread * exp_factor / scale)
+    cfg.reserve_price + (spread * factor / scale)
 }
 
 /// Dispatch to the correct decay function based on `cfg.exponential`.

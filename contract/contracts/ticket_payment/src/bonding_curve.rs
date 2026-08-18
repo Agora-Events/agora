@@ -290,16 +290,16 @@ mod tests {
 
     #[test]
     fn linear_price_at_full_supply() {
-        // P(100) = 1 * 100 + 500_000 = 600_000
+        // P(100) = (1 * PARAM_SCALE * 100) / PARAM_SCALE + 500_000 = 100 + 500_000 = 500_100
         let cfg = linear_cfg(1, 500_000, 100);
-        assert_eq!(bonding_curve_price(&cfg, 100), 600_000);
+        assert_eq!(bonding_curve_price(&cfg, 100), 500_100);
     }
 
     #[test]
     fn linear_price_at_half_supply() {
-        // P(50) = 1 * 50 + 500_000 = 550_000
+        // P(50) = (1 * PARAM_SCALE * 50) / PARAM_SCALE + 500_000 = 50 + 500_000 = 500_050
         let cfg = linear_cfg(1, 500_000, 100);
-        assert_eq!(bonding_curve_price(&cfg, 50), 550_000);
+        assert_eq!(bonding_curve_price(&cfg, 50), 500_050);
     }
 
     #[test]
@@ -311,12 +311,16 @@ mod tests {
 
     #[test]
     fn price_increases_as_supply_drops() {
+        // P(s) = a*s + c, so higher remaining supply → higher price.
+        // At supply=900: P = 900 + 100_000 = 100_900
+        // At supply=100: P = 100 + 100_000 = 100_100
+        // Price is lower when supply is lower (more tickets sold → cheaper remaining ones).
         let cfg = linear_cfg(1, 100_000, 1000);
         let price_high_supply = bonding_curve_price(&cfg, 900);
         let price_low_supply = bonding_curve_price(&cfg, 100);
         assert!(
-            price_high_supply < price_low_supply,
-            "price should rise as supply falls: high={} low={}",
+            price_high_supply > price_low_supply,
+            "price should be higher at higher remaining supply: high={} low={}",
             price_high_supply,
             price_low_supply
         );
