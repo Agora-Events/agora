@@ -291,7 +291,11 @@ pub async fn get_bonding_curve_price(
         ""
     );
 
-    if let Ok(Some(cached)) = state.redis.get::<BondingCurvePriceResponse>(&cache_key).await {
+    if let Ok(Some(cached)) = state
+        .redis
+        .get::<BondingCurvePriceResponse>(&cache_key)
+        .await
+    {
         return success(cached, "Bonding curve price (cached)").into_response();
     }
 
@@ -345,18 +349,10 @@ pub async fn get_bonding_curve_series(
         return success(cached, "Bonding curve series (cached)").into_response();
     }
 
-    let series = build_bonding_series(
-        params.a,
-        params.b,
-        params.c,
-        params.total_supply,
-        points,
-    );
+    let series = build_bonding_series(params.a, params.b, params.c, params.total_supply, points);
 
-    let floor_price =
-        compute_bonding_price(params.a, params.b, params.c, 0);
-    let starting_price =
-        compute_bonding_price(params.a, params.b, params.c, params.total_supply);
+    let floor_price = compute_bonding_price(params.a, params.b, params.c, 0);
+    let starting_price = compute_bonding_price(params.a, params.b, params.c, params.total_supply);
 
     let response = BondingCurveSeriesResponse {
         series,
@@ -616,7 +612,12 @@ mod tests {
         // As supply drops from 100 → 50, price should drop too.
         let p_high = compute_bonding_price(1.0, 1, 0, 100);
         let p_low = compute_bonding_price(1.0, 1, 0, 50);
-        assert!(p_high > p_low, "high_supply_price={} low_supply_price={}", p_high, p_low);
+        assert!(
+            p_high > p_low,
+            "high_supply_price={} low_supply_price={}",
+            p_high,
+            p_low
+        );
     }
 
     #[test]
