@@ -346,7 +346,13 @@ mod tests {
         let integral = bonding_curve_integral_cost(&cfg, 10, 1).unwrap();
         // spot = 10, integral ≈ 9 (rounding due to integer division)
         let diff = (spot - integral).abs();
-        assert!(diff <= 2, "spot={} integral={} diff={}", spot, integral, diff);
+        assert!(
+            diff <= 2,
+            "spot={} integral={} diff={}",
+            spot,
+            integral,
+            diff
+        );
     }
 
     #[test]
