@@ -5,11 +5,8 @@
  * regenerated every PAYLOAD_WINDOW_S seconds via `generateRotatingPayload()`
  * from `lib/crypto.ts`.
  *
- * The QR library is not yet installed in this app (no QR library in
- * package.json at the time of this feature). This component renders the
- * base64url payload string directly for now, with a clearly marked TODO to
- * swap in a QR code rendering library (e.g. react-native-qrcode-svg) once
- * one is added to the project.
+ * Uses react-native-qrcode-svg (backed by react-native-svg) to render the
+ * QR code natively on iOS and Android.
  *
  * The component is intentionally dumb: it receives the secretKey as a prop
  * rather than reading from SecureStore directly, so the parent screen
@@ -26,6 +23,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { generateRotatingPayload, PAYLOAD_WINDOW_S } from '../lib/crypto';
 import Colors from '@/constants/Colors';
 
@@ -102,34 +100,17 @@ export default function DynamicQrView({
 
   return (
     <View style={styles.container} accessibilityRole="image" accessibilityLabel="Ticket QR code">
-      {/*
-       * TODO: Replace this placeholder with a proper QR code rendering component
-       * once a QR library is added to the project (e.g. react-native-qrcode-svg).
-       *
-       * The payload string is a base64url-encoded binary ticket proof ~140
-       * characters long, well within QR code capacity even at medium error
-       * correction.
-       *
-       * Example drop-in replacement:
-       *
-       *   import QRCode from 'react-native-qrcode-svg';
-       *   <QRCode value={payload} size={240} />
-       */}
-      <View style={styles.qrPlaceholderBox} accessibilityHidden>
-        <Text style={styles.qrPlaceholderLabel}>QR Code</Text>
-        <Text style={styles.qrPlaceholderSub}>(QR library not yet installed)</Text>
+      <View style={styles.qrWrapper}>
+        <QRCode
+          value={payload}
+          size={240}
+          backgroundColor="#FFFFFF"
+          color="#000000"
+          // Medium error correction (M = ~15% data recovery) balances density
+          // and scan reliability; the ~140-char payload fits comfortably.
+          ecl="M"
+        />
       </View>
-
-      {/* Payload string — shown for development/debugging and for gate staff
-          on devices that cannot render the QR. In production this should be
-          hidden or shown only on request. */}
-      <Text
-        style={styles.payloadText}
-        numberOfLines={3}
-        accessibilityLabel="Ticket payload"
-      >
-        {payload}
-      </Text>
 
       <Text style={styles.refreshHint} accessibilityLiveRegion="polite">
         Refreshes every {PAYLOAD_WINDOW_S}s
@@ -147,38 +128,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#1E1E20',
   },
-  qrPlaceholderBox: {
-    width: 200,
-    height: 200,
-    backgroundColor: '#2C2C2E',
+  qrWrapper: {
+    padding: 12,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 12,
-  },
-  qrPlaceholderLabel: {
-    color: Colors.primaryText,
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  qrPlaceholderSub: {
-    color: Colors.secondaryText,
-    fontSize: 11,
-    marginTop: 4,
-    textAlign: 'center',
-    paddingHorizontal: 8,
-  },
-  payloadText: {
-    fontSize: 9,
-    color: Colors.secondaryText,
-    textAlign: 'center',
-    marginTop: 4,
-    fontFamily: 'SpaceMono',
   },
   refreshHint: {
     fontSize: 11,
     color: Colors.secondaryText,
-    marginTop: 8,
+    marginTop: 4,
     opacity: 0.6,
   },
   errorText: {
