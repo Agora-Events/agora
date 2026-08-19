@@ -60,6 +60,9 @@ use crate::handlers::{
         cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
         get_listing, list_listings, list_offers, register_push_token, MarketplaceState,
     },
+    pricing::{
+        get_bonding_curve_price, get_bonding_curve_series, get_dutch_auction_price, PricingState,
+    },
     profile::{
         delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
         get_wallet_tickets, list_events_by_organizer, list_my_transactions, patch_profile,
@@ -130,6 +133,9 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     };
 
     let rates_state = RatesState::new(redis.clone(), reqwest::Client::new());
+
+    // Dynamic pricing state for Dutch auction & bonding curve projections (Issue #1175)
+    let pricing_state = PricingState::new(redis.clone());
 
     // Spawn the Soroban event listener background task (Issue #490)
     let listener_config = ListenerConfig::from_env();
@@ -322,6 +328,14 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/rates", get(get_rates))
         .with_state(rates_state);
 
+    // Dynamic pricing routes: Dutch auction projections and bonding curve
+    // visualisation series (Issue #1175).
+    let pricing_routes = Router::new()
+        .route("/dutch-auction", get(get_dutch_auction_price))
+        .route("/bonding-curve", get(get_bonding_curve_price))
+        .route("/bonding-curve/series", get(get_bonding_curve_series))
+        .with_state(pricing_state);
+
     let public_api_routes = Router::new()
         .nest("/events", event_routes)
         .nest("/events", event_qr_routes)
@@ -333,6 +347,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/ws", ws_routes)
         .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
+        .nest("/pricing", pricing_routes)
         .merge(rates_route)
         .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
