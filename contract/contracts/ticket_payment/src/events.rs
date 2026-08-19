@@ -31,6 +31,11 @@ pub enum AgoraEvent {
     ResaleListed,
     ResaleCancelled,
     ResalePurchased,
+    MilestoneReleased,
+    EscrowWithdrawalProposed,
+    EscrowWithdrawalApproved,
+    EscrowWithdrawalExecuted,
+    EscrowDisputed,
 }
 
 #[contracttype]
@@ -286,11 +291,58 @@ pub struct ResalePurchasedEvent {
     pub event_id: String,
     pub seller: Address,
     pub buyer: Address,
-    /// Gross price paid by the buyer.
     pub price: i128,
-    /// Portion routed to the organizer as a royalty.
     pub royalty: i128,
-    /// Net proceeds received by the seller (`price - royalty`).
     pub seller_proceeds: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when an escrow milestone is released for an event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MilestoneReleasedEvent {
+    pub event_id: String,
+    pub milestone_index: u32,
+    pub amount_released: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when a multi-sig escrow withdrawal is proposed.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowWithdrawalProposedEvent {
+    pub proposal_id: u64,
+    pub event_id: String,
+    pub amount: i128,
+    pub proposer: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a multi-sig escrow withdrawal is approved.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowWithdrawalApprovedEvent {
+    pub proposal_id: u64,
+    pub approver: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a multi-sig escrow withdrawal is executed.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowWithdrawalExecutedEvent {
+    pub proposal_id: u64,
+    pub event_id: String,
+    pub amount: i128,
+    pub executor: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a dispute is opened on an event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowDisputedEvent {
+    pub event_id: String,
+    pub opened_by: Address,
     pub timestamp: u64,
 }

@@ -59,4 +59,8 @@ pub enum EventRegistryError {
     // TooManyIds = 81,
     /// Issue #851: payment token is not in the event's accepted_tokens list.
     TokenNotAccepted = 82,
+    DisputeNotFound = 83,
+    DisputeNotOpen = 84,
+    AlreadyVoted = 85,
+    NotTicketHolder = 86,
 }

@@ -38,7 +38,6 @@ pub enum DataKey {
     WithdrawalCap(Address),              // token_address -> max amount per day
     DailyWithdrawalAmount(Address, u64), // (token_address, day_timestamp) -> amount withdrawn
     IsPaused,                            // bool – global circuit breaker flag
-    DisputeStatus(String),               // event_id -> bool
     EventCancelledForRefund(String),     // event_id -> bool
     PartialRefundIndex(String),          // event_id -> last processed payment index
     PartialRefundPercentage(String),     // event_id -> active refund percentage in bps
@@ -68,4 +67,6 @@ pub enum DataKey {
     ResaleListing(String),
     /// Per-event resale royalty paid to the organizer: event_id -> rate_bps (u32) (Persistent)
     ResaleRoyaltyBps(String),
+    EscrowState(String),
+    EscrowMilestone(String, u32),
 }

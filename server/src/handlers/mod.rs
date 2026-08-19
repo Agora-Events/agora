@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod categories;
 pub mod events;
+pub mod governance;
 pub mod health;
 pub mod leaderboard;
 pub mod marketplace;

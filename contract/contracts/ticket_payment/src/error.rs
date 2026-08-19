@@ -61,6 +61,11 @@ pub enum TicketPaymentError {
     ResaleListingNotActive = 65,
     TicketAlreadyListed = 66,
     InvalidRoyaltyBps = 67,
+    MilestoneNotMet = 68,
+    InvalidMilestone = 69,
+    EscrowNotInitialized = 70,
+    MultiSigThresholdNotMet = 71,
+    DisputeNotResolved = 72,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -137,8 +142,13 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             64 => TicketPaymentError::ResaleListingNotFound,
             65 => TicketPaymentError::ResaleListingNotActive,
             66 => TicketPaymentError::TicketAlreadyListed,
-            67 => TicketPaymentError::InvalidRoyaltyBps,
-            _ => TicketPaymentError::ArithmeticError,
+             67 => TicketPaymentError::InvalidRoyaltyBps,
+             68 => TicketPaymentError::MilestoneNotMet,
+             69 => TicketPaymentError::InvalidMilestone,
+             70 => TicketPaymentError::EscrowNotInitialized,
+             71 => TicketPaymentError::MultiSigThresholdNotMet,
+             72 => TicketPaymentError::DisputeNotResolved,
+             _ => TicketPaymentError::ArithmeticError,
         }
     }
 }

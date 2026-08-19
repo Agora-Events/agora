@@ -2,7 +2,8 @@
 
 use crate::events::{
     AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, CustomFeeSetEvent,
-    EventArchivedEvent, EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
+    DisputeOpenedEvent, DisputeResolvedEvent, DisputeVotedEvent, EventArchivedEvent,
+    EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
     EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, FeedbackCidSetEvent,
     GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent, InventoryIncrementedEvent,
     LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent, MinStakeAmountUpdatedEvent,
@@ -18,6 +19,7 @@ use crate::types::{
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
 mod auth;
+pub mod dispute;
 pub mod error;
 pub mod events;
 pub mod storage;
@@ -2180,6 +2182,38 @@ impl EventRegistry {
             types::ParameterChange::SetPlatformFee(new_fee_percent),
             expiry_ledgers,
         )
+    }
+
+    // ── Dispute ───────────────────────────────────────────────────────────
+
+    /// Opens a dispute on an event. Only callable by a ticket holder within 48h post-event.
+    pub fn open_dispute(env: Env, event_id: String, opened_by: Address) -> Result<(), EventRegistryError> {
+        dispute::open_dispute(&env, event_id, opened_by)
+    }
+
+    /// Casts a vote on an open dispute. One vote per address.
+    pub fn vote_on_dispute(
+        env: Env,
+        event_id: String,
+        voter: Address,
+        vote: crate::types::DisputeVote,
+    ) -> Result<(), EventRegistryError> {
+        dispute::vote_on_dispute(&env, event_id, voter, vote)
+    }
+
+    /// Resolves a dispute after voting ends. Counts votes and determines outcome.
+    pub fn resolve_dispute(env: Env, event_id: String) -> Result<crate::types::DisputeStatus, EventRegistryError> {
+        dispute::resolve_dispute(&env, event_id)
+    }
+
+    /// Returns the dispute for an event, if one exists.
+    pub fn get_dispute(env: Env, event_id: String) -> Option<crate::types::Dispute> {
+        dispute::get_dispute(&env, event_id)
+    }
+
+    /// Returns all votes for a dispute.
+    pub fn get_dispute_votes(env: Env, event_id: String) -> Vec<crate::types::DisputeVote> {
+        dispute::get_dispute_votes(&env, event_id)
     }
 }
 

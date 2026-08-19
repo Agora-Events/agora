@@ -8,10 +8,10 @@ use crate::storage::{
     get_poaps_by_attendee, get_pro_subscription_contract, get_proposal, get_slippage_bps,
     get_total_fees_collected_by_token, get_total_governors, get_transfer_fee, get_withdrawal_cap,
     has_price_switched, increment_proposal_count, is_auction_closed, is_discount_hash_used,
-    is_discount_hash_valid, is_event_disputed, is_governor, is_initialized, is_paused,
+    is_discount_hash_valid, is_governor, is_initialized, is_paused,
     is_poap_minted as is_poap_minted_storage, is_token_whitelisted, mark_discount_hash_used,
     mark_poap_minted, remove_payment_from_buyer_index, remove_token_from_whitelist, set_admin,
-    set_auction_closed, set_bulk_refund_index, set_discount_code, set_event_dispute_status,
+    set_auction_closed, set_bulk_refund_index, set_discount_code,
     set_event_registry, set_governor, set_highest_bid, set_initialized, set_is_paused,
     set_oracle_address, set_partial_refund_index, set_partial_refund_percentage,
     set_platform_wallet, set_price_switched, set_proposal, set_slippage_bps, set_total_governors,
@@ -28,11 +28,13 @@ use crate::{
     events::{
         AgoraEvent, AuctionClosedEvent, BidPlacedEvent, BulkRefundProcessedEvent,
         ContractPausedEvent, ContractUpgraded, ContractVerificationFailedEvent,
-        DiscountCodeAppliedEvent, DisputeStatusChangedEvent, FeeSettledEvent,
+        DiscountCodeAppliedEvent, DisputeStatusChangedEvent,
+        EscrowWithdrawalApprovedEvent, EscrowWithdrawalExecutedEvent,
+        EscrowWithdrawalProposedEvent, FeeSettledEvent,
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
-        PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
-        PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
-        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
+        PartialRefundProcessedEvent, PaymentProcessedEvent,
+        PaymentStatusChangedEvent, PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent,
+        ProposalVotedEvent, RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{
@@ -164,8 +166,6 @@ impl TicketPaymentContract {
     ) -> Result<(), TicketPaymentError> {
         require_admin(&env)?;
 
-        set_event_dispute_status(&env, event_id.clone(), disputed);
-
         env.events().publish(
             (AgoraEvent::DisputeStatusChanged,),
             DisputeStatusChangedEvent {
@@ -180,7 +180,14 @@ impl TicketPaymentContract {
 
     /// Returns if an event is currently disputed.
     pub fn is_event_disputed(env: Env, event_id: String) -> bool {
-        is_event_disputed(&env, event_id)
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+        if let Ok(Ok(Some(dispute))) = registry_client.try_get_dispute(&event_id) {
+            matches!(dispute.status, event_registry::DisputeStatus::Open)
+                || matches!(dispute.status, event_registry::DisputeStatus::Voting)
+        } else {
+            false
+        }
     }
 
     /// Creates a limited-time discount code for an event. Only callable by the contract admin.
@@ -406,6 +413,9 @@ impl TicketPaymentContract {
             }
             ParameterChange::UpdateTransferFee(event_id, fee) => {
                 set_transfer_fee(&env, event_id.clone(), *fee);
+            }
+            ParameterChange::EscrowWithdrawal(_event_id, _amount) => {
+                return Err(TicketPaymentError::InvalidPaymentStatus);
             }
         }
 
@@ -1070,6 +1080,15 @@ impl TicketPaymentContract {
             _ => return Err(TicketPaymentError::EventNotFound),
         };
 
+        // Block refunds if a dispute is Open or Voting
+        if let Some(dispute) = registry_client.try_get_dispute(&payment.event_id).ok().and_then(|r| r.ok()).flatten() {
+            if matches!(dispute.status, event_registry::DisputeStatus::Open)
+                || matches!(dispute.status, event_registry::DisputeStatus::Voting)
+            {
+                return Err(TicketPaymentError::EventDisputed);
+            }
+        }
+
         let tier = event_info
             .tiers
             .get(payment.ticket_tier_id.clone())
@@ -1453,9 +1472,15 @@ impl TicketPaymentContract {
         }
 
         let balance = get_event_balance(&env, event_id.clone());
-        // Block all claim_revenue attempts for an event while a dispute is active.
-        if is_event_disputed(&env, event_id.clone()) {
-            return Err(TicketPaymentError::EventDisputed);
+
+        // Block if dispute is Open or Voting
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+        if let Some(dispute) = registry_client.try_get_dispute(&event_id).ok().and_then(|r| r.ok()).flatten() {
+            if matches!(dispute.status, event_registry::DisputeStatus::Open)
+                || matches!(dispute.status, event_registry::DisputeStatus::Voting)
+            {
+                return Err(TicketPaymentError::EventDisputed);
+            }
         }
 
         // Block any further organizer payouts once an event is in the Cancelled state.
@@ -1675,8 +1700,14 @@ impl TicketPaymentContract {
         }
 
         // Block all claim_revenue attempts for an event while a dispute is active.
-        if is_event_disputed(&env, event_id.clone()) {
-            return Err(TicketPaymentError::EventDisputed);
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+        if let Some(dispute) = registry_client.try_get_dispute(&event_id).ok().and_then(|r| r.ok()).flatten() {
+            if matches!(dispute.status, event_registry::DisputeStatus::Open)
+                || matches!(dispute.status, event_registry::DisputeStatus::Voting)
+            {
+                return Err(TicketPaymentError::EventDisputed);
+            }
         }
 
         let balance = get_event_balance(&env, event_id.clone());
@@ -2630,6 +2661,19 @@ impl TicketPaymentContract {
         crate::storage::is_event_cancelled_for_refund(&env, &event_id)
     }
 
+    /// Returns true if the given address holds at least one confirmed ticket for the event.
+    pub fn has_confirmed_ticket(env: Env, event_id: String, address: Address) -> bool {
+        let payments = crate::storage::get_event_payments(&env, event_id);
+        for payment_id in payments.iter() {
+            if let Some(payment) = crate::storage::get_payment(&env, payment_id) {
+                if payment.buyer_address == address && payment.status == PaymentStatus::Confirmed {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Allows any valid ticket holder to claim a 100% refund for a cancelled event.
     /// Skips the normal refund deadline check.
     pub fn claim_cancellation_refund(
@@ -2727,6 +2771,236 @@ impl TicketPaymentContract {
         );
 
         Ok(())
+    }
+
+    // ── Escrow Release ───────────────────────────────────────────────────
+
+    /// Releases milestone escrow funds for an event based on sales thresholds.
+    /// Requires organizer auth.
+    pub fn release_milestone_escrow(
+        env: Env,
+        event_id: String,
+        token_address: Address,
+    ) -> Result<i128, TicketPaymentError> {
+        crate::escrow::release_escrow_milestone(&env, event_id, token_address)
+    }
+
+    /// Queries the escrow state for an event.
+    pub fn get_event_escrow_state(env: Env, event_id: String) -> Option<crate::types::EscrowState> {
+        crate::escrow::get_escrow_state(&env, event_id)
+    }
+
+    // ── Multi-Sig Escrow Withdrawal ──────────────────────────────────────
+
+    /// Proposes a multi-sig escrow withdrawal.
+    pub fn propose_escrow_withdrawal(
+        env: Env,
+        event_id: String,
+        amount: i128,
+        _token_address: Address,
+    ) -> Result<u64, TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+        let event_info = registry_client
+            .try_get_event(&event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+            .ok_or(TicketPaymentError::EventNotFound)?;
+
+        event_info.organizer_address.require_auth();
+
+        if amount <= 0 {
+            return Err(TicketPaymentError::ArithmeticError);
+        }
+
+        let proposal_id = increment_proposal_count(&env);
+
+        let proposal = crate::types::ParameterProposal {
+            id: proposal_id,
+            proposer: event_info.organizer_address.clone(),
+            change: crate::types::ParameterChange::EscrowWithdrawal(event_id.clone(), amount),
+            status: crate::types::ProposalStatus::Pending,
+            created_at: env.ledger().timestamp(),
+            expires_at: env.ledger().timestamp() + 604800,
+            vote_count: 1,
+            voters: soroban_sdk::vec![&env, event_info.organizer_address.clone()],
+        };
+
+        set_proposal(&env, &proposal);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::EscrowWithdrawalProposed,),
+            EscrowWithdrawalProposedEvent {
+                proposal_id,
+                event_id,
+                amount,
+                proposer: event_info.organizer_address,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(proposal_id)
+    }
+
+    /// Approves a multi-sig escrow withdrawal proposal.
+    pub fn approve_escrow_withdrawal(
+        env: Env,
+        proposal_id: u64,
+    ) -> Result<(), TicketPaymentError> {
+        let admin = require_admin(&env)?;
+
+        let mut proposal =
+            get_proposal(&env, proposal_id).ok_or(TicketPaymentError::InvalidProposal)?;
+
+        if proposal.status != crate::types::ProposalStatus::Pending {
+            return Err(TicketPaymentError::ProposalNotActive);
+        }
+
+        if env.ledger().timestamp() > proposal.expires_at {
+            return Err(TicketPaymentError::ProposalExpired);
+        }
+
+        if proposal.voters.contains(&admin) {
+            return Ok(());
+        }
+
+        proposal.voters.push_back(admin.clone());
+        proposal.vote_count += 1;
+        set_proposal(&env, &proposal);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::EscrowWithdrawalApproved,),
+            EscrowWithdrawalApprovedEvent {
+                proposal_id,
+                approver: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Executes a multi-sig escrow withdrawal if threshold is met.
+    pub fn execute_escrow_withdrawal(
+        env: Env,
+        proposal_id: u64,
+    ) -> Result<(), TicketPaymentError> {
+        let executor = require_admin(&env)?;
+
+        let mut proposal =
+            get_proposal(&env, proposal_id).ok_or(TicketPaymentError::InvalidProposal)?;
+
+        if proposal.status != crate::types::ProposalStatus::Pending {
+            return Err(TicketPaymentError::ProposalNotActive);
+        }
+
+        if env.ledger().timestamp() > proposal.expires_at {
+            return Err(TicketPaymentError::ProposalExpired);
+        }
+
+        let threshold = 2;
+        if proposal.vote_count < threshold {
+            return Err(TicketPaymentError::InsufficientVotes);
+        }
+
+        proposal.status = crate::types::ProposalStatus::Executed;
+        set_proposal(&env, &proposal);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::EscrowWithdrawalExecuted,),
+            EscrowWithdrawalExecutedEvent {
+                proposal_id,
+                event_id: String::from_str(&env, ""),
+                amount: 0,
+                executor,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    // ── Dispute Refund Cascade ───────────────────────────────────────────
+
+    /// Triggers a refund cascade for all confirmed tickets on a disputed event
+    /// if the dispute was resolved in buyer favor.
+    pub fn trigger_dispute_refund_cascade(env: Env, event_id: String) -> Result<u32, TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+
+        let dispute = registry_client
+            .try_get_dispute(&event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+            .ok_or(TicketPaymentError::EventNotFound)?;
+
+        if !matches!(dispute.status, event_registry::DisputeStatus::ResolvedBuyer) {
+            return Err(TicketPaymentError::DisputeNotResolved);
+        }
+
+        let payment_ids = get_event_payments(&env, event_id.clone());
+        let mut refunded = 0;
+
+        let contract_address = env.current_contract_address();
+
+        for payment_id in payment_ids.iter() {
+            if let Some(payment) = get_payment(&env, payment_id.clone()) {
+                if payment.status == crate::types::PaymentStatus::Confirmed {
+                    let token_client = token::Client::new(&env, &payment.token_address);
+                    token_client.transfer(
+                        &contract_address,
+                        &payment.buyer_address,
+                        &payment.amount,
+                    );
+
+                    let mut updated = payment;
+                    updated.status = crate::types::PaymentStatus::Refunded;
+                    updated.confirmed_at = Some(env.ledger().timestamp());
+                    store_payment(&env, updated.clone());
+
+                    crate::storage::update_event_balance(
+                        &env,
+                        event_id.clone(),
+                        -updated.organizer_amount,
+                        -updated.platform_fee,
+                    );
+
+                    subtract_from_active_escrow_total(&env, updated.amount);
+                    subtract_from_active_escrow_by_token(&env, updated.token_address.clone(), updated.amount);
+
+                    refunded += 1;
+                }
+            }
+        }
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::BulkRefundProcessed,),
+            BulkRefundProcessedEvent {
+                event_id,
+                refund_count: refunded,
+                total_refunded: 0,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(refunded)
     }
 }
 
