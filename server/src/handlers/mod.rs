@@ -5,6 +5,7 @@ pub mod health;
 pub mod leaderboard;
 pub mod marketplace;
 pub mod monitoring;
+pub mod pricing;
 pub mod profile;
 pub mod qr_payload;
 pub mod rates;

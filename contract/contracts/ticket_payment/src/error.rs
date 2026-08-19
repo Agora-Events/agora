@@ -61,6 +61,10 @@ pub enum TicketPaymentError {
     ResaleListingNotActive = 65,
     TicketAlreadyListed = 66,
     InvalidRoyaltyBps = 67,
+    /// A commit-reveal commit has expired without being revealed.
+    CommitExpired = 68,
+    /// A Dutch auction has not yet started.
+    DutchAuctionNotStarted = 69,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -138,6 +142,8 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             65 => TicketPaymentError::ResaleListingNotActive,
             66 => TicketPaymentError::TicketAlreadyListed,
             67 => TicketPaymentError::InvalidRoyaltyBps,
+            68 => TicketPaymentError::CommitExpired,
+            69 => TicketPaymentError::DutchAuctionNotStarted,
             _ => TicketPaymentError::ArithmeticError,
         }
     }
