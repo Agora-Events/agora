@@ -24,7 +24,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { generateRotatingPayload, PAYLOAD_WINDOW_S } from '../lib/crypto';
+import { generateRotatingPayload, PAYLOAD_WINDOW_S } from '../../lib/crypto';
 import Colors from '@/constants/Colors';
 
 // Refresh slightly more often than the window so the display never lags
