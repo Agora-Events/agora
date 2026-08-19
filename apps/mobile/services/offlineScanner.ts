@@ -45,13 +45,10 @@
  *   }
  */
 
-import nacl from 'tweetnacl';
 import {
   verifyPayload,
   parsePayload,
   fromBase64Url,
-  SCANNER_CLOCK_DRIFT_S,
-  PAYLOAD_WINDOW_S,
   VerifyResult,
 } from '../lib/crypto';
 

@@ -13,7 +13,7 @@ import {
   clearTicketSecret,
   isVaultAvailable,
 } from '../../services/ticketVault';
-import { deriveTicketKeyPair, toBase64Url, fromBase64Url } from '../../lib/crypto';
+import { deriveTicketKeyPair } from '../../lib/crypto';
 
 // ── Mock expo-secure-store ────────────────────────────────────────────────────
 
