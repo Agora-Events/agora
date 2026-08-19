@@ -2,6 +2,7 @@ pub mod auth;
 pub mod categories;
 pub mod events;
 pub mod health;
+pub mod indexer;
 pub mod leaderboard;
 pub mod marketplace;
 pub mod monitoring;
