@@ -131,6 +131,9 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
 
     let rates_state = RatesState::new(redis.clone(), reqwest::Client::new());
 
+    // Sync state for CRDT delta synchronization
+    let sync_state = SyncState::new(pool.clone());
+
     // Spawn the Soroban event listener background task (Issue #490)
     let listener_config = ListenerConfig::from_env();
     spawn_listener(pool.clone(), Some(redis.clone()), listener_config);
@@ -322,6 +325,12 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/rates", get(get_rates))
         .with_state(rates_state);
 
+    // Sync routes for CRDT delta synchronization
+    let sync_routes = Router::new()
+        .route("/delta", post(delta_sync))
+        .route("/status/:node_id", get(sync_status))
+        .with_state(sync_state);
+
     let public_api_routes = Router::new()
         .nest("/events", event_routes)
         .nest("/events", event_qr_routes)
@@ -333,6 +342,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/ws", ws_routes)
         .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
+        .nest("/sync", sync_routes)
         .merge(rates_route)
         .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
