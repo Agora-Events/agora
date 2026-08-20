@@ -69,3 +69,17 @@ pub enum DataKey {
     /// Per-event resale royalty paid to the organizer: event_id -> rate_bps (u32) (Persistent)
     ResaleRoyaltyBps(String),
 }
+
+/// Storage keys for dynamic pricing features (Dutch auctions and bonding curves).
+///
+/// Kept as a separate enum from `DataKey` to avoid exceeding the XDR symbol
+/// count limit on the main key enum.
+#[contracttype]
+pub enum PricingKey {
+    /// Dutch auction config: (event_id, tier_id) -> DutchAuctionConfig (Persistent)
+    DutchAuction(String, String),
+    /// Bonding curve config: (event_id, tier_id) -> BondingCurveConfig (Persistent)
+    BondingCurve(String, String),
+    /// Pending commit-reveal: (event_id, tier_id, buyer) -> PendingCommit (Temporary)
+    PendingCommit(String, String, Address),
+}
