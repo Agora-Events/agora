@@ -2,7 +2,6 @@
  * Last-Write-Wins Element-Set (LWW-Element-Set) CRDT
  * A set where each element has a timestamp, and the latest write wins
  */
-
 use crate::crdt::vector_clock::VectorClock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -38,70 +37,90 @@ impl<T: Clone + PartialEq + serde::Serialize + for<'de> serde::Deserialize<'de>>
     /// Add an element to the set
     pub fn add(&mut self, value: T, node_id: &str, timestamp: Option<i64>) {
         let key = Self::generate_key(&value);
-        let effective_timestamp = timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let effective_timestamp =
+            timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
         let vector_clock = VectorClock::new(node_id, 1);
 
         if let Some(existing) = self.elements.get(&key) {
             if effective_timestamp > existing.timestamp {
-                self.elements.insert(key, LWWElement {
-                    value,
-                    timestamp: effective_timestamp,
-                    vector_clock,
-                    is_add: true,
-                });
-            } else if effective_timestamp == existing.timestamp {
-                let comparison = vector_clock.compare(&existing.vector_clock);
-                if comparison > 0 {
-                    self.elements.insert(key, LWWElement {
+                self.elements.insert(
+                    key,
+                    LWWElement {
                         value,
                         timestamp: effective_timestamp,
                         vector_clock,
                         is_add: true,
-                    });
+                    },
+                );
+            } else if effective_timestamp == existing.timestamp {
+                let comparison = vector_clock.compare(&existing.vector_clock);
+                if comparison > 0 {
+                    self.elements.insert(
+                        key,
+                        LWWElement {
+                            value,
+                            timestamp: effective_timestamp,
+                            vector_clock,
+                            is_add: true,
+                        },
+                    );
                 }
             }
         } else {
-            self.elements.insert(key, LWWElement {
-                value,
-                timestamp: effective_timestamp,
-                vector_clock,
-                is_add: true,
-            });
+            self.elements.insert(
+                key,
+                LWWElement {
+                    value,
+                    timestamp: effective_timestamp,
+                    vector_clock,
+                    is_add: true,
+                },
+            );
         }
     }
 
     /// Remove an element from the set
     pub fn remove(&mut self, value: T, node_id: &str, timestamp: Option<i64>) {
         let key = Self::generate_key(&value);
-        let effective_timestamp = timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let effective_timestamp =
+            timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
         let vector_clock = VectorClock::new(node_id, 1);
 
         if let Some(existing) = self.elements.get(&key) {
             if effective_timestamp > existing.timestamp {
-                self.elements.insert(key, LWWElement {
-                    value,
-                    timestamp: effective_timestamp,
-                    vector_clock,
-                    is_add: false,
-                });
-            } else if effective_timestamp == existing.timestamp {
-                let comparison = vector_clock.compare(&existing.vector_clock);
-                if comparison > 0 {
-                    self.elements.insert(key, LWWElement {
+                self.elements.insert(
+                    key,
+                    LWWElement {
                         value,
                         timestamp: effective_timestamp,
                         vector_clock,
                         is_add: false,
-                    });
+                    },
+                );
+            } else if effective_timestamp == existing.timestamp {
+                let comparison = vector_clock.compare(&existing.vector_clock);
+                if comparison > 0 {
+                    self.elements.insert(
+                        key,
+                        LWWElement {
+                            value,
+                            timestamp: effective_timestamp,
+                            vector_clock,
+                            is_add: false,
+                        },
+                    );
                 }
             }
         } else {
-            self.elements.insert(key, LWWElement {
-                value,
-                timestamp: effective_timestamp,
-                vector_clock,
-                is_add: false,
-            });
+            self.elements.insert(
+                key,
+                LWWElement {
+                    value,
+                    timestamp: effective_timestamp,
+                    vector_clock,
+                    is_add: false,
+                },
+            );
         }
     }
 
@@ -140,7 +159,7 @@ impl<T: Clone + PartialEq + serde::Serialize + for<'de> serde::Deserialize<'de>>
                 } else if other_element.timestamp == existing.timestamp {
                     let merged_clock = existing.vector_clock.merge(&other_element.vector_clock);
                     let comparison = other_element.vector_clock.compare(&existing.vector_clock);
-                    
+
                     if comparison > 0 {
                         let mut element = other_element.clone();
                         element.vector_clock = merged_clock;
@@ -166,7 +185,9 @@ impl<T: Clone + PartialEq + serde::Serialize + for<'de> serde::Deserialize<'de>>
     }
 }
 
-impl<T: Default> Default for LWWElementSet<T> {
+impl<T: Clone + PartialEq + serde::Serialize + for<'de> serde::Deserialize<'de>> Default
+    for LWWElementSet<T>
+{
     fn default() -> Self {
         Self::new()
     }
@@ -195,10 +216,10 @@ mod tests {
     fn test_lww_merge() {
         let mut set1 = LWWElementSet::new();
         set1.add("value1".to_string(), "node1", Some(100));
-        
+
         let mut set2 = LWWElementSet::new();
         set2.add("value2".to_string(), "node2", Some(150));
-        
+
         set1.merge(&set2);
         assert!(set1.has(&"value1".to_string()));
         assert!(set1.has(&"value2".to_string()));

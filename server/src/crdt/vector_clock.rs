@@ -2,7 +2,6 @@
  * Vector Clock implementation for CRDT operations
  * Tracks causality between distributed operations
  */
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -36,12 +35,12 @@ impl VectorClock {
     /// Merge two vector clocks (takes maximum for each node)
     pub fn merge(&self, other: &VectorClock) -> VectorClock {
         let mut merged = self.counters.clone();
-        
+
         for (node_id, counter) in &other.counters {
             let entry = merged.entry(node_id.clone()).or_insert(0);
             *entry = (*entry).max(*counter);
         }
-        
+
         Self { counters: merged }
     }
 
@@ -50,23 +49,21 @@ impl VectorClock {
     pub fn compare(&self, other: &VectorClock) -> i8 {
         let mut less_than = false;
         let mut greater_than = false;
-        
-        let all_node_ids: std::collections::HashSet<&String> = self.counters
-            .keys()
-            .chain(other.counters.keys())
-            .collect();
-        
+
+        let all_node_ids: std::collections::HashSet<&String> =
+            self.counters.keys().chain(other.counters.keys()).collect();
+
         for node_id in all_node_ids {
             let c1 = self.counters.get(node_id).unwrap_or(&0);
             let c2 = other.counters.get(node_id).unwrap_or(&0);
-            
+
             if c1 < c2 {
                 less_than = true;
             } else if c1 > c2 {
                 greater_than = true;
             }
         }
-        
+
         if less_than && !greater_than {
             -1
         } else if greater_than && !less_than {
@@ -88,11 +85,9 @@ impl VectorClock {
 
     /// Check if two clocks are equal
     pub fn equals(&self, other: &VectorClock) -> bool {
-        let all_node_ids: std::collections::HashSet<&String> = self.counters
-            .keys()
-            .chain(other.counters.keys())
-            .collect();
-        
+        let all_node_ids: std::collections::HashSet<&String> =
+            self.counters.keys().chain(other.counters.keys()).collect();
+
         for node_id in all_node_ids {
             let c1 = self.counters.get(node_id).unwrap_or(&0);
             let c2 = other.counters.get(node_id).unwrap_or(&0);
@@ -100,7 +95,7 @@ impl VectorClock {
                 return false;
             }
         }
-        
+
         true
     }
 

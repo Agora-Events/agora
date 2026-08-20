@@ -48,7 +48,6 @@ pub use crate::handlers::{
         list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
         set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
-    example_empty_success, example_not_found, example_validation_error,
     health::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
         health_check_redis,

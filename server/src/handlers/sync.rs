@@ -2,9 +2,8 @@
  * Sync handler for CRDT delta synchronization
  * Implements POST /api/v1/sync/delta endpoint for offline-first sync
  */
-
-use crate::crdt::{VectorClock, VectorClockUtils};
-use crate::utils::error::{ApiError, AppError};
+use crate::crdt::VectorClock;
+use crate::utils::error::ApiError;
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -69,7 +68,7 @@ impl SyncState {
 }
 
 /// POST /api/v1/sync/delta
-/// Receives local state vector clocks, computes state diffs, 
+/// Receives local state vector clocks, computes state diffs,
 /// applies CRDT merge rules, and returns server delta patches
 pub async fn delta_sync(
     State(state): State<SyncState>,
@@ -123,7 +122,7 @@ async fn compute_server_deltas(
     let delta_store = state.delta_store.read().await;
     let mut server_deltas = Vec::new();
 
-    for (node_id, deltas) in delta_store.iter() {
+    for (_node_id, deltas) in delta_store.iter() {
         for delta in deltas {
             // Convert delta vector clock to our format
             let delta_clock = VectorClock {
@@ -131,8 +130,8 @@ async fn compute_server_deltas(
             };
 
             // Check if this delta happened after the client's clock
-            if delta_clock.happened_before(client_clock) || 
-               delta_clock.is_concurrent(client_clock) {
+            if delta_clock.happened_before(client_clock) || delta_clock.is_concurrent(client_clock)
+            {
                 server_deltas.push(delta.clone());
             }
         }
@@ -142,10 +141,7 @@ async fn compute_server_deltas(
 }
 
 /// Apply client deltas to server state
-async fn apply_client_deltas(
-    state: &SyncState,
-    deltas: &[DeltaEntry],
-) -> Result<(), ApiError> {
+async fn apply_client_deltas(state: &SyncState, deltas: &[DeltaEntry]) -> Result<(), ApiError> {
     // In a real implementation, this would:
     // 1. Apply deltas to the appropriate CRDT stores
     // 2. Persist changes to the database
@@ -172,15 +168,12 @@ async fn apply_client_deltas(
 }
 
 /// Apply an add operation to the database
-async fn apply_add_operation(
-    _state: &SyncState,
-    delta: &DeltaEntry,
-) -> Result<(), ApiError> {
+async fn apply_add_operation(_state: &SyncState, delta: &DeltaEntry) -> Result<(), ApiError> {
     // This is a placeholder - in a real implementation, you would:
     // 1. Parse the entity type and determine the table
     // 2. Insert or update the record in the database
     // 3. Handle conflicts using CRDT merge rules
-    
+
     tracing::info!(
         "Applying add operation for entity_type={}, entity_id={}",
         delta.entity_type,
@@ -204,15 +197,12 @@ async fn apply_add_operation(
 }
 
 /// Apply a remove operation to the database
-async fn apply_remove_operation(
-    _state: &SyncState,
-    delta: &DeltaEntry,
-) -> Result<(), ApiError> {
+async fn apply_remove_operation(_state: &SyncState, delta: &DeltaEntry) -> Result<(), ApiError> {
     // This is a placeholder - in a real implementation, you would:
     // 1. Parse the entity type and determine the table
     // 2. Soft delete or mark as removed in the database
     // 3. Handle conflicts using CRDT merge rules
-    
+
     tracing::info!(
         "Applying remove operation for entity_type={}, entity_id={}",
         delta.entity_type,
@@ -223,15 +213,12 @@ async fn apply_remove_operation(
 }
 
 /// Apply an update operation to the database
-async fn apply_update_operation(
-    _state: &SyncState,
-    delta: &DeltaEntry,
-) -> Result<(), ApiError> {
+async fn apply_update_operation(_state: &SyncState, delta: &DeltaEntry) -> Result<(), ApiError> {
     // This is a placeholder - in a real implementation, you would:
     // 1. Parse the entity type and determine the table
     // 2. Update the record in the database
     // 3. Handle conflicts using CRDT merge rules (last-write-wins)
-    
+
     tracing::info!(
         "Applying update operation for entity_type={}, entity_id={}",
         delta.entity_type,
@@ -242,15 +229,13 @@ async fn apply_update_operation(
 }
 
 /// Store client deltas for future syncs
-async fn store_client_deltas(
-    state: &SyncState,
-    node_id: &str,
-    deltas: &[DeltaEntry],
-) {
+async fn store_client_deltas(state: &SyncState, node_id: &str, deltas: &[DeltaEntry]) {
     let mut delta_store = state.delta_store.write().await;
-    
-    let node_deltas = delta_store.entry(node_id.to_string()).or_insert_with(Vec::new);
-    
+
+    let node_deltas = delta_store
+        .entry(node_id.to_string())
+        .or_insert_with(Vec::new);
+
     // Add new deltas, avoiding duplicates
     for delta in deltas {
         if !node_deltas.iter().any(|d| d.id == delta.id) {
@@ -309,10 +294,10 @@ mod tests {
             timestamp: 1234567890,
             synced: false,
         };
-        
+
         let json = serde_json::to_string(&entry).unwrap();
         let parsed: DeltaEntry = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.id, entry.id);
         assert_eq!(parsed.entity_type, entry.entity_type);
     }

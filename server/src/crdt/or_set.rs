@@ -2,13 +2,12 @@
  * Observed-Remove Set (OR-Set) CRDT
  * A set that handles concurrent adds and removes correctly
  */
-
 use crate::crdt::vector_clock::VectorClock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// A tag for an OR-Set element
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ORSetTag {
     pub id: String,
     pub node_id: String,
@@ -38,7 +37,12 @@ impl<T: Clone + PartialEq + serde::Serialize + for<'de> serde::Deserialize<'de>>
 
     /// Generate a unique tag for an element
     fn generate_tag(node_id: &str) -> ORSetTag {
-        let id = format!("{}-{}-{}", node_id, chrono::Utc::now().timestamp_millis(), uuid::Uuid::new_v4().to_string());
+        let id = format!(
+            "{}-{}-{}",
+            node_id,
+            chrono::Utc::now().timestamp_millis(),
+            uuid::Uuid::new_v4()
+        );
         ORSetTag {
             id,
             node_id: node_id.to_string(),
@@ -59,10 +63,13 @@ impl<T: Clone + PartialEq + serde::Serialize + for<'de> serde::Deserialize<'de>>
         if let Some(element) = self.elements.get_mut(&key) {
             element.tags.push(tag);
         } else {
-            self.elements.insert(key, ORSetElement {
-                value,
-                tags: vec![tag],
-            });
+            self.elements.insert(
+                key,
+                ORSetElement {
+                    value,
+                    tags: vec![tag],
+                },
+            );
         }
     }
 
@@ -95,7 +102,10 @@ impl<T: Clone + PartialEq + serde::Serialize + for<'de> serde::Deserialize<'de>>
 
     /// Get the size of the set
     pub fn size(&self) -> usize {
-        self.elements.values().filter(|e| !e.tags.is_empty()).count()
+        self.elements
+            .values()
+            .filter(|e| !e.tags.is_empty())
+            .count()
     }
 
     /// Merge another OR-Set into this one
@@ -142,7 +152,9 @@ impl<T: Clone + PartialEq + serde::Serialize + for<'de> serde::Deserialize<'de>>
     }
 }
 
-impl<T: Default> Default for ORSet<T> {
+impl<T: Clone + PartialEq + serde::Serialize + for<'de> serde::Deserialize<'de>> Default
+    for ORSet<T>
+{
     fn default() -> Self {
         Self::new()
     }
@@ -171,10 +183,10 @@ mod tests {
     fn test_or_set_merge() {
         let mut set1 = ORSet::new();
         set1.add("value1".to_string(), "node1");
-        
+
         let mut set2 = ORSet::new();
         set2.add("value2".to_string(), "node2");
-        
+
         set1.merge(&set2);
         assert!(set1.has(&"value1".to_string()));
         assert!(set1.has(&"value2".to_string()));

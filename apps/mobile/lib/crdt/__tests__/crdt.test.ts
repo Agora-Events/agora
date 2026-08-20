@@ -3,6 +3,13 @@
  * Tests for LWW-Element-Set, OR-Set, and Vector Clock implementations
  */
 
+// @ts-ignore - Jest types
+declare const describe: any;
+// @ts-ignore - Jest types
+declare const test: any;
+// @ts-ignore - Jest types
+declare const expect: any;
+
 import {
   VectorClockUtils,
   LWWElementSet,

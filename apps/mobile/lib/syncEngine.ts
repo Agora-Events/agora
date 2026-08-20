@@ -3,6 +3,7 @@
  * Manages local mutations, network detection, and delta sync sessions
  */
 
+// @ts-ignore - NetInfo types
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import {
   VectorClock,
