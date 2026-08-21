@@ -1257,9 +1257,101 @@ pub fn has_event_role(
     required_role: crate::types::Role,
 ) -> bool {
     if let Some(member_role) = get_event_team_role(env, event_id, member) {
-        // Check role hierarchy: Admin (1) > Manager (2) > Scanner (3)
         (member_role as u32) <= (required_role as u32)
     } else {
         false
     }
+}
+
+// ── Dispute Storage ────────────────────────────────────────────────────────────
+
+const DISPUTE_SHARD_SIZE: u32 = 50;
+
+/// Stores a dispute for an event.
+pub fn store_dispute(env: &Env, dispute: &crate::types::Dispute) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Dispute(dispute.event_id.clone()), dispute);
+}
+
+/// Retrieves a dispute by event_id.
+pub fn get_dispute(env: &Env, event_id: String) -> Option<crate::types::Dispute> {
+    env.storage().persistent().get(&DataKey::Dispute(event_id))
+}
+
+/// Adds a vote to the dispute vote shard list.
+pub fn add_dispute_vote(env: &Env, event_id: String, voter: &Address) {
+    let count = get_dispute_vote_count(env, event_id.clone());
+    let shard_id = count / DISPUTE_SHARD_SIZE;
+
+    let mut shard: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::DisputeVoteShard(event_id.clone(), shard_id))
+        .unwrap_or_else(|| Vec::new(env));
+
+    shard.push_back(voter.clone());
+    env.storage().persistent().set(
+        &DataKey::DisputeVoteShard(event_id.clone(), shard_id),
+        &shard,
+    );
+
+    env.storage().persistent().set(
+        &DataKey::DisputeVoteCount(event_id.clone()),
+        &(count + 1),
+    );
+}
+
+/// Gets all votes for a dispute.
+pub fn get_dispute_votes(env: &Env, event_id: String) -> Vec<crate::types::DisputeVote> {
+    let count = get_dispute_vote_count(env, event_id.clone());
+    let mut votes = Vec::new(env);
+
+    if count == 0 {
+        return votes;
+    }
+
+    let num_shards = count.div_ceil(DISPUTE_SHARD_SIZE);
+    for i in 0..num_shards {
+        let shard: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::DisputeVoteShard(event_id.clone(), i))
+            .unwrap_or_else(|| Vec::new(env));
+
+        for voter in shard.iter() {
+            if let Some(vote) = env
+                .storage()
+                .persistent()
+                .get::<_, crate::types::DisputeVote>(&DataKey::DisputeVote(event_id.clone(), voter.clone()))
+            {
+                votes.push_back(vote);
+            }
+        }
+    }
+
+    votes
+}
+
+/// Gets the total number of votes for a dispute.
+pub fn get_dispute_vote_count(env: &Env, event_id: String) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DisputeVoteCount(event_id))
+        .unwrap_or(0)
+}
+
+/// Checks if a voter has already voted on a dispute.
+pub fn has_voted(env: &Env, event_id: String, voter: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::DisputeVote(event_id, voter.clone()))
+}
+
+/// Stores a dispute vote.
+pub fn store_dispute_vote(env: &Env, event_id: String, voter: &Address, vote: &crate::types::DisputeVote) {
+    env.storage().persistent().set(
+        &DataKey::DisputeVote(event_id, voter.clone()),
+        vote,
+    );
 }

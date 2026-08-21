@@ -1,7 +1,8 @@
 use crate::{
     error::TicketPaymentError,
     types::{
-        DataKey, DiscountData, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus,
+        DataKey, DiscountData, EscrowMilestone, EscrowState, EventBalance, HighestBid,
+        ParameterProposal, Payment, PaymentStatus,
     },
 };
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
@@ -583,19 +584,6 @@ pub fn mark_discount_hash_used(env: &Env, hash: soroban_sdk::BytesN<32>) {
         .set(&DataKey::DiscountCodeUsed(hash), &true);
 }
 
-pub fn is_event_disputed(env: &Env, event_id: String) -> bool {
-    env.storage()
-        .persistent()
-        .get(&DataKey::DisputeStatus(event_id))
-        .unwrap_or(false)
-}
-
-pub fn set_event_dispute_status(env: &Env, event_id: String, disputed: bool) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::DisputeStatus(event_id), &disputed);
-}
-
 pub fn is_event_cancelled_for_refund(env: &Env, event_id: &String) -> bool {
     env.storage()
         .persistent()
@@ -936,4 +924,41 @@ pub fn get_poaps_by_attendee(env: &Env, attendee: &Address) -> Vec<String> {
         }
     }
     all
+}
+
+// ── Escrow Storage ─────────────────────────────────────────────────────────────
+
+pub fn get_escrow_state(env: &Env, event_id: String) -> Option<EscrowState> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EscrowState(event_id))
+}
+
+pub fn set_escrow_state(env: &Env, event_id: String, state: &EscrowState) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EscrowState(event_id), state);
+}
+
+pub fn store_escrow_milestone(env: &Env, event_id: String, index: u32, milestone: &EscrowMilestone) {
+    env.storage().persistent().set(
+        &DataKey::EscrowMilestone(event_id, index),
+        milestone,
+    );
+}
+
+pub fn get_escrow_milestone(env: &Env, event_id: String, index: u32) -> Option<EscrowMilestone> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EscrowMilestone(event_id, index))
+}
+
+pub fn init_escrow_state(env: &Env, event_id: String) -> EscrowState {
+    let state = EscrowState {
+        total_collected: 0,
+        total_released: 0,
+        milestones_reached: 0,
+    };
+    set_escrow_state(env, event_id, &state);
+    state
 }

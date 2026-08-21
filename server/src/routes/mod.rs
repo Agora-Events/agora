@@ -19,6 +19,7 @@
 //! 3. Security headers
 //! 4. Database connection state
 
+use crate::handlers::{delta_sync, sync_status, SyncState};
 use axum::{
     middleware,
     response::IntoResponse,
@@ -51,6 +52,10 @@ use crate::handlers::{
         list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
         set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
+    governance::{
+        cast_vote, get_dispute, get_dispute_votes, list_disputes, open_dispute,
+        resolve_dispute, GovernanceState,
+    },
     example_empty_success, example_not_found, example_validation_error,
     health::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
@@ -73,7 +78,6 @@ use crate::handlers::{
         list_qr_payloads, mark_qr_used, scan_ticket, verify_qr_payload,
     },
     rates::{get_rates, RatesState},
-    soroban_listener::{spawn_listener, ListenerConfig},
     waiting_room::{
         join_queue, queue_status, queue_stream, request_challenge, WaitingRoomConfig,
         WaitingRoomState,
@@ -84,6 +88,8 @@ use crate::handlers::{
 use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
+use crate::services::indexer::spawn_indexer;
+use crate::services::indexer::IndexerConfig;
 use crate::services::queue::QueueEngine;
 
 /// Sensitive routes that hit the database or expose internal state.
@@ -135,12 +141,19 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
 
     let rates_state = RatesState::new(redis.clone(), reqwest::Client::new());
 
+    // Sync state for CRDT delta synchronization
+    let sync_state = SyncState::new(pool.clone());
     // Dynamic pricing state for Dutch auction & bonding curve projections (Issue #1175)
     let pricing_state = PricingState::new(redis.clone());
 
-    // Spawn the Soroban event listener background task (Issue #490)
-    let listener_config = ListenerConfig::from_env();
-    spawn_listener(pool.clone(), Some(redis.clone()), listener_config);
+    // Spawn the high-throughput, re-org resilient Soroban event indexer (Issue #1174)
+    let indexer_config = IndexerConfig::from_env();
+    spawn_indexer(
+        pool.clone(),
+        Some(redis.clone()),
+        Some(broadcaster.clone()),
+        indexer_config,
+    );
 
     // Auth routes — challenge-response JWT flow (Issue #484, #875)
     let auth_routes = Router::new()
@@ -179,16 +192,44 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         token: config.admin_token.clone(),
     };
 
+    let governance_state = GovernanceState {
+        pool: pool.clone(),
+    };
+
+    let governance_routes = Router::new()
+        .route("/disputes", get(list_disputes).post(open_dispute))
+        .route("/disputes/:id", get(get_dispute))
+        .route(
+            "/disputes/:id/votes",
+            get(get_dispute_votes).post(cast_vote),
+        )
+        .route("/disputes/:id/resolve", post(resolve_dispute))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_state.clone(),
+            require_admin_token,
+        ))
+        .layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(governance_state);
+
     let admin_routes = Router::new()
         .route("/events/:id/toggle-flag", post(toggle_event_flag))
         .route("/events/:id/feature", patch(set_event_featured))
         .route("/events/:id/flag", patch(flag_event))
+        .merge(governance_routes)
         .route_layer(middleware::from_fn_with_state(
             admin_auth_state,
             require_admin_token,
         ))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
-        .with_state(event_state.clone());
+        .with_state(event_state.clone())
+        .merge(
+            Router::new()
+                .route("/indexer/replay", get(replay_indexer))
+                .with_state(IndexerAdminState {
+                    pool: pool.clone(),
+                    broker: Some(broadcaster.clone()),
+                }),
+        );
 
     // WebSocket sub-router for real-time purchase updates.
     let ws_routes = Router::new()
@@ -350,6 +391,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/rates", get(get_rates))
         .with_state(rates_state);
 
+    // Sync routes for CRDT delta synchronization
+    let sync_routes = Router::new()
+        .route("/delta", post(delta_sync))
+        .route("/status/:node_id", get(sync_status))
+        .with_state(sync_state);
     // Dynamic pricing routes: Dutch auction projections and bonding curve
     // visualisation series (Issue #1175).
     let pricing_routes = Router::new()

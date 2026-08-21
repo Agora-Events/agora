@@ -14,6 +14,7 @@
 pub mod analytics;
 pub mod audit_log;
 pub mod category;
+pub mod dispute;
 pub mod event;
 pub mod event_rating;
 pub mod organizer;
@@ -21,3 +22,5 @@ pub mod organizer_profile;
 pub mod ticket;
 pub mod transaction;
 pub mod user;
+pub mod indexer_event;
+pub mod blockchain_checkpoint;

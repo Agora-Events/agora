@@ -71,4 +71,10 @@ pub enum AgoraEvent {
     StakingTokenUpdated,
     /// The minimum stake amount has been updated by an admin.
     MinStakeAmountUpdated,
+    /// A dispute has been opened on an event.
+    DisputeOpened,
+    /// A vote has been cast on a dispute.
+    DisputeVoted,
+    /// A dispute has been resolved.
+    DisputeResolved,
 }

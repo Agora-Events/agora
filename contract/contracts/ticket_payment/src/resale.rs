@@ -44,7 +44,7 @@ use crate::error::TicketPaymentError;
 use crate::events::{AgoraEvent, ResaleCancelledEvent, ResaleListedEvent, ResalePurchasedEvent};
 use crate::storage::{
     add_payment_to_buyer_index, add_to_total_volume_processed, get_event_registry, get_payment,
-    is_event_disputed, is_initialized, is_paused, remove_payment_from_buyer_index,
+    is_initialized, is_paused, remove_payment_from_buyer_index,
 };
 use crate::types::{DataKey, PaymentStatus, MAX_BPS};
 
@@ -201,8 +201,14 @@ fn require_tradeable_event(
     if !event_info.is_active {
         return Err(TicketPaymentError::EventInactive);
     }
-    if is_event_disputed(env, event_info.event_id.clone()) {
-        return Err(TicketPaymentError::EventDisputed);
+    let registry_addr = crate::storage::get_event_registry(env);
+    let registry_client = event_registry::Client::new(env, &registry_addr);
+    if let Ok(Ok(Some(dispute))) = registry_client.try_get_dispute(&event_info.event_id) {
+        if matches!(dispute.status, event_registry::DisputeStatus::Open)
+            || matches!(dispute.status, event_registry::DisputeStatus::Voting)
+        {
+            return Err(TicketPaymentError::EventDisputed);
+        }
     }
     if event_info.end_time > 0 && env.ledger().timestamp() >= event_info.end_time {
         return Err(TicketPaymentError::EventEnded);

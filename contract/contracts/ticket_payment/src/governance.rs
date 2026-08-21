@@ -7,9 +7,10 @@ pub enum ParameterChange {
     RemoveGovernor(Address),
     AddTokenToWhitelist(Address),
     RemoveTokenFromWhitelist(Address),
-    UpdateWithdrawalCap(Address, i128), // This is still i128 amount
+    UpdateWithdrawalCap(Address, i128),
     UpdateSlippage(u32),
-    UpdateTransferFee(String, u32), // Changed from i128 to u32 basis points
+    UpdateTransferFee(String, u32),
+    EscrowWithdrawal(String, i128),
 }
 
 #[contracttype]
