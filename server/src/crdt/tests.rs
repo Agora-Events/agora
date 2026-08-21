@@ -160,6 +160,7 @@ mod integration_tests {
         set1.add("value1".to_string(), "node1");
 
         let mut set2: ORSet<String> = ORSet::new();
+        set2.add("value1".to_string(), "node1");
         set2.remove(&"value1".to_string());
 
         set1.merge(&set2);
