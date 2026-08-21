@@ -12,6 +12,7 @@ pub mod rates;
 pub mod soroban_listener;
 pub mod waiting_room;
 pub mod ws;
+pub mod zk_checkin;
 
 use axum::{extract::Path, response::IntoResponse, response::Response};
 
