@@ -83,7 +83,7 @@ use crate::handlers::{
         WaitingRoomState,
     },
     ws::{ws_purchases_handler, PurchaseBroadcaster},
-    indexer::{replay_indexer, IndexerAdminState},
+    zk_checkin::{get_ring, register_commitment, seal_bucket, zk_checkin, ZkCheckinState},
 };
 use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
@@ -259,6 +259,27 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/:id", delete(delete_qr_payload))
         .with_state(pool.clone());
 
+    // Zero-knowledge ticket attestation (Issue #1186). The public half is the
+    // gate: fetch an anonymity set, then present a proof. Registering
+    // commitments and sealing a set are issuer actions and live under /admin.
+    let zk_state = ZkCheckinState::new(pool.clone());
+    let zk_routes = Router::new()
+        .route("/ring", get(get_ring))
+        .route("/checkin", post(zk_checkin))
+        .with_state(zk_state.clone());
+
+    let admin_zk_routes = Router::new()
+        .route("/zk/commitments", post(register_commitment))
+        .route("/zk/buckets/seal", post(seal_bucket))
+        .route_layer(middleware::from_fn_with_state(
+            AdminAuthState {
+                token: config.admin_token.clone(),
+            },
+            require_admin_token,
+        ))
+        .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(zk_state);
+
     // Event routes with Redis caching
     let event_routes = Router::new()
         .route("/", get(list_events))
@@ -394,7 +415,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/ws", ws_routes)
         .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
-        .nest("/sync", sync_routes)
+        .nest("/zk", zk_routes)
         .nest("/pricing", pricing_routes)
         .merge(rates_route)
         .layer(middleware::from_fn(require_json_content_type))
@@ -423,7 +444,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     Router::new()
         .route("/metrics", get(metrics_handler))
         .nest("/api/v1", api_routes)
-        .nest("/api/v1/admin", admin_routes)
+        .nest("/api/v1/admin", admin_routes.merge(admin_zk_routes))
         .merge(deep_link_routes)
         .layer(middleware::from_fn(track_metrics))
         .layer(create_security_headers_layer())

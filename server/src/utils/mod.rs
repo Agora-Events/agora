@@ -5,6 +5,7 @@ pub mod logging;
 pub mod pagination;
 pub mod rate_limit;
 pub mod response;
+pub mod zkp_verifier;
 
 // Utility helpers (hashing, validation) will be added here
 

@@ -53,6 +53,11 @@ hex = "0.4"
 # SHA-256 for the waiting-room proof-of-work challenge (Issue #1187)
 sha2 = "0.10"
 
+# ristretto255 group arithmetic for the zero-knowledge ticket attestation
+# (Issue #1186). Already in the tree transitively via ed25519-dalek; named
+# explicitly here because `utils::zkp_verifier` depends on it directly.
+curve25519-dalek = "4.1"
+
 # Streaming (SSE) support for the waiting-room queue position stream (Issue #1187)
 async-stream = "0.3"
 futures-util = "0.3"

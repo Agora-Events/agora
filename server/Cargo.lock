@@ -22,6 +22,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "chrono",
+ "curve25519-dalek",
  "dashmap",
  "dotenvy",
  "ed25519-dalek",
