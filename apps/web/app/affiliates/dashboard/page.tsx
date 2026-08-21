@@ -1,4 +1,5 @@
 import { AffiliateMetricsDashboard } from "@/components/analytics/affiliate-metrics-dashboard";
+import { ReferralLinkGenerator } from "@/components/affiliates/referral-link-generator";
 import { Footer } from "@/components/layout/footer";
 import { Navbar } from "@/components/layout/navbar";
 
@@ -12,10 +13,13 @@ export default function AffiliateDashboardPage() {
           <h1 className="mt-2 text-4xl font-bold text-ink-deep sm:text-5xl">Performance Metrics</h1>
           <p className="mt-3 max-w-2xl text-gray-600">Track your referral clicks, sales, and total commission earned.</p>
         </div>
-        
+
         <AffiliateMetricsDashboard affiliateId="demo123" />
-        
-        {/* We can also render an empty state one right below to show empty state handling, but we'll stick to a standard dashboard */}
+
+        {/* Referral link generator for sharing event links */}
+        <div className="mt-8">
+          <ReferralLinkGenerator defaultAffiliateCode="demo123" />
+        </div>
       </div>
       <Footer />
     </main>
