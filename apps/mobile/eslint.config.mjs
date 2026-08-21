@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     "web-build/**",
     "scripts/**",
     "metro.config.js",
+    "**/__tests__/**",
   ]),
   ...tseslint.configs.recommended,
   {

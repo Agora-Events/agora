@@ -19,6 +19,7 @@
 //! 3. Security headers
 //! 4. Database connection state
 
+use crate::handlers::{delta_sync, sync_status, SyncState};
 use axum::{
     middleware,
     response::IntoResponse,
@@ -140,6 +141,8 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
 
     let rates_state = RatesState::new(redis.clone(), reqwest::Client::new());
 
+    // Sync state for CRDT delta synchronization
+    let sync_state = SyncState::new(pool.clone());
     // Dynamic pricing state for Dutch auction & bonding curve projections (Issue #1175)
     let pricing_state = PricingState::new(redis.clone());
 
@@ -367,6 +370,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/rates", get(get_rates))
         .with_state(rates_state);
 
+    // Sync routes for CRDT delta synchronization
+    let sync_routes = Router::new()
+        .route("/delta", post(delta_sync))
+        .route("/status/:node_id", get(sync_status))
+        .with_state(sync_state);
     // Dynamic pricing routes: Dutch auction projections and bonding curve
     // visualisation series (Issue #1175).
     let pricing_routes = Router::new()
@@ -386,6 +394,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/ws", ws_routes)
         .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
+        .nest("/sync", sync_routes)
         .nest("/pricing", pricing_routes)
         .merge(rates_route)
         .layer(middleware::from_fn(require_json_content_type))
