@@ -77,16 +77,18 @@ use crate::handlers::{
         list_qr_payloads, mark_qr_used, scan_ticket, verify_qr_payload,
     },
     rates::{get_rates, RatesState},
-    soroban_listener::{spawn_listener, ListenerConfig},
     waiting_room::{
         join_queue, queue_status, queue_stream, request_challenge, WaitingRoomConfig,
         WaitingRoomState,
     },
     ws::{ws_purchases_handler, PurchaseBroadcaster},
+    indexer::{replay_indexer, IndexerAdminState},
 };
 use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
+use crate::services::indexer::spawn_indexer;
+use crate::services::indexer::IndexerConfig;
 use crate::services::queue::QueueEngine;
 
 /// Sensitive routes that hit the database or expose internal state.
@@ -141,9 +143,14 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     // Dynamic pricing state for Dutch auction & bonding curve projections (Issue #1175)
     let pricing_state = PricingState::new(redis.clone());
 
-    // Spawn the Soroban event listener background task (Issue #490)
-    let listener_config = ListenerConfig::from_env();
-    spawn_listener(pool.clone(), Some(redis.clone()), listener_config);
+    // Spawn the high-throughput, re-org resilient Soroban event indexer (Issue #1174)
+    let indexer_config = IndexerConfig::from_env();
+    spawn_indexer(
+        pool.clone(),
+        Some(redis.clone()),
+        Some(broadcaster.clone()),
+        indexer_config,
+    );
 
     // Auth routes — challenge-response JWT flow (Issue #484, #875)
     let auth_routes = Router::new()
@@ -211,7 +218,15 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
             require_admin_token,
         ))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
-        .with_state(event_state.clone());
+        .with_state(event_state.clone())
+        .merge(
+            Router::new()
+                .route("/indexer/replay", get(replay_indexer))
+                .with_state(IndexerAdminState {
+                    pool: pool.clone(),
+                    broker: Some(broadcaster.clone()),
+                }),
+        );
 
     // WebSocket sub-router for real-time purchase updates.
     let ws_routes = Router::new()

@@ -22,3 +22,5 @@ pub mod organizer_profile;
 pub mod ticket;
 pub mod transaction;
 pub mod user;
+pub mod indexer_event;
+pub mod blockchain_checkpoint;
