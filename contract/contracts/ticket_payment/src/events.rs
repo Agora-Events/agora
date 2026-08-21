@@ -31,12 +31,11 @@ pub enum AgoraEvent {
     ResaleListed,
     ResaleCancelled,
     ResalePurchased,
-    // Dynamic pricing events (Issue #1175)
-    DutchAuctionCreated,
-    DutchAuctionPurchaseCommitted,
-    DutchAuctionPurchaseRevealed,
-    BondingCurveCreated,
-    BondingCurvePurchase,
+    MilestoneReleased,
+    EscrowWithdrawalProposed,
+    EscrowWithdrawalApproved,
+    EscrowWithdrawalExecuted,
+    EscrowDisputed,
 }
 
 #[contracttype]
@@ -292,77 +291,58 @@ pub struct ResalePurchasedEvent {
     pub event_id: String,
     pub seller: Address,
     pub buyer: Address,
-    /// Gross price paid by the buyer.
     pub price: i128,
-    /// Portion routed to the organizer as a royalty.
     pub royalty: i128,
-    /// Net proceeds received by the seller (`price - royalty`).
     pub seller_proceeds: i128,
     pub timestamp: u64,
 }
 
-// ── Dynamic Pricing Events (Issue #1175) ──────────────────────────────────────
-
+/// Emitted when an escrow milestone is released for an event.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DutchAuctionCreatedEvent {
+pub struct MilestoneReleasedEvent {
     pub event_id: String,
-    pub tier_id: String,
-    pub start_price: i128,
-    pub reserve_price: i128,
-    pub start_time: u64,
-    pub end_time: u64,
-    pub exponential: bool,
+    pub milestone_index: u32,
+    pub amount_released: i128,
     pub timestamp: u64,
 }
 
+/// Emitted when a multi-sig escrow withdrawal is proposed.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DutchAuctionCommitEvent {
+pub struct EscrowWithdrawalProposedEvent {
+    pub proposal_id: u64,
     pub event_id: String,
-    pub tier_id: String,
-    pub buyer: Address,
-    /// Price locked in at commit time (stroops).
-    pub committed_price: i128,
-    /// Timestamp at which the commit expires.
-    pub expires_at: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DutchAuctionRevealEvent {
-    pub event_id: String,
-    pub tier_id: String,
-    pub buyer: Address,
-    /// Final approved price charged to the buyer (stroops).
-    pub approved_price: i128,
+    pub amount: i128,
+    pub proposer: Address,
     pub timestamp: u64,
 }
 
+/// Emitted when a multi-sig escrow withdrawal is approved.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BondingCurveCreatedEvent {
-    pub event_id: String,
-    pub tier_id: String,
-    /// Amplitude `a` (scaled by PARAM_SCALE).
-    pub a_scaled: i128,
-    pub b_exponent: u32,
-    /// Base price floor `c` (stroops).
-    pub c_base: i128,
-    pub initial_supply: u32,
+pub struct EscrowWithdrawalApprovedEvent {
+    pub proposal_id: u64,
+    pub approver: Address,
     pub timestamp: u64,
 }
 
+/// Emitted when a multi-sig escrow withdrawal is executed.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BondingCurvePurchaseEvent {
+pub struct EscrowWithdrawalExecutedEvent {
+    pub proposal_id: u64,
     pub event_id: String,
-    pub tier_id: String,
-    pub buyer: Address,
-    pub quantity: u32,
-    /// Total cost charged (stroops).
-    pub total_cost: i128,
-    /// Remaining supply after this purchase.
-    pub remaining_supply: u32,
+    pub amount: i128,
+    pub executor: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a dispute is opened on an event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowDisputedEvent {
+    pub event_id: String,
+    pub opened_by: Address,
     pub timestamp: u64,
 }

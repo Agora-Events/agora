@@ -51,6 +51,10 @@ use crate::handlers::{
         list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
         set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
+    governance::{
+        cast_vote, get_dispute, get_dispute_votes, list_disputes, open_dispute,
+        resolve_dispute, GovernanceState,
+    },
     example_empty_success, example_not_found, example_validation_error,
     health::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
@@ -178,10 +182,30 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         token: config.admin_token.clone(),
     };
 
+    let governance_state = GovernanceState {
+        pool: pool.clone(),
+    };
+
+    let governance_routes = Router::new()
+        .route("/disputes", get(list_disputes).post(open_dispute))
+        .route("/disputes/:id", get(get_dispute))
+        .route(
+            "/disputes/:id/votes",
+            get(get_dispute_votes).post(cast_vote),
+        )
+        .route("/disputes/:id/resolve", post(resolve_dispute))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_state.clone(),
+            require_admin_token,
+        ))
+        .layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(governance_state);
+
     let admin_routes = Router::new()
         .route("/events/:id/toggle-flag", post(toggle_event_flag))
         .route("/events/:id/feature", patch(set_event_featured))
         .route("/events/:id/flag", patch(flag_event))
+        .merge(governance_routes)
         .route_layer(middleware::from_fn_with_state(
             admin_auth_state,
             require_admin_token,

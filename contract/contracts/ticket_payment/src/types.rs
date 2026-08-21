@@ -12,6 +12,9 @@ pub use crate::payment_types::{DiscountData, HighestBid, PurchaseOptions};
 // Re-export governance-related types from the dedicated governance module.
 pub use crate::governance::{ParameterChange, ParameterProposal, ProposalStatus};
 
+// Re-export escrow-related types from the dedicated escrow module.
+pub use crate::escrow::{EscrowMilestone, EscrowState};
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuctionConfig {
