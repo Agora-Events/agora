@@ -1,25 +1,59 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
+/**
+ * ticket/[id].tsx — Issue #1179: Offline Ticket Vault
+ *
+ * Ticket detail screen with:
+ *   - Biometric authentication gate before any vault decryption (issue #1179)
+ *   - Rotating QR display via DynamicQrView (replaces the old ad-hoc approach)
+ *   - Explicit biometric-unavailable and biometric-failure states
+ *
+ * Biometric flow:
+ *   1. Screen mounts → useBiometricAuth checks hardware availability.
+ *   2. If unavailable (no hardware / not enrolled): show an error banner;
+ *      the QR section is never shown. Do NOT silently unlock.
+ *   3. User taps "Show Ticket QR" → OS biometric prompt appears.
+ *   4. On success: vault secret is read, keypair derived in memory, passed
+ *      to DynamicQrView. The secretKey is held only in React state for the
+ *      lifetime of the screen — it is cleared on unmount.
+ *   5. On failure / cancel: explicit error message shown; QR stays hidden.
+ *
+ * Android note: expo-secure-store on Android does not self-prompt for
+ * biometrics. We call useBiometricAuth().authenticate() first, and only call
+ * getTicketSecret() after it resolves with success. On iOS the Keychain item
+ * itself requires authentication, so the OS prompts automatically — the
+ * explicit authenticate() call before reading is belt-and-suspenders.
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Modal,
+  Alert,
+  ActivityIndicator,
+  TouchableOpacity,
+} from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 import Colors from '@/constants/Colors';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Keypair, Networks, TransactionBuilder, Horizon } from '@stellar/stellar-sdk';
 import { StellarWalletManager } from '@/services/stellar';
-
-/** How often the entry QR payload is re-signed. */
-const QR_REFRESH_INTERVAL_MS = 15000;
+import { useBiometricAuth } from '@/hooks/useBiometricAuth';
+import { getTicketSecret } from '@/services/ticketVault';
+import { deriveTicketKeyPair } from '@/lib/crypto';
+import DynamicQrView from '@/components/ticket/DynamicQrView';
 
 export default function TicketDetailsScreen() {
   const { id } = useLocalSearchParams();
-  
+
   const [ticketStatus, setTicketStatus] = useState<'Active' | 'Transferred' | 'Listed'>('Active');
-  
+
   // Modals state
   const [isTransferModalOpen, setTransferModalOpen] = useState(false);
   const [isSellModalOpen, setSellModalOpen] = useState(false);
-  
+
   // Form states
   const [recipientAddress, setRecipientAddress] = useState('');
   const [recipientError, setRecipientError] = useState('');
@@ -27,49 +61,89 @@ export default function TicketDetailsScreen() {
   const [sellError, setSellError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Rotating entry QR payload (issue #1006). Regenerated on a timer so a
-  // screenshot of the code stops being valid shortly after it is taken.
-  const [qrPayload, setQrPayload] = useState<string | null>(null);
-  const qrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Vault state — secretKey held in memory only, never persisted to state storage.
+  // Cleared when the screen unmounts.
+  const [vaultSecretKey, setVaultSecretKey] = useState<Uint8Array | null>(null);
+  const [vaultError, setVaultError] = useState<string | null>(null);
+  const [vaultLoading, setVaultLoading] = useState(false);
+
+  const biometric = useBiometricAuth();
+
+  // Clear the in-memory key when the screen unmounts to minimise the window
+  // during which the key is resident in JS heap.
+  useEffect(() => {
+    return () => {
+      setVaultSecretKey(null);
+    };
+  }, []);
 
   // MOCK Ticket Details (consistent with `tickets.tsx` style)
+  // TODO: Replace with real ticket lookup once the ticket store is wired up.
   const ticket = {
     id: id || 'T-1004',
     eventTitle: 'Stellar Meridian 2026',
     date: 'Oct 15, 2026',
     seat: 'General Admission',
     txHash: '0x3f...b82d',
+    // paymentId corresponds to the payment ID used when the ticket was purchased.
+    // In production this comes from the ticket store / on-chain lookup.
+    paymentId: String(id || 'T-1004'),
   };
 
-  const generateDynamicPayload = useCallback(async () => {
-    if (!id) return;
-    try {
-      // The secret is read only for the signing step and never held in state.
-      const privateKey = await SecureStore.getItemAsync('privateKey');
-      if (!privateKey) return;
-
-      // System time so the payload still refreshes offline.
-      const timestamp = Math.floor(Date.now() / 1000);
-      const payload = { ticketId: String(id), timestamp };
-      const payloadString = JSON.stringify(payload);
-
-      const keypair = Keypair.fromSecret(privateKey);
-      const signature = keypair.sign(Buffer.from(payloadString)).toString('base64');
-
-      setQrPayload(JSON.stringify({ ...payload, signature }));
-    } catch (e) {
-      console.error('Error generating ticket payload', e);
+  /**
+   * Gate: authenticate with biometrics, then read the vault.
+   *
+   * Called when the user taps "Show Ticket QR". Never called automatically
+   * on mount — we require explicit user intent before prompting biometrics.
+   */
+  const handleShowQr = useCallback(async () => {
+    if (biometric.state === 'unavailable') {
+      // Already shown the banner — no point prompting again.
+      return;
     }
-  }, [id]);
 
-  useEffect(() => {
-    generateDynamicPayload();
-    qrTimerRef.current = setInterval(generateDynamicPayload, QR_REFRESH_INTERVAL_MS);
+    setVaultError(null);
+    setVaultLoading(true);
 
-    return () => {
-      if (qrTimerRef.current) clearInterval(qrTimerRef.current);
-    };
-  }, [generateDynamicPayload]);
+    try {
+      // Step 1: authenticate (required on Android; belt-and-suspenders on iOS).
+      await biometric.authenticate();
+
+      // If authentication failed, biometric.state will be 'failed' or 'error'.
+      // We check after awaiting because authenticate() does not throw on failure.
+      if (biometric.state !== 'success') {
+        setVaultLoading(false);
+        return;
+      }
+
+      // Step 2: read vault (OS may re-prompt on iOS if required).
+      const secretBytes = await getTicketSecret(ticket.paymentId);
+      if (!secretBytes) {
+        setVaultError(
+          'No ticket secret found for this ticket. This device may not be the original ' +
+          'purchase device, or the ticket was purchased on a different account.'
+        );
+        setVaultLoading(false);
+        return;
+      }
+
+      // Step 3: derive the signing keypair in memory.
+      const { secretKey } = deriveTicketKeyPair(secretBytes);
+      setVaultSecretKey(secretKey);
+    } catch (err) {
+      setVaultError(
+        err instanceof Error ? err.message : 'Failed to access the ticket vault.'
+      );
+    } finally {
+      setVaultLoading(false);
+    }
+  }, [biometric, ticket.paymentId]);
+
+  /** Hide the QR and clear the in-memory key. */
+  const handleHideQr = useCallback(() => {
+    setVaultSecretKey(null);
+    biometric.reset();
+  }, [biometric]);
 
   const handleTransferSubmit = async () => {
     // Validate target string against Stellar public key constraints or email
@@ -187,11 +261,68 @@ export default function TicketDetailsScreen() {
         </View>
       </View>
 
-      <View style={styles.qrContainer}>
-        {/* Placeholder for the visual QR code; no QR library is available in
-            this app yet, so the signed payload is rendered directly. */}
-        <Text style={styles.qrPlaceholder}>[QR Code Placeholder]</Text>
-        <Text style={styles.payload}>{qrPayload}</Text>
+      {/* ── Biometric gate + Rotating QR ──────────────────────────────────── */}
+      <View style={styles.qrSection}>
+        <Text style={styles.sectionTitle}>Entry QR Code</Text>
+
+        {/* Biometric unavailable — explicit error, no silent passthrough */}
+        {biometric.state === 'unavailable' && (
+          <View style={styles.warningBox} accessibilityRole="alert">
+            <Text style={styles.warningText}>
+              ⚠️ Biometric authentication is not available on this device.{'\n'}
+              {biometric.errorMessage ?? 'Please enroll Face ID or Touch ID to display your ticket QR.'}
+            </Text>
+          </View>
+        )}
+
+        {/* Biometric failed — explicit error, no silent passthrough */}
+        {(biometric.state === 'failed' || biometric.state === 'error') && !vaultSecretKey && (
+          <View style={styles.errorBox} accessibilityRole="alert">
+            <Text style={styles.errorText}>
+              {biometric.errorMessage ?? 'Authentication failed. Please try again.'}
+            </Text>
+            <TouchableOpacity onPress={handleShowQr} style={styles.retryButton}>
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Vault error */}
+        {vaultError && (
+          <View style={styles.errorBox} accessibilityRole="alert">
+            <Text style={styles.errorText}>{vaultError}</Text>
+          </View>
+        )}
+
+        {/* Loading */}
+        {vaultLoading && (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={Colors.primaryYellow} />
+            <Text style={styles.loadingText}>Verifying…</Text>
+          </View>
+        )}
+
+        {/* QR unlocked and visible */}
+        {vaultSecretKey && !vaultLoading && (
+          <>
+            <DynamicQrView
+              ticketId={ticket.paymentId}
+              secretKey={vaultSecretKey}
+            />
+            <TouchableOpacity onPress={handleHideQr} style={styles.hideButton}>
+              <Text style={styles.hideButtonText}>Hide QR</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Prompt to authenticate */}
+        {!vaultSecretKey && !vaultLoading && biometric.state !== 'unavailable' && !vaultError && (
+          <Button
+            title="Show Ticket QR"
+            onPress={handleShowQr}
+            style={styles.actionButton}
+          />
+        )}
       </View>
 
       <View style={styles.actionsContainer}>
@@ -403,28 +534,55 @@ const styles = StyleSheet.create({
   cancelButton: {
     backgroundColor: '#2C2C2E',
   },
-  // Entry-QR panel (issue #1006), restyled for this screen's dark surface.
-  qrContainer: {
+  // ── QR / biometric gate section ──────────────────────────────────────────
+  qrSection: {
     marginBottom: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#2C2C2E',
-    borderRadius: 12,
-    alignItems: 'center',
-    width: '100%',
   },
-  qrPlaceholder: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
     color: Colors.primaryText,
+    marginBottom: 12,
   },
-  payload: {
-    fontSize: 10,
+  loadingBox: {
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
     color: Colors.secondaryText,
-    textAlign: 'center',
-    marginTop: 10,
+    marginTop: 8,
+    fontSize: 13,
+  },
+  errorBox: {
+    backgroundColor: '#FF3B3022',
+    padding: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FF3B3055',
+    marginBottom: 12,
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  retryButtonText: {
+    color: Colors.primaryYellow,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  hideButton: {
+    marginTop: 12,
+    alignSelf: 'center',
+  },
+  hideButtonText: {
+    color: Colors.secondaryText,
+    fontSize: 13,
+    textDecorationLine: 'underline',
   },
 });
 
