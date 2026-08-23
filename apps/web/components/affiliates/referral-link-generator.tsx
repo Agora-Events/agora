@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { dataEvents } from "@/components/events/mockups";
+import { ReferralSharingModal } from "./referral-sharing-modal";
 
 interface ReferralLinkGeneratorProps {
   /** Optional pre-filled affiliate code from auth context */
@@ -22,6 +23,7 @@ export function ReferralLinkGenerator({
   const [generatedUrl, setGeneratedUrl] = useState("");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   /** Build the base URL for the current environment */
   const baseUrl =
@@ -222,8 +224,41 @@ export function ReferralLinkGenerator({
             Share this link with your audience. You earn commissions on ticket
             sales made through this link.
           </p>
+
+          {/* Share action */}
+          <button
+            type="button"
+            onClick={() => setShareModalOpen(true)}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border-2 border-black bg-ink-deep px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="18" cy="5" r="3" />
+              <circle cx="6" cy="12" r="3" />
+              <circle cx="18" cy="19" r="3" />
+              <path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98" />
+            </svg>
+            Share Link
+          </button>
         </div>
       )}
+
+      {/* Referral sharing modal */}
+      <ReferralSharingModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        referralUrl={generatedUrl}
+        shareText="Join me at this event on Agora Events! Get your ticket here:"
+      />
     </div>
   );
 }
