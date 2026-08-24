@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   RefreshControl,
@@ -12,6 +11,7 @@ import {
 } from "react-native";
 import MapView, { Marker, Callout } from "react-native-maps";
 import CategorySelector from "@/components/CategorySelector";
+import { EventCardSkeleton } from "@/components/EventCardSkeleton";
 import { useDiscoverEvents } from "@/hooks/useDiscoverEvents";
 import {
   mappableEvents,
@@ -100,7 +100,11 @@ export default function DiscoverScreen() {
       )}
 
       {isLoading ? (
-        <ActivityIndicator style={styles.loader} color="#FACC15" />
+        <View style={styles.skeletonList} testID="discover-skeleton">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <EventCardSkeleton key={`skeleton-${index}`} />
+          ))}
+        </View>
       ) : mode === "list" ? (
         <FlatList
           data={events}
@@ -172,6 +176,7 @@ const styles = StyleSheet.create({
   },
   offlineText: { color: "#FACC15", fontSize: 12 },
   loader: { marginTop: 32 },
+  skeletonList: { paddingTop: 8 },
   map: { flex: 1 },
   row: { flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
   thumb: { width: 64, height: 64, borderRadius: 8 },
