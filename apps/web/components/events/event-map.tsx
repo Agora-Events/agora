@@ -1,15 +1,17 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
   Marker,
   Popup,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import Supercluster from "supercluster";
 
 // Fix default icon path issues with webpack/Next.js
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)
@@ -27,6 +29,34 @@ const customIcon = new L.Icon({
   iconAnchor: [20, 40],
   popupAnchor: [0, -40],
 });
+
+/**
+ * Cluster icon factory — renders a circle with the count.
+ * Colour and size scale with the number of events in the cluster.
+ */
+function createClusterIcon(count: number): L.DivIcon {
+  const size = count < 10 ? 44 : count < 50 ? 54 : 64;
+  const hue = count < 10 ? 200 : count < 50 ? 30 : 0; // blue → orange → red
+  return L.divIcon({
+    html: `<div style="
+      width:${size}px;height:${size}px;
+      border-radius:50%;
+      background:hsl(${hue},70%,55%);
+      color:#fff;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:${size < 54 ? 14 : 16}px;
+      font-weight:700;
+      box-shadow:0 2px 6px rgba(0,0,0,.3);
+      border:3px solid rgba(255,255,255,.8);
+      cursor:pointer;
+    ">${count}</div>`,
+    className: "",
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
 
 /**
  * Default centre: Lagos, Nigeria (West Africa region).
@@ -52,6 +82,22 @@ interface MapEvent {
 interface MapViewState {
   center: [number, number];
   zoom: number;
+}
+
+// ─── Supercluster setup ──────────────────────────────────────────────────────
+
+/** Convert a MapEvent array into GeoJSON FeatureCollection for supercluster. */
+function eventsToGeoJSON(events: MapEvent[]): Supercluster.PointFeature<MapEvent>[] {
+  return events
+    .filter((e) => e.latitude != null && e.longitude != null)
+    .map((e) => ({
+      type: "Feature" as const,
+      geometry: {
+        type: "Point" as const,
+        coordinates: [e.longitude!, e.latitude!],
+      },
+      properties: { ...e },
+    }));
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -81,6 +127,100 @@ function FitBounds({ events }: { events: MapEvent[] }) {
   return null;
 }
 
+/**
+ * Renders clustered markers using supercluster.
+ * Listens to viewport changes and re-computes clusters on every move/zoom.
+ */
+function ClusterLayer({
+  events,
+  supercluster,
+}: {
+  events: MapEvent[];
+  supercluster: Supercluster<MapEvent, MapEvent>;
+}) {
+  const map = useMap();
+  const [zoom, setZoom] = useState(map.getZoom());
+  const [bounds, setBounds] = useState(map.getBounds());
+
+  // Recalculate clusters when the viewport changes
+  const onViewChange = useCallback(() => {
+    setZoom(map.getZoom());
+    setBounds(map.getBounds());
+  }, [map]);
+
+  useMapEvents({
+    moveend: onViewChange,
+    zoomend: onViewChange,
+  });
+
+  // Get clusters for the current viewport
+  const clusters = useMemo(() => {
+    const b = bounds;
+    const bbox: [number, number, number, number] = [
+      b.getWest(),
+      b.getSouth(),
+      b.getEast(),
+      b.getNorth(),
+    ];
+    return supercluster.getClusters(bbox, Math.round(zoom));
+  }, [supercluster, bounds, zoom]);
+
+  return (
+    <>
+      {(clusters ?? []).map((cluster) => {
+        const [lng, lat] = cluster.geometry.coordinates;
+        const props = cluster.properties;
+
+        if (cluster.properties.cluster) {
+          // Cluster marker
+          const count = cluster.properties.point_count;
+          const clusterId = cluster.properties.cluster_id;
+          return (
+            <Marker
+              key={`cluster-${clusterId}`}
+              position={[lat, lng]}
+              icon={createClusterIcon(count)}
+              eventHandlers={{
+                click: () => {
+                  // Zoom in so the cluster expands
+                  const expansionZoom =
+                    supercluster.getClusterExpansionZoom(clusterId);
+                  map.setView([lat, lng], expansionZoom, { animate: true });
+                },
+              }}
+            />
+          );
+        }
+
+        // Individual event marker
+        return (
+          <Marker key={props.id} position={[lat, lng]} icon={customIcon}>
+            <Popup>
+              <div className="min-w-[180px]">
+                {props.imageUrl && (
+                  <img
+                    src={props.imageUrl}
+                    alt={props.title}
+                    className="mb-2 h-24 w-full rounded-lg object-cover"
+                  />
+                )}
+                <h3 className="text-sm font-semibold text-gray-900">
+                  {props.title}
+                </h3>
+                <p className="mt-1 text-xs text-gray-600">{props.date}</p>
+                <p className="text-xs text-gray-500">{props.location}</p>
+                <p className="mt-1 text-xs font-medium text-gray-800">
+                  {props.price === "Free" ? "Free" : `${props.price}`}
+                </p>
+              </div>
+            </Popup>
+          </Marker>
+        );
+      })}
+    </>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 interface EventMapProps {
@@ -94,6 +234,7 @@ export default function EventMap({ initialEvents }: EventMapProps) {
   const [isLoading, setIsLoading] = useState(!initialEvents);
   const [error, setError] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<MapEvent | null>(null);
+  const clusterRef = useRef<Supercluster<MapEvent, MapEvent> | null>(null);
 
   const fetchEvents = useCallback(async () => {
     if (initialEvents) return;
@@ -121,6 +262,20 @@ export default function EventMap({ initialEvents }: EventMapProps) {
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  // Build supercluster index from events
+  const supercluster = useMemo(() => {
+    const features = eventsToGeoJSON(events);
+    if (features.length === 0) return null;
+
+    const index = new Supercluster<MapEvent, MapEvent>({
+      radius: 60, // cluster radius in pixels
+      maxZoom: 16, // max zoom level to cluster
+      minZoom: 2,  // min zoom level to start clustering
+    });
+    index.load(features);
+    return index;
+  }, [events]);
 
   // Filter events that have coordinates
   const eventsWithCoords = events.filter(
@@ -237,33 +392,12 @@ export default function EventMap({ initialEvents }: EventMapProps) {
 
         <FitBounds events={eventsWithCoords} />
 
-        {eventsWithCoords.map((event) => (
-          <Marker
-            key={event.id}
-            position={[event.latitude!, event.longitude!]}
-            icon={customIcon}
-          >
-            <Popup>
-              <div className="min-w-[180px]">
-                {event.imageUrl && (
-                  <img
-                    src={event.imageUrl}
-                    alt={event.title}
-                    className="mb-2 h-24 w-full rounded-lg object-cover"
-                  />
-                )}
-                <h3 className="text-sm font-semibold text-gray-900">
-                  {event.title}
-                </h3>
-                <p className="mt-1 text-xs text-gray-600">{event.date}</p>
-                <p className="text-xs text-gray-500">{event.location}</p>
-                <p className="mt-1 text-xs font-medium text-gray-800">
-                  {event.price === "Free" ? "Free" : `${event.price}`}
-                </p>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {supercluster && (
+          <ClusterLayer
+            events={eventsWithCoords}
+            supercluster={supercluster}
+          />
+        )}
       </MapContainer>
     </div>
   );

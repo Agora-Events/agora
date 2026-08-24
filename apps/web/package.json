@@ -37,7 +37,8 @@
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "swr": "^2.4.1",
-    "zod": "3.24.4"
+    "zod": "3.24.4",
+    "supercluster": "^8.0.0"
   },
   "devDependencies": {
     "@storybook/addon-docs": "^10.5.3",
@@ -67,6 +68,7 @@
     "typescript": "^5",
     "vite": "^7.0.0",
     "vitest": "^3.2.4",
-    "@playwright/test": "1.49.1"
+    "@playwright/test": "1.49.1",
+    "@types/supercluster": "^7.1.0"
   }
 }
