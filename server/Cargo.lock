@@ -972,7 +972,7 @@ checksum = "45565fc9416b9896014f5732ac776f810ee53a66730c17e4020c3ec064a8f88f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.114",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -3946,7 +3946,7 @@ dependencies = [
  "escape-bytes",
  "ethnum",
  "hex",
- "sha2",
+ "sha2 0.10.9",
  "stellar-strkey 0.0.13",
 ]
 
