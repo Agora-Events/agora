@@ -10,6 +10,8 @@ import { buildMetadata } from "@/components/layout/seo";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EventPageView } from "@/components/analytics/event-page-view";
 import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
+import { SellTicketModal } from "@/components/events/sell-ticket-modal";
+import { SellTicketSection } from "@/components/events/sell-ticket-section";
 
 export async function generateMetadata({
   params,
@@ -253,6 +255,17 @@ export default async function EventDetailPage({
             <h2 className="text-[22px] sm:text-[24px] font-bold text-black font-heading">
               Secondary Marketplace
             </h2>
+            <div className="ml-auto">
+              <SellTicketSection
+                event={{
+                  id: event.id,
+                  title: event.title,
+                  date: event.date,
+                  location: event.location,
+                  price: event.price,
+                }}
+              />
+            </div>
           </div>
           <SecondaryMarketplaceTab eventId={eventId} />
         </div>
