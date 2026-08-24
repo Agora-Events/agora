@@ -31,6 +31,8 @@ export const GET = withErrorHandler(async () => {
       title: event.title,
       date: event.startsAt.toLocaleString(),
       location: event.location,
+      latitude: event.latitude,
+      longitude: event.longitude,
       price: event.ticketPrice === 0 ? "Free" : String(event.ticketPrice),
       imageUrl: event.imageUrl,
       category: event.category,

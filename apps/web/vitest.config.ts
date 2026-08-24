@@ -1,6 +1,11 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 
+// Force test environment — NODE_ENV=production (inherited from the shell)
+// loads React production builds where React.act is stripped, crashing
+// @testing-library/react with "React.act is not a function".
+process.env.NODE_ENV = 'test';
+
 export default defineConfig({
   test: {
     environment: 'jsdom',

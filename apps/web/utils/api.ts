@@ -9,6 +9,8 @@ export type DiscoverEvent = {
   title: string;
   date: string;
   location: string;
+  latitude: number | null;
+  longitude: number | null;
   price: string;
   imageUrl: string;
   category: string;
