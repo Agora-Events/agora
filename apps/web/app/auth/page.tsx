@@ -3,12 +3,9 @@
 import { useState, FormEvent } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-
-function validateEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { authSchema } from "@/lib/validation";
 export default function AuthPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -18,13 +15,9 @@ export default function AuthPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
-    if (!email) {
-      setError("Email is required");
-      return;
-    }
-
-    if (!validateEmail(email)) {
-      setError("Enter a valid email");
+    const result = authSchema.safeParse({ email });
+    if (!result.success) {
+      setError(result.error.issues[0].message);
       return;
     }
 
@@ -44,48 +37,41 @@ export default function AuthPage() {
       }
 
       router.push('/home');
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong');
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleGoBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  };
+
   return (
-    <main className="min-h-screen bg-[#A9A495] relative flex items-center justify-center">
+    <main className="min-h-screen bg-sand relative flex items-center justify-center">
       {/* Back Button */}
-      <button
+      <Button
         type="button"
-        className="
-          absolute top-10 left-16
-          bg-white
-          px-6 py-2
-          rounded-full
-          font-medium text-sm
-          flex items-center gap-2
-          border-2 border-black
-          shadow-[0_4px_0_#000]
-          active:translate-y-[2px]
-          active:shadow-[0_2px_0_#000]
-        "
+        variant="secondary"
+        onClick={handleGoBack}
+        className="absolute top-10 left-16 text-sm py-2"
       >
         <Image src="/icons/arrow-left.svg" alt="Back" width={16} height={16} />
         Back
-      </button>
+      </Button>
 
       {/* Auth Card */}
       <div className="w-[360px] bg-[#F3EEDC] rounded-2xl shadow-[0_8px_0_#00000020] p-8 flex flex-col items-center">
-        {/* Logo Container (Ticked Black Card Style) */}
+        {/* Logo Container */}
         <div className="mb-6">
-          <div
-            className="
-              bg-white
-              border-2 border-black
-              rounded-lg
-              px-4 py-2
-              shadow-[2px_2px_0_#000]
-            "
-          >
+          <div className="bg-white border-2 border-black rounded-lg px-4 py-2 shadow-[2px_2px_0_#000]">
             <Image
               src="/logo/agora logo.svg"
               alt="Agora"
@@ -95,7 +81,6 @@ export default function AuthPage() {
           </div>
         </div>
 
-        {/* Title */}
         <h1 className="text-xl font-semibold mb-1 text-black">
           Welcome to agora
         </h1>
@@ -103,43 +88,30 @@ export default function AuthPage() {
           Please sign in or sign up below.
         </p>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="w-full">
-          {/* Email */}
-          <label className="text-sm font-medium block mb-2 text-black">
-            Email
-          </label>
-
-          <input
+          <FormField
+            label="Email"
+            name="email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="
-              w-full
-              bg-white
-              border-2 border-black
-              rounded-full
-              px-4 py-2
-              mb-4
-              outline-none
-            "
+            error={error}
           />
 
-          {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
-
-          {/* Yellow Continue Button */}
-          <button
+          <Button
             type="submit"
+            variant="primary"
             disabled={isLoading}
             className="
               w-full
-              bg-[#FACC15]
-              hover:bg-[#EAB308]
+              bg-accent
+              hover:bg-accent-hover
               rounded-full
               py-2
               font-medium
               flex items-center justify-center gap-2
               mb-4
+              mt-3
               border-2 border-black
               shadow-[0_4px_0_#000]
               active:translate-y-[2px]
@@ -148,18 +120,12 @@ export default function AuthPage() {
             "
           >
             Continue with Email
-            <Image
-              src="/icons/arrow-right.svg"
-              alt="Arrow"
-              width={16}
-              height={16}
-            />
-          </button>
+            <Image src="/icons/arrow-right.svg" alt="Arrow" width={16} height={16} />
+          </Button>
 
-          {/* Google Button */}
-          <button
+          <Button
             type="button"
-            onClick={() => window.location.href = '/api/auth/google'}
+            onClick={() => router.push("/api/auth/google")}
             className="
               w-full
               bg-black
@@ -174,19 +140,13 @@ export default function AuthPage() {
               active:shadow-[0_2px_0_#000]
             "
           >
-            <Image
-              src="/icons/google.svg"
-              alt="Google"
-              width={16}
-              height={16}
-            />
+            <Image src="/icons/google.svg" alt="Google" width={16} height={16} />
             Sign in with Google
-          </button>
+          </Button>
 
-          {/* Apple Button */}
-          <button
+          <Button
             type="button"
-            onClick={() => window.location.href = '/api/auth/apple'}
+            onClick={() => router.push("/api/auth/apple")}
             className="
               w-full
               bg-black
@@ -202,7 +162,7 @@ export default function AuthPage() {
           >
             <Image src="/icons/apple.svg" alt="Apple" width={16} height={16} />
             Sign in with Apple
-          </button>
+          </Button>
         </form>
       </div>
     </main>

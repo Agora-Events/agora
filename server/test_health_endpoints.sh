@@ -18,14 +18,21 @@ echo ""
 echo ""
 
 # Test 2: Database health check (with database running)
-echo "2. Testing GET /api/v1/health/db (Database health check - DB running)"
+echo "2. Testing GET /api/v1/health/blockchain (Soroban RPC reachability check)"
+echo "Expected: 200 OK with blockchain: soroban"
+curl -i -X GET "$BASE_URL/health/blockchain"
+echo ""
+echo ""
+
+# Test 3: Database health check (with database running)
+echo "3. Testing GET /api/v1/health/db (Database health check - DB running)"
 echo "Expected: 200 OK with database: connected"
 curl -i -X GET "$BASE_URL/health/db"
 echo ""
 echo ""
 
-# Test 3: Readiness check (with both healthy)
-echo "3. Testing GET /api/v1/health/ready (Readiness check - all healthy)"
+# Test 4: Readiness check (with both healthy)
+echo "4. Testing GET /api/v1/health/ready (Readiness check - all healthy)"
 echo "Expected: 200 OK with api: ok, database: ok"
 curl -i -X GET "$BASE_URL/health/ready"
 echo ""

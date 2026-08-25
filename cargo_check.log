@@ -1,0 +1,4 @@
+error: process didn't exit successfully: `rustc -vV` (exit code: 1)
+--- stderr
+error: Missing manifest in toolchain 'stable-x86_64-pc-windows-msvc'
+

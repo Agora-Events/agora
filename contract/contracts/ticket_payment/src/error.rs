@@ -53,6 +53,19 @@ pub enum TicketPaymentError {
     CannotRemoveLastGovernor = 57,
     InvalidFeePercent = 58,
     EventEnded = 59,
+    NonTransferable = 60,
+    InvalidSecret = 61,
+    DiscountExpired = 62,
+    DiscountMaxUsesReached = 63,
+    ResaleListingNotFound = 64,
+    ResaleListingNotActive = 65,
+    TicketAlreadyListed = 66,
+    InvalidRoyaltyBps = 67,
+    MilestoneNotMet = 68,
+    InvalidMilestone = 69,
+    EscrowNotInitialized = 70,
+    MultiSigThresholdNotMet = 71,
+    DisputeNotResolved = 72,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -122,7 +135,20 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             57 => TicketPaymentError::CannotRemoveLastGovernor,
             58 => TicketPaymentError::InvalidFeePercent,
             59 => TicketPaymentError::EventEnded,
-            _ => TicketPaymentError::ArithmeticError,
+            60 => TicketPaymentError::NonTransferable,
+            61 => TicketPaymentError::InvalidSecret,
+            62 => TicketPaymentError::DiscountExpired,
+            63 => TicketPaymentError::DiscountMaxUsesReached,
+            64 => TicketPaymentError::ResaleListingNotFound,
+            65 => TicketPaymentError::ResaleListingNotActive,
+            66 => TicketPaymentError::TicketAlreadyListed,
+             67 => TicketPaymentError::InvalidRoyaltyBps,
+             68 => TicketPaymentError::MilestoneNotMet,
+             69 => TicketPaymentError::InvalidMilestone,
+             70 => TicketPaymentError::EscrowNotInitialized,
+             71 => TicketPaymentError::MultiSigThresholdNotMet,
+             72 => TicketPaymentError::DisputeNotResolved,
+             _ => TicketPaymentError::ArithmeticError,
         }
     }
 }
