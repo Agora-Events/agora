@@ -135,4 +135,8 @@ pub enum DataKey {
     EventPaymentStatus(String, PaymentStatus),
     /// Individual entry for status index: (event_id, status, payment_id) -> bool
     EventPaymentStatusEntry(String, PaymentStatus, String),
+    /// Resale escrow listing: payment_id -> ResaleListing
+    ResaleListing(String),
+    /// Royalty bps override for an event's resale: event_id -> u32
+    ResaleRoyaltyBps(String),
 }

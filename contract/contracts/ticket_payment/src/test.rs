@@ -6804,3 +6804,163 @@ fn test_transfer_ticket_valid_recipient_succeeds() {
     let updated = client.get_payment_status(&payment_id).unwrap();
     assert_eq!(updated.buyer_address, recipient);
 }
+
+// ─── Resale Escrow Tests ────────────────────────────────────────────────────
+
+#[test]
+fn test_list_for_resale_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_resale_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    // List at any price — MockEventRegistry has no resale cap for event_1
+    let ask_price = 1500_0000000i128;
+    client.list_for_resale(&payment_id, &ask_price);
+}
+
+#[test]
+fn test_list_for_resale_already_listed_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_resale_dup");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_for_resale(&payment_id, &500_0000000i128);
+
+    let result = client.try_list_for_resale(&payment_id, &600_0000000i128);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::TicketAlreadyListed.into()))
+    );
+}
+
+#[test]
+fn test_list_for_resale_price_exceeds_cap_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_resale_cap");
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "event_capped"),
+        buyer_address: seller.clone(),
+        ticket_tier_id: String::from_str(&env, "general"),
+        amount: 1000_0000000,
+        platform_fee: 50_0000000,
+        organizer_amount: 950_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx_cap"),
+        created_at: 100,
+        confirmed_at: Some(101),
+        refunded_amount: 0,
+    };
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+    });
+
+    // Cap is 10% above face value (1000 USDC), so max is 1100 USDC
+    let result = client.try_list_for_resale(&payment_id, &1200_0000000i128);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::ResalePriceExceedsCap.into()))
+    );
+}
+
+#[test]
+fn test_cancel_resale_listing() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_cancel_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_for_resale(&payment_id, &1000_0000000i128);
+    client.cancel_resale_listing(&payment_id);
+
+    // Cancelling again must fail: no longer Active
+    let result = client.try_cancel_resale_listing(&payment_id);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::ResaleListingNotActive.into()))
+    );
+}
+
+#[test]
+fn test_purchase_resale_ticket_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_purchase_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    let ask_price = 1000_0000000i128;
+    client.list_for_resale(&payment_id, &ask_price);
+
+    // Fund buyer and approve
+    usdc_token.mint(&buyer, &ask_price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &ask_price, &99999);
+
+    client.purchase_resale_ticket(&payment_id, &buyer, &ask_price);
+
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(updated.buyer_address, buyer);
+}
+
+#[test]
+fn test_purchase_resale_ticket_price_mismatch() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_mismatch_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    let ask_price = 1000_0000000i128;
+    client.list_for_resale(&payment_id, &ask_price);
+
+    usdc_token.mint(&buyer, &ask_price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &ask_price, &99999);
+
+    // Buyer only willing to pay 900 USDC but listing is 1000 USDC
+    let result = client.try_purchase_resale_ticket(&payment_id, &buyer, &900_0000000i128);
+    assert_eq!(result, Err(Ok(TicketPaymentError::PriceMismatch.into())));
+}
+
+#[test]
+fn test_purchase_cancelled_listing_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_cancelled_buy");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_for_resale(&payment_id, &1000_0000000i128);
+    client.cancel_resale_listing(&payment_id);
+
+    let result = client.try_purchase_resale_ticket(&payment_id, &buyer, &1000_0000000i128);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::ResaleListingNotActive.into()))
+    );
+}

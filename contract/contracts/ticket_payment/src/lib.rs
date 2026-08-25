@@ -2,6 +2,7 @@
 pub mod contract;
 pub mod error;
 pub mod events;
+pub mod resale;
 pub mod storage;
 pub mod types;
 
