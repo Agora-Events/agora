@@ -14,18 +14,21 @@
 //! }
 //! ```
 //!
-//! Error responses are handled by the `AppError` type but can also
-//! be created manually using the `error` function.
+//! Error responses use the flat `{ "code": <u16>, "message": "..." }` shape
+//! (see [`crate::utils::error::ApiError`]).
 
 use axum::http::StatusCode;
-use axum::response::{ IntoResponse, Response };
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Serialize;
 use serde_json::Value;
 
 /// Standard API response wrapper for successful responses
 #[derive(Serialize)]
-pub struct ApiResponse<T> where T: Serialize {
+pub struct ApiResponse<T>
+where
+    T: Serialize,
+{
     /// Always true for successful responses
     pub success: bool,
     /// Response data payload
@@ -34,24 +37,13 @@ pub struct ApiResponse<T> where T: Serialize {
     pub message: Option<String>,
 }
 
-/// Error response body structure
-#[derive(Serialize)]
+/// Error response body structure — flat `{ code, message }` shape.
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ApiErrorBody {
-    /// Machine-readable error code
-    pub code: String,
+    /// HTTP status code mirrored for client-side branching
+    pub code: u16,
     /// Human-readable error message
     pub message: String,
-    /// Optional error details
-    pub details: Option<Value>,
-}
-
-/// Complete error response wrapper
-#[derive(Serialize)]
-pub struct ApiErrorResponse {
-    /// Always false for error responses
-    pub success: bool,
-    /// Error details
-    pub error: ApiErrorBody,
 }
 
 /// Creates a successful response with data
@@ -62,7 +54,10 @@ pub struct ApiErrorResponse {
 ///
 /// # Returns
 /// An Axum response with 200 status code and JSON body
-pub fn success<T>(data: T, message: impl Into<String>) -> impl IntoResponse where T: Serialize {
+pub fn success<T>(data: T, message: impl Into<String>) -> impl IntoResponse
+where
+    T: Serialize,
+{
     let body = ApiResponse {
         success: true,
         data: Some(data),
@@ -87,29 +82,19 @@ pub fn empty_success(message: impl Into<String>) -> impl IntoResponse {
     (StatusCode::OK, Json(body))
 }
 
-/// Creates an error response with custom status code
+/// Creates an error response with the standardised flat JSON body.
 ///
-/// # Arguments
-/// * `code` - Error code string
-/// * `message` - Error message
-/// * `details` - Optional error details
-/// * `status` - HTTP status code
-///
-/// # Returns
-/// An Axum response with specified status code and JSON error body
+/// The `code` string argument is retained for call-site compatibility but the
+/// HTTP status is the numeric `code` written into the JSON body.
 pub fn error(
-    code: &str,
+    _code: &str,
     message: impl Into<String>,
-    details: Option<Value>,
-    status: StatusCode
+    _details: Option<Value>,
+    status: StatusCode,
 ) -> Response {
-    let body = ApiErrorResponse {
-        success: false,
-        error: ApiErrorBody {
-            code: code.to_string(),
-            message: message.into(),
-            details,
-        },
+    let body = ApiErrorBody {
+        code: status.as_u16(),
+        message: message.into(),
     };
 
     (status, Json(body)).into_response()

@@ -60,6 +60,8 @@ This installs the JavaScript dependencies used by the frontend workspace.
 
 ## 3. Prepare Environment Files
 
+> **Configuration Note**: *For a comprehensive list of all backend environment variables, their defaults, required statuses, and security classifications, please refer to the [Server Configuration Reference](./server/README.md#Configuration)*.
+
 Before starting services, review these env files:
 
 ### Required for local full-stack work
@@ -94,29 +96,52 @@ That file is only needed for devnet/testnet deployment flows such as `scripts/de
 
 There is currently no frontend `.env.example` in `apps/web`, so contributors do not need to create an `apps/web/.env.local` file for the default local setup described here.
 
-## 4. Start Infrastructure First
+## 4. Start Infrastructure First (1-Click Startup)
 
-The backend expects PostgreSQL to be running before migrations and server startup.
+The unified `docker-compose.yml` at the repo root starts PostgreSQL, Redis, Stellar RPC, backend, and frontend with a single command.
 
-From `server/`:
+From the repo root:
 
 ```bash
-cd server
-docker compose up -d
+make up
 ```
 
-This starts PostgreSQL with:
+Or directly:
 
-- Host: `localhost`
-- Port: `5432`
-- Database: `agora`
-- Username: `user`
-- Password: `password`
+```bash
+docker compose up --build
+```
 
-To confirm the container is running:
+This starts the full stack with these defaults:
+
+| Service | Container Name | Port | Environment |
+|---------|---------------|------|-------------|
+| PostgreSQL | `agora_postgres` | `5432` | `POSTGRES_USER=user`, `POSTGRES_PASSWORD=password`, `POSTGRES_DB=agora` |
+| Redis | `agora_redis` | `6379` | AOF persistence enabled |
+| Stellar RPC | `agora_stellar_rpc` | `8000` | Test network passphrase |
+| Backend (Rust) | `agora_backend` | `3001` | Connects to postgres + redis + stellar-rpc |
+| Frontend (Next.js) | `agora_frontend` | `3000` | `NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1` |
+
+Container names and ports can be customized with environment variables (see `make help`).
+
+To confirm all containers are running and healthy:
 
 ```bash
 docker compose ps
+```
+
+Each service should report `healthy` once startup completes.
+
+To view logs from all services:
+
+```bash
+make logs
+```
+
+To stop the stack:
+
+```bash
+make down
 ```
 
 ## 5. Start The Backend
@@ -126,6 +151,16 @@ Stay in `server/` and run the database migration first:
 ```bash
 sqlx migrate run
 ```
+
+This applies all migrations in `server/migrations/`, including `20260630000001_add_events_indexes.sql`, which adds indexes on `events(is_featured)` and `events(created_at DESC)` for featured-event listings.
+
+To verify the indexes are used after migrating, seed or load events data and run:
+
+```bash
+psql "$DATABASE_URL" -c "EXPLAIN ANALYZE SELECT * FROM events WHERE is_featured = TRUE ORDER BY created_at DESC LIMIT 20;"
+```
+
+The plan should show an index scan (for example on `idx_events_featured` or `idx_events_created_at`) rather than a sequential scan on large datasets.
 
 Then start the Axum API:
 
@@ -185,11 +220,11 @@ Use this order for first-time setup:
 
 1. Install prerequisites.
 2. Run `pnpm install` from the repo root.
-3. Create `server/.env` from `server/.env.example`.
-4. Start PostgreSQL with `docker compose up -d` from `server/`.
-5. Run `sqlx migrate run` from `server/`.
-6. Start the backend with `cargo run` from `server/`.
-7. Start the frontend with `pnpm dev` from `apps/web/`.
+3. Copy `server/.env.example` to `server/.env` (or create `server/.env` with your local settings).
+4. Run `make up` from the repo root to start the full stack.
+5. Once containers are healthy, run `sqlx migrate run` from `server/` against the Docker database.
+6. Start the backend with `cargo run` from `server/` if running outside Docker.
+7. Start the frontend with `pnpm dev` from `apps/web/` if running outside Docker.
 8. Run `cargo test` from `contract/`.
 
 ## 9. Health Verification
@@ -198,6 +233,7 @@ Once the backend is running, confirm the system is healthy with these endpoints:
 
 ```bash
 curl http://localhost:3001/api/v1/health
+curl http://localhost:3001/api/v1/health/blockchain
 curl http://localhost:3001/api/v1/health/db
 curl http://localhost:3001/api/v1/health/ready
 ```
@@ -205,6 +241,7 @@ curl http://localhost:3001/api/v1/health/ready
 What to expect:
 
 - `/api/v1/health`: API process is up
+- `/api/v1/health/blockchain`: Soroban RPC endpoint is reachable
 - `/api/v1/health/db`: database connection is working
 - `/api/v1/health/ready`: service is ready to serve requests
 
@@ -212,6 +249,25 @@ You should also be able to open:
 
 - `http://localhost:3000` for the frontend
 - `http://localhost:3001/api/v1/health` for the backend
+
+### Docker Compose healthchecks
+
+`server/docker-compose.yml` defines container-level healthchecks so dependent
+services only start once their dependencies are actually ready:
+
+- `server`: `curl -fsS http://localhost:3001/api/v1/health`
+- `postgres`: `pg_isready -U user -d agora`
+- `redis`: `redis-cli ping`
+
+The `server` service uses `depends_on` with `condition: service_healthy`, so it
+waits for PostgreSQL and Redis to pass their healthchecks before starting.
+Verify container health with:
+
+```bash
+docker compose ps
+```
+
+Each service should report a `healthy` status once startup completes.
 
 ## 10. Troubleshooting
 
@@ -241,7 +297,68 @@ You should also be able to open:
 - Confirm Rust and Cargo are installed correctly.
 - Confirm Soroban CLI is installed if your contract workflow depends on it.
 
-## 11. PR Reminder
+## 11. Pre-commit Hooks
+
+Pre-commit hooks enforce formatting and linting before every commit, catching issues locally before they reach CI.
+
+### Install pre-commit
+
+```bash
+pip install pre-commit
+```
+
+### Activate hooks for this repo
+
+Run once after cloning (or after any change to `.pre-commit-config.yaml`):
+
+```bash
+pre-commit install
+```
+
+This installs the hooks into `.git/hooks/pre-commit`.
+
+### What runs on each commit
+
+| Hook | What it checks |
+|------|---------------|
+| `trailing-whitespace` | Removes trailing whitespace |
+| `end-of-file-fixer` | Ensures files end with a newline |
+| `check-merge-conflict` | Catches leftover merge conflict markers |
+| `rustfmt` | Formats Rust code (`cargo fmt --check`) |
+| `clippy` | Lints Rust code (`cargo clippy -D warnings`) |
+| `prettier` | Formats JS/TS/CSS/JSON/MD files |
+| `eslint` | Lints JS/TS files in `apps/web` |
+
+### Run hooks manually
+
+```bash
+# Run on all files (same as CI)
+pre-commit run --all-files
+
+# Run a single hook
+pre-commit run rustfmt --all-files
+pre-commit run eslint --all-files
+```
+
+### Auto-fix formatting before committing
+
+```bash
+# Rust
+cargo fmt --all
+
+# JS/TS/CSS/JSON/MD (from repo root)
+pnpm --filter web format
+```
+
+### Skipping hooks (not recommended)
+
+```bash
+git commit --no-verify -m "message"
+```
+
+Only skip when you have a specific reason; CI will still run all checks.
+
+## 12. PR Reminder
 
 When you open the PR for this task, include the linked issue in the PR description:
 

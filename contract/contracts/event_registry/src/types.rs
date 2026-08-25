@@ -1,5 +1,56 @@
 use soroban_sdk::{contracttype, Address, Map, String, Vec};
 
+/// Role-based access control for event teams.
+/// Defines granular permissions for large events with multiple team members.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum Role {
+    /// Full control over the event: can manage roles, edit all settings, pause/cancel event
+    Admin = 1,
+    /// Can edit tiers, pause/resume event, but cannot manage roles or cancel event
+    Manager = 2,
+    /// Can only check in attendees (call check_in functions), no edit permissions
+    Scanner = 3,
+}
+
+/// Platform-wide category mapping for event discovery.
+/// IDs are stable and must not be renumbered once deployed.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum Category {
+    Music = 1,
+    Sports = 2,
+    Tech = 3,
+    Arts = 4,
+    Food = 5,
+    Business = 6,
+    Health = 7,
+    Education = 8,
+    Community = 9,
+    Other = 10,
+}
+
+impl Category {
+    /// Returns `Some(Category)` for a valid ID, `None` otherwise.
+    pub fn from_id(id: u32) -> Option<Self> {
+        match id {
+            1 => Some(Self::Music),
+            2 => Some(Self::Sports),
+            3 => Some(Self::Tech),
+            4 => Some(Self::Arts),
+            5 => Some(Self::Food),
+            6 => Some(Self::Business),
+            7 => Some(Self::Health),
+            8 => Some(Self::Education),
+            9 => Some(Self::Community),
+            10 => Some(Self::Other),
+            _ => None,
+        }
+    }
+}
+
 /// Represents a series or festival grouping multiple events
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -145,6 +196,8 @@ pub struct EventInfo {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Category IDs for discovery (up to 5). See [`Category`] for the platform-wide mapping.
+    pub category_ids: Option<Vec<u32>>,
     /// Unix timestamp when the event starts (0 = not set)
     pub start_time: u64,
     /// Whether the event is private and should be excluded from global public counters.
@@ -161,6 +214,10 @@ pub struct EventInfo {
     pub use_global_whitelist: bool,
     /// Optional IPFS CID for post-event feedback (only settable after end_time)
     pub feedback_cid: Option<String>,
+    /// Optional human-readable reason provided when the event was cancelled
+    pub cancellation_reason: Option<String>,
+    /// Referral commission rate in basis points (e.g., 500 = 5%)
+    pub referral_rate_bps: u32,
 }
 
 /// Payment information for an event
@@ -175,6 +232,8 @@ pub struct PaymentInfo {
     pub custom_fee_bps: Option<u32>,
     /// Map of tier_id to TicketTier for multi-tiered pricing
     pub tiers: Map<String, TicketTier>,
+    /// Referral commission rate in basis points
+    pub referral_rate_bps: u32,
 }
 
 /// Arguments required to register a new event
@@ -202,6 +261,8 @@ pub struct EventRegistrationArgs {
     pub banner_cid: Option<String>,
     /// Optional categorical tags for the event (e.g., "Music", "Tech")
     pub tags: Option<Vec<String>>,
+    /// Category IDs for discovery (up to 5). See [`Category`] for the platform-wide mapping.
+    pub category_ids: Option<Vec<u32>>,
     /// Unix timestamp when the event starts (0 = not set)
     pub start_time: u64,
     /// Whether the event is private and should be excluded from global public counters.
@@ -214,6 +275,8 @@ pub struct EventRegistrationArgs {
     pub accepted_tokens: Vec<Address>,
     /// Whether to use the global token whitelist instead of event-specific one
     pub use_global_whitelist: bool,
+    /// Referral commission rate in basis points (optional)
+    pub referral_rate_bps: Option<u32>,
 }
 
 /// Audit log entry for blacklist actions
@@ -328,6 +391,42 @@ pub enum ParameterChange {
     SetMinStakeAmount(i128),
 }
 
+/// Status of a dispute
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    Open,
+    Voting,
+    ResolvedBuyer,
+    ResolvedOrganizer,
+    Expired,
+}
+
+/// Vote type in a dispute
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum DisputeVote {
+    BuyerFavor = 1,
+    OrganizerFavor = 2,
+}
+
+/// Represents a dispute on an event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Dispute {
+    pub event_id: String,
+    pub opened_by: Address,
+    pub opened_at: u64,
+    pub closes_at: u64,
+    pub status: DisputeStatus,
+    pub total_votes: u32,
+    pub buyer_votes: u32,
+    pub organizer_votes: u32,
+    pub quorum_threshold_bps: u32,
+    pub total_eligible_tickets: i128,
+}
+
 /// Storage keys for the Event Registry contract.
 #[contracttype]
 pub enum DataKey {
@@ -410,4 +509,26 @@ pub enum DataKey {
     GlobalTicketsSold,
     /// Mapping of (event_id, tier_id, user_address) to ticket count for per-user limits (Persistent)
     UserTicketCount(String, String, Address),
+    /// Mapping of (event_id, user_address) to bool for waitlist membership (Persistent)
+    Waitlist(String, Address),
+    /// Mapping of event_id to pause status (bool) – whether the event is paused (Persistent)
+    EventPaused(String),
+    /// The administrator address specifically for organizer whitelisting (Instance)
+    ContractAdmin,
+    /// Mapping of organizer address to approved status (Instance)
+    ApprovedOrganizer(Address),
+    /// Index of event_ids tagged with a given category ID (Persistent)
+    CategoryEvents(u32),
+    /// Mapping of (event_id, team_member_address) to Role for team-based access control (Persistent)
+    EventTeamRole(String, Address),
+
+    // ── Dispute Storage ───────────────────────────────────────────────────────
+    /// Mapping of event_id to Dispute (Persistent)
+    Dispute(String),
+    /// Mapping of (event_id, voter_address) to DisputeVote (Persistent)
+    DisputeVote(String, Address),
+    /// Sharded list of voters for a dispute (Persistent)
+    DisputeVoteShard(String, u32),
+    /// Total number of votes for a dispute (Persistent)
+    DisputeVoteCount(String),
 }

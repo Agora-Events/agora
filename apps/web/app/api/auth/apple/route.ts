@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     }
 
     return handleAppleOAuth(code, request);
-  } catch (error) {
+  } catch {
     return NextResponse.redirect(new URL('/auth?error=Invalid POST request', request.url));
   }
 }

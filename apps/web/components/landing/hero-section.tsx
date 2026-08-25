@@ -5,23 +5,16 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
+import { useState, useId } from "react";
+import styles from "./hero-section.module.css";
 
 /**
  * Hero section component for the landing page
- *
- * Features:
- * - Full-screen hero background
- * - Navigation bar integration
- * - Animated content with Framer Motion
- * - Responsive design for mobile and desktop
- * - "Powered by Stellar" branding
- *
- * @returns React component that renders the main hero section
  */
 export function HeroSection() {
   return (
     <div
-      className="relative w-full min-h-screen flex flex-col items-center bg-cover bg-center bg-no-repeat select-none overflow-hidden"
+      className={`relative w-full min-h-screen flex flex-col items-center bg-cover bg-center bg-no-repeat select-none overflow-hidden ${styles.hero}`}
       style={{ backgroundImage: 'url("/backgrounds/hero-gradient.svg")' }}
     >
       <Navbar />
@@ -40,7 +33,7 @@ export function HeroSection() {
         {/* Hero Heading */}
         <h1 className="text-4xl md:text-[58px] leading-tight md:leading-[66px] font-semibold italic text-center text-black mb-6 md:mb-8 transition-all">
           <div>Plan Events. Bring People Together.</div>
-          <div className="text-[#CAAE1C]">Grow Communities.</div>
+          <div className="text-accent-dark">Grow Communities.</div>
         </h1>
         <p className="text-lg md:text-[20px] font-light text-center max-w-[800px] mb-8 px-4">
           Create your event page, invite your community, and sell tickets
@@ -68,10 +61,10 @@ export function HeroSection() {
             </Button>
           </Link>
 
-          <Link href="#pricing" className="w-full sm:w-auto">
+          <Link href="/pricing" className="w-full sm:w-auto">
             <Button
               className="w-full sm:w-[135px] h-[56px]"
-              backgroundColor="bg-[#FDDA23]"
+              backgroundColor="bg-accent"
               textColor="text-white"
               shadowColor="rgba(0,0,0,1)"
             >
@@ -83,7 +76,7 @@ export function HeroSection() {
         <div className="relative w-full max-w-[1000px] flex justify-center mt-auto">
           <Image
             src="/images/World.png"
-            alt="World"
+            alt="World Map"
             width={1000}
             height={500}
             className="object-contain"
@@ -94,6 +87,7 @@ export function HeroSection() {
           {/* Organizers */}
           <Tooltip
             icon="/icons/Organizers.png"
+            label="Organizers"
             className="md:top-[30%] top-[20%] left-[57%] md:left-[58%]"
             delay={0.2}
           />
@@ -101,6 +95,7 @@ export function HeroSection() {
           {/* Meet ups */}
           <Tooltip
             icon="/icons/MeetUps.png"
+            label="Meetups"
             className=" md:top-[70%] top-[60%] -right-[4%] md:-right-[2%]"
             delay={0.4}
           />
@@ -108,6 +103,7 @@ export function HeroSection() {
           {/* Party */}
           <Tooltip
             icon="/icons/Party.png"
+            label="Parties"
             className="bottom-[35%] left-[2%] md:left-[11%]"
             delay={0.6}
           />
@@ -115,6 +111,7 @@ export function HeroSection() {
           {/* Events */}
           <Tooltip
             icon="/icons/Events.png"
+            label="Events"
             className="md:top-[5%] -top-[10%] right-[5%] md:right-[15%]"
             delay={0.8}
           />
@@ -128,15 +125,23 @@ function Tooltip({
   icon,
   className,
   delay,
+  label,
 }: {
   icon: string;
   className: string;
   delay: number;
+  label: string;
 }) {
+  const [isFocused, setIsFocused] = useState(false);
+  const id = useId();
+
   return (
     <motion.div
+      id={id}
       initial={{ scale: 0, opacity: 0, y: 10 }}
       whileInView={{ scale: 1, opacity: 1, y: 0 }}
+      animate={isFocused ? { scale: 1.1 } : {}}
+      whileHover={{ scale: 1.1 }}
       viewport={{ once: false, margin: "-50px" }}
       transition={{
         delay,
@@ -144,13 +149,18 @@ function Tooltip({
         stiffness: 260,
         damping: 20,
       }}
-      className={`absolute ${className} z-20 w-16 h-16 md:w-24 md:h-24`}
+      className={`absolute ${className} z-20 w-16 h-16 md:w-24 md:h-24 outline-none focus-visible:ring-4 focus-visible:ring-accent rounded-full cursor-pointer transition-shadow`}
+      tabIndex={0}
+      role="tooltip"
+      aria-label={label}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
     >
       <Image
         src={icon}
-        alt="tooltip"
+        alt="" // Alt is empty because aria-label is on the wrapper
         fill
-        className="hover:scale-110 transition-transform cursor-pointer drop-shadow-xl object-contain"
+        className="drop-shadow-xl object-contain"
       />
     </motion.div>
   );

@@ -136,6 +136,35 @@ Database connectivity check.
 }
 ```
 
+#### GET /health/blockchain
+
+Soroban RPC connectivity check.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "status": "ok",
+    "blockchain": "soroban",
+    "soroban_rpc": "https://soroban-testnet.stellar.org",
+    "timestamp": "2024-01-15T10:30:00Z"
+  },
+  "message": "Soroban RPC is reachable"
+}
+```
+
+**Error Response (503):**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "EXTERNAL_SERVICE_ERROR",
+    "message": "Soroban RPC health check failed"
+  }
+}
+```
+
 #### GET /health/ready
 
 Readiness check for both API and Database.
@@ -200,6 +229,51 @@ Returns a not found error for testing 404 handling.
   }
 }
 ```
+
+### POST /tickets/:id/scan
+
+Validates a signed attendee ticket QR payload and checks the corresponding ticket into the event.
+
+**Request Body:**
+```json
+{
+  "payload": {
+    "id": "...",
+    "qr_type": "ticket",
+    "data": {
+      "wallet_address": "GABC...XYZ",
+      "ticket_id": "550e8400-e29b-41d4-a716-446655440000"
+    },
+    "created_at": "2026-07-30T12:00:00Z",
+    "expires_at": "2026-07-30T12:05:00Z",
+    "nonce": "..."
+  },
+  "signature": "base64_signature",
+  "public_key": "hex_public_key"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "valid": true,
+    "scanned": true,
+    "ticket_id": "550e8400-e29b-41d4-a716-446655440000",
+    "ticket_status": "Scanned",
+    "scanned_at": "2026-07-30T12:00:12Z",
+    "message": "Ticket scan verified successfully"
+  },
+  "message": "Ticket scan verified successfully"
+}
+```
+
+**Errors:**
+- `400` — invalid payload or expired QR
+- `403` — wallet address does not match ticket ownership
+- `404` — ticket or QR payload not found
+- `409` — ticket already scanned or QR already used
 
 ## Error Codes Reference
 
