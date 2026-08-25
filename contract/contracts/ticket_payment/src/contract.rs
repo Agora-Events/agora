@@ -2008,76 +2008,236 @@ impl TicketPaymentContract {
         Ok(())
     }
 
-    // ── Secondary market ─────────────────────────────────────────────────
-    //
-    // Thin entry points over `crate::resale`, which holds the pricing rules,
-    // royalty split and atomic settlement logic. See that module for the
-    // anti-scalping model and how it relates to the off-chain E2EE handover
-    // of the ticket's check-in secret.
-
-    /// Lists a confirmed ticket on the secondary market at `price_usdc`
-    /// (token base units). Authorized by the current holder; rejected if the
-    /// price exceeds the event's resale ceiling.
+    /// Lists a confirmed ticket for resale at `ask_price` USDC stroops.
+    /// Only the current ticket holder may call this. The listing is checked
+    /// against any resale price cap set by the event organizer.
     pub fn list_for_resale(
         env: Env,
         payment_id: String,
-        price_usdc: i128,
-    ) -> Result<crate::resale::ResaleListing, TicketPaymentError> {
-        crate::resale::list_for_resale(&env, payment_id, price_usdc)
+        ask_price: i128,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+        if ask_price <= 0 {
+            return Err(TicketPaymentError::InvalidPrice);
+        }
+
+        let payment =
+            get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+
+        if payment.status != PaymentStatus::Confirmed {
+            return Err(TicketPaymentError::InvalidPaymentStatus);
+        }
+
+        payment.buyer_address.require_auth();
+
+        // Reject if an active listing already exists for this ticket
+        if let Some(existing) = crate::resale::get_resale_listing(&env, payment_id.clone()) {
+            if existing.status == crate::resale::ResaleStatus::Active {
+                return Err(TicketPaymentError::TicketAlreadyListed);
+            }
+        }
+
+        // Enforce the organizer's resale price cap if one is set
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+        if let Ok(Ok(Some(event_info))) = registry_client.try_get_event(&payment.event_id) {
+            if let Some(cap_bps) = event_info.resale_cap_bps {
+                let tier = event_info
+                    .tiers
+                    .get(payment.ticket_tier_id.clone())
+                    .ok_or(TicketPaymentError::TierNotFound)?;
+                let max_price = tier
+                    .price
+                    .checked_mul((MAX_BPS as i128).checked_add(cap_bps as i128).unwrap_or(i128::MAX))
+                    .ok_or(TicketPaymentError::ArithmeticError)?
+                    / MAX_BPS as i128;
+                if ask_price > max_price {
+                    return Err(TicketPaymentError::ResalePriceExceedsCap);
+                }
+            }
+        }
+
+        let listing = crate::resale::ResaleListing {
+            payment_id: payment_id.clone(),
+            event_id: payment.event_id.clone(),
+            seller: payment.buyer_address.clone(),
+            ask_price,
+            status: crate::resale::ResaleStatus::Active,
+            listed_at: env.ledger().timestamp(),
+        };
+        crate::resale::store_resale_listing(&env, &listing);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::ResaleListed,),
+            crate::events::ResaleListedEvent {
+                payment_id,
+                seller: payment.buyer_address,
+                ask_price,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
-    /// Withdraws an active listing. Only the seller may cancel.
-    pub fn cancel_resale_listing(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
-        crate::resale::cancel_resale_listing(&env, payment_id)
+    /// Cancels an active resale listing. Only the original seller may call this.
+    pub fn cancel_resale_listing(
+        env: Env,
+        payment_id: String,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        let mut listing = crate::resale::get_resale_listing(&env, payment_id.clone())
+            .ok_or(TicketPaymentError::ResaleListingNotFound)?;
+
+        if listing.status != crate::resale::ResaleStatus::Active {
+            return Err(TicketPaymentError::ResaleListingNotActive);
+        }
+
+        listing.seller.require_auth();
+        listing.status = crate::resale::ResaleStatus::Cancelled;
+        crate::resale::store_resale_listing(&env, &listing);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::ResaleCancelled,),
+            crate::events::ResaleCancelledEvent {
+                payment_id,
+                seller: listing.seller,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
-    /// Buys a listed ticket. Settles payment, organizer royalty and ownership
-    /// transfer in a single atomic invocation. Requires the buyer to have
-    /// approved this contract for the listing price first.
+    /// Atomically purchases a resale ticket: USDC moves from buyer to seller
+    /// (minus organizer royalty), and ticket ownership transfers to the buyer.
+    /// `max_price` guards against price changes between signing and execution.
     pub fn purchase_resale_ticket(
         env: Env,
         payment_id: String,
         buyer: Address,
-    ) -> Result<crate::resale::ResaleListing, TicketPaymentError> {
-        crate::resale::purchase_resale_ticket(&env, payment_id, buyer)
+        max_price: i128,
+    ) -> Result<(), TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        buyer.require_auth();
+
+        let mut listing = crate::resale::get_resale_listing(&env, payment_id.clone())
+            .ok_or(TicketPaymentError::ResaleListingNotFound)?;
+
+        if listing.status != crate::resale::ResaleStatus::Active {
+            return Err(TicketPaymentError::ResaleListingNotActive);
+        }
+
+        if buyer == listing.seller {
+            return Err(TicketPaymentError::InvalidAddress);
+        }
+
+        let ask_price = listing.ask_price;
+        if ask_price > max_price {
+            return Err(TicketPaymentError::PriceMismatch);
+        }
+
+        // Compute organizer royalty
+        let royalty_bps = crate::resale::get_resale_royalty_bps(&env, listing.event_id.clone());
+        let royalty = if royalty_bps > 0 {
+            ask_price
+                .checked_mul(royalty_bps as i128)
+                .and_then(|v| v.checked_div(MAX_BPS as i128))
+                .ok_or(TicketPaymentError::ArithmeticError)?
+        } else {
+            0
+        };
+        let seller_proceeds = ask_price
+            .checked_sub(royalty)
+            .ok_or(TicketPaymentError::ArithmeticError)?;
+
+        // Pull full ask_price from buyer into contract
+        let token_address = get_usdc_token(&env);
+        let token_client = token::Client::new(&env, &token_address);
+        let contract_address = env.current_contract_address();
+
+        let allowance = token_client.allowance(&buyer, &contract_address);
+        if allowance < ask_price {
+            return Err(TicketPaymentError::InsufficientAllowance);
+        }
+
+        token_client.transfer_from(&contract_address, &buyer, &contract_address, &ask_price);
+
+        // Pay seller their proceeds
+        if seller_proceeds > 0 {
+            token_client.transfer(&contract_address, &listing.seller, &seller_proceeds);
+        }
+
+        // Pay royalty to organizer (best-effort via event_registry lookup)
+        if royalty > 0 {
+            let event_registry_addr = get_event_registry(&env);
+            let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+            if let Ok(Ok(Some(event_info))) = registry_client.try_get_event(&listing.event_id) {
+                token_client.transfer(&contract_address, &event_info.organizer_address, &royalty);
+            } else {
+                // Royalty falls back to seller if organizer is not resolvable
+                token_client.transfer(&contract_address, &listing.seller, &royalty);
+            }
+        }
+
+        // Transfer ticket ownership
+        let mut payment =
+            get_payment(&env, payment_id.clone()).ok_or(TicketPaymentError::PaymentNotFound)?;
+        let seller = listing.seller.clone();
+        remove_payment_from_buyer_index(&env, seller.clone(), payment_id.clone());
+        payment.buyer_address = buyer.clone();
+        let key = DataKey::Payment(payment_id.clone());
+        env.storage().persistent().set(&key, &payment);
+        add_payment_to_buyer_index(&env, buyer.clone(), payment_id.clone());
+
+        // Mark listing complete
+        listing.status = crate::resale::ResaleStatus::Completed;
+        crate::resale::store_resale_listing(&env, &listing);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::ResalePurchased,),
+            crate::events::ResalePurchasedEvent {
+                payment_id,
+                seller,
+                buyer,
+                price: ask_price,
+                royalty,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
-    /// Returns the listing for a ticket, if one has ever been created.
-    /// Cancelled and sold listings are retained for history.
-    pub fn get_resale_listing(
-        env: Env,
-        payment_id: String,
-    ) -> Option<crate::resale::ResaleListing> {
-        crate::resale::get_listing(&env, &payment_id)
-    }
-
-    /// Sets the organizer royalty applied to resales of this event's tickets.
-    /// Organizer-only; capped at `MAX_RESALE_ROYALTY_BPS`.
+    /// Sets the resale royalty percentage (in basis points) for an event.
+    /// Only the contract admin may call this.
     pub fn set_resale_royalty_bps(
         env: Env,
         event_id: String,
-        royalty_bps: u32,
+        bps: u32,
     ) -> Result<(), TicketPaymentError> {
-        crate::resale::set_royalty_bps(&env, &event_id, royalty_bps)
-    }
-
-    /// Returns the royalty rate in bps used for this event's resales.
-    pub fn get_resale_royalty_bps(env: Env, event_id: String) -> u32 {
-        crate::resale::get_royalty_bps(&env, &event_id)
-    }
-
-    /// Returns the highest price `payment_id` may currently be listed at.
-    /// Useful for client-side validation before building a listing tx.
-    pub fn get_max_resale_price(env: Env, payment_id: String) -> Result<i128, TicketPaymentError> {
-        let payment = get_payment(&env, payment_id).ok_or(TicketPaymentError::PaymentNotFound)?;
-
-        let registry_client = event_registry::Client::new(&env, &get_event_registry(&env));
-        let event_info = match registry_client.try_get_event(&payment.event_id) {
-            Ok(Ok(Some(info))) => info,
-            _ => return Err(TicketPaymentError::EventNotFound),
-        };
-
-        crate::resale::max_resale_price(payment.amount, event_info.resale_cap_bps)
+        require_admin(&env)?;
+        crate::resale::set_resale_royalty_bps(&env, event_id, bps)
     }
 
     /// Triggers a bulk refund for a cancelled event. Processes in batches.

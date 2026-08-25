@@ -25,17 +25,9 @@ pub enum AgoraEvent {
     ProposalVoted,
     GovernanceActionExecuted,
     ContractVerificationFailed,
-    EventCancelled,
-    CancellationRefundClaimed,
-    PoapMinted,
     ResaleListed,
     ResaleCancelled,
     ResalePurchased,
-    MilestoneReleased,
-    EscrowWithdrawalProposed,
-    EscrowWithdrawalApproved,
-    EscrowWithdrawalExecuted,
-    EscrowDisputed,
 }
 
 #[contracttype]
@@ -217,6 +209,34 @@ pub struct ProposalVotedEvent {
 pub struct GovernanceActionExecutedEvent {
     pub proposal_id: u64,
     pub change: crate::types::ParameterChange,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResaleListedEvent {
+    pub payment_id: String,
+    pub seller: Address,
+    pub ask_price: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResaleCancelledEvent {
+    pub payment_id: String,
+    pub seller: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResalePurchasedEvent {
+    pub payment_id: String,
+    pub seller: Address,
+    pub buyer: Address,
+    pub price: i128,
+    pub royalty: i128,
     pub timestamp: u64,
 }
 
