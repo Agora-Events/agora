@@ -60,6 +60,8 @@ This installs the JavaScript dependencies used by the frontend workspace.
 
 ## 3. Prepare Environment Files
 
+> **Configuration Note**: *For a comprehensive list of all backend environment variables, their defaults, required statuses, and security classifications, please refer to the [Server Configuration Reference](./server/README.md#Configuration)*.
+
 Before starting services, review these env files:
 
 ### Required for local full-stack work
