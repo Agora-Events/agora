@@ -285,4 +285,109 @@ mod tests {
         assert!(!response.pagination.has_more);
         assert!(response.pagination.next_cursor.is_none());
     }
+
+    // -----------------------------------------------------------------------
+    // Issue #1266 — additional coverage
+    // -----------------------------------------------------------------------
+
+    /// An empty result set must return `has_more = false` and no next cursor.
+    #[test]
+    fn test_cursor_response_empty_result() {
+        let params = ValidatedCursorParams {
+            limit: 20,
+            cursor: None,
+        };
+        let response: CursorResponse<i32> = CursorResponse::new(vec![], &params, None);
+        assert!(!response.pagination.has_more);
+        assert!(response.pagination.next_cursor.is_none());
+        assert!(response.items.is_empty());
+    }
+
+    /// A single-item result must behave correctly (no overflow, has_more = false).
+    #[test]
+    fn test_cursor_response_single_result() {
+        let params = ValidatedCursorParams {
+            limit: 20,
+            cursor: None,
+        };
+        let response: CursorResponse<i32> = CursorResponse::new(vec![42], &params, None);
+        assert!(!response.pagination.has_more);
+        assert_eq!(response.items.len(), 1);
+    }
+
+    /// When the result count equals the page size exactly, `has_more` must be
+    /// determined by whether a `next_cursor` was passed, not by item count.
+    #[test]
+    fn test_cursor_response_exact_page_boundary_no_more() {
+        let params = ValidatedCursorParams {
+            limit: 3,
+            cursor: None,
+        };
+        // Exactly page_size items returned — caller did NOT pass a next cursor,
+        // meaning the DB had no additional rows.
+        let response: CursorResponse<i32> = CursorResponse::new(vec![1, 2, 3], &params, None);
+        assert!(!response.pagination.has_more);
+        assert!(response.pagination.next_cursor.is_none());
+        assert_eq!(response.items.len(), 3);
+    }
+
+    #[test]
+    fn test_cursor_response_exact_page_boundary_has_more() {
+        let params = ValidatedCursorParams {
+            limit: 3,
+            cursor: None,
+        };
+        // Caller stripped the extra item and encoded a cursor.
+        let response: CursorResponse<i32> =
+            CursorResponse::new(vec![1, 2, 3], &params, Some("next-token".to_string()));
+        assert!(response.pagination.has_more);
+        assert_eq!(
+            response.pagination.next_cursor.as_deref(),
+            Some("next-token")
+        );
+    }
+
+    /// A tampered (invalid characters) base64 cursor must return an error.
+    #[test]
+    fn test_decode_tampered_cursor_is_rejected() {
+        // Valid base64 chars but content that cannot deserialise into EventCursor.
+        let tampered = URL_SAFE_NO_PAD.encode(b"this is not valid json");
+        let result: Result<EventCursor, _> = decode_cursor(&tampered);
+        assert!(
+            matches!(result, Err(CursorError::Deserialize(_))),
+            "tampered cursor should fail with Deserialize error"
+        );
+    }
+
+    /// Round-trip encode/decode of an AttendeeCursor.
+    #[test]
+    fn test_encode_decode_attendee_cursor_roundtrip() {
+        let cursor = AttendeeCursor {
+            created_at: Utc::now(),
+            id: Uuid::new_v4(),
+        };
+        let encoded = encode_cursor(&cursor).unwrap();
+        let decoded: AttendeeCursor = decode_cursor(&encoded).unwrap();
+        assert_eq!(cursor.created_at, decoded.created_at);
+        assert_eq!(cursor.id, decoded.id);
+    }
+
+    /// Cursor with all optional fields set to None still round-trips correctly.
+    #[test]
+    fn test_encode_decode_event_cursor_minimal() {
+        let cursor = EventCursor {
+            start_time: Utc::now(),
+            id: Uuid::new_v4(),
+            created_at: None,
+            minted_tickets: None,
+            count_of_ratings: None,
+        };
+        let encoded = encode_cursor(&cursor).unwrap();
+        let decoded: EventCursor = decode_cursor(&encoded).unwrap();
+        assert_eq!(cursor.start_time, decoded.start_time);
+        assert_eq!(cursor.id, decoded.id);
+        assert!(decoded.created_at.is_none());
+        assert!(decoded.minted_tickets.is_none());
+        assert!(decoded.count_of_ratings.is_none());
+    }
 }
