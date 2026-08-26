@@ -38,7 +38,10 @@ export default function SettingsPage() {
           <div className="mb-5">
             <h2 className="text-xl font-bold">Cookie preferences</h2>
             <p className="mt-2 text-sm text-gray-600">
-              Current choice: {consent ? consent[0].toUpperCase() + consent.slice(1) : "Not set"}
+              Current choice:{" "}
+              {consent
+                ? consent[0].toUpperCase() + consent.slice(1)
+                : "Not set"}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">

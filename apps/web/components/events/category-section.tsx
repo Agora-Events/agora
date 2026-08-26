@@ -47,7 +47,10 @@ interface CategorySectionProps {
   onCategoryChange: (category: string) => void;
 }
 
-export function CategorySection({ selectedCategory, onCategoryChange }: CategorySectionProps) {
+export function CategorySection({
+  selectedCategory,
+  onCategoryChange,
+}: CategorySectionProps) {
   return (
     <section className="px-4 bg-base pt-12 pb-6">
       <div className="mx-auto max-w-[1221px]">
@@ -84,7 +87,11 @@ export function CategorySection({ selectedCategory, onCategoryChange }: Category
             {categories.map((category) => (
               <motion.div key={category.name} variants={item}>
                 <button
-                  onClick={() => onCategoryChange(selectedCategory === category.name ? "" : category.name)}
+                  onClick={() =>
+                    onCategoryChange(
+                      selectedCategory === category.name ? "" : category.name,
+                    )
+                  }
                   aria-pressed={selectedCategory === category.name}
                   style={{ backgroundColor: category.color }}
                   className={`

@@ -26,15 +26,26 @@ function DiscoverContent() {
     }
 
     const query = params.toString();
-    router.replace(query ? `/discover?${query}` : "/discover", { scroll: false });
+    router.replace(query ? `/discover?${query}` : "/discover", {
+      scroll: false,
+    });
   };
 
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
-      <CategorySection selectedCategory={category} onCategoryChange={(value) => updateFilter("category", value)} />
-      <PopularEventsSection category={category} onCategoryChange={(value) => updateFilter("category", value)} />
-      <OrganizerComponent selectedOrganizer={organizer} onOrganizerChange={(value) => updateFilter("organizer", value)} />
+      <CategorySection
+        selectedCategory={category}
+        onCategoryChange={(value) => updateFilter("category", value)}
+      />
+      <PopularEventsSection
+        category={category}
+        onCategoryChange={(value) => updateFilter("category", value)}
+      />
+      <OrganizerComponent
+        selectedOrganizer={organizer}
+        onOrganizerChange={(value) => updateFilter("organizer", value)}
+      />
       <Footer />
     </main>
   );

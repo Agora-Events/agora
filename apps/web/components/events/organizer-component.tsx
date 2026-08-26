@@ -61,7 +61,10 @@ interface OrganizerComponentProps {
   onOrganizerChange: (organizer: string) => void;
 }
 
-export function OrganizerComponent({ selectedOrganizer, onOrganizerChange }: OrganizerComponentProps) {
+export function OrganizerComponent({
+  selectedOrganizer,
+  onOrganizerChange,
+}: OrganizerComponentProps) {
   const cardsRef = useRef<HTMLDivElement>(null);
   const [cardsData, setCardsData] = useState<DiscoverOrganizer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -133,11 +136,15 @@ export function OrganizerComponent({ selectedOrganizer, onOrganizerChange }: Org
               role="button"
               tabIndex={0}
               aria-pressed={selectedOrganizer === card.id}
-              onClick={() => onOrganizerChange(selectedOrganizer === card.id ? "" : card.id)}
+              onClick={() =>
+                onOrganizerChange(selectedOrganizer === card.id ? "" : card.id)
+              }
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
-                  onOrganizerChange(selectedOrganizer === card.id ? "" : card.id);
+                  onOrganizerChange(
+                    selectedOrganizer === card.id ? "" : card.id,
+                  );
                 }
               }}
               className={`relative z-10 bg-black text-white p-5x border rounded-2xl lg:min-w-100

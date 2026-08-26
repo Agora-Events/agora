@@ -53,7 +53,9 @@ const initialFormState: EventFormData = {
  */
 export default function CreateEventForm() {
   const [formData, setFormData] = useState<EventFormData>(initialFormState);
-  const [locationMode, setLocationMode] = useState<"Virtual" | "Physical">("Physical");
+  const [locationMode, setLocationMode] = useState<"Virtual" | "Physical">(
+    "Physical",
+  );
   const [isDraftAvailable, setIsDraftAvailable] = useState(false);
   const lastPersistedAt = useRef(0);
   const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -73,11 +75,14 @@ export default function CreateEventForm() {
     }
   }, []);
 
-  useEffect(() => () => {
-    if (persistTimeout.current) {
-      clearTimeout(persistTimeout.current);
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (persistTimeout.current) {
+        clearTimeout(persistTimeout.current);
+      }
+    },
+    [],
+  );
 
   const persistDraft = () => {
     persistTimeout.current = null;
@@ -87,7 +92,10 @@ export default function CreateEventForm() {
     }
 
     try {
-      window.localStorage.setItem(CREATE_EVENT_DRAFT_KEY, JSON.stringify(pendingDraft.current));
+      window.localStorage.setItem(
+        CREATE_EVENT_DRAFT_KEY,
+        JSON.stringify(pendingDraft.current),
+      );
       lastPersistedAt.current = Date.now();
       pendingDraft.current = null;
     } catch {
@@ -127,7 +135,10 @@ export default function CreateEventForm() {
       const storedDraft = window.localStorage.getItem(CREATE_EVENT_DRAFT_KEY);
 
       if (storedDraft) {
-        setFormData({ ...initialFormState, ...(JSON.parse(storedDraft) as Partial<EventFormData>) });
+        setFormData({
+          ...initialFormState,
+          ...(JSON.parse(storedDraft) as Partial<EventFormData>),
+        });
       }
     } catch {
       // Ignore storage failures or invalid draft data.
@@ -189,7 +200,10 @@ export default function CreateEventForm() {
   return (
     <div className="flex flex-col gap-6 w-full">
       {isDraftAvailable && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-black rounded-xl bg-[#FFFBEA] p-4 shadow-[-3px_3px_0px_0px_rgba(0,0,0,1)]" role="status">
+        <div
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-black rounded-xl bg-[#FFFBEA] p-4 shadow-[-3px_3px_0px_0px_rgba(0,0,0,1)]"
+          role="status"
+        >
           <span className="font-semibold">Restore your unsaved draft?</span>
           <div className="flex gap-2">
             <Button

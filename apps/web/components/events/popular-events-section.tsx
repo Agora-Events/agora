@@ -60,7 +60,10 @@ type ActiveFilter = {
   label: string;
 };
 
-export function PopularEventsSection({ category, onCategoryChange }: PopularEventsSectionProps) {
+export function PopularEventsSection({
+  category,
+  onCategoryChange,
+}: PopularEventsSectionProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
   // Keystrokes update `search` instantly for the input; filtering (and any
@@ -204,7 +207,10 @@ export function PopularEventsSection({ category, onCategoryChange }: PopularEven
     <section className="px-4 bg-base py-12">
       <div className="max-w-305.25 mx-auto">
         {getActiveFilterCount(filters) > 0 && (
-          <div className="flex flex-wrap items-center gap-2 mb-6" aria-label="Active filters">
+          <div
+            className="flex flex-wrap items-center gap-2 mb-6"
+            aria-label="Active filters"
+          >
             {activeFilters.map((filter) => (
               <span
                 key={`${filter.key}-${filter.value ?? filter.label}`}
