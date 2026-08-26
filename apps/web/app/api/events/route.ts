@@ -66,11 +66,16 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     }
   }
 
+  if (payload.timezone !== undefined && (typeof payload.timezone !== "string" || payload.timezone.trim().length === 0)) {
+    throwApiError("Invalid field: timezone", 400);
+  }
+
   const created = await prisma.event.create({
     data: {
       title: payload.title as string,
       description: typeof payload.description === "string" ? payload.description : "",
       startsAt: new Date(payload.startsAt as string),
+      timezone: typeof payload.timezone === "string" ? payload.timezone : undefined,
       location: payload.location as string,
       category: payload.category as string,
       organizerName: payload.organizerName as string,
