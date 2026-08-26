@@ -29,6 +29,7 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::time::Duration as StdDuration;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -382,25 +383,34 @@ impl QueueEngine {
 
     /// Spawn the background admission worker. Runs `tick`-periodically,
     /// draining every active event queue at its token-bucket rate and issuing
-    /// signed grants with the given TTL.
+    /// signed grants with the given TTL. Stops when `shutdown` is cancelled
+    /// (graceful shutdown, Issue #1261).
     pub fn spawn_admission_worker(
         engine: std::sync::Arc<Self>,
         tick: StdDuration,
         grant_ttl_minutes: i64,
+        shutdown: CancellationToken,
     ) {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tick);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                interval.tick().await;
-                match engine.admit_all(grant_ttl_minutes).await {
-                    Ok(total) => {
-                        if total > 0 {
-                            tracing::info!(admitted = total, "Waiting room: admitted clients");
-                        }
+                tokio::select! {
+                    _ = shutdown.cancelled() => {
+                        tracing::info!("Waiting room admission worker stopping");
+                        break;
                     }
-                    Err(e) => {
-                        tracing::error!(error = %e, "Waiting room admission worker error");
+                    _ = interval.tick() => {
+                        match engine.admit_all(grant_ttl_minutes).await {
+                            Ok(total) => {
+                                if total > 0 {
+                                    tracing::info!(admitted = total, "Waiting room: admitted clients");
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!(error = %e, "Waiting room admission worker error");
+                            }
+                        }
                     }
                 }
             }

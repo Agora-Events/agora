@@ -7,8 +7,8 @@ use axum::{
     extract::{Path, Query, State},
     response::IntoResponse,
     response::Response,
-    Json,
 };
+use crate::utils::extract::ValidatedJson;
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -1315,6 +1315,7 @@ mod tests {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubmitEventRatingRequest {
     pub ticket_id: Uuid,
     pub rating: i16,
@@ -1985,6 +1986,7 @@ pub fn validate_event_description(description: &Option<String>) -> Result<(), St
 
 /// Request body for creating a new event
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateEventRequest {
     pub organizer_id: Uuid,
     pub title: String,
@@ -2131,7 +2133,7 @@ fn validate_event_timestamps(
 /// POST `/api/v1/events`
 pub async fn create_event(
     State(mut state): State<EventState>,
-    Json(payload): Json<CreateEventRequest>,
+    ValidatedJson(payload): ValidatedJson<CreateEventRequest>,
 ) -> Response {
     if let Some(ref url) = payload.image_url {
         if let Err(e) = validate_image_url(url) {
@@ -2244,7 +2246,7 @@ pub async fn create_event(
 pub async fn submit_event_rating(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    Json(payload): Json<SubmitEventRatingRequest>,
+    ValidatedJson(payload): ValidatedJson<SubmitEventRatingRequest>,
 ) -> Response {
     if payload.rating < 1 || payload.rating > 5 {
         return AppError::ValidationError("Rating must be between 1 and 5".to_string())
@@ -2781,6 +2783,7 @@ pub async fn toggle_event_flag(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SetEventFeaturedRequest {
     pub featured: bool,
 }
@@ -2791,7 +2794,7 @@ pub struct SetEventFeaturedRequest {
 pub async fn set_event_featured(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    Json(payload): Json<SetEventFeaturedRequest>,
+    ValidatedJson(payload): ValidatedJson<SetEventFeaturedRequest>,
 ) -> Response {
     let updated = match sqlx::query_as::<_, (bool,)>(
         "UPDATE events SET is_featured = $1 WHERE id = $2 RETURNING is_featured",
@@ -2836,6 +2839,7 @@ pub async fn set_event_featured(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FlagEventRequest {
     pub flagged: bool,
 }
@@ -2846,7 +2850,7 @@ pub struct FlagEventRequest {
 pub async fn flag_event(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    Json(payload): Json<FlagEventRequest>,
+    ValidatedJson(payload): ValidatedJson<FlagEventRequest>,
 ) -> Response {
     let updated = match sqlx::query_as::<_, (bool,)>(
         "UPDATE events SET is_flagged = $1 WHERE id = $2 RETURNING is_flagged",
@@ -3784,7 +3788,12 @@ pub async fn get_events_map(
 ) -> Response {
     let lat = params.latitude;
     let lng = params.longitude;
-    let radius_km = params.radius.unwrap_or(50.0).clamp(1.0, 500.0);
+    let radius_km = params.radius.unwrap_or(50.0);
+    if !radius_km.is_finite() {
+        return AppError::ValidationError("radius must be a finite number".to_string())
+            .into_response();
+    }
+    let radius_km = radius_km.clamp(1.0, 500.0);
     let limit = (params.limit.unwrap_or(50) as i64).clamp(1, 200);
 
     if !(-90.0..=90.0).contains(&lat) {

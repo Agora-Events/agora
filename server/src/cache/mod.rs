@@ -103,6 +103,13 @@ impl RedisCache {
         redis::cmd("PING").query_async(&mut self.client).await
     }
 
+    /// Explicitly close the Redis connection manager (Issue #1261). The
+    /// underlying connection is also closed on drop, but calling this during
+    /// shutdown makes the intent explicit and gives the caller a point to log.
+    pub async fn close(self) {
+        tracing::info!("Closing Redis connection");
+    }
+
     /// Clone the underlying multiplexed connection manager so services can
     /// issue raw Redis commands (e.g. the waiting-room queue engine, #1187).
     pub fn connection(&self) -> redis::aio::ConnectionManager {

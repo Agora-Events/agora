@@ -98,6 +98,11 @@ pub struct Config {
     /// Rate limit threshold for auth/nonce endpoint in requests per minute (default: 10).
     pub auth_rate_limit_per_minute: usize,
 
+    /// Graceful-shutdown drain timeout in seconds (default: 15). When a
+    /// SIGTERM/SIGINT is received, in-flight requests are given up to this long
+    /// to finish before the process exits (Issue #1261).
+    pub shutdown_timeout_secs: u64,
+
     /// Allowed MIME types for uploaded files.
     pub allowed_upload_mime_types: Vec<String>,
 }
@@ -167,6 +172,11 @@ impl Config {
             .and_then(|v| v.parse().ok())
             .unwrap_or(10);
 
+        let shutdown_timeout_secs = env::var("SHUTDOWN_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(15);
+
         let allowed_upload_mime_types = env::var("ALLOWED_UPLOAD_MIME_TYPES")
             .or_else(|_| env::var("ALLOWED_MIME_TYPES"))
             .map(|s| s.split(',').map(|m| m.trim().to_string()).collect())
@@ -199,6 +209,7 @@ impl Config {
             admin_token,
             auth_rate_limit_per_minute,
             allowed_upload_mime_types,
+            shutdown_timeout_secs,
         })
     }
 
@@ -300,6 +311,11 @@ impl Config {
             ));
         }
 
+        // --- SHUTDOWN_TIMEOUT_SECS -----------------------------------------
+        if self.shutdown_timeout_secs == 0 {
+            errors.push("SHUTDOWN_TIMEOUT_SECS must be greater than 0".to_string());
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -360,6 +376,7 @@ mod tests {
                 "image/webp".to_string(),
                 "image/gif".to_string(),
             ],
+            shutdown_timeout_secs: 15,
         }
     }
 
@@ -899,6 +916,7 @@ mod tests {
                 "image/webp".to_string(),
                 "image/gif".to_string(),
             ],
+            shutdown_timeout_secs: 15,
         };
 
         let err = cfg.validate().unwrap_err();
