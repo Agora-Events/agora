@@ -46,6 +46,54 @@ const DEFAULT_FILTERS: FilterState = {
   maxPrice: "",
 };
 
+type EventSort = "date-soonest" | "price-asc" | "price-desc" | "popularity";
+
+const SORT_OPTIONS: { value: EventSort; label: string }[] = [
+  { value: "date-soonest", label: "Date (soonest)" },
+  { value: "price-asc", label: "Price (low → high)" },
+  { value: "price-desc", label: "Price (high → low)" },
+  { value: "popularity", label: "Most popular" },
+];
+
+function parseEventTimestamp(date: string): number {
+  const direct = Date.parse(date);
+  if (!Number.isNaN(direct)) return direct;
+
+  const match = date.match(/(\d{1,2})\s+([A-Za-z]{3}),?\s+(\d{1,2}:\d{2})/);
+  if (match) {
+    const parsed = Date.parse(`${match[1]} ${match[2]} ${new Date().getFullYear()} ${match[3]}`);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
+function parseEventPrice(price: string): number {
+  if (!price || price.toLowerCase() === "free") return 0;
+  const value = Number.parseFloat(price);
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function sortEvents(events: DiscoverEvent[], sort: EventSort): DiscoverEvent[] {
+  const copy = [...events];
+
+  copy.sort((a, b) => {
+    switch (sort) {
+      case "price-asc":
+        return parseEventPrice(a.price) - parseEventPrice(b.price);
+      case "price-desc":
+        return parseEventPrice(b.price) - parseEventPrice(a.price);
+      case "popularity":
+        return (b.mintedTickets ?? 0) - (a.mintedTickets ?? 0);
+      case "date-soonest":
+      default:
+        return parseEventTimestamp(a.date) - parseEventTimestamp(b.date);
+    }
+  });
+
+  return copy;
+}
+
 type PopularEventsSectionProps = {
   activeCategory?: string;
   onError: (message: string) => void;
@@ -60,6 +108,7 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [events, setEvents] = useState<DiscoverEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<EventSort>("date-soonest");
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -169,8 +218,8 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
       });
     }
 
-    return result;
-  }, [search, filters, events, activeCategory]);
+    return sortEvents(result, sortBy);
+  }, [search, filters, events, activeCategory, sortBy]);
 
   // Notify parent whenever the visible count changes
   const prevCountRef = useRef<number | null>(null);
@@ -254,6 +303,28 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
                 animate={isFocused ? "focused" : "unfocused"}
                 transition={{ duration: 0.3, ease: "easeInOut" }}
               />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="discover-sort"
+                className="text-sm font-medium text-ink-soft max-sm:sr-only"
+              >
+                Sort by
+              </label>
+              <select
+                id="discover-sort"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as EventSort)}
+                aria-label="Sort events"
+                className="h-9.75 max-w-[10.5rem] sm:max-w-none rounded-4xl bg-black px-3 text-sm text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>

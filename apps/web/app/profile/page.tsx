@@ -8,6 +8,7 @@ import { EventCard } from "@/components/events/event-card";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { WalletAddress } from "@/components/ui/wallet-address";
 
 // Types for organizer profile
 interface OrganizerProfile {
@@ -117,6 +118,11 @@ function OrganizerProfileSection({ profile }: { profile: OrganizerProfile | null
         )}
         <div className="flex-1">
           <h3 className="text-xl font-bold text-ink-deep">{profile.displayName}</h3>
+          {profile.address && profile.address !== "me" && (
+            <div className="mt-2 min-w-0">
+              <WalletAddress address={profile.address} />
+            </div>
+          )}
           {profile.bio && <p className="text-gray-600 mt-2">{profile.bio}</p>}
           <div className="mt-4 flex flex-wrap gap-2">
             {profile.socials && Object.entries(profile.socials).map(([platform, url]) => (

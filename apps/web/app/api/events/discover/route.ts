@@ -10,6 +10,7 @@ type OrganizerData = {
   title: string;
   description: string;
   image: string;
+  wallet?: string;
 };
 
 export const GET = withErrorHandler(async () => {
@@ -34,6 +35,7 @@ export const GET = withErrorHandler(async () => {
       price: event.ticketPrice === 0 ? "Free" : String(event.ticketPrice),
       imageUrl: event.imageUrl,
       category: event.category,
+      mintedTickets: event.mintedTickets,
     }));
 
   const organizers = Array.from(
@@ -44,6 +46,7 @@ export const GET = withErrorHandler(async () => {
           title: event.organizerName,
           description: `Organizer of ${event.category} events on Agora.`,
           image: "/icons/stellar-west-africa.svg",
+          wallet: event.organizerWallet,
         });
       }
       return acc;
