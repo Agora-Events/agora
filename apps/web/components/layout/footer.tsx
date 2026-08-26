@@ -58,6 +58,12 @@ export function Footer() {
             >
               FAQs
             </Link>
+            <Link
+              href="/settings#cookie-preferences"
+              className="text-gray-300 hover:text-white transition-colors"
+            >
+              Cookie preferences
+            </Link>
           </div>
 
           {/* Socials Column */}

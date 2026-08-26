@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
+
+const CREATE_EVENT_DRAFT_KEY = "agora:draft:create-event";
 
 export type EventFormData = {
   title: string;
@@ -35,37 +37,130 @@ const initialFormState: EventFormData = {
 export default function CreateEventForm() {
   const [formData, setFormData] = useState<EventFormData>(initialFormState);
   const [locationMode, setLocationMode] = useState<"Virtual" | "Physical">("Physical");
+  const [isDraftAvailable, setIsDraftAvailable] = useState(false);
+  const lastPersistedAt = useRef(0);
+  const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingDraft = useRef<EventFormData | null>(null);
+
+  useEffect(() => {
+    try {
+      const storedDraft = window.localStorage.getItem(CREATE_EVENT_DRAFT_KEY);
+
+      if (storedDraft) {
+        const parsedDraft = JSON.parse(storedDraft) as Partial<EventFormData>;
+        setFormData({ ...initialFormState, ...parsedDraft });
+        setIsDraftAvailable(true);
+      }
+    } catch {
+      // localStorage can be unavailable or contain invalid data.
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (persistTimeout.current) {
+      clearTimeout(persistTimeout.current);
+    }
+  }, []);
+
+  const persistDraft = () => {
+    persistTimeout.current = null;
+
+    if (!pendingDraft.current) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(CREATE_EVENT_DRAFT_KEY, JSON.stringify(pendingDraft.current));
+      lastPersistedAt.current = Date.now();
+      pendingDraft.current = null;
+    } catch {
+      // Ignore storage failures, including private-browsing restrictions.
+    }
+  };
+
+  const scheduleDraftPersist = (nextFormData: EventFormData) => {
+    pendingDraft.current = nextFormData;
+    const delay = Math.max(0, 1000 - (Date.now() - lastPersistedAt.current));
+
+    if (delay === 0 && !persistTimeout.current) {
+      persistDraft();
+    } else if (!persistTimeout.current) {
+      persistTimeout.current = setTimeout(persistDraft, delay);
+    }
+  };
+
+  const cancelPendingDraft = () => {
+    if (persistTimeout.current) {
+      clearTimeout(persistTimeout.current);
+      persistTimeout.current = null;
+    }
+    pendingDraft.current = null;
+  };
+
+  const clearStoredDraft = () => {
+    try {
+      window.localStorage.removeItem(CREATE_EVENT_DRAFT_KEY);
+    } catch {
+      // Ignore storage failures, including private-browsing restrictions.
+    }
+  };
+
+  const handleRestore = () => {
+    try {
+      const storedDraft = window.localStorage.getItem(CREATE_EVENT_DRAFT_KEY);
+
+      if (storedDraft) {
+        setFormData({ ...initialFormState, ...(JSON.parse(storedDraft) as Partial<EventFormData>) });
+      }
+    } catch {
+      // Ignore storage failures or invalid draft data.
+    }
+
+    setIsDraftAvailable(false);
+  };
+
+  const handleDiscard = () => {
+    cancelPendingDraft();
+    clearStoredDraft();
+    setIsDraftAvailable(false);
+  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
+    let nextFormData: EventFormData;
 
     if (name === "capacity") {
       const numericValue = value.replace(/[^0-9]/g, "");
-      setFormData((prev) => ({ ...prev, [name]: numericValue }));
-      return;
-    }
-
-    if (name === "price") {
+      nextFormData = { ...formData, [name]: numericValue };
+    } else if (name === "price") {
       const decimalValue = value.replace(/[^0-9.]/g, "");
-      setFormData((prev) => ({ ...prev, [name]: decimalValue }));
-      return;
+      nextFormData = { ...formData, [name]: decimalValue };
+    } else {
+      nextFormData = { ...formData, [name]: value };
     }
 
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData(nextFormData);
+    scheduleDraftPersist(nextFormData);
   };
 
   const handleVisibilityChange = (visibility: "Public" | "Private") => {
-    setFormData((prev) => ({ ...prev, visibility }));
+    const nextFormData = { ...formData, visibility };
+    setFormData(nextFormData);
+    scheduleDraftPersist(nextFormData);
   };
 
   const handleClear = () => {
+    cancelPendingDraft();
     setFormData(initialFormState);
+    clearStoredDraft();
   };
 
   const handleSubmit = () => {
     console.log("Submitting Event Data:", formData);
+    cancelPendingDraft();
+    clearStoredDraft();
   };
 
   const isSubmitDisabled = !formData.title.trim() || !formData.startDate.trim();
@@ -75,6 +170,32 @@ export default function CreateEventForm() {
 
   return (
     <div className="flex flex-col gap-6 w-full">
+      {isDraftAvailable && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-black rounded-xl bg-[#FFFBEA] p-4 shadow-[-3px_3px_0px_0px_rgba(0,0,0,1)]" role="status">
+          <span className="font-semibold">Restore your unsaved draft?</span>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleRestore}
+              backgroundColor="bg-black"
+              textColor="text-white"
+              shadowColor="transparent"
+              className="px-4"
+            >
+              Restore
+            </Button>
+            <Button
+              onClick={handleDiscard}
+              backgroundColor="bg-white"
+              textColor="text-black"
+              shadowColor="transparent"
+              className="px-4 border border-black"
+            >
+              Discard
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Event Title Section */}
       <div className={`p-6 shadow-sm ${neubrutalistInputClass}`}>
         <label className="block text-sm font-semibold mb-3">Event Title</label>

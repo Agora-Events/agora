@@ -1,12 +1,16 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, Transition } from "framer-motion";
 import Image from "next/image";
 import { EventCard } from "./event-card";
 import { Button } from "../ui/button";
 import { dataEvents } from "./mockups";
-import { FilterSidebar, FilterState } from "./filter-sidebar";
+import {
+  FilterSidebar,
+  FilterState,
+  getActiveFilterCount,
+} from "./filter-sidebar";
 
 const container = {
   hidden: { opacity: 0 },
@@ -44,11 +48,73 @@ const DEFAULT_FILTERS: FilterState = {
   maxPrice: "",
 };
 
-export function PopularEventsSection() {
+interface PopularEventsSectionProps {
+  category: string;
+  onCategoryChange: (category: string) => void;
+}
+
+type ActiveFilter = {
+  key: keyof FilterState;
+  value?: string;
+  label: string;
+};
+
+export function PopularEventsSection({ category, onCategoryChange }: PopularEventsSectionProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<FilterState>({
+    ...DEFAULT_FILTERS,
+    categories: category ? [category] : [],
+  });
+
+  useEffect(() => {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      categories: category ? [category] : [],
+    }));
+  }, [category]);
+
+  const handleFiltersChange = (nextFilters: FilterState) => {
+    setFilters(nextFilters);
+    onCategoryChange(nextFilters.categories[0] ?? "");
+  };
+
+  const activeFilters: ActiveFilter[] = [
+    ...(filters.date && filters.date !== "Any time"
+      ? [{ key: "date" as const, label: filters.date }]
+      : []),
+    ...filters.categories.map((category) => ({
+      key: "categories" as const,
+      value: category,
+      label: category,
+    })),
+    ...filters.locations.map((location) => ({
+      key: "locations" as const,
+      value: location,
+      label: location,
+    })),
+    ...(filters.minPrice
+      ? [{ key: "minPrice" as const, label: `From $${filters.minPrice}` }]
+      : []),
+    ...(filters.maxPrice
+      ? [{ key: "maxPrice" as const, label: `Up to $${filters.maxPrice}` }]
+      : []),
+  ];
+
+  const removeFilter = (filter: ActiveFilter) => {
+    const nextFilters = { ...filters };
+
+    if (filter.key === "categories" || filter.key === "locations") {
+      nextFilters[filter.key] = nextFilters[filter.key].filter(
+        (value) => value !== filter.value,
+      );
+    } else {
+      nextFilters[filter.key] = "";
+    }
+
+    handleFiltersChange(nextFilters);
+  };
 
   const filteredEvents = useMemo(() => {
     let result = dataEvents;
@@ -114,6 +180,34 @@ export function PopularEventsSection() {
   return (
     <section className="px-4 bg-[#FFFBE9] py-12">
       <div className="max-w-305.25 mx-auto">
+        {getActiveFilterCount(filters) > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-6" aria-label="Active filters">
+            {activeFilters.map((filter) => (
+              <span
+                key={`${filter.key}-${filter.value ?? filter.label}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-black bg-white px-3 py-1.5 text-sm"
+              >
+                {filter.label}
+                <button
+                  type="button"
+                  onClick={() => removeFilter(filter)}
+                  aria-label={`Remove ${filter.label} filter`}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full font-bold hover:bg-black hover:text-white"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => handleFiltersChange(DEFAULT_FILTERS)}
+              className="text-sm font-semibold underline underline-offset-2"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+
         <motion.div
           className="flex justify-between gap-3 mb-5.75"
           variants={container}
@@ -270,7 +364,7 @@ export function PopularEventsSection() {
         isOpen={isFilterOpen}
         onClose={() => setIsFilterOpen(false)}
         filters={filters}
-        onFiltersChange={setFilters}
+        onFiltersChange={handleFiltersChange}
       />
     </section>
   );

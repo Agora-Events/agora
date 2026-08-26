@@ -53,7 +53,12 @@ const Button: React.FC = () => {
   );
 };
 
-export function OrganizerComponent() {
+interface OrganizerComponentProps {
+  selectedOrganizer: string;
+  onOrganizerChange: (organizer: string) => void;
+}
+
+export function OrganizerComponent({ selectedOrganizer, onOrganizerChange }: OrganizerComponentProps) {
   const cardsRef = useRef<HTMLDivElement>(null);
 
   const scrollLeft = () => {
@@ -82,8 +87,18 @@ export function OrganizerComponent() {
           <div key={card.id} className="relative h-full">
             <section className="absolute border-10 rounded-2xl bg-yellow-400 border-yellow-400 w-102 h-58 -left-2 top-2 z-0"></section>
             <div
-              className="relative z-10 bg-black text-white p-5x border rounded-2xl lg:min-w-100
-                     h-40 lg:h-58"
+              role="button"
+              tabIndex={0}
+              aria-pressed={selectedOrganizer === card.id}
+              onClick={() => onOrganizerChange(selectedOrganizer === card.id ? "" : card.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOrganizerChange(selectedOrganizer === card.id ? "" : card.id);
+                }
+              }}
+              className={`relative z-10 bg-black text-white p-5x border rounded-2xl lg:min-w-100
+                     h-40 lg:h-58 ${selectedOrganizer === card.id ? "ring-4 ring-black/30" : ""}`}
             >
               <div className="absolute top-5 left-5">
                 <Image

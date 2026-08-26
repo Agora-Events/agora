@@ -36,6 +36,16 @@ export type FilterState = {
   maxPrice: string;
 };
 
+export function getActiveFilterCount(filters: FilterState): number {
+  return (
+    filters.categories.length +
+    filters.locations.length +
+    (filters.date && filters.date !== "Any time" ? 1 : 0) +
+    (filters.minPrice ? 1 : 0) +
+    (filters.maxPrice ? 1 : 0)
+  );
+}
+
 interface FilterSidebarProps {
   isOpen: boolean;
   onClose: () => void;
@@ -77,6 +87,7 @@ export function FilterSidebar({
   onFiltersChange,
 }: FilterSidebarProps) {
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const activeFilterCount = getActiveFilterCount(filters);
 
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
@@ -184,15 +195,24 @@ export function FilterSidebar({
                   alt=""
                   aria-hidden="true"
                 />
-                <h2 className="font-bold text-[20px]/6 text-black">Filters</h2>
+                <h2 className="font-bold text-[20px]/6 text-black">
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="ml-2 inline-flex min-w-6 h-6 items-center justify-center rounded-full bg-black px-1.5 text-xs text-white">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </h2>
               </div>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={handleReset}
-                  className="text-[13px] font-medium text-black/50 hover:text-black transition-colors underline underline-offset-2"
-                >
-                  Clear Filter
-                </button>
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={handleReset}
+                    className="text-[13px] font-medium text-black/50 hover:text-black transition-colors underline underline-offset-2"
+                  >
+                    Clear Filter
+                  </button>
+                )}
                 <button
                   onClick={onClose}
                   aria-label="Close filters"

@@ -39,7 +39,12 @@ const item = {
   },
 };
 
-export function CategorySection() {
+interface CategorySectionProps {
+  selectedCategory: string;
+  onCategoryChange: (category: string) => void;
+}
+
+export function CategorySection({ selectedCategory, onCategoryChange }: CategorySectionProps) {
   return (
     <section className="px-4 bg-[#FFFBE9] pt-12 pb-6">
       <div className="mx-auto max-w-[1221px]">
@@ -70,6 +75,8 @@ export function CategorySection() {
             {categories.map((category) => (
               <motion.div key={category.name} variants={item}>
                 <button
+                  onClick={() => onCategoryChange(selectedCategory === category.name ? "" : category.name)}
+                  aria-pressed={selectedCategory === category.name}
                   style={{ backgroundColor: category.color }}
                   className={`
                     flex items-center gap-2 px-[26px] py-[13px] rounded-full border-2 border-black
@@ -77,6 +84,7 @@ export function CategorySection() {
                     shadow-[-4px_4px_0px_0px_rgba(0,0,0,1)]
                     active:translate-x-[2px] active:translate-y-[2px] active:shadow-none
                     hover:opacity-90 min-w-32 justify-center
+                    ${selectedCategory === category.name ? "ring-4 ring-black/30" : ""}
                   `}
                 >
                   <Image
