@@ -142,6 +142,27 @@ pub fn validate_bonding_curve_config(cfg: &BondingCurveConfig) -> Result<(), Tic
 /// purchase.  The price is computed at the current supply level.
 ///
 /// Returns the price in **stroops**.
+///
+/// ## Mathematical Invariants
+///
+/// 1. **Monotonicity**: Because `s^b` is non-decreasing in `s` for `b >= 1`,
+///    and `a_scaled > 0`, we have `P(s + 1) >= P(s)` for all `s >= 0`.
+///    Higher remaining supply → higher price; as tickets sell the price falls.
+///
+/// 2. **Base Price Anchor**: At `s = 0` the variable component disappears:
+///    `P(0) = (a_scaled * 0^b) / PARAM_SCALE + c_base = c_base`.
+///    Therefore `P(0) == c_base` exactly.
+///
+/// 3. **Non-Zero Guarantee**: When `c_base > 0`, integer division of
+///    `(a_scaled * s^b)` by `PARAM_SCALE` can only reduce the variable
+///    component toward zero, never below.  The `c_base` floor ensures the
+///    total price is at least `c_base > 0`.
+///
+/// 4. **Overflow Safety**: The function uses [`integer_pow`] which calls
+///    `i128::saturating_mul` internally, so no panic occurs for any supply
+///    value up to `u32::MAX`.  Callers should validate that `a_scaled` is
+///    chosen such that intermediate products stay within `i128` range for
+///    their expected supply levels.
 pub fn bonding_curve_price(cfg: &BondingCurveConfig, remaining_supply: u32) -> i128 {
     let s = remaining_supply as i128;
 
@@ -496,5 +517,136 @@ mod tests {
             initial_supply: 500,
         };
         assert!(validate_bonding_curve_config(&cfg).is_ok());
+    }
+
+    // ── Issue #1276: Monotonicity & Boundary Property Tests ─────────────────
+
+    /// Invariant 1: P(n+1) >= P(n) for all n in [0, 1000].
+    ///
+    /// This test iterates supply from 0 to 1000 and asserts that the price at
+    /// supply n+1 is always at least as large as the price at supply n.
+    #[test]
+    fn price_is_monotonically_non_decreasing() {
+        // Test with a linear curve (b = 1).
+        let cfg_linear = BondingCurveConfig {
+            a_scaled: PARAM_SCALE, // a = 1
+            b_exponent: 1,
+            c_base: 100_000,
+            initial_supply: 1001,
+        };
+        for n in 0u32..1000 {
+            let price_n = bonding_curve_price(&cfg_linear, n);
+            let price_n_plus_1 = bonding_curve_price(&cfg_linear, n + 1);
+            assert!(
+                price_n_plus_1 >= price_n,
+                "monotonicity violated (linear) at n={}: P({})={} < P({})={}",
+                n,
+                n + 1,
+                price_n_plus_1,
+                n,
+                price_n
+            );
+        }
+
+        // Test with a quadratic curve (b = 2).
+        let cfg_quad = BondingCurveConfig {
+            a_scaled: PARAM_SCALE / 10, // a = 0.1 to avoid overflow
+            b_exponent: 2,
+            c_base: 50_000,
+            initial_supply: 1001,
+        };
+        for n in 0u32..1000 {
+            let price_n = bonding_curve_price(&cfg_quad, n);
+            let price_n_plus_1 = bonding_curve_price(&cfg_quad, n + 1);
+            assert!(
+                price_n_plus_1 >= price_n,
+                "monotonicity violated (quadratic) at n={}: P({})={} < P({})={}",
+                n,
+                n + 1,
+                price_n_plus_1,
+                n,
+                price_n
+            );
+        }
+    }
+
+    /// Invariant 2: P(0) == c_base (base price anchor).
+    #[test]
+    fn price_at_zero_supply_equals_base_price() {
+        let c_base = 500_000i128;
+        let cfg = BondingCurveConfig {
+            a_scaled: 3 * PARAM_SCALE,
+            b_exponent: 2,
+            c_base,
+            initial_supply: 100,
+        };
+        assert_eq!(
+            bonding_curve_price(&cfg, 0),
+            c_base,
+            "P(0) must equal c_base"
+        );
+    }
+
+    /// Invariant 3: Non-zero price guarantee when base_price > 0.
+    ///
+    /// Integer division of the variable component can only reduce it, never
+    /// produce a price below c_base.
+    #[test]
+    fn price_never_zero_when_base_price_positive() {
+        let cfg = BondingCurveConfig {
+            a_scaled: PARAM_SCALE,
+            b_exponent: 1,
+            c_base: 1, // minimal positive base price
+            initial_supply: 200,
+        };
+        for s in 0u32..=200 {
+            let price = bonding_curve_price(&cfg, s);
+            assert!(
+                price > 0,
+                "price must be > 0 when c_base > 0, but got {} at supply {}",
+                price,
+                s
+            );
+        }
+    }
+
+    /// Invariant 4: Boundary safety — no panic at supply = 0 and supply = initial_supply.
+    ///
+    /// Uses a large supply value to verify the implementation does not overflow
+    /// or panic at the extremes.
+    #[test]
+    fn boundary_no_panic_at_zero_and_max_supply() {
+        let max_supply = 10_000u32;
+        let cfg = BondingCurveConfig {
+            a_scaled: PARAM_SCALE,
+            b_exponent: 1,
+            c_base: 100_000,
+            initial_supply: max_supply,
+        };
+
+        // Should not panic at supply = 0.
+        let price_at_zero = bonding_curve_price(&cfg, 0);
+        assert_eq!(price_at_zero, cfg.c_base, "P(0) must equal c_base");
+
+        // Should not panic at supply = max_supply.
+        let price_at_max = bonding_curve_price(&cfg, max_supply);
+        assert!(
+            price_at_max >= cfg.c_base,
+            "P(max_supply) must be >= c_base"
+        );
+    }
+
+    /// Boundary safety with cubic curve — verifies no overflow up to supply = 1000.
+    #[test]
+    fn boundary_cubic_no_overflow_up_to_large_supply() {
+        let cfg = BondingCurveConfig {
+            a_scaled: 1, // tiny amplitude to avoid overflow with cubic
+            b_exponent: 3,
+            c_base: 1_000,
+            initial_supply: 1_000,
+        };
+        // Should not panic.
+        let price = bonding_curve_price(&cfg, 1_000);
+        assert!(price >= cfg.c_base);
     }
 }

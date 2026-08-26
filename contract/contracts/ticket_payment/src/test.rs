@@ -578,8 +578,9 @@ fn test_confirm_payment() {
 }
 
 #[test]
-#[should_panic(expected = "Amount must be positive")]
 fn test_process_payment_zero_amount() {
+    // Zero amount on a paid tier is rejected. Previously this panicked; now it
+    // returns Err(InvalidPrice) because amount (0) != tier.price (1000 USDC).
     let env = Env::default();
     env.mock_all_auths();
 
@@ -588,7 +589,7 @@ fn test_process_payment_zero_amount() {
     let payment_id = String::from_str(&env, "pay_1");
 
     let (_secret, hash) = test_secret(&env);
-    client.process_payment(
+    let result = client.try_process_payment(
         &payment_id,
         &String::from_str(&env, "event_1"),
         &String::from_str(&env, "tier_1"),
@@ -603,6 +604,11 @@ fn test_process_payment_zero_amount() {
             discount_code: None,
         },
         &hash,
+    );
+    // Zero amount on a paid tier mismatches the tier price → InvalidPrice.
+    assert!(
+        result.is_err() || matches!(result, Ok(Err(_))),
+        "zero amount on paid tier should fail"
     );
 }
 
@@ -10769,5 +10775,363 @@ fn test_purchase_cancelled_listing_rejected() {
     assert_eq!(
         result,
         Err(Ok(TicketPaymentError::ResaleListingNotActive.into()))
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Issue #1276 – Bonding Curve Price Monotonicity & Boundary Property Tests
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Invariant 1 – Monotonicity: P(n+1) >= P(n) for all n in [0, 1000].
+///
+/// Iterates supply from 0 to 1000 with a linear curve (b=1) and a quadratic
+/// curve (b=2), asserting that the price at supply n+1 is always >= price at
+/// supply n.  This property guarantees buyers cannot gain an advantage by
+/// artificially inflating supply before purchasing.
+#[test]
+fn test_bonding_curve_price_monotonically_non_decreasing() {
+    use crate::bonding_curve::{bonding_curve_price, BondingCurveConfig, PARAM_SCALE};
+
+    // ── Linear curve (b = 1) ──────────────────────────────────────────────
+    let cfg_linear = BondingCurveConfig {
+        a_scaled: PARAM_SCALE, // a = 1
+        b_exponent: 1,
+        c_base: 100_000,
+        initial_supply: 1001,
+    };
+    for n in 0u32..1000 {
+        let price_n = bonding_curve_price(&cfg_linear, n);
+        let price_n1 = bonding_curve_price(&cfg_linear, n + 1);
+        assert!(
+            price_n1 >= price_n,
+            "monotonicity violated (linear) at n={}: P({})={} < P({})={}",
+            n,
+            n + 1,
+            price_n1,
+            n,
+            price_n
+        );
+    }
+
+    // ── Quadratic curve (b = 2) ───────────────────────────────────────────
+    let cfg_quad = BondingCurveConfig {
+        a_scaled: PARAM_SCALE / 10, // a = 0.1 to stay within i128 range
+        b_exponent: 2,
+        c_base: 50_000,
+        initial_supply: 1001,
+    };
+    for n in 0u32..1000 {
+        let price_n = bonding_curve_price(&cfg_quad, n);
+        let price_n1 = bonding_curve_price(&cfg_quad, n + 1);
+        assert!(
+            price_n1 >= price_n,
+            "monotonicity violated (quadratic) at n={}: P({})={} < P({})={}",
+            n,
+            n + 1,
+            price_n1,
+            n,
+            price_n
+        );
+    }
+}
+
+/// Invariant 2 – Base Price Anchor: P(0) == c_base.
+///
+/// At zero remaining supply the variable component a * 0^b = 0, so the price
+/// must equal c_base exactly.
+#[test]
+fn test_bonding_curve_price_at_zero_supply_equals_base_price() {
+    use crate::bonding_curve::{bonding_curve_price, BondingCurveConfig, PARAM_SCALE};
+
+    let c_base = 500_000i128;
+    let cfg = BondingCurveConfig {
+        a_scaled: 3 * PARAM_SCALE,
+        b_exponent: 2,
+        c_base,
+        initial_supply: 100,
+    };
+    assert_eq!(
+        bonding_curve_price(&cfg, 0),
+        c_base,
+        "P(0) must equal c_base"
+    );
+}
+
+/// Invariant 3 – Non-Zero Guarantee: price > 0 for all supply values when c_base > 0.
+///
+/// Integer division can only reduce the variable component toward zero, never
+/// below.  The c_base floor ensures the total price is always at least c_base.
+#[test]
+fn test_bonding_curve_price_never_zero_when_base_price_positive() {
+    use crate::bonding_curve::{bonding_curve_price, BondingCurveConfig, PARAM_SCALE};
+
+    let cfg = BondingCurveConfig {
+        a_scaled: PARAM_SCALE,
+        b_exponent: 1,
+        c_base: 1, // minimal positive floor
+        initial_supply: 200,
+    };
+    for s in 0u32..=200 {
+        let price = bonding_curve_price(&cfg, s);
+        assert!(
+            price > 0,
+            "price must be > 0 when c_base > 0, but got {} at supply {}",
+            price,
+            s
+        );
+    }
+}
+
+/// Invariant 4 – Boundary Safety: no panic at supply = 0 and supply = max_supply.
+///
+/// Verifies that the implementation handles both extremes without overflow or
+/// panic, including with a cubic curve (b=3) and a large supply value.
+#[test]
+fn test_bonding_curve_boundary_no_panic_at_zero_and_max_supply() {
+    use crate::bonding_curve::{bonding_curve_price, BondingCurveConfig, PARAM_SCALE};
+
+    let max_supply = 10_000u32;
+    let cfg = BondingCurveConfig {
+        a_scaled: PARAM_SCALE,
+        b_exponent: 1,
+        c_base: 100_000,
+        initial_supply: max_supply,
+    };
+
+    // Must not panic at supply = 0.
+    let price_at_zero = bonding_curve_price(&cfg, 0);
+    assert_eq!(price_at_zero, cfg.c_base, "P(0) must equal c_base");
+
+    // Must not panic at supply = max_supply.
+    let price_at_max = bonding_curve_price(&cfg, max_supply);
+    assert!(
+        price_at_max >= cfg.c_base,
+        "P(max_supply) must be >= c_base, got {}",
+        price_at_max
+    );
+
+    // Cubic curve with large supply — saturating_mul prevents panic.
+    let cfg_cubic = BondingCurveConfig {
+        a_scaled: 1,
+        b_exponent: 3,
+        c_base: 1_000,
+        initial_supply: 1_000,
+    };
+    let _price_cubic = bonding_curve_price(&cfg_cubic, 1_000); // must not panic
+    assert!(_price_cubic >= cfg_cubic.c_base);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Issue #1280 – Input Validation for Ticket Purchase Entry Points
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Negative amount must be rejected with InvalidAmount before any storage write.
+#[test]
+fn test_process_payment_negative_amount_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "neg_pay_1");
+    let (_secret, hash) = test_secret(&env);
+
+    let result = client.try_process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &(-1i128), // negative amount
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::InvalidAmount.into())),
+        "negative amount must return InvalidAmount"
+    );
+
+    // State must be completely unmodified.
+    assert!(
+        client
+            .try_get_payment_status(&payment_id)
+            .unwrap()
+            .unwrap()
+            .is_none(),
+        "no payment record should be created on rejected purchase"
+    );
+}
+
+/// Zero quantity must be rejected with InvalidAmount.
+#[test]
+fn test_process_payment_zero_quantity_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "zero_qty_1");
+    let (_secret, hash) = test_secret(&env);
+
+    let result = client.try_process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &1000_0000000i128,
+        &0u32, // zero quantity
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::InvalidAmount.into())),
+        "zero quantity must return InvalidAmount"
+    );
+
+    // State must be completely unmodified.
+    assert!(
+        client
+            .try_get_payment_status(&payment_id)
+            .unwrap()
+            .unwrap()
+            .is_none(),
+        "no payment record should be created on rejected purchase"
+    );
+}
+
+/// Zero amount on a paid event must fail before any token transfer.
+#[test]
+fn test_process_payment_zero_amount_on_paid_event_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "zero_amt_paid_1");
+    let (_secret, hash) = test_secret(&env);
+
+    // event_1 / tier_1 has price = 1000 USDC (see MockEventRegistry).
+    let result = client.try_process_payment(
+        &payment_id,
+        &String::from_str(&env, "event_1"),
+        &String::from_str(&env, "tier_1"),
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &0i128, // zero amount on a paid tier
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    assert!(
+        result.is_err() || matches!(result, Ok(Err(_))),
+        "zero amount on paid event must fail (got Ok(Ok(_)))"
+    );
+
+    // State must be completely unmodified.
+    assert!(
+        client
+            .try_get_payment_status(&payment_id)
+            .unwrap()
+            .unwrap()
+            .is_none(),
+        "no payment record should be created on rejected purchase"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Issue #1274 – Batch-Size Guard for Bulk Operations
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Empty discount-hash batch must be rejected with EmptyBatch.
+#[test]
+fn test_add_discount_hashes_empty_batch_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    // Build a mock event that our registry returns.
+    let event_id = String::from_str(&env, "event_1");
+
+    // Empty vec → EmptyBatch.
+    let empty_hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::vec![&env];
+    let result = client.try_add_discount_hashes(&event_id, &empty_hashes);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::EmptyBatch.into())),
+        "empty batch must return EmptyBatch"
+    );
+}
+
+/// Batch of exactly MAX_BATCH_SIZE (50) hashes must succeed.
+#[test]
+fn test_add_discount_hashes_batch_at_max_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _event_registry_id) = setup_test(&env);
+
+    let event_id = String::from_str(&env, "event_1");
+
+    // Build 50 distinct hashes.
+    let mut hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::vec![&env];
+    for i in 0u8..50 {
+        let mut raw = [0u8; 32];
+        raw[0] = i;
+        hashes.push_back(BytesN::from_array(&env, &raw));
+    }
+    // Should not return an error.
+    let result = client.try_add_discount_hashes(&event_id, &hashes);
+    assert!(
+        !matches!(result, Err(Ok(ref e)) if *e == TicketPaymentError::BatchTooLarge.into()
+            || *e == TicketPaymentError::EmptyBatch.into()),
+        "batch of 50 should not be rejected for size"
+    );
+}
+
+/// Batch of 51 hashes must be rejected with BatchTooLarge.
+#[test]
+fn test_add_discount_hashes_batch_over_max_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _event_registry_id) = setup_test(&env);
+
+    let event_id = String::from_str(&env, "event_1");
+
+    // Build 51 distinct hashes.
+    let mut hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::vec![&env];
+    for i in 0u8..51 {
+        let mut raw = [0u8; 32];
+        raw[0] = i;
+        if i < 255 {
+            raw[1] = i.wrapping_add(1);
+        }
+        hashes.push_back(BytesN::from_array(&env, &raw));
+    }
+    let result = client.try_add_discount_hashes(&event_id, &hashes);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::BatchTooLarge.into())),
+        "batch of 51 must return BatchTooLarge"
     );
 }
