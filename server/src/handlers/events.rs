@@ -1312,6 +1312,103 @@ mod tests {
             clause
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Issue #1263 — search query validation / sanitisation
+    // -----------------------------------------------------------------------
+
+    /// Helper that applies the same normalisation logic used in `search_events`.
+    fn normalise_search_q(raw: &str) -> Result<Option<String>, String> {
+        if raw.len() > MAX_SEARCH_QUERY_LENGTH {
+            return Err(format!(
+                "Search query must not exceed {} characters",
+                MAX_SEARCH_QUERY_LENGTH
+            ));
+        }
+        let trimmed = raw.trim().to_string();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        let sanitised = trimmed
+            .to_lowercase()
+            .replace('%', "")
+            .replace('_', " ");
+        let sanitised = sanitised.trim().to_string();
+        Ok(if sanitised.is_empty() { None } else { Some(sanitised) })
+    }
+
+    #[test]
+    fn test_search_q_over_128_chars_is_rejected() {
+        let long_q = "a".repeat(MAX_SEARCH_QUERY_LENGTH + 1);
+        assert!(
+            normalise_search_q(&long_q).is_err(),
+            "query longer than {} characters should be rejected",
+            MAX_SEARCH_QUERY_LENGTH
+        );
+    }
+
+    #[test]
+    fn test_search_q_exactly_128_chars_is_accepted() {
+        let q = "a".repeat(MAX_SEARCH_QUERY_LENGTH);
+        assert!(
+            normalise_search_q(&q).is_ok(),
+            "query of exactly {} characters should be accepted",
+            MAX_SEARCH_QUERY_LENGTH
+        );
+    }
+
+    #[test]
+    fn test_search_q_empty_string_treated_as_absent() {
+        let result = normalise_search_q("").unwrap();
+        assert_eq!(result, None, "empty query should normalise to None");
+    }
+
+    #[test]
+    fn test_search_q_whitespace_only_treated_as_absent() {
+        let result = normalise_search_q("   ").unwrap();
+        assert_eq!(
+            result, None,
+            "whitespace-only query should normalise to None"
+        );
+    }
+
+    #[test]
+    fn test_search_q_percent_wildcard_stripped() {
+        // A bare `%` must not produce a full-scan LIKE pattern.
+        let result = normalise_search_q("%").unwrap();
+        assert_eq!(
+            result, None,
+            "a bare '%' should be stripped and treated as absent"
+        );
+    }
+
+    #[test]
+    fn test_search_q_percent_mixed_stripped() {
+        // `%music%` should become `music`.
+        let result = normalise_search_q("%music%").unwrap();
+        assert_eq!(result, Some("music".to_string()));
+    }
+
+    #[test]
+    fn test_search_q_underscore_wildcard_replaced_with_space() {
+        let result = normalise_search_q("hello_world").unwrap();
+        // `_` is replaced with a space, then the result is trimmed.
+        assert!(result.is_some());
+        let inner = result.unwrap();
+        assert!(!inner.contains('_'), "underscore should be removed from query");
+    }
+
+    #[test]
+    fn test_search_q_normalised_to_lowercase() {
+        let result = normalise_search_q("CONCERT").unwrap();
+        assert_eq!(result, Some("concert".to_string()));
+    }
+
+    #[test]
+    fn test_search_q_trimmed_before_use() {
+        let result = normalise_search_q("  jazz  ").unwrap();
+        assert_eq!(result, Some("jazz".to_string()));
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -2437,13 +2534,17 @@ pub async fn submit_event_rating(
     success(response, "Rating recorded successfully").into_response()
 }
 
+/// Maximum length for the free-text search query parameter `q`.
+/// Queries longer than this are rejected with a 400 to prevent expensive full-table scans.
+const MAX_SEARCH_QUERY_LENGTH: usize = 128;
+
 /// Search events with advanced filters
 ///
 /// # Endpoint
 /// GET `/api/v1/events/search`
 ///
 /// # Query Parameters
-/// - `q` (optional): Keyword search in title and description
+/// - `q` (optional): Keyword search in title and description (max 128 chars)
 /// - `category_id` (optional): Filter by category UUID
 /// - `min_price` (optional): Minimum ticket price in cents
 /// - `max_price` (optional): Maximum ticket price in cents
@@ -2459,11 +2560,38 @@ const SEARCH_CACHE_TTL: Duration = Duration::from_secs(120);
 
 pub async fn search_events(
     State(mut state): State<EventState>,
-    Query(params): Query<SearchParams>,
+    Query(mut params): Query<SearchParams>,
 ) -> Response {
     if let Err(msg) = params.validate_page_size() {
         return AppError::ValidationError(msg).into_response();
     }
+
+    // --- Issue #1263: sanitise and validate the free-text search parameter ---
+    if let Some(raw_q) = params.q.take() {
+        // Reject queries that exceed the maximum allowed length.
+        if raw_q.len() > MAX_SEARCH_QUERY_LENGTH {
+            return AppError::ValidationError(format!(
+                "Search query must not exceed {} characters",
+                MAX_SEARCH_QUERY_LENGTH
+            ))
+            .into_response();
+        }
+
+        // Trim whitespace; treat empty/whitespace-only queries as absent.
+        let trimmed = raw_q.trim().to_string();
+        if trimmed.is_empty() {
+            params.q = None;
+        } else {
+            // Normalise to lowercase and strip SQL LIKE wildcards.
+            let sanitised = trimmed
+                .to_lowercase()
+                .replace('%', "")
+                .replace('_', " ");
+            let sanitised = sanitised.trim().to_string();
+            params.q = if sanitised.is_empty() { None } else { Some(sanitised) };
+        }
+    }
+
     let pagination = PaginationParams {
         page: params.page,
         page_size: params.page_size,
