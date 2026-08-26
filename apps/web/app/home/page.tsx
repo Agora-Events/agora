@@ -1,19 +1,32 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { ChatSidebar } from "@/components/layout/chat-sidebar";
+import { useAuth } from "@/hooks/useAuth";
+import { UpcomingEventsEmptyState } from "@/components/empty-state/upcoming-events-empty-state";
+import CalendarIcon from "@/public/icons/calendar.svg";
+import HostingIcon from "@/public/icons/ticket-star.svg";
+import PastIcon from "@/public/icons/camera-smile-01.svg";
+import BubbleChatIcon from "@/public/icons/bubble-chat.svg";
 
 type MyEventsTab = "upcoming" | "hosting" | "past";
 type ForYouTab = "discover" | "following";
 
-const myEventsTabs: { id: MyEventsTab; label: string }[] = [
-  { id: "upcoming", label: "Upcoming" },
-  { id: "hosting", label: "Hosting" },
-  { id: "past", label: "Past" },
+const myEventsTabs: { id: MyEventsTab; label: string; icon?: string }[] = [
+  {
+    id: "upcoming",
+    label: "Upcoming",
+    icon: CalendarIcon,
+  },
+  { id: "hosting", label: "Hosting", icon: HostingIcon },
+  { id: "past", label: "Past", icon: PastIcon },
 ];
 
 const forYouTabs: { id: ForYouTab; label: string }[] = [
@@ -33,6 +46,7 @@ interface TimelineEvent {
   isFree: boolean;
   price?: string;
   attendees: number;
+  status?: string;
 }
 
 interface GridEvent {
@@ -44,96 +58,6 @@ interface GridEvent {
   imageUrl: string;
   color: string;
 }
-
-// Mock data for My Events (Timeline)
-const upcomingEvents: TimelineEvent[] = [
-  {
-    id: 1,
-    date: "6 Mar, Friday",
-    day: "Friday",
-    time: "18:00 - 20:00 UTC",
-    title: "Stellar Developers Meetup",
-    location: "Discord",
-    imageUrl: "/images/event1.png",
-    isFree: true,
-    attendees: 24,
-  },
-  {
-    id: 2,
-    date: "8 Mar, Sunday",
-    day: "Sunday",
-    time: "10:00 - 12:00 UTC",
-    title: "Web3 Design Workshop",
-    location: "Lagos, Nigeria",
-    imageUrl: "/images/event2.png",
-    isFree: false,
-    price: "$25.00",
-    attendees: 156,
-  },
-  {
-    id: 3,
-    date: "12 Mar, Thursday",
-    day: "Thursday",
-    time: "14:00 - 16:00 UTC",
-    title: "Blockchain Fundamentals",
-    location: "Virtual",
-    imageUrl: "/images/event3.png",
-    isFree: true,
-    attendees: 89,
-  },
-];
-
-const hostingEvents: TimelineEvent[] = [
-  {
-    id: 4,
-    date: "15 Mar, Sunday",
-    day: "Sunday",
-    time: "19:00 - 21:00 UTC",
-    title: "Agora Community AMA",
-    location: "Twitter Spaces",
-    imageUrl: "/images/event4.png",
-    isFree: true,
-    attendees: 342,
-  },
-  {
-    id: 5,
-    date: "22 Mar, Sunday",
-    day: "Sunday",
-    time: "15:00 - 18:00 UTC",
-    title: "NFT Ticketing Workshop",
-    location: "Virtual",
-    imageUrl: "/images/event5.png",
-    isFree: false,
-    price: "$50.00",
-    attendees: 78,
-  },
-];
-
-const pastEvents: TimelineEvent[] = [
-  {
-    id: 6,
-    date: "28 Feb, Saturday",
-    day: "Saturday",
-    time: "16:00 - 18:00 UTC",
-    title: "Crypto Trading Basics",
-    location: "Discord",
-    imageUrl: "/images/event6.png",
-    isFree: true,
-    attendees: 210,
-  },
-  {
-    id: 7,
-    date: "20 Feb, Friday",
-    day: "Friday",
-    time: "12:00 - 14:00 UTC",
-    title: "DeFi Yield Strategies",
-    location: "Virtual",
-    imageUrl: "/images/event1.png",
-    isFree: false,
-    price: "$30.00",
-    attendees: 445,
-  },
-];
 
 // Mock data for For You (Grid)
 const discoverEvents: GridEvent[] = [
@@ -238,23 +162,24 @@ function AnimatedToggle<T extends string>({
   onTabChange,
   layoutId,
 }: {
-  tabs: { id: T; label: string }[];
+  tabs: { id: T; label: string; icon?: string }[];
   activeTab: T;
   onTabChange: (tab: T) => void;
   layoutId: string;
 }) {
   return (
-    <div className="inline-flex items-center bg-white rounded-full p-1 sm:p-1.5 border border-black shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
+    <div className="inline-flex w-fit items-center bg-white rounded-full p-1 sm:p-1.5 ">
       {tabs.map((tab) => (
         <button
+          type="button"
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
-          className="relative px-3 sm:px-5 py-1.5 sm:py-2 text-[13px] sm:text-[15px] font-medium transition-colors duration-200 z-10"
+          className="relative px-3 transition-all ease-in-out sm:px-5 py-1.5 sm:py-2 text-[13px] sm:text-[15px] font-medium  duration-200 z-10  flex items-center justify-center gap-2.5 flex-row"
         >
           {activeTab === tab.id && (
             <motion.div
               layoutId={layoutId}
-              className="absolute inset-0 bg-[#FDDA23] rounded-full border border-black"
+              className="absolute inset-0 bg-surface rounded-full"
               transition={{
                 type: "spring",
                 stiffness: 400,
@@ -262,9 +187,19 @@ function AnimatedToggle<T extends string>({
               }}
             />
           )}
+          {tab.icon && (
+            <Image
+              src={tab.icon}
+              alt={`${tab.label} icon`}
+              width={16}
+              height={16}
+              className="object-contain w-4 h-4 sm:w-6 sm:h-6 relative"
+            />
+          )}
+
           <span
-            className={`relative z-10 ${
-              activeTab === tab.id ? "text-black" : "text-black/70"
+            className={`relative z-10 text-sm leading-7.5 tracking-[0%] ${
+              activeTab === tab.id ? "text-black font-bold" : "text-black/70"
             }`}
           >
             {tab.label}
@@ -281,165 +216,186 @@ function SectionHeader<T extends string>({
   activeTab,
   onTabChange,
   layoutId,
+  hasNotifications = false,
+  onChatClick,
 }: {
   title: string;
   tabs: { id: T; label: string }[];
   activeTab: T;
   onTabChange: (tab: T) => void;
   layoutId: string;
+  hasNotifications?: boolean;
+  onChatClick?: () => void;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-6 sm:mb-8">
-      <h2 className="text-[24px] sm:text-[28px] lg:text-[32px] font-bold text-black">
+    <div className="flex flex-col  gap-3 sm:gap-8 mb-6 sm:mb-8">
+      <h2 className="text-[24px] sm:text-[28px] lg:text-[3.6rem] leading-16.5 tracking-[0px] font-semibold text-ink-deep italic">
         {title}
       </h2>
-      <AnimatedToggle
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={onTabChange}
-        layoutId={layoutId}
-      />
+      <div className="flex justify-between items-end">
+        <AnimatedToggle
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabChange={onTabChange}
+          layoutId={layoutId}
+        />
+        {hasNotifications && (
+          <button type="button" onClick={onChatClick} aria-label="Open messages">
+            <div className="w-13.75 h-13.75 rounded-full bg-surface flex items-center justify-center  relative">
+              <div className="absolute -top-1 right-1 rounded-full size-4.75 bg-error text-white flex items-center justify-center">
+                <p>1</p>
+              </div>
+              <Image
+                src={BubbleChatIcon}
+                alt="chat"
+                width={24}
+                height={24}
+                className="object-contain w-6 h-6 mx-auto"
+              />
+            </div>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 // Timeline Event Card Component
-function TimelineEventCard({
-  event,
-  isLast,
-}: {
-  event: TimelineEvent;
-  isLast: boolean;
-}) {
+function TimelineEventCard({ event }: { event: any }) {
   const locationImageSrc =
-    event.location.toLowerCase().includes("discord") ||
-    event.location.toLowerCase().includes("virtual") ||
-    event.location.toLowerCase().includes("twitter")
+    (event.location || "").toLowerCase().includes("discord") ||
+    (event.location || "").toLowerCase().includes("virtual") ||
+    (event.location || "").toLowerCase().includes("twitter")
       ? "/icons/discord.svg"
       : "/icons/location.svg";
 
   return (
-    <div className="flex gap-3 sm:gap-6">
+    <div className="flex md:gap-22.5  ">
       {/* Timeline Column */}
-      <div className="flex flex-col items-center w-[70px] sm:w-[100px] shrink-0">
-        <span className="text-[12px] sm:text-[14px] font-medium text-black text-center leading-tight">
-          {event.date}
+      <div className="flex  w-39 max-w-39 shrink-0  mb-3">
+        <span className="text-[1.625rem] text-left font-medium text-black  leading-10.25">
+          {event.date || "TBD"}
         </span>
-        <div className="relative flex-1 w-px my-2 min-h-[40px]">
-          <div className="absolute inset-0 border-l-2 border-dashed border-black/30" />
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-[#FDDA23] rounded-full border-2 border-black" />
-          {!isLast && (
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-black/20 rounded-full" />
-          )}
-        </div>
       </div>
 
-      {/* Event Card */}
-      <Link
-        href={`/events/${event.id}`}
-        className="block flex-1 mb-6 sm:mb-8 min-w-0"
-      >
-        <div className="bg-[#FFEFD3] rounded-xl border border-black shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] overflow-hidden transition-transform hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
-          <div className="flex flex-col sm:flex-row">
-            {/* Left side - Image */}
-            <div className="w-full sm:w-[160px] md:w-[200px] shrink-0 h-[120px] sm:h-auto">
-              <Image
-                src={event.imageUrl}
-                width={200}
-                height={140}
-                alt={event.title}
-                className="object-cover w-full h-full"
-              />
-            </div>
+      <div className="flex gap-17.5 flex-1">
+        {/* divider */}
 
-            {/* Right side - Details */}
-            <div className="flex-1 p-3 sm:p-4 flex flex-col min-w-0">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12px] sm:text-[13px] text-black/60 mb-0.5 sm:mb-1">
-                    {event.time}
-                  </p>
-                  <h3 className="text-[14px] sm:text-[16px] font-semibold text-black leading-tight line-clamp-2">
-                    {event.title}
-                  </h3>
-                </div>
-                <span className="text-[12px] sm:text-[14px] font-semibold text-black shrink-0">
-                  {event.isFree ? "Free" : event.price}
-                </span>
+        <div className="h-full  flex flex-col gap-2">
+          <div className="rounded-full size-4.25 bg-black opacity-50" />
+          <div className="h-full w-0 border-[1.5px] border-dashed border-black  mx-auto flex-1 relative">
+            <div className="absolute w-1 h-full -left-0.5  bg-linear-to-b from-transparent to-base z-20" />
+          </div>
+        </div>
+        {/* Event Card */}
+        <Link href={`/events/${event.id}`} className="   h-full flex-1">
+          <div className="bg-surface rounded-xl  shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] p-9.5 overflow-hidden transition-all ease-in-out hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]">
+            <div className="flex flex-col sm:flex-row gap-6">
+              {/* Left side - Image */}
+              <div className="w-full flex-1 ">
+                <Image
+                  src={event.imageUrl || "/images/event1.png"}
+                  width={400}
+                  height={140}
+                  alt={event.title || "Event"}
+                  className="object-cover w-full h-full"
+                />
               </div>
 
-              <div className="mt-auto pt-2 sm:pt-3">
-                <div className="flex items-center gap-1.5 text-black/70">
-                  <Image
-                    src={locationImageSrc}
-                    alt="location"
-                    width={16}
-                    height={16}
-                    className="object-contain w-4 h-4 sm:w-[18px] sm:h-[18px]"
-                  />
-                  <span className="text-[12px] sm:text-[13px] truncate">
-                    {event.location}
-                  </span>
+              {/* Right side - Details */}
+              <div className="flex-1 p-3 sm:p-4 flex flex-col min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] text-black font-light leading-7.5 tracking-[0%] mb-4.5">
+                      {event.time || "12:00 UTC"}
+                    </p>
+                    <h3 className="text-[1.2rem] font-semibold text-black leading-5.5 line-clamp-2 mb-4.5">
+                      {event.title}
+                    </h3>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between mt-2 sm:mt-3">
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <div className="flex -space-x-1.5 sm:-space-x-2">
-                      {[1, 2, 3].map((i) => (
-                        <div
-                          key={i}
-                          className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 border-white overflow-hidden bg-gray-300"
-                        >
-                          <Image
-                            src="/images/pfp.png"
-                            width={24}
-                            height={24}
-                            alt="attendee"
-                            className="object-cover w-full h-full"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <span className="text-[11px] sm:text-[12px] text-black/60">
-                      {event.attendees} going
+                <div className="">
+                  <div className="flex items-center gap-1.5 text-black/70">
+                    <Image
+                      src={locationImageSrc}
+                      alt="Location"
+                      width={16}
+                      height={16}
+                      className="object-contain"
+                    />
+                    <span className="text-[12px] text-black ">
+                      {event.location || "Virtual"}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1 text-black text-[12px] sm:text-[13px] font-medium">
-                    <span className="hidden sm:inline">View Event</span>
-                    <span className="sm:hidden">View</span>
-                    <Image
-                      src="/icons/arrow-right.svg"
-                      width={16}
-                      height={16}
-                      alt="arrow"
-                      className="object-contain w-4 h-4 sm:w-[18px] sm:h-[18px]"
-                    />
+                  <div className="flex items-center justify-between mt-2 sm:mt-3">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
+                      {event.status && (
+                        <div
+                          className={`capitalize rounded-lg p-2.5 ${event.status === "going" ? "bg-success-light text-black" : event.status === "finished" ? "bg-base text-black" : ""} w-20.5 text-center text-xs font-medium`}
+                        >
+                          {event.status}
+                        </div>
+                      )}
+                      <div className="flex -space-x-1.5 sm:-space-x-2">
+                        {[1, 2, 3].map((i) => (
+                          <div
+                            key={i}
+                            className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 border-white overflow-hidden bg-gray-300"
+                          >
+                            <Image
+                              src="/images/pfp.png"
+                              width={24}
+                              height={24}
+                              alt="attendee"
+                              className="object-cover w-full h-full"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <span className="text-[11px] sm:text-[12px] text-black/60">
+                        {event.attendees || 0} going
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-black text-[12px] sm:text-[13px] font-medium">
+                      <span className="hidden sm:inline">View Event</span>
+                      <span className="sm:hidden">View</span>
+                      <Image
+                        src="/icons/arrow-right.svg"
+                        width={16}
+                        height={16}
+                        alt="arrow"
+                        className="object-contain w-4 h-4 sm:w-[18px] sm:h-[18px]"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </Link>
+        </Link>
+      </div>
     </div>
   );
 }
 
 // Grid Event Card Component
-function GridEventCard({ event }: { event: GridEvent }) {
+function GridEventCard({ event }: { event: any }) {
+  const color = event.color || "bg-[#E8D5F7]";
   return (
     <Link href={`/events/${event.id}`} className="block">
       <div
-        className={`${event.color} rounded-xl border border-black shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] overflow-hidden transition-transform hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]`}
+        className={`${color} rounded-xl border border-black shadow-[-4px_4px_0_rgba(0,0,0,1)] sm:shadow-[-6px_6px_0_rgba(0,0,0,1)] overflow-hidden transition-transform hover:-translate-x-0.5 hover:translate-y-0.5 hover:shadow-[-3px_3px_0_rgba(0,0,0,1)] sm:hover:-translate-x-1 sm:hover:translate-y-1 sm:hover:shadow-[-4px_4px_0_rgba(0,0,0,1)]`}
       >
         {/* Image */}
         <div className="h-[120px] sm:h-[140px] overflow-hidden">
           <Image
-            src={event.imageUrl}
+            src={event.imageUrl || "/images/event2.png"}
             width={400}
             height={140}
-            alt={event.title}
+            alt={event.title || "Event"}
             className="object-cover w-full h-full"
           />
         </div>
@@ -451,7 +407,7 @@ function GridEventCard({ event }: { event: GridEvent }) {
           </h3>
 
           <p className="text-[11px] sm:text-[12px] text-black/60 mb-1">
-            {event.date}
+            {event.date || "TBD"}
           </p>
 
           <div className="flex items-center gap-1 text-black/70 mb-2 sm:mb-3">
@@ -463,13 +419,13 @@ function GridEventCard({ event }: { event: GridEvent }) {
               className="object-contain w-3 h-3 sm:w-[14px] sm:h-[14px]"
             />
             <span className="text-[11px] sm:text-[12px] line-clamp-1">
-              {event.location}
+              {event.location || "Virtual"}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-[12px] sm:text-[13px] font-medium text-black">
-              {event.price === "$0.00" ? "Free" : event.price}
+              {event.price === "$0.00" || !event.price ? "Free" : event.price}
             </span>
             <div className="flex items-center gap-1 text-black text-[11px] sm:text-[12px] font-medium">
               <span className="hidden sm:inline">View</span>
@@ -488,54 +444,67 @@ function GridEventCard({ event }: { event: GridEvent }) {
   );
 }
 
-// My Events Section Content
-function MyEventsContent({ activeTab }: { activeTab: MyEventsTab }) {
-  let events: TimelineEvent[] = [];
+function EventCardSkeleton() {
+  return (
+    <div className="min-h-[200px] rounded-xl border-2 border-black/20 bg-black/5 animate-pulse flex items-center justify-center">
+    </div>
+  );
+}
 
-  switch (activeTab) {
-    case "upcoming":
-      events = upcomingEvents;
-      break;
-    case "hosting":
-      events = hostingEvents;
-      break;
-    case "past":
-      events = pastEvents;
-      break;
+// My Events Section Content
+function MyEventsContent({
+  activeTab,
+  events,
+  isLoading,
+}: {
+  activeTab: MyEventsTab;
+  events: any[];
+  isLoading: boolean;
+}) {
+  const isUpcomingTab = activeTab === "upcoming";
+
+  if (isLoading) {
+    return (
+      <div className="pt-4 space-y-13.25">
+        <EventCardSkeleton />
+        <EventCardSkeleton />
+      </div>
+    );
   }
 
   if (events.length === 0) {
+    if (isUpcomingTab) {
+      return <UpcomingEventsEmptyState />;
+    }
+
     return (
-      <div className="min-h-[200px] rounded-xl border-2 border-dashed border-black/20 flex items-center justify-center">
-        <p className="text-black/50 text-lg">No events found</p>
+      <div className="flex min-h-[15rem] items-center justify-center rounded-[2rem] border border-dashed border-black/20 bg-white/60 px-6 text-center">
+        <p className="text-base font-medium text-black/55">
+          No events found in this section.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="pt-4">
-      {events.map((event, index) => (
-        <TimelineEventCard
-          key={event.id}
-          event={event}
-          isLast={index === events.length - 1}
-        />
+    <div className="pt-4 space-y-13.25">
+      {events.map((event) => (
+        <TimelineEventCard key={event.id} event={event} />
       ))}
     </div>
   );
 }
 
 // For You Section Content
-function ForYouContent({ activeTab }: { activeTab: ForYouTab }) {
-  let events: GridEvent[] = [];
-
-  switch (activeTab) {
-    case "discover":
-      events = discoverEvents;
-      break;
-    case "following":
-      events = followingEvents;
-      break;
+function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab, events: any[], isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
+        <EventCardSkeleton />
+        <EventCardSkeleton />
+        <EventCardSkeleton />
+      </div>
+    );
   }
 
   if (events.length === 0) {
@@ -555,25 +524,80 @@ function ForYouContent({ activeTab }: { activeTab: ForYouTab }) {
   );
 }
 
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
 export default function HomePage() {
+  const router = useRouter();
+  const {
+    walletAddress: userWallet,
+    isAuthenticated,
+    isLoading: isAuthLoading,
+  } = useAuth();
   const [myEventsTab, setMyEventsTab] = useState<MyEventsTab>("upcoming");
   const [forYouTab, setForYouTab] = useState<ForYouTab>("discover");
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // "My Events" is personal — signed-out visitors belong on the auth page.
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      router.replace("/auth");
+    }
+  }, [isAuthLoading, isAuthenticated, router]);
+
+  const { data, isLoading: isEventsLoading } = useSWR(
+    isAuthenticated ? "/api/v1/events" : null,
+    fetcher,
+  );
+  const isLoading = isAuthLoading || isEventsLoading;
+  const allEvents = data?.events || [];
+
+  const now = new Date().getTime();
+
+  // Filter for 'My Events'
+  const upcomingEvents = allEvents.filter((e: any) => new Date(e.start_time).getTime() > now); // assuming user has ticket logically mapped
+  const hostingEvents = userWallet
+    ? allEvents.filter((e: any) => e.organizer_wallet === userWallet)
+    : [];
+  const pastEvents = allEvents.filter((e: any) => new Date(e.end_time).getTime() < now);
+
+  let displayedMyEvents = [];
+  if (myEventsTab === "upcoming") displayedMyEvents = upcomingEvents;
+  else if (myEventsTab === "hosting") displayedMyEvents = hostingEvents;
+  else if (myEventsTab === "past") displayedMyEvents = pastEvents;
+
+  // Filter for 'For You'
+  const discoverEvents = allEvents.slice(0, 6); // simple pagination mock
+  const followingEvents = allEvents.slice(0, 4);
+
+  let displayedForYouEvents = [];
+  if (forYouTab === "discover") displayedForYouEvents = discoverEvents;
+  else if (forYouTab === "following") displayedForYouEvents = followingEvents;
 
   return (
-    <div className="min-h-screen bg-[#FFFDF0]">
+    <div className="min-h-screen bg-base-alt">
       <Navbar />
 
-      <main className="w-full max-w-[1221px] mx-auto px-3 sm:px-4 lg:px-6 xl:px-0 pt-6 sm:pt-[35px] pb-12 sm:pb-20">
+      <main className="w-full max-w-304.5 mx-auto px-3 sm:px-4 lg:px-6 xl:px-0 pt-6 sm:pt-22.5 pb-12 sm:pb-20">
         {/* My Events Section */}
-        <section className="mb-10 sm:mb-16">
+        <section className="mb-10 sm:mb-16 space-y-15">
           <SectionHeader
             title="My Events"
             tabs={myEventsTabs}
             activeTab={myEventsTab}
             onTabChange={setMyEventsTab}
             layoutId="my-events-toggle"
+            hasNotifications={true}
+            onChatClick={() => setIsChatOpen((prev) => !prev)}
           />
-          <MyEventsContent activeTab={myEventsTab} />
+
+          {/* Chat Sidebar (shown when toggled) */}
+          {isChatOpen && (
+            <div className="flex justify-end mb-4">
+              <ChatSidebar onNewChat={() => setIsChatOpen(false)} />
+            </div>
+          )}
+
+          <MyEventsContent activeTab={myEventsTab} events={displayedMyEvents} isLoading={isLoading} />
         </section>
 
         {/* For You Section */}
@@ -585,7 +609,7 @@ export default function HomePage() {
             onTabChange={setForYouTab}
             layoutId="for-you-toggle"
           />
-          <ForYouContent activeTab={forYouTab} />
+          <ForYouContent activeTab={forYouTab} events={displayedForYouEvents} isLoading={isLoading} />
         </section>
       </main>
 
@@ -593,3 +617,4 @@ export default function HomePage() {
     </div>
   );
 }
+

@@ -1,7 +1,19 @@
-use soroban_sdk::{contracttype, Address, BytesN, String};
+use soroban_sdk::{contracttype, Address, String};
 
 pub const TRANSFER_FEE_BPS: u32 = 100;
 pub const MAX_BPS: u32 = 10000;
+
+// Re-export DataKey from the dedicated keys module so all existing imports continue to work.
+pub use crate::keys::DataKey;
+
+// Re-export payment-specific types from the dedicated payment_types module.
+pub use crate::payment_types::{DiscountData, HighestBid, PurchaseOptions};
+
+// Re-export governance-related types from the dedicated governance module.
+pub use crate::governance::{ParameterChange, ParameterProposal, ProposalStatus};
+
+// Re-export escrow-related types from the dedicated escrow module.
+pub use crate::escrow::{EscrowMilestone, EscrowState};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -13,35 +25,9 @@ pub struct AuctionConfig {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ParameterChange {
-    AddGovernor(Address),
-    RemoveGovernor(Address),
-    AddTokenToWhitelist(Address),
-    RemoveTokenFromWhitelist(Address),
-    UpdateWithdrawalCap(Address, i128), // This is still i128 amount
-    UpdateSlippage(u32),
-    UpdateTransferFee(String, u32), // Changed from i128 to u32 basis points
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ProposalStatus {
-    Pending,
-    Executed,
-    Rejected,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ParameterProposal {
-    pub id: u64,
-    pub proposer: Address,
-    pub change: ParameterChange,
-    pub status: ProposalStatus,
-    pub created_at: u64,
-    pub expires_at: u64,
-    pub vote_count: u32,
-    pub voters: soroban_sdk::Vec<Address>,
+pub struct PriceSchedule {
+    pub price: i128,
+    pub valid_until: u64,
 }
 
 #[contracttype]
@@ -60,8 +46,10 @@ pub struct Payment {
     pub payment_id: String,
     pub event_id: String,
     pub buyer_address: Address,
+    pub owner_address: Address, // The recipient who owns the ticket (can be different from buyer)
     pub ticket_tier_id: String,
-    pub amount: i128, // USDC amount in stroops
+    pub token_address: Address,
+    pub amount: i128, // Payment token amount in stroops
     pub platform_fee: i128,
     pub organizer_amount: i128,
     pub status: PaymentStatus,
@@ -69,6 +57,10 @@ pub struct Payment {
     pub created_at: u64,
     pub confirmed_at: Option<u64>,
     pub refunded_amount: i128,
+    pub is_soulbound: bool,
+    pub last_checked_in_at: u64,
+    pub referral_amount: i128,
+    pub referrer: Option<Address>,
 }
 
 #[contracttype]
@@ -135,4 +127,8 @@ pub enum DataKey {
     EventPaymentStatus(String, PaymentStatus),
     /// Individual entry for status index: (event_id, status, payment_id) -> bool
     EventPaymentStatusEntry(String, PaymentStatus, String),
+    /// Resale escrow listing: payment_id -> ResaleListing
+    ResaleListing(String),
+    /// Royalty bps override for an event's resale: event_id -> u32
+    ResaleRoyaltyBps(String),
 }

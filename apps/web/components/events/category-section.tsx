@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
 import { motion, type Transition } from "framer-motion";
-import Image from "next/image";
+import useSWR from "swr";
+import { fetchCategories, type DiscoverCategory } from "@/utils/api";
+import { CategoryChips } from "./category-chips";
 
-const categories = [
+const defaultCategories: DiscoverCategory[] = [
   { name: "Tech", icon: "/icons/Tech.svg", color: "#DBF4B9" },
   { name: "Party", icon: "/icons/party.svg", color: "#FFA4D5" },
   { name: "global", icon: "/icons/global.svg", color: "#B9C7FE" },
@@ -46,7 +49,7 @@ interface CategorySectionProps {
 
 export function CategorySection({ selectedCategory, onCategoryChange }: CategorySectionProps) {
   return (
-    <section className="px-4 bg-[#FFFBE9] pt-12 pb-6">
+    <section className="px-4 bg-base pt-12 pb-6">
       <div className="mx-auto max-w-[1221px]">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -64,12 +67,18 @@ export function CategorySection({ selectedCategory, onCategoryChange }: Category
         </motion.div>
 
         <motion.div variants={container} initial="hidden" animate="show">
-          <motion.h3
-            variants={item}
-            className="font-semibold text-xl mb-6 flex items-center gap-2"
-          >
-            Browse by Category
-          </motion.h3>
+          {/* Heading is suppressed while loading so it doesn't float above skeletons */}
+          {!isLoading && (
+            <motion.h3
+              variants={item}
+              className="font-semibold text-xl mb-6 flex items-center gap-2"
+            >
+              Browse by Category
+            </motion.h3>
+          )}
+          {isLoading && (
+            <div className="h-7 w-48 rounded-md bg-black/10 animate-pulse mb-6" />
+          )}
 
           <motion.div variants={container} className="flex flex-wrap gap-4">
             {categories.map((category) => (

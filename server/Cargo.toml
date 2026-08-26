@@ -5,19 +5,23 @@ edition = "2021"
 
 [dependencies]
 # Web framework
-axum = "0.7"
+axum = { version = "0.7", features = ["ws", "multipart"] }
 
 # Async runtime
 tokio = { version = "1.37", features = ["full"] }
 
 # Middleware
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit", "catch-panic"] }
 pin-project = "1.1"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Redis caching (exchange rate cache)
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 
 # Env handling (recommended)
 dotenvy = "0.15"
@@ -32,6 +36,59 @@ rust_decimal = { version = "1.33", features = ["db-postgres"] }
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async trait support for notification providers
+async-trait = "0.1"
+
+# HTTP body buffering for audit middleware
+bytes = "1.0"
+http-body-util = "0.1"
+
+# Cryptography for QR payload signing
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+rand = "0.8"
+base64 = "0.21"
+hex = "0.4"
+
+# SHA-256 for the waiting-room proof-of-work challenge (Issue #1187)
+sha2 = "0.10"
+
+# ristretto255 group arithmetic for the zero-knowledge ticket attestation
+# (Issue #1186). Already in the tree transitively via ed25519-dalek; named
+# explicitly here because `utils::zkp_verifier` depends on it directly.
+curve25519-dalek = "4.1"
+
+# Streaming (SSE) support for the waiting-room queue position stream (Issue #1187)
+async-stream = "0.3"
+futures-util = "0.3"
+
+
+# Rate limiting (using built-in RateLimitLayer only; tower_governor requires axum 0.8)
+
+# System monitoring
+sysinfo = "0.30"
+
+# JWT authentication (Issue #484)
+jsonwebtoken = "9.3"
+
+# AWS S3 for image uploads
+aws-sdk-s3 = "1.82"
+aws-credential-types = "1.2"
+aws-config = "1.5"
+
+# Lazy static initialization
+once_cell = "1.19"
+stellar-strkey = "0.0.18"
+stellar-xdr = { version = "23.0.0", features = ["base64"] }
+utoipa = "5.5.0"
+utoipa-swagger-ui = { version = "8.0.3", features = ["axum"] }
+axum-extra = { version = "0.12.6", features = ["cookie"] }
+
+# Prometheus metrics
+prometheus = { version = "0.13", features = ["process"] }
+dashmap = "6.2.1"
+
+# Currency conversion HTTP client already covered by reqwest above
 
 # Testing
 [dev-dependencies]

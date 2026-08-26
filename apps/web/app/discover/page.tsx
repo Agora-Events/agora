@@ -7,6 +7,8 @@ import { CategorySection } from "@/components/events/category-section";
 import { PopularEventsSection } from "@/components/events/popular-events-section";
 import { OrganizerComponent } from "@/components/events/organizer-component";
 import { Footer } from "@/components/layout/footer";
+import { EmptyState } from "@/components/ui/empty-state";
+import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 
 function DiscoverContent() {
   const router = useRouter();
@@ -28,7 +30,7 @@ function DiscoverContent() {
   };
 
   return (
-    <main className="flex flex-col min-h-screen bg-[#FFFBE9]">
+    <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
       <CategorySection selectedCategory={category} onCategoryChange={(value) => updateFilter("category", value)} />
       <PopularEventsSection category={category} onCategoryChange={(value) => updateFilter("category", value)} />

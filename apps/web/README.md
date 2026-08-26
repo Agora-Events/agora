@@ -49,6 +49,7 @@ import { Button } from "@/components/ui/button";
 
 - **Navbar**: Located in `components/layout/navbar.tsx`.
 - **Footer**: Located in `components/layout/footer.tsx`.
+- **Component Catalog**: See `DOCS/COMPONENTS.md` for the reusable component library, folder map, and contribution rules.
 
 These should be used in your page layouts (e.g., `app/page.tsx`) to maintain a consistent wrapper.
 
@@ -62,6 +63,11 @@ These should be used in your page layouts (e.g., `app/page.tsx`) to maintain a c
    Before submitting a PR, please ensure your code is linted:
    ```bash
    pnpm lint
+   ```
+3. **Type Checking**:
+   Run TypeScript type checks across all web app files, tests, and stories:
+   ```bash
+   pnpm typecheck
    ```
 
 ---

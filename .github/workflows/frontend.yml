@@ -24,8 +24,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "pnpm"
+          node-version: "24"
 
       - name: Install dependencies
         run: pnpm install
@@ -33,5 +32,9 @@ jobs:
       - name: Lint
         run: pnpm --filter web lint
 
+      - name: Type check
+        run: pnpm --filter web typecheck
+
       - name: Build
         run: pnpm --filter web build
+

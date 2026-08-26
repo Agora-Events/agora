@@ -1,3 +1,10 @@
+// Toast Notification System (sonner)
+// Usage: import { toast } from "sonner";
+//   toast.success("Event created!")
+//   toast.error("Something went wrong")
+//   toast.info("Loading...")
+// Toaster is globally mounted below — no per-page setup needed.
+
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { CookieBanner } from "@/components/layout/cookie-banner";
@@ -31,6 +38,11 @@ export const metadata: Metadata = {
     type: "website",
   },
 };
+
+import { Suspense } from "react";
+import LoadingBar from "@/components/ui/loading-bar";
+import { ThemeProvider } from "@/components/providers/theme-context";
+import { AttributionCapture } from "@/components/analytics/attribution-capture";
 
 export default function RootLayout({
   children,

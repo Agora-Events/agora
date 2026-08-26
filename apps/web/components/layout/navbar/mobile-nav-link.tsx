@@ -10,6 +10,7 @@ export function MobileNavLink({
   i,
   isActive,
   onClose,
+  ariaLabel,
 }: {
   href: string;
   icon: string;
@@ -17,6 +18,7 @@ export function MobileNavLink({
   i: number;
   isActive: boolean;
   onClose?: () => void;
+  ariaLabel?: string;
 }) {
   const linkVariants = {
     closed: { opacity: 0, x: 20 },
@@ -36,12 +38,14 @@ export function MobileNavLink({
       <Link
         href={href}
         onClick={onClose}
-        className={`flex items-center gap-3 text-lg font-medium transition-colors p-2 rounded-lg ${
-          isActive ? "text-[#FDDA23]" : "hover:opacity-80"
+        aria-label={ariaLabel}
+        aria-current={isActive ? "page" : undefined}
+        className={`flex items-center gap-3 text-lg font-medium transition-colors p-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
+          isActive ? "text-accent" : "hover:opacity-80"
         }`}
       >
         <div
-          className={`w-6 h-6 transition-colors ${isActive ? "bg-[#FDDA23]" : "bg-black"}`}
+          className={`w-6 h-6 transition-colors ${isActive ? "bg-accent" : "bg-black"}`}
           style={{
             maskImage: `url("${icon}")`,
             WebkitMaskImage: `url("${icon}")`,
