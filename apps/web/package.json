@@ -7,6 +7,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:ci": "vitest run --coverage --thresholds.coverageMap=80",
     "test:visual": "playwright test",
@@ -15,7 +16,11 @@
     "storybook": "storybook dev -p 6006",
     "prebuild-storybook": "node ../../scripts/fix-storybook-next.js",
     "build-storybook": "storybook build",
-    "chromatic": "chromatic --exit-zero-on-changes"
+    "chromatic": "chromatic --exit-zero-on-changes",
+    "db:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^7.8.0",
@@ -40,6 +45,7 @@
     "zod": "3.24.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.1",
     "@storybook/addon-docs": "^10.5.3",
     "@storybook/nextjs-vite": "10.5.3",
     "@storybook/react": "^10.5.3",
@@ -64,6 +70,7 @@
     "prisma": "^7.8.0",
     "storybook": "^10.5.3",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "typescript": "^5",
     "vite": "^7.0.0",
     "vitest": "^3.2.4",

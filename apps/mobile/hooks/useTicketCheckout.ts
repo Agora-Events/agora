@@ -149,6 +149,8 @@ export interface StartCheckoutParams {
   quantity: number;
   buyerPublicKey: string;
   recipientAddress?: string | null;
+  /** Signed waiting-room checkout access grant (Issue #1187). */
+  grantToken?: string | null;
 }
 
 export interface UseTicketCheckoutResult {
@@ -273,6 +275,7 @@ export function useTicketCheckout(): UseTicketCheckoutResult {
           paymentTxHash: purchaseResult.paymentTxHash,
           buyerPublicKey: purchaseResult.buyerPublicKey,
           completedAt: new Date().toISOString(),
+          grantToken: params.grantToken ?? undefined,
         },
       });
     } catch (error) {

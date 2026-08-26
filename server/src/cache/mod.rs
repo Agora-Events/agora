@@ -102,6 +102,12 @@ impl RedisCache {
     pub async fn ping(&mut self) -> Result<(), RedisError> {
         redis::cmd("PING").query_async(&mut self.client).await
     }
+
+    /// Clone the underlying multiplexed connection manager so services can
+    /// issue raw Redis commands (e.g. the waiting-room queue engine, #1187).
+    pub fn connection(&self) -> redis::aio::ConnectionManager {
+        self.client.clone()
+    }
 }
 
 #[async_trait]

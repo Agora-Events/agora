@@ -16,9 +16,7 @@ use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::cache::{
-    RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL,
-};
+use crate::cache::{RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL};
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
@@ -342,20 +340,6 @@ fn build_event_where_clause(
         ));
     }
 
-    let where_clause = if where_clauses.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", where_clauses.join(" AND "))
-    };
-
-    // Count total items
-    let count_query = format!("SELECT COUNT(*) FROM events e {}", where_clause);
-    let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
-    
-    if let Some(organizer_id) = filters.organizer_id {
-        count_query_builder = count_query_builder.bind(organizer_id);
-    }
-
     if let Some(_min_tickets) = filters.min_tickets_available {
         param_count += 1;
         where_clauses.push(format!(
@@ -388,27 +372,6 @@ fn build_event_where_clause(
             where_clauses.push("is_featured = FALSE".to_string());
         }
     };
-    
-    // Fetch paginated items, joining ticket_tiers to expose total/minted ticket counts
-    let items_query = format!(
-        "SELECT e.*, \
-         COALESCE(SUM(tt.total_quantity), 0)::bigint AS total_tickets, \
-         COALESCE(SUM(tt.total_quantity - tt.available_quantity), 0)::bigint AS minted_tickets \
-         FROM events e \
-         LEFT JOIN ticket_tiers tt ON tt.event_id = e.id \
-         {} \
-         GROUP BY e.id \
-         ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
-        where_clause,
-        param_count + 1,
-        param_count + 2
-    );
-    
-    let mut items_query_builder = sqlx::query_as::<_, Event>(&items_query);
-    
-    if let Some(organizer_id) = filters.organizer_id {
-        items_query_builder = items_query_builder.bind(organizer_id);
-    }
 
     // Cursor condition for keyset pagination on the active sort column.
     if cursor.is_some() {
@@ -1055,7 +1018,10 @@ mod tests {
         let end = start - chrono::Duration::hours(1); // end before start
         let result = validate_event_timestamps(start, Some(end));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("end_time must be strictly after start_time"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("end_time must be strictly after start_time"));
     }
 
     #[test]
@@ -1064,7 +1030,10 @@ mod tests {
         let end = start; // end equals start
         let result = validate_event_timestamps(start, Some(end));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("end_time must be strictly after start_time"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("end_time must be strictly after start_time"));
     }
 
     #[test]
@@ -1073,7 +1042,10 @@ mod tests {
         let end = Some(start + chrono::Duration::hours(2));
         let result = validate_event_timestamps(start, end);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("start_time must be in the future"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("start_time must be in the future"));
     }
 
     #[test]
@@ -1105,7 +1077,10 @@ mod tests {
         let end = Some(start + chrono::Duration::days(31)); // 31 days exceeds max
         let result = validate_event_timestamps(start, end);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("event duration must not exceed"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("event duration must not exceed"));
     }
 
     #[test]
@@ -1426,7 +1401,11 @@ pub async fn list_events(
     // Normalize search: treat whitespace-only search as no search term at all,
     // so a single space doesn't match every event via `% %` ILIKE.
     if let Some(trimmed) = filters.search.as_ref().map(|s| s.trim().to_string()) {
-        filters.search = if trimmed.is_empty() { None } else { Some(trimmed) };
+        filters.search = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        };
     }
 
     // Build the WHERE clause dynamically based on filters
@@ -1869,7 +1848,11 @@ pub async fn get_event(
         {
             Ok(rows) => Some(rows),
             Err(e) => {
-                tracing::warn!("Failed to fetch ticket tiers for event {}: {:?}", event_id, e);
+                tracing::warn!(
+                    "Failed to fetch ticket tiers for event {}: {:?}",
+                    event_id,
+                    e
+                );
                 None
             }
         }
@@ -2106,9 +2089,12 @@ fn validate_event_coordinates(
 /// Validates event timestamps for create/update requests.
 /// Ensures start_time is not too far in the past, end_time > start_time (if provided),
 /// and event duration does not exceed the maximum allowed.
-fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTime<Utc>>) -> Result<(), AppError> {
+fn validate_event_timestamps(
+    start_time: DateTime<Utc>,
+    end_time: Option<DateTime<Utc>>,
+) -> Result<(), AppError> {
     let now = Utc::now();
-    
+
     // Check that start_time is not too far in the past (with grace period)
     let grace_period = chrono::Duration::seconds(START_TIME_GRACE_PERIOD_SECONDS);
     if start_time + grace_period < now {
@@ -2116,7 +2102,7 @@ fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTim
             "start_time must be in the future or within the grace period".to_string(),
         ));
     }
-    
+
     // If end_time is provided, validate it
     if let Some(end) = end_time {
         // end_time must be strictly after start_time
@@ -2125,7 +2111,7 @@ fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTim
                 "end_time must be strictly after start_time".to_string(),
             ));
         }
-        
+
         // Check event duration does not exceed maximum
         let max_duration = chrono::Duration::days(MAX_EVENT_DURATION_DAYS);
         if end - start_time > max_duration {
@@ -2135,7 +2121,7 @@ fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTim
             )));
         }
     }
-    
+
     Ok(())
 }
 
@@ -2345,7 +2331,8 @@ pub async fn submit_event_rating(
     if maybe_end_time.is_none() {
         // event not found or flagged
         log_if_slow("submit_event_rating", start.elapsed());
-        return AppError::NotFound(format!("Event with id '{}' not found", event_id)).into_response();
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
     }
 
     if let Some(end_time) = maybe_end_time.unwrap() {
@@ -3747,6 +3734,37 @@ pub struct MapEvent {
     pub distance_km: f64,
 }
 
+/// Parses a single row from the `get_events_map` distance query into an
+/// `Event` plus its computed `distance_km`. Pulled out of `get_events_map`
+/// itself because `?` can only be used in a function returning `Result`/
+/// `Option`, and that handler returns a bare `Response`.
+fn map_event_row(row: &sqlx::postgres::PgRow) -> Result<(Event, f64), sqlx::Error> {
+    let event = Event {
+        id: row.try_get("id")?,
+        organizer_id: row.try_get("organizer_id")?,
+        title: row.try_get("title")?,
+        description: row.try_get("description")?,
+        location: row.try_get("location")?,
+        start_time: row.try_get("start_time")?,
+        end_time: row.try_get("end_time")?,
+        is_flagged: row.try_get("is_flagged")?,
+        is_featured: row.try_get("is_featured")?,
+        sum_of_ratings: row.try_get("sum_of_ratings")?,
+        count_of_ratings: row.try_get("count_of_ratings")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+        image_url: row.try_get("image_url")?,
+        latitude: row.try_get("latitude")?,
+        longitude: row.try_get("longitude")?,
+        is_free: false,
+        is_free_populated: false,
+        total_tickets: 0,
+        minted_tickets: 0,
+    };
+    let distance_km: f64 = row.try_get("distance_km")?;
+    Ok((event, distance_km))
+}
+
 /// GET /api/v1/events/map
 ///
 /// Returns upcoming events within a given radius of a geographic coordinate,
@@ -3770,16 +3788,12 @@ pub async fn get_events_map(
     let limit = (params.limit.unwrap_or(50) as i64).clamp(1, 200);
 
     if !(-90.0..=90.0).contains(&lat) {
-        return AppError::ValidationError(
-            "latitude must be between -90 and 90".to_string(),
-        )
-        .into_response();
+        return AppError::ValidationError("latitude must be between -90 and 90".to_string())
+            .into_response();
     }
     if !(-180.0..=180.0).contains(&lng) {
-        return AppError::ValidationError(
-            "longitude must be between -180 and 180".to_string(),
-        )
-        .into_response();
+        return AppError::ValidationError("longitude must be between -180 and 180".to_string())
+            .into_response();
     }
 
     let rad_lat = lat.to_radians();
@@ -3822,43 +3836,28 @@ pub async fn get_events_map(
         }
     };
 
-    let mut events: Vec<MapEvent> = Vec::with_capacity(rows.len());
-    for row in rows {
-        use sqlx::Row;
-        let event = Event {
-            id: row.try_get("id")?,
-            organizer_id: row.try_get("organizer_id")?,
-            title: row.try_get("title")?,
-            description: row.try_get("description")?,
-            location: row.try_get("location")?,
-            start_time: row.try_get("start_time")?,
-            end_time: row.try_get("end_time")?,
-            is_flagged: row.try_get("is_flagged")?,
-            is_featured: row.try_get("is_featured")?,
-            sum_of_ratings: row.try_get("sum_of_ratings")?,
-            count_of_ratings: row.try_get("count_of_ratings")?,
-            created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
-            image_url: row.try_get("image_url")?,
-            latitude: row.try_get("latitude")?,
-            longitude: row.try_get("longitude")?,
-            is_free: false,
-            is_free_populated: false,
-            total_tickets: 0,
-            minted_tickets: 0,
-        };
-        let distance_km: f64 = row.try_get("distance_km")?;
-        events.push(MapEvent {
-            event,
-            distance_km,
-        });
+    let mut parsed_events: Vec<Event> = Vec::with_capacity(rows.len());
+    let mut distances: Vec<f64> = Vec::with_capacity(rows.len());
+    for row in &rows {
+        match map_event_row(row) {
+            Ok((event, distance_km)) => {
+                parsed_events.push(event);
+                distances.push(distance_km);
+            }
+            Err(e) => {
+                tracing::error!("Failed to parse map event row: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        }
     }
 
-    populate_is_free(
-        &mut events.iter_mut().map(|m| &mut m.event).collect::<Vec<&mut Event>>(),
-        &state.pool,
-    )
-    .await;
+    populate_is_free(&mut parsed_events, &state.pool).await;
+
+    let events: Vec<MapEvent> = parsed_events
+        .into_iter()
+        .zip(distances)
+        .map(|(event, distance_km)| MapEvent { event, distance_km })
+        .collect();
 
     success(events, "Map events retrieved successfully").into_response()
 }
@@ -3915,7 +3914,7 @@ pub async fn get_event_organizer(
          FROM events e \
          LEFT JOIN ticket_tiers tt ON tt.event_id = e.id \
          WHERE e.id = $1 \
-         GROUP BY e.id"
+         GROUP BY e.id",
     )
     .bind(event_id)
     .fetch_optional(&state.pool)
@@ -4504,7 +4503,10 @@ fn test_event_detail_tiers_omitted_when_none() {
 
     let json = serde_json::to_value(&detail).unwrap();
     // `tiers` must not appear in the response when None.
-    assert!(json.get("tiers").is_none(), "tiers should be omitted when None");
+    assert!(
+        json.get("tiers").is_none(),
+        "tiers should be omitted when None"
+    );
 }
 
 #[test]
@@ -4553,7 +4555,9 @@ fn test_event_detail_tiers_present_when_some() {
     };
 
     let json = serde_json::to_value(&detail).unwrap();
-    let tiers = json.get("tiers").expect("tiers should be present when Some");
+    let tiers = json
+        .get("tiers")
+        .expect("tiers should be present when Some");
     assert!(tiers.is_array());
     assert_eq!(tiers.as_array().unwrap().len(), 1);
     assert_eq!(tiers[0]["name"], "VIP");

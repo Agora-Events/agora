@@ -36,7 +36,7 @@ afterAll(() => {
 });
 
 const createWrapper = () => {
-  return ({ children }: { children: ReactNode }) => (
+  return ({ children }: { children: any }) => (
     <SWRConfig
       value={{
         provider: () => new Map(),
@@ -53,7 +53,7 @@ const createWrapper = () => {
 
 /** Minimal error boundary to catch errors thrown by the hook under test. */
 class ErrorBoundary extends Component<
-  { children: ReactNode; onError: (e: Error) => void },
+  { children: any; onError: (e: Error) => void },
   { caught: boolean }
 > {
   state = { caught: false };

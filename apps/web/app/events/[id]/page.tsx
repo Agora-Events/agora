@@ -9,6 +9,7 @@ import MapClient from "@/components/events/map-client";
 import { buildMetadata } from "@/components/layout/seo";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EventPageView } from "@/components/analytics/event-page-view";
+import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
 
 export async function generateMetadata({
   params,
@@ -243,6 +244,17 @@ export default async function EventDetailPage({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Secondary Marketplace Section */}
+        <div className="w-full mt-16 sm:mt-20">
+          <div className="flex items-center gap-3 mb-6 sm:mb-8">
+            <div className="w-1 h-8 bg-accent rounded-full" aria-hidden="true" />
+            <h2 className="text-[22px] sm:text-[24px] font-bold text-black font-heading">
+              Secondary Marketplace
+            </h2>
+          </div>
+          <SecondaryMarketplaceTab eventId={eventId} />
         </div>
       </div>
 

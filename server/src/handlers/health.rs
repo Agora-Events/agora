@@ -1,4 +1,8 @@
-use axum::{extract::State, response::IntoResponse, response::Response};
+use axum::{
+    extract::{FromRef, State},
+    response::IntoResponse,
+    response::Response,
+};
 use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
@@ -6,8 +10,30 @@ use sqlx::PgPool;
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use crate::cache::RedisCache;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
+
+/// Combined state for the `/health` route, which — unlike its siblings
+/// (`/health/db`, `/health/redis`, ...) — needs both the DB pool and the
+/// Redis client to report a single combined status.
+#[derive(Clone)]
+pub struct HealthState {
+    pub pool: PgPool,
+    pub redis: RedisCache,
+}
+
+impl FromRef<HealthState> for PgPool {
+    fn from_ref(state: &HealthState) -> Self {
+        state.pool.clone()
+    }
+}
+
+impl FromRef<HealthState> for RedisCache {
+    fn from_ref(state: &HealthState) -> Self {
+        state.redis.clone()
+    }
+}
 
 static CATEGORY_SYNC_STATUS: LazyLock<std::sync::Mutex<bool>> =
     LazyLock::new(|| std::sync::Mutex::new(true));
@@ -59,7 +85,10 @@ struct HealthBlockchainResponse {
         (status = 200, description = "API is healthy", body = HealthResponse)
     )
 )]
-pub async fn health_check(State(pool): State<PgPool>, State(mut redis): State<crate::cache::RedisCache>) -> Response {
+pub async fn health_check(
+    State(pool): State<PgPool>,
+    State(mut redis): State<crate::cache::RedisCache>,
+) -> Response {
     let category_sync = *CATEGORY_SYNC_STATUS.lock().unwrap();
 
     // Probe database
@@ -81,7 +110,11 @@ pub async fn health_check(State(pool): State<PgPool>, State(mut redis): State<cr
     let db_status = if db_ok { "ok" } else { "unreachable" };
     let redis_status = if redis_ok { "ok" } else { "unreachable" };
 
-    tracing::error!("Health check failed: database={}, redis={}", db_status, redis_status);
+    tracing::error!(
+        "Health check failed: database={}, redis={}",
+        db_status,
+        redis_status
+    );
     AppError::ExternalServiceError(format!(
         "Service is not ready: database={}, redis={}",
         db_status, redis_status
@@ -230,6 +263,8 @@ mod tests {
             status: "ok",
             timestamp: Utc::now().to_rfc3339(),
             category_sync: true,
+            database: "ok",
+            redis: "ok",
         };
         let resp = success(payload, "API is healthy").into_response();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -252,6 +287,8 @@ mod tests {
                     status: "ok",
                     timestamp: Utc::now().to_rfc3339(),
                     category_sync: true,
+                    database: "ok",
+                    redis: "ok",
                 };
                 success(payload, "API is healthy").into_response()
             }),

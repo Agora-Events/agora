@@ -32,10 +32,7 @@ pub fn create_http_span(method: &str, route: &str, status_code: u16) -> tracing:
 
 /// Helper function to create an OpenTelemetry instrumented span for external RPC calls.
 pub fn create_rpc_span(target: &str) -> tracing::Span {
-    tracing::info_span!(
-        "rpc.external",
-        rpc.target = target
-    )
+    tracing::info_span!("rpc.external", rpc.target = target)
 }
 
 #[cfg(test)]

@@ -93,7 +93,7 @@ impl Serialize for Event {
             );
         }
 
-        let mut state = serializer.serialize_struct("Event", 18)?;
+        let mut state = serializer.serialize_struct("Event", 20)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("organizer_id", &self.organizer_id)?;
         state.serialize_field("title", &self.title)?;
@@ -111,6 +111,8 @@ impl Serialize for Event {
         state.serialize_field("latitude", &self.latitude)?;
         state.serialize_field("longitude", &self.longitude)?;
         state.serialize_field("is_free", &self.is_free)?;
+        state.serialize_field("total_tickets", &self.total_tickets)?;
+        state.serialize_field("minted_tickets", &self.minted_tickets)?;
         state.serialize_field("average_rating", &self.average_rating())?;
         state.end()
     }
@@ -371,7 +373,10 @@ mod tests {
         apply_populate_is_free(&mut events, &[]);
 
         assert!(events[0].is_free, "event with no paid tiers should be free");
-        assert!(events[0].is_free_populated, "is_free_populated must be true after populate");
+        assert!(
+            events[0].is_free_populated,
+            "is_free_populated must be true after populate"
+        );
     }
 
     #[test]
@@ -382,8 +387,14 @@ mod tests {
         // Event ID in paid list → event is paid (is_free = false).
         apply_populate_is_free(&mut events, &[paid_id]);
 
-        assert!(!events[0].is_free, "event with paid tiers should not be free");
-        assert!(events[0].is_free_populated, "is_free_populated must be true after populate");
+        assert!(
+            !events[0].is_free,
+            "event with paid tiers should not be free"
+        );
+        assert!(
+            events[0].is_free_populated,
+            "is_free_populated must be true after populate"
+        );
     }
 
     #[test]
@@ -394,8 +405,14 @@ mod tests {
 
         apply_populate_is_free(&mut events, &[paid_id]);
 
-        assert!(events[0].is_free, "first event (no paid tiers) should be free");
-        assert!(!events[1].is_free, "second event (paid tier) should not be free");
+        assert!(
+            events[0].is_free,
+            "first event (no paid tiers) should be free"
+        );
+        assert!(
+            !events[1].is_free,
+            "second event (paid tier) should not be free"
+        );
         assert!(events[0].is_free_populated);
         assert!(events[1].is_free_populated);
     }
@@ -403,7 +420,10 @@ mod tests {
     #[test]
     fn test_is_free_populated_flag_starts_false() {
         let event = make_event(Uuid::new_v4());
-        assert!(!event.is_free_populated, "flag must default to false before populate_is_free");
+        assert!(
+            !event.is_free_populated,
+            "flag must default to false before populate_is_free"
+        );
     }
 
     // ── Issue #1136: event location coordinates ─────────────────────────────

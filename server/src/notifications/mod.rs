@@ -5,6 +5,7 @@
 //! [`NotificationProvider`] and registering them in [`NotificationService`].
 
 pub mod email;
+pub mod push;
 pub mod sms;
 
 use async_trait::async_trait;

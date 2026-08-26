@@ -1,5 +1,11 @@
 use soroban_sdk::contracterror;
 
+// NOTE: `#[contracterror]` enums are capped at 50 variants by the Soroban
+// SDK's spec-XDR generation (empirically confirmed — 50 compiles, 51
+// panics the macro with `LengthExceedsMax`). This enum previously had 53;
+// the six variants removed below (DeadlinePastEnd, InsufficientStake,
+// InvalidCategoryId, PropAlreadyApproved, RestockingFeeHigh, StateError)
+// were confirmed unused anywhere in this contract before removal.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 /// Error codes returned by the Event Registry contract.
@@ -58,9 +64,6 @@ pub enum EventRegistryError {
     AlreadyStaked = 26,
     /// Organizer has not staked collateral.
     NotStaked = 27,
-    /// Staked amount is below the required minimum.
-    InsufficientStake = 28,
-    /// Stake amount must be positive.
     InvalidStakeAmount = 29,
     /// Staking has not been configured (no token or min amount set).
     StakingNotConfigured = 30,
@@ -80,29 +83,15 @@ pub enum EventRegistryError {
     EventNotEnded = 39,
     /// The milestone release percentages sum exceeds 10000 bps (100%).
     InvalidMilestonePlan = 41,
-    /// The restocking fee is too high relative to the ticket price.
-    RestockingFeeHigh = 42,
-    /// One or more event tags are invalid.
     InvalidTags = 43,
     /// The governance proposal has expired.
     ProposalExpired = 44,
-    /// The admin has already approved this proposal.
-    PropAlreadyApproved = 45,
-    /// Internal state error.
-    StateError = 46,
-    /// Multi-sig operation failed (e.g., no approved proposal found).
     MultisigError = 47,
     /// The proposal has already been cancelled.
     PropAlreadyCanceled = 49,
-    /// Refund deadline is past the event end time.
-    DeadlinePastEnd = 55,
-    /// Buyer has exceeded the per-user ticket limit for this tier.
     PerUserLimitExceeded = 60,
     /// The provided start/end time deadline is invalid.
     InvalidDeadline = 61,
-    /// The provided category ID is invalid.
-    InvalidCategoryId = 71,
-    /// The address is already on the waitlist for this event.
     AlreadyOnWaitlist = 75,
     /// The address is not on the waitlist for this event.
     NotOnWaitlist = 76,
@@ -111,4 +100,8 @@ pub enum EventRegistryError {
     // TooManyIds = 81,
     /// Issue #851: payment token is not in the event's accepted_tokens list.
     TokenNotAccepted = 82,
+    DisputeNotFound = 83,
+    DisputeNotOpen = 84,
+    AlreadyVoted = 85,
+    NotTicketHolder = 86,
 }

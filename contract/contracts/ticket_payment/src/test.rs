@@ -168,7 +168,7 @@ impl MockEventRegistry {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -257,7 +257,7 @@ impl MockEventRegistry2 {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -344,7 +344,7 @@ impl MockAuctionEventRegistry {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -376,7 +376,7 @@ impl MockEventRegistryNotFound {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -1305,7 +1305,7 @@ impl MockEventRegistryMaxSupply {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         panic!("MaxSupplyExceeded");
     }
@@ -1437,7 +1437,7 @@ impl MockEventRegistryWithInventory {
         _tier_id: String,
         _user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
@@ -1699,7 +1699,7 @@ impl MockEventRegistryWithMilestones {
         _tier_id: String,
         _user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
@@ -2134,7 +2134,7 @@ impl MockEventRegistryEarlyBird {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -2700,7 +2700,7 @@ impl MockEventRegistryWithOrganizer {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -3102,7 +3102,7 @@ impl MockPlatformRegistryE2E {
         tier_id: String,
         _user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         let mut event = env
             .storage()
@@ -3594,7 +3594,7 @@ impl MockEventRegistryRefund {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -3682,7 +3682,7 @@ impl MockEventRegistryWithResaleCap {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -3989,7 +3989,7 @@ impl MockRegistryZeroCap {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -4662,7 +4662,7 @@ impl MockEventRegistryUsdPriced {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -5417,7 +5417,7 @@ impl MockEventRegistryWithFailingLoyaltyUpdate {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -5566,7 +5566,7 @@ impl MockEventRegistryWithLoyalty {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -5663,7 +5663,7 @@ impl MockEventRegistryWithExcessiveLoyaltyDiscount {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -5912,7 +5912,7 @@ impl MockEventRegistryCustomFee {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -6062,7 +6062,7 @@ impl MockEventRegistryHighPrice {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -6191,7 +6191,7 @@ impl MockEventRegistryRefundDeadline {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -6824,7 +6824,7 @@ impl MockEventRegistryForDust {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -7054,7 +7054,7 @@ impl MockEventRegistryEnforceMaxPerUser {
         _tier_id: String,
         user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         // Track purchases per user in instance storage keyed by Address.
         let current: u32 = env.storage().instance().get(&user).unwrap_or(0u32);
@@ -7174,7 +7174,7 @@ impl MockEventRegistryUnlimitedPerUser {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         // Unlimited: accept any increments
     }
@@ -7419,7 +7419,7 @@ impl MockEventRegistryForReferral {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -7514,7 +7514,7 @@ impl MockEventRegistryFullLoyaltyDiscount {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn get_global_promo_bps(_env: Env) -> u32 {
@@ -8806,7 +8806,7 @@ impl MockTransferLockRegistry {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}
@@ -9715,7 +9715,7 @@ impl MockRegistryNoScanner {
         _tier_id: String,
         _buyer: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _buyer: Address) {}
@@ -9811,7 +9811,7 @@ impl MockRegistryWithScanner {
         _tier_id: String,
         _buyer: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _buyer: Address) {}
@@ -10077,7 +10077,7 @@ impl MockRegistryMilestone {
         _tier_id: String,
         _buyer: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _buyer: Address) {}
@@ -10254,117 +10254,520 @@ fn test_poap_minting_and_duplicate_prevention() {
     assert!(res2.is_err());
 }
 
+// ── Secondary market (issue #1184) ───────────────────────────────────────────
+//
+// The registry mock behind `setup_test_with_resale_cap` reports
+// `resale_cap_bps: Some(1000)` on a tier with a 1000 USDC face value, so the
+// ceiling under test is 1100 USDC. `setup_test`'s registry leaves the cap
+// unset, which exercises the marketplace's own 110% default.
 
-/// Issue #1277 – double-mint / duplicate-payment-ID protection.
-///
-/// Verifies that submitting `process_payment` with the same `payment_id` a
-/// second time is immediately rejected with `PaymentAlreadyExists`, and that
-/// neither the escrow balance, the total supply, nor the emitted events are
-/// affected by the failed second call.
+/// Stores a confirmed, transferable ticket owned by `owner` and returns its id.
+fn seed_resale_ticket(
+    env: &Env,
+    client: &TicketPaymentContractClient<'static>,
+    owner: &Address,
+    event_id: &str,
+    payment_id: &str,
+    amount: i128,
+) -> String {
+    let payment_id = String::from_str(env, payment_id);
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(env, event_id),
+        buyer_address: owner.clone(),
+        owner_address: owner.clone(),
+        ticket_tier_id: String::from_str(env, "general"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(env)),
+        amount,
+        platform_fee: 0,
+        organizer_amount: amount,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(env, "tx_resale"),
+        created_at: 100,
+        confirmed_at: Some(101),
+        refunded_amount: 0,
+        is_soulbound: false,
+        last_checked_in_at: 0,
+        referral_amount: 0,
+        referrer: None,
+    };
+
+    env.as_contract(&client.address, || store_payment(env, payment));
+    payment_id
+}
+
 #[test]
-fn test_double_mint_is_rejected() {
+fn test_list_for_resale_at_cap_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
 
-    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
-    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let seller = Address::generate(&env);
+    let payment_id = seed_resale_ticket(
+        &env,
+        &client,
+        &seller,
+        "event_capped",
+        "pay_resale_1",
+        1000_0000000,
+    );
 
+    // Exactly 110% of face value — the boundary must be inclusive.
+    let listing = client.list_for_resale(&payment_id, &1100_0000000);
+
+    assert_eq!(listing.seller, seller);
+    assert_eq!(listing.price, 1100_0000000);
+    assert_eq!(listing.max_price, 1100_0000000);
+    assert_eq!(
+        listing.royalty_bps,
+        crate::resale::DEFAULT_RESALE_ROYALTY_BPS
+    );
+    assert_eq!(listing.status, crate::resale::ResaleStatus::Active);
+    assert_eq!(client.get_max_resale_price(&payment_id), 1100_0000000);
+}
+
+#[test]
+fn test_list_for_resale_above_cap_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = seed_resale_ticket(
+        &env,
+        &client,
+        &seller,
+        "event_capped",
+        "pay_resale_2",
+        1000_0000000,
+    );
+
+    // One stroop over the ceiling.
+    let result = client.try_list_for_resale(&payment_id, &1100_0000001);
+    assert_eq!(result, Err(Ok(TicketPaymentError::ResalePriceExceedsCap)));
+
+    // Nothing should have been written for a rejected listing.
+    assert!(client.get_resale_listing(&payment_id).is_none());
+}
+
+#[test]
+fn test_list_for_resale_falls_back_to_default_cap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    // This registry mock leaves `resale_cap_bps` as None.
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = seed_resale_ticket(&env, &client, &seller, "event_1", "pay_resale_3", 100);
+
+    // 110% of 100 = 110, from DEFAULT_MAX_RESALE_MARKUP_BPS rather than the
+    // uncapped free market `transfer_ticket` allows.
+    assert_eq!(client.get_max_resale_price(&payment_id), 110);
+
+    let result = client.try_list_for_resale(&payment_id, &111);
+    assert_eq!(result, Err(Ok(TicketPaymentError::ResalePriceExceedsCap)));
+
+    let listing = client.list_for_resale(&payment_id, &110);
+    assert_eq!(listing.max_price, 110);
+}
+
+#[test]
+fn test_double_listing_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = seed_resale_ticket(
+        &env,
+        &client,
+        &seller,
+        "event_capped",
+        "pay_resale_4",
+        1000_0000000,
+    );
+
+    client.list_for_resale(&payment_id, &1000_0000000);
+    let result = client.try_list_for_resale(&payment_id, &1050_0000000);
+    assert_eq!(result, Err(Ok(TicketPaymentError::TicketAlreadyListed)));
+}
+
+#[test]
+fn test_cancel_then_relist() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = seed_resale_ticket(
+        &env,
+        &client,
+        &seller,
+        "event_capped",
+        "pay_resale_5",
+        1000_0000000,
+    );
+
+    client.list_for_resale(&payment_id, &1000_0000000);
+    client.cancel_resale_listing(&payment_id);
+
+    let cancelled = client.get_resale_listing(&payment_id).unwrap();
+    assert_eq!(cancelled.status, crate::resale::ResaleStatus::Cancelled);
+
+    // Cancelling twice is not allowed…
+    let result = client.try_cancel_resale_listing(&payment_id);
+    assert_eq!(result, Err(Ok(TicketPaymentError::ResaleListingNotActive)));
+
+    // …but the ticket is free to be listed again.
+    let relisted = client.list_for_resale(&payment_id, &900_0000000);
+    assert_eq!(relisted.status, crate::resale::ResaleStatus::Active);
+    assert_eq!(relisted.price, 900_0000000);
+}
+
+#[test]
+fn test_purchase_resale_ticket_settles_atomically() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
+    let usdc_mint = token::StellarAssetClient::new(&env, &usdc_id);
+    let usdc = token::Client::new(&env, &usdc_id);
+
+    let seller = Address::generate(&env);
     let buyer = Address::generate(&env);
-    let amount = 1000_0000000i128; // 1 000 USDC (matches MockEventRegistry tier_1 price)
-
-    // Fund the buyer with enough USDC for two attempted purchases.
-    usdc_token.mint(&buyer, &(amount * 2));
-    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &(amount * 2), &99999);
-
-    let payment_id = String::from_str(&env, "dup_pay_1");
-    let event_id = String::from_str(&env, "event_1");
-    let tier_id = String::from_str(&env, "tier_1");
-    let (_secret, hash) = test_secret(&env);
-
-    // ── First mint: must succeed ───────────────────────────────────────────
-    let returned_id = client.process_payment(
-        &payment_id,
-        &event_id,
-        &tier_id,
-        &buyer,
-        &None::<Address>,
-        &usdc_id,
-        &amount,
-        &1u32,
-        &crate::types::PurchaseOptions {
-            code_preimage: None,
-            referrer: None,
-            discount_code: None,
-        },
-        &hash,
-    );
-    assert_eq!(returned_id, payment_id, "first mint should succeed");
-
-    // Snapshot state after the legitimate first mint.
-    let escrow_after_first = client.get_event_escrow_balance(&event_id);
-    let events_after_first = env.events().all().len();
-
-    // ── Second mint with the same payment_id: must be rejected ────────────
-    let second_result = client.try_process_payment(
-        &payment_id,
-        &event_id,
-        &tier_id,
-        &buyer,
-        &None::<Address>,
-        &usdc_id,
-        &amount,
-        &1u32,
-        &crate::types::PurchaseOptions {
-            code_preimage: None,
-            referrer: None,
-            discount_code: None,
-        },
-        &hash,
+    let payment_id = seed_resale_ticket(
+        &env,
+        &client,
+        &seller,
+        "event_capped",
+        "pay_resale_6",
+        1000_0000000,
     );
 
-    assert!(
-        second_result.is_err(),
-        "duplicate payment_id must be rejected"
+    let price: i128 = 1100_0000000;
+    client.list_for_resale(&payment_id, &price);
+
+    usdc_mint.mint(&buyer, &price);
+    usdc.approve(&buyer, &client.address, &price, &9999);
+
+    let listing = client.purchase_resale_ticket(&payment_id, &buyer);
+
+    // 5% default royalty on 1100 USDC = 55 USDC to the organizer.
+    let expected_royalty =
+        price * crate::resale::DEFAULT_RESALE_ROYALTY_BPS as i128 / MAX_BPS as i128;
+    assert_eq!(listing.status, crate::resale::ResaleStatus::Sold);
+    assert_eq!(usdc.balance(&buyer), 0);
+    assert_eq!(usdc.balance(&seller), price - expected_royalty);
+    // Funds pass through the contract but must not be left sitting in it.
+    assert_eq!(usdc.balance(&client.address), 0);
+
+    // Ownership moved to the buyer on both fields the rest of the contract reads.
+    let payment = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(payment.buyer_address, buyer);
+    assert_eq!(payment.owner_address, buyer);
+
+    // …and the buyer index follows it.
+    assert!(client.get_buyer_payments(&buyer).contains(&payment_id));
+    assert!(!client.get_buyer_payments(&seller).contains(&payment_id));
+}
+
+#[test]
+fn test_purchase_resale_requires_allowance() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = seed_resale_ticket(
+        &env,
+        &client,
+        &seller,
+        "event_capped",
+        "pay_resale_7",
+        1000_0000000,
     );
 
-    // The error must be the dedicated double-mint error code.
-    let err = second_result.unwrap_err();
+    client.list_for_resale(&payment_id, &1000_0000000);
+
+    // No approve() call — settlement must refuse rather than half-execute.
+    let result = client.try_purchase_resale_ticket(&payment_id, &buyer);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InsufficientAllowance)));
+
+    // The listing is untouched and the ticket still belongs to the seller.
+    let listing = client.get_resale_listing(&payment_id).unwrap();
+    assert_eq!(listing.status, crate::resale::ResaleStatus::Active);
     assert_eq!(
-        err,
-        Err(TicketPaymentError::PaymentAlreadyExists.into()),
-        "expected PaymentAlreadyExists error on duplicate payment_id"
+        client
+            .get_payment_status(&payment_id)
+            .unwrap()
+            .buyer_address,
+        seller
+    );
+}
+
+#[test]
+fn test_seller_cannot_buy_own_listing() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = seed_resale_ticket(
+        &env,
+        &client,
+        &seller,
+        "event_capped",
+        "pay_resale_8",
+        1000_0000000,
     );
 
-    // ── Invariants: nothing should have changed after the failed second mint ──
+    client.list_for_resale(&payment_id, &1000_0000000);
 
-    // 1. Escrow balance unchanged.
-    let escrow_after_second = client.get_event_escrow_balance(&event_id);
-    assert_eq!(
-        escrow_after_first.platform_fee, escrow_after_second.platform_fee,
-        "platform fee escrow must not change after rejected duplicate"
-    );
-    assert_eq!(
-        escrow_after_first.organizer_amount, escrow_after_second.organizer_amount,
-        "organizer escrow must not change after rejected duplicate"
-    );
+    let result = client.try_purchase_resale_ticket(&payment_id, &seller);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
+}
 
-    // 2. No additional events emitted for the failed call.
-    let events_after_second = env.events().all().len();
+#[test]
+fn test_resale_royalty_bps_is_configurable_and_bounded() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let event_id = String::from_str(&env, "event_capped");
     assert_eq!(
-        events_after_first, events_after_second,
-        "no new contract events should be emitted for a rejected duplicate mint"
+        client.get_resale_royalty_bps(&event_id),
+        crate::resale::DEFAULT_RESALE_ROYALTY_BPS
     );
 
-    // 3. The stored payment record is the one from the FIRST call (not overwritten).
-    let stored = client
-        .get_payment_status(&payment_id)
-        .expect("payment record must exist");
-    assert_eq!(
-        stored.buyer_address, buyer,
-        "stored payment should belong to the original buyer"
+    client.set_resale_royalty_bps(&event_id, &250);
+    assert_eq!(client.get_resale_royalty_bps(&event_id), 250);
+
+    let result =
+        client.try_set_resale_royalty_bps(&event_id, &(crate::resale::MAX_RESALE_ROYALTY_BPS + 1));
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidRoyaltyBps)));
+
+    // The rejected write must not have clobbered the accepted one.
+    assert_eq!(client.get_resale_royalty_bps(&event_id), 250);
+}
+
+#[test]
+fn test_listing_captures_royalty_rate_at_listing_time() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let event_id = String::from_str(&env, "event_capped");
+    let seller = Address::generate(&env);
+    let payment_id = seed_resale_ticket(
+        &env,
+        &client,
+        &seller,
+        "event_capped",
+        "pay_resale_9",
+        1000_0000000,
     );
+
+    client.set_resale_royalty_bps(&event_id, &300);
+    let listing = client.list_for_resale(&payment_id, &1000_0000000);
+    assert_eq!(listing.royalty_bps, 300);
+
+    // Raising the rate afterwards must not retroactively change what the
+    // seller agreed to when they listed.
+    client.set_resale_royalty_bps(&event_id, &2000);
+    let stored = client.get_resale_listing(&payment_id).unwrap();
+    assert_eq!(stored.royalty_bps, 300);
+}
+
+#[test]
+fn test_soulbound_ticket_cannot_be_listed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_resale_10");
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "event_capped"),
+        buyer_address: seller.clone(),
+        owner_address: seller.clone(),
+        ticket_tier_id: String::from_str(&env, "general"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
+        amount: 1000_0000000,
+        platform_fee: 0,
+        organizer_amount: 1000_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx_sb"),
+        created_at: 100,
+        confirmed_at: Some(101),
+        refunded_amount: 0,
+        is_soulbound: true,
+        last_checked_in_at: 0,
+        referral_amount: 0,
+        referrer: None,
+    };
+    env.as_contract(&client.address, || store_payment(&env, payment));
+
+    let result = client.try_list_for_resale(&payment_id, &1000_0000000);
+    assert_eq!(result, Err(Ok(TicketPaymentError::NonTransferable)));
+}
+
+// ─── Resale Escrow Tests ────────────────────────────────────────────────────
+
+#[test]
+fn test_list_for_resale_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_resale_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    // List at any price — MockEventRegistry has no resale cap for event_1
+    let ask_price = 1500_0000000i128;
+    client.list_for_resale(&payment_id, &ask_price);
+}
+
+#[test]
+fn test_list_for_resale_already_listed_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_resale_dup");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_for_resale(&payment_id, &500_0000000i128);
+
+    let result = client.try_list_for_resale(&payment_id, &600_0000000i128);
     assert_eq!(
-        stored.amount, amount,
-        "stored payment amount should match the original mint"
+        result,
+        Err(Ok(TicketPaymentError::TicketAlreadyListed.into()))
+    );
+}
+
+#[test]
+fn test_list_for_resale_price_exceeds_cap_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_resale_cap");
+    let payment = Payment {
+        payment_id: payment_id.clone(),
+        event_id: String::from_str(&env, "event_capped"),
+        buyer_address: seller.clone(),
+        ticket_tier_id: String::from_str(&env, "general"),
+        amount: 1000_0000000,
+        platform_fee: 50_0000000,
+        organizer_amount: 950_0000000,
+        status: PaymentStatus::Confirmed,
+        transaction_hash: String::from_str(&env, "tx_cap"),
+        created_at: 100,
+        confirmed_at: Some(101),
+        refunded_amount: 0,
+    };
+    env.as_contract(&client.address, || {
+        store_payment(&env, payment);
+    });
+
+    // Cap is 10% above face value (1000 USDC), so max is 1100 USDC
+    let result = client.try_list_for_resale(&payment_id, &1200_0000000i128);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::ResalePriceExceedsCap.into()))
+    );
+}
+
+#[test]
+fn test_cancel_resale_listing() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_cancel_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_for_resale(&payment_id, &1000_0000000i128);
+    client.cancel_resale_listing(&payment_id);
+
+    // Cancelling again must fail: no longer Active
+    let result = client.try_cancel_resale_listing(&payment_id);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::ResaleListingNotActive.into()))
+    );
+}
+
+#[test]
+fn test_purchase_resale_ticket_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_purchase_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    let ask_price = 1000_0000000i128;
+    client.list_for_resale(&payment_id, &ask_price);
+
+    // Fund buyer and approve
+    usdc_token.mint(&buyer, &ask_price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &ask_price, &99999);
+
+    client.purchase_resale_ticket(&payment_id, &buyer, &ask_price);
+
+    let updated = client.get_payment_status(&payment_id).unwrap();
+    assert_eq!(updated.buyer_address, buyer);
+}
+
+#[test]
+fn test_purchase_resale_ticket_price_mismatch() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, usdc_id, _, _) = setup_test(&env);
+
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_mismatch_1");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    let ask_price = 1000_0000000i128;
+    client.list_for_resale(&payment_id, &ask_price);
+
+    usdc_token.mint(&buyer, &ask_price);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &ask_price, &99999);
+
+    // Buyer only willing to pay 900 USDC but listing is 1000 USDC
+    let result = client.try_purchase_resale_ticket(&payment_id, &buyer, &900_0000000i128);
+    assert_eq!(result, Err(Ok(TicketPaymentError::PriceMismatch.into())));
+}
+
+#[test]
+fn test_purchase_cancelled_listing_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let payment_id = String::from_str(&env, "pay_cancelled_buy");
+    insert_confirmed_payment(&env, &client.address, &payment_id, &seller, "event_1");
+
+    client.list_for_resale(&payment_id, &1000_0000000i128);
+    client.cancel_resale_listing(&payment_id);
+
+    let result = client.try_purchase_resale_ticket(&payment_id, &buyer, &1000_0000000i128);
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::ResaleListingNotActive.into()))
     );
 }

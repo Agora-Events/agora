@@ -90,6 +90,16 @@ function AppNavigation() {
           }}
         />
         <Stack.Screen
+          name="checkout/waiting-room"
+          options={{
+            presentation: 'modal',
+            title: 'Virtual Waiting Room',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
           name="event/[id]"
           options={{
             presentation: 'modal',
@@ -143,6 +153,15 @@ function AppNavigation() {
           name="organizer/staking"
           options={{
             title: 'Organizer Staking',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="organizer/dashboard"
+          options={{
+            title: 'Organizer Dashboard',
             headerStyle,
             headerTintColor,
             headerShadowVisible: false,

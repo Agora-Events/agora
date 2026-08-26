@@ -58,7 +58,7 @@ describe("EventCard", () => {
 
   it("handles click and navigates to event page", () => {
     const mockPush = vi.fn();
-    vi.mocked(useRouter).mockReturnValue({ push: mockPush });
+    vi.mocked(useRouter).mockReturnValue({ push: mockPush } as any);
     
     render(<EventCard {...mockEvent} />);
     

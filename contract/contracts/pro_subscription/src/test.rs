@@ -673,7 +673,10 @@ fn test_issue_876_subscribe_success() {
     assert_eq!(sub.tier, SubscriptionTier::Pro);
     assert!(sub.is_active);
     assert_eq!(sub.amount_paid, total_cost);
-    assert_eq!(sub.expires_at, env.ledger().timestamp() + SECONDS_PER_MONTH * (months as u64));
+    assert_eq!(
+        sub.expires_at,
+        env.ledger().timestamp() + SECONDS_PER_MONTH * (months as u64)
+    );
     assert!(client.is_pro_member(&organizer));
 }
 
@@ -684,7 +687,12 @@ fn test_issue_876_renew_active_subscription() {
     let monthly_price = 1_000_000i128;
 
     token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &(monthly_price * 2));
-    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &(monthly_price * 2), &99999);
+    token::Client::new(&env, &usdc).approve(
+        &organizer,
+        &client.address,
+        &(monthly_price * 2),
+        &99999,
+    );
 
     client.subscribe_pro(&organizer, &1u32);
     let initial_expiry = client.get_subscription_expiry(&organizer).unwrap();
@@ -702,7 +710,12 @@ fn test_issue_876_renew_expired_subscription() {
     let monthly_price = 1_000_000i128;
 
     token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &(monthly_price * 2));
-    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &(monthly_price * 2), &99999);
+    token::Client::new(&env, &usdc).approve(
+        &organizer,
+        &client.address,
+        &(monthly_price * 2),
+        &99999,
+    );
 
     client.subscribe_pro(&organizer, &1u32);
     let initial_sub = client.get_subscription(&organizer).unwrap();
@@ -722,7 +735,10 @@ fn test_issue_876_renew_expired_subscription() {
     client.renew_subscription(&organizer, &1u32);
     let renewed_sub = client.get_subscription(&organizer).unwrap();
 
-    assert_eq!(renewed_sub.expires_at, env.ledger().timestamp() + SECONDS_PER_MONTH);
+    assert_eq!(
+        renewed_sub.expires_at,
+        env.ledger().timestamp() + SECONDS_PER_MONTH
+    );
     assert!(client.is_pro_member(&organizer));
 }
 
