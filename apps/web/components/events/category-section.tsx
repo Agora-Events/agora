@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { motion, type Transition } from "framer-motion";
+import Image from "next/image";
 import useSWR from "swr";
 import { fetchCategories, type DiscoverCategory } from "@/utils/api";
 import { CategoryChips } from "./category-chips";

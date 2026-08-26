@@ -5,6 +5,7 @@ import { motion, Transition } from "framer-motion";
 import Image from "next/image";
 import { EventCard } from "./event-card";
 import { EventCardSkeleton } from "./event-card-skeleton";
+import { EmptyState } from "../ui/empty-state";
 import { Button } from "../ui/button";
 import { dataEvents } from "./mockups";
 import {
