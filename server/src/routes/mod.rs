@@ -20,6 +20,7 @@
 //! 4. Database connection state
 
 use crate::handlers::{delta_sync, sync_status, SyncState};
+use crate::handlers::indexer::{replay_indexer, IndexerAdminState};
 use axum::{
     middleware,
     response::IntoResponse,
@@ -417,6 +418,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/qr", qr_routes)
         .nest("/zk", zk_routes)
         .nest("/pricing", pricing_routes)
+        .nest("/sync", sync_routes)
         .merge(rates_route)
         .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
@@ -446,6 +448,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/api/v1", api_routes)
         .nest("/api/v1/admin", admin_routes.merge(admin_zk_routes))
         .merge(deep_link_routes)
+        .fallback(handle_404)
         .layer(middleware::from_fn(track_metrics))
         .layer(create_security_headers_layer())
         .layer(create_cors_layer())
@@ -454,6 +457,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .layer(propagate_request_id_layer())
         .layer(set_request_id_layer())
         .layer(catch_panic_layer())
+}
+
+async fn handle_404() -> Response {
+    crate::utils::error::ApiError::new(axum::http::StatusCode::NOT_FOUND, "Route not found").into_response()
 }
 
 /// Serve Apple App Site Association file for iOS deep linking
