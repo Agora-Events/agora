@@ -1,16 +1,17 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Playwright configuration for visual regression testing.
+ * Playwright configuration for visual regression and end-to-end testing.
  *
  * Runs against a locally-served Next.js app on port 3000.
  * Base snapshots live in tests/visual/__snapshots__ and are committed to git.
+ * Functional e2e specs (no snapshots) live under tests/e2e.
  *
  * Update snapshots:
  *   npx playwright test --update-snapshots
  */
 export default defineConfig({
-  testDir: "./tests/visual",
+  testDir: "./tests",
   // Run snapshot tests sequentially to avoid race conditions on screenshots.
   workers: 1,
   fullyParallel: false,
