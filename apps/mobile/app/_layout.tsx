@@ -169,6 +169,15 @@ function AppNavigation() {
             headerShadowVisible: false,
           }}
         />
+        <Stack.Screen
+          name="organizer/qrScanner"
+          options={{
+            title: 'Gate Scanner',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
         <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
       </Stack>
     </NavThemeProvider>

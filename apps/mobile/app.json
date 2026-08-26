@@ -33,7 +33,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-local-authentication"
+      "expo-local-authentication",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Agora uses the camera to scan attendee ticket QR codes at the gate."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
