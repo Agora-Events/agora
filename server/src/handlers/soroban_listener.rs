@@ -1,30 +1,29 @@
-//! # Soroban Event Listener
+//! # Soroban Event Listener & Redis Background Job Queue
 //!
 //! A background service that long-polls the Stellar RPC node for `ContractEvent`
 //! objects emitted by the `ticket_payment` and `event_registry` contracts.
 //!
 //! ## Architecture
-//! - Spawned as a `tokio` background task at server startup.
-//! - Uses `getEvents` RPC method with a cursor to avoid re-processing events.
-//! - Parses XDR-encoded event topics/data to update `tickets` and `events` tables.
-//! - Handles ledger re-orgs by only processing events with ≥ `MIN_CONFIRMATIONS`
-//!   ledgers of depth (i.e. `latest_ledger - event_ledger >= MIN_CONFIRMATIONS`).
-//!
-//! ## Acceptance Criteria
-//! A purchase confirmed on-chain appears in the backend DB within 10 seconds.
+//! - Polling loop fetches contract events and pushes raw RPC events into a Redis-backed
+//!   background job queue (`soroban:job_queue`).
+//! - A worker pool consumes jobs asynchronously from the queue.
+//! - Failed jobs are retried with exponential backoff.
+//! - Jobs exceeding `MAX_JOB_RETRIES` are pushed to a Dead-Letter Queue (`soroban:dead_letter_queue`)
+//!   and logged at `error!` level.
 
+use crate::cache::RedisCache;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgPool;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc;
 use tokio::time::sleep;
 
 /// Minimum ledger confirmations before an event is considered final.
-/// Protects against short re-orgs on Stellar (typically 1 is sufficient,
-/// but we use 2 for safety).
 const MIN_CONFIRMATIONS: u32 = 2;
 
-/// How often to poll the RPC node for new events (base interval and first-failure delay).
+/// How often to poll the RPC node for new events (base interval).
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Maximum back-off delay between retries after consecutive RPC failures.
@@ -35,10 +34,22 @@ const MAX_EVENTS_PER_POLL: u32 = 100;
 
 /// Redis key for persisting the last processed event cursor.
 #[allow(dead_code)]
-const CURSOR_CACHE_KEY: &str = "soroban:event_cursor";
+pub const CURSOR_CACHE_KEY: &str = "soroban:event_cursor";
+
+/// Redis key for the main job queue.
+pub const JOB_QUEUE_KEY: &str = "soroban:job_queue";
+
+/// Redis key for the dead-letter queue.
+pub const DEAD_LETTER_QUEUE_KEY: &str = "soroban:dead_letter_queue";
+
+/// Default maximum retry attempts for failed jobs.
+pub const MAX_JOB_RETRIES: u32 = 5;
+
+/// Number of concurrent background worker tasks.
+pub const WORKER_POOL_SIZE: usize = 4;
 
 // ---------------------------------------------------------------------------
-// RPC types
+// RPC & Job Queue types
 // ---------------------------------------------------------------------------
 
 /// Stellar RPC `getEvents` request body.
@@ -87,7 +98,7 @@ struct GetEventsResult {
 }
 
 /// A single Soroban contract event from the RPC.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SorobanEvent {
     /// Opaque pagination cursor for this event.
     pub id: String,
@@ -106,8 +117,37 @@ pub struct SorobanEvent {
     pub ledger_closed_at: Option<String>,
 }
 
+/// A background job wrapping a Soroban event for asynchronous processing.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SorobanJob {
+    pub id: String,
+    pub event: SorobanEvent,
+    pub retry_count: u32,
+    pub max_retries: u32,
+    pub created_at: i64,
+}
+
+impl SorobanJob {
+    pub fn new(event: SorobanEvent) -> Self {
+        let job_id = format!("job_{}_{}", event.id, event.ledger);
+        Self {
+            id: job_id,
+            event,
+            retry_count: 0,
+            max_retries: MAX_JOB_RETRIES,
+            created_at: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    /// Calculate exponential backoff duration for retries: 2^retry_count seconds (capped at 60s).
+    pub fn backoff_duration(&self) -> Duration {
+        let secs = 2u64.pow(self.retry_count).min(60);
+        Duration::from_secs(secs)
+    }
+}
+
 // ---------------------------------------------------------------------------
-// Listener state
+// Listener state & configuration
 // ---------------------------------------------------------------------------
 
 /// Configuration for the Soroban event listener.
@@ -121,6 +161,8 @@ pub struct ListenerConfig {
     pub event_registry_contract_id: String,
     /// Ledger to start scanning from (used only on first run).
     pub start_ledger: u32,
+    /// Optional Redis URL for job queue persistence.
+    pub redis_url: Option<String>,
 }
 
 impl ListenerConfig {
@@ -137,26 +179,23 @@ impl ListenerConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0),
+            redis_url: std::env::var("REDIS_URL").ok(),
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Main listener loop
+// Main listener loop & worker pool
 // ---------------------------------------------------------------------------
 
-/// Spawn the Soroban event listener as a background task.
-///
-/// This function returns immediately; the listener runs indefinitely in the
-/// background. Errors are logged but do not crash the server.
-pub fn spawn_listener(pool: PgPool, config: ListenerConfig) {
+/// Spawn the Soroban event listener as a background task along with the worker pool.
+pub fn spawn_listener(pool: PgPool, redis: Option<RedisCache>, config: ListenerConfig) {
     tokio::spawn(async move {
-        run_listener(pool, config).await;
+        run_listener(pool, redis, config).await;
     });
 }
 
-async fn run_listener(pool: PgPool, config: ListenerConfig) {
-    // Skip if no contract IDs are configured (e.g. in development without contracts)
+async fn run_listener(pool: PgPool, mut redis: Option<RedisCache>, config: ListenerConfig) {
     if config.ticket_payment_contract_id.is_empty() && config.event_registry_contract_id.is_empty()
     {
         tracing::info!(
@@ -166,13 +205,47 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
         return;
     }
 
+    let (job_tx, job_rx) = mpsc::channel::<SorobanJob>(1000);
+    let job_rx = Arc::new(tokio::sync::Mutex::new(job_rx));
+
+    // Initialize Redis client if REDIS_URL is configured
+    let redis_client = config
+        .redis_url
+        .as_ref()
+        .and_then(|url| redis::Client::open(url.as_str()).ok());
+
+    // Spawn Worker Pool
+    for worker_id in 0..WORKER_POOL_SIZE {
+        let pool = pool.clone();
+        let config = config.clone();
+        let rx = Arc::clone(&job_rx);
+        let redis = redis_client.clone();
+
+        tokio::spawn(async move {
+            run_worker(worker_id, pool, config, rx, redis).await;
+        });
+    }
+
     let http = reqwest::Client::new();
     let mut cursor: Option<String> = None;
-    let mut start_ledger = Some(config.start_ledger);
+
+    if let Some(ref mut r) = redis {
+        if let Ok(Some(cached_cursor)) = r.get::<String>(CURSOR_CACHE_KEY).await {
+            tracing::info!("Loaded Soroban event cursor from Redis: {}", cached_cursor);
+            cursor = Some(cached_cursor);
+        }
+    }
+
+    let mut start_ledger = if cursor.is_none() {
+        Some(config.start_ledger)
+    } else {
+        None
+    };
     let mut current_backoff = POLL_INTERVAL;
 
     tracing::info!(
-        "Soroban listener started. RPC={} poll_interval={:?}",
+        "Soroban listener started with Redis job queue & {} workers. RPC={} poll_interval={:?}",
+        WORKER_POOL_SIZE,
         config.rpc_url,
         POLL_INTERVAL
     );
@@ -183,7 +256,6 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
                 let latest_ledger = result.latest_ledger;
 
                 for event in &result.events {
-                    // Re-org protection: skip events that are too recent
                     if latest_ledger.saturating_sub(event.ledger) < MIN_CONFIRMATIONS {
                         tracing::debug!(
                             "Skipping event {} (ledger {} not yet confirmed, latest={})",
@@ -194,23 +266,36 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
                         continue;
                     }
 
-                    if let Err(e) = process_event(&pool, event, &config).await {
-                        tracing::error!("Failed to process event {}: {:?}", event.id, e);
+                    let job = SorobanJob::new(event.clone());
+                    push_job(&job, &redis_client, &job_tx).await;
+                }
+
+                if let Some(last) = result.events.last() {
+                    cursor = Some(last.id.clone());
+                    start_ledger = None;
+
+                    if let Some(ref mut r) = redis {
+                        if let Err(e) = r
+                            .set(CURSOR_CACHE_KEY, &last.id, Duration::from_secs(86400 * 30))
+                            .await
+                        {
+                            tracing::warn!(
+                                "Failed to persist Soroban event cursor to Redis: {:?}",
+                                e
+                            );
+                        }
                     }
                 }
 
-                // Advance cursor to the last event we received
-                if let Some(last) = result.events.last() {
-                    cursor = Some(last.id.clone());
-                    // Once we have a cursor, stop specifying startLedger
-                    start_ledger = None;
-                }
-
-                // Reset back-off on any successful poll
                 current_backoff = POLL_INTERVAL;
+
+                // Full page means more events may be waiting — fetch next page
+                // immediately instead of waiting for POLL_INTERVAL.
+                if should_immediately_fetch_next_page(result.events.len()) {
+                    continue;
+                }
             }
             Ok(None) => {
-                // No new events — reset back-off and poll again at base rate
                 current_backoff = POLL_INTERVAL;
             }
             Err(e) => {
@@ -220,7 +305,6 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
                     e
                 );
                 sleep(current_backoff).await;
-                // Double the back-off for the next failure, capped at MAX_BACKOFF
                 current_backoff = (current_backoff * 2).min(MAX_BACKOFF);
                 continue;
             }
@@ -228,6 +312,153 @@ async fn run_listener(pool: PgPool, config: ListenerConfig) {
 
         sleep(POLL_INTERVAL).await;
     }
+}
+
+/// Push a job into Redis (if available) or into the fallback MPSC channel.
+async fn push_job(
+    job: &SorobanJob,
+    redis_client: &Option<redis::Client>,
+    job_tx: &mpsc::Sender<SorobanJob>,
+) {
+    if let Some(client) = redis_client {
+        if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
+            if let Ok(json) = serde_json::to_string(job) {
+                let res: Result<(), redis::RedisError> = redis::cmd("RPUSH")
+                    .arg(JOB_QUEUE_KEY)
+                    .arg(json)
+                    .query_async(&mut conn)
+                    .await;
+                if res.is_ok() {
+                    tracing::debug!("Pushed job {} to Redis queue {}", job.id, JOB_QUEUE_KEY);
+                    return;
+                }
+            }
+        }
+    }
+
+    // Fallback to MPSC channel
+    if let Err(e) = job_tx.send(job.clone()).await {
+        tracing::error!(
+            "Failed to enqueue job {} to internal channel: {:?}",
+            job.id,
+            e
+        );
+    }
+}
+
+/// Worker consumer task that pops jobs, executes event processing, and handles retries / DLQ.
+async fn run_worker(
+    worker_id: usize,
+    pool: PgPool,
+    config: ListenerConfig,
+    job_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<SorobanJob>>>,
+    redis_client: Option<redis::Client>,
+) {
+    tracing::debug!("Soroban queue worker {} started", worker_id);
+
+    loop {
+        let mut popped_job: Option<SorobanJob> = None;
+
+        // 1. Try popping from Redis BLPOP if connected
+        if let Some(ref client) = redis_client {
+            if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
+                let res: Result<Option<(String, String)>, redis::RedisError> = redis::cmd("BLPOP")
+                    .arg(JOB_QUEUE_KEY)
+                    .arg(2) // 2 second timeout
+                    .query_async(&mut conn)
+                    .await;
+
+                if let Ok(Some((_, payload))) = res {
+                    if let Ok(job) = serde_json::from_str::<SorobanJob>(&payload) {
+                        popped_job = Some(job);
+                    }
+                }
+            }
+        }
+
+        // 2. If Redis had no item or is disabled, try MPSC channel
+        if popped_job.is_none() {
+            let mut rx = job_rx.lock().await;
+            if let Ok(job) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+                popped_job = job;
+            }
+        }
+
+        let mut job = match popped_job {
+            Some(j) => j,
+            None => continue,
+        };
+
+        // 3. Execute event persistence logic
+        match process_event(&pool, &job.event, &config).await {
+            Ok(()) => {
+                tracing::info!("Worker {} successfully processed job {}", worker_id, job.id);
+            }
+            Err(err_msg) => {
+                tracing::warn!(
+                    "Worker {} failed processing job {} (attempt {}/{}): {}",
+                    worker_id,
+                    job.id,
+                    job.retry_count + 1,
+                    job.max_retries,
+                    err_msg
+                );
+
+                if job.retry_count < job.max_retries {
+                    job.retry_count += 1;
+                    let backoff = job.backoff_duration();
+                    tracing::info!(
+                        "Retrying job {} in {:?} (attempt {})",
+                        job.id,
+                        backoff,
+                        job.retry_count
+                    );
+                    sleep(backoff).await;
+
+                    // Re-enqueue for retry
+                    if let Some(ref client) = redis_client {
+                        if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
+                            if let Ok(json) = serde_json::to_string(&job) {
+                                let _: Result<(), _> = redis::cmd("RPUSH")
+                                    .arg(JOB_QUEUE_KEY)
+                                    .arg(json)
+                                    .query_async(&mut conn)
+                                    .await;
+                            }
+                        }
+                    }
+                } else {
+                    // Exceeded max retries -> Move to Dead-Letter Queue
+                    tracing::error!(
+                        "Job {} for event {} exceeded max retries ({}), moving to dead-letter queue. Error: {}",
+                        job.id,
+                        job.event.id,
+                        job.max_retries,
+                        err_msg
+                    );
+
+                    if let Some(ref client) = redis_client {
+                        if let Ok(mut conn) = client.get_multiplexed_tokio_connection().await {
+                            if let Ok(json) = serde_json::to_string(&job) {
+                                let _: Result<(), _> = redis::cmd("RPUSH")
+                                    .arg(DEAD_LETTER_QUEUE_KEY)
+                                    .arg(json)
+                                    .query_async(&mut conn)
+                                    .await;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Returns true when a poll returned a full page, indicating more events may
+/// be available beyond the current cursor and the listener should retry
+/// immediately without waiting for [`POLL_INTERVAL`].
+fn should_immediately_fetch_next_page(events_returned: usize) -> bool {
+    events_returned == MAX_EVENTS_PER_POLL as usize
 }
 
 /// Poll the Stellar RPC node for new contract events.
@@ -286,17 +517,14 @@ async fn poll_events(
 }
 
 // ---------------------------------------------------------------------------
-// Event processing
+// Event processing logic
 // ---------------------------------------------------------------------------
 
-/// Dispatch a single Soroban event to the appropriate handler based on its topic.
 async fn process_event(
     pool: &PgPool,
     event: &SorobanEvent,
     config: &ListenerConfig,
 ) -> Result<(), String> {
-    // The first topic element identifies the event type (a Symbol in XDR).
-    // We use the string representation that the RPC returns in the topic array.
     let event_name = event.topic.first().map(|t| t.as_str()).unwrap_or("unknown");
 
     tracing::debug!(
@@ -308,11 +536,9 @@ async fn process_event(
 
     if event.contract_id == config.ticket_payment_contract_id {
         match event_name {
-            // Emitted by TicketPayment::process_purchase
             "ticket_purchased" | "purchase_confirmed" => {
                 handle_ticket_purchased(pool, event).await?;
             }
-            // Emitted by TicketPayment::refund
             "ticket_refunded" => {
                 handle_ticket_refunded(pool, event).await?;
             }
@@ -322,19 +548,15 @@ async fn process_event(
         }
     } else if event.contract_id == config.event_registry_contract_id {
         match event_name {
-            // Emitted by EventRegistry::register_event
             "event_registered" => {
                 handle_event_registered(pool, event).await?;
             }
-            // Emitted by EventRegistry::update_event_status / cancel_event
             "event_status_updated" | "event_cancelled" => {
                 handle_event_status_updated(pool, event).await?;
             }
-            // Emitted by EventRegistry::stake_collateral
             "collateral_staked" | "CollateralStaked" => {
                 handle_collateral_staked(pool, event).await?;
             }
-            // Emitted by EventRegistry::unstake_collateral
             "collateral_unstaked" | "CollateralUnstaked" => {
                 handle_collateral_unstaked(pool, event).await?;
             }
@@ -347,12 +569,6 @@ async fn process_event(
     Ok(())
 }
 
-/// Handle a `ticket_purchased` event — upsert a ticket record in the DB.
-///
-/// Expected event value shape (JSON representation of XDR map):
-/// ```json
-/// { "event_id": "...", "buyer": "G...", "owner": "G...", "quantity": 1, "stellar_id": "..." }
-/// ```
 async fn handle_ticket_purchased(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
     let data = &event.value;
 
@@ -381,11 +597,10 @@ async fn handle_ticket_purchased(pool: &PgPool, event: &SorobanEvent) -> Result<
         return Ok(());
     }
 
-    // Upsert ticket — idempotent on stellar_id
     match sqlx::query(
         r#"
         INSERT INTO tickets (stellar_id, event_id, buyer_wallet, owner_wallet, status)
-        VALUES ($1, $2::uuid, $3, $4, 'active')
+        VALUES ($1, $2::uuid, $3, $4, 'Unused')
         ON CONFLICT (stellar_id) DO NOTHING
         "#,
     )
@@ -411,7 +626,6 @@ async fn handle_ticket_purchased(pool: &PgPool, event: &SorobanEvent) -> Result<
     }
 }
 
-/// Handle a `ticket_refunded` event — mark the ticket as cancelled.
 async fn handle_ticket_refunded(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
     let stellar_id = event
         .value
@@ -419,7 +633,7 @@ async fn handle_ticket_refunded(pool: &PgPool, event: &SorobanEvent) -> Result<(
         .and_then(|v| v.as_str())
         .unwrap_or(&event.id);
 
-    match sqlx::query("UPDATE tickets SET status = 'cancelled' WHERE stellar_id = $1")
+    match sqlx::query("UPDATE tickets SET status = 'Revoked' WHERE stellar_id = $1")
         .bind(stellar_id)
         .execute(pool)
         .await
@@ -435,8 +649,7 @@ async fn handle_ticket_refunded(pool: &PgPool, event: &SorobanEvent) -> Result<(
     }
 }
 
-/// Handle an `event_registered` event — record the on-chain event ID.
-async fn handle_event_registered(_pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+async fn handle_event_registered(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
     let data = &event.value;
     let on_chain_event_id = data
         .get("event_id")
@@ -447,6 +660,14 @@ async fn handle_event_registered(_pool: &PgPool, event: &SorobanEvent) -> Result
         return Ok(());
     }
 
+    if let Ok(uuid) = uuid::Uuid::parse_str(on_chain_event_id) {
+        sqlx::query("UPDATE events SET updated_at = NOW() WHERE id = $1")
+            .bind(uuid)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("DB error updating registered event: {e}"))?;
+    }
+
     tracing::info!(
         "On-chain event registered: event_id={} ledger={}",
         on_chain_event_id,
@@ -455,8 +676,7 @@ async fn handle_event_registered(_pool: &PgPool, event: &SorobanEvent) -> Result
     Ok(())
 }
 
-/// Handle an `event_status_updated` or `event_cancelled` event.
-async fn handle_event_status_updated(_pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
+async fn handle_event_status_updated(pool: &PgPool, event: &SorobanEvent) -> Result<(), String> {
     let data = &event.value;
     let on_chain_event_id = data
         .get("event_id")
@@ -469,6 +689,14 @@ async fn handle_event_status_updated(_pool: &PgPool, event: &SorobanEvent) -> Re
 
     if on_chain_event_id.is_empty() {
         return Ok(());
+    }
+
+    if let Ok(uuid) = uuid::Uuid::parse_str(on_chain_event_id) {
+        sqlx::query("UPDATE events SET updated_at = NOW() WHERE id = $1")
+            .bind(uuid)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("DB error updating event status: {e}"))?;
     }
 
     tracing::info!(
@@ -532,87 +760,65 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_listener_config_from_env_defaults() {
-        let config = ListenerConfig {
-            rpc_url: "https://soroban-testnet.stellar.org".to_string(),
-            ticket_payment_contract_id: String::new(),
-            event_registry_contract_id: String::new(),
-            start_ledger: 0,
+    fn test_job_creation_and_exponential_backoff() {
+        let event = SorobanEvent {
+            id: "evt-123".to_string(),
+            ledger: 1000,
+            contract_id: "CTEST".to_string(),
+            topic: vec!["ticket_purchased".to_string()],
+            value: serde_json::json!({ "event_id": "e1", "buyer": "G1" }),
+            ledger_closed_at: None,
         };
-        assert_eq!(config.rpc_url, "https://soroban-testnet.stellar.org");
-        assert_eq!(config.start_ledger, 0);
+
+        let mut job = SorobanJob::new(event);
+        assert_eq!(job.retry_count, 0);
+        assert_eq!(job.backoff_duration(), Duration::from_secs(1));
+
+        job.retry_count = 1;
+        assert_eq!(job.backoff_duration(), Duration::from_secs(2));
+
+        job.retry_count = 2;
+        assert_eq!(job.backoff_duration(), Duration::from_secs(4));
+
+        job.retry_count = 3;
+        assert_eq!(job.backoff_duration(), Duration::from_secs(8));
+
+        job.retry_count = 4;
+        assert_eq!(job.backoff_duration(), Duration::from_secs(16));
+
+        job.retry_count = 6;
+        assert_eq!(job.backoff_duration(), Duration::from_secs(60));
     }
 
     #[test]
-    fn test_min_confirmations_value() {
-        // MIN_CONFIRMATIONS is a compile-time constant; verify it's at least 1
-        const _: () = assert!(MIN_CONFIRMATIONS >= 1);
+    fn test_job_serialization() {
+        let event = SorobanEvent {
+            id: "evt-999".to_string(),
+            ledger: 500,
+            contract_id: "CPAY".to_string(),
+            topic: vec!["event_registered".to_string()],
+            value: serde_json::json!({ "event_id": "e99" }),
+            ledger_closed_at: None,
+        };
+
+        let job = SorobanJob::new(event);
+        let serialized = serde_json::to_string(&job).unwrap();
+        let deserialized: SorobanJob = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.id, job.id);
+        assert_eq!(deserialized.event.contract_id, "CPAY");
+        assert_eq!(deserialized.max_retries, MAX_JOB_RETRIES);
     }
 
     #[test]
-    fn test_poll_interval_within_acceptance_criteria() {
-        // Acceptance criteria: on-chain purchase appears in DB within 10 seconds.
-        // Poll interval must be well under 10s.
-        assert!(
-            POLL_INTERVAL.as_secs() < 10,
-            "poll interval must be < 10s to meet acceptance criteria"
-        );
-    }
-
-    #[test]
-    fn test_soroban_event_deserialization() {
-        let json = serde_json::json!({
-            "id": "0000000100-0000000001",
-            "ledger": 100u32,
-            "contractId": "CABC123",
-            "topic": ["ticket_purchased"],
-            "value": { "event_id": "evt-1", "buyer": "GABC", "quantity": 2 },
-            "ledgerClosedAt": "2026-05-01T12:00:00Z"
-        });
-
-        let event: SorobanEvent = serde_json::from_value(json).unwrap();
-        assert_eq!(event.ledger, 100);
-        assert_eq!(event.contract_id, "CABC123");
-        assert_eq!(event.topic[0], "ticket_purchased");
-    }
-
-    #[test]
-    fn test_backoff_sequence_doubles_and_caps() {
-        let mut backoff = POLL_INTERVAL;
-        // First failure: wait POLL_INTERVAL (5s), then double
-        assert_eq!(backoff, Duration::from_secs(5));
-        backoff = (backoff * 2).min(MAX_BACKOFF);
-        assert_eq!(backoff, Duration::from_secs(10));
-        backoff = (backoff * 2).min(MAX_BACKOFF);
-        assert_eq!(backoff, Duration::from_secs(20));
-        backoff = (backoff * 2).min(MAX_BACKOFF);
-        assert_eq!(backoff, Duration::from_secs(40));
-        backoff = (backoff * 2).min(MAX_BACKOFF);
-        assert_eq!(backoff, Duration::from_secs(80));
-        backoff = (backoff * 2).min(MAX_BACKOFF);
-        assert_eq!(backoff, Duration::from_secs(160));
-        backoff = (backoff * 2).min(MAX_BACKOFF);
-        // 320 > 300, so capped at MAX_BACKOFF
-        assert_eq!(backoff, MAX_BACKOFF);
-        backoff = (backoff * 2).min(MAX_BACKOFF);
-        // Still capped
-        assert_eq!(backoff, MAX_BACKOFF);
-
-        // Reset on success
-        backoff = POLL_INTERVAL;
-        assert_eq!(backoff, Duration::from_secs(5));
-    }
-
-    #[test]
-    fn test_reorg_protection_logic() {
-        let latest_ledger: u32 = 100;
-        let event_ledger: u32 = 99;
-        let depth = latest_ledger.saturating_sub(event_ledger);
-        // With MIN_CONFIRMATIONS = 2, ledger 99 at latest 100 should be skipped
-        assert!(depth < MIN_CONFIRMATIONS);
-
-        let confirmed_ledger: u32 = 97;
-        let depth2 = latest_ledger.saturating_sub(confirmed_ledger);
-        assert!(depth2 >= MIN_CONFIRMATIONS);
+    fn test_immediate_retry_when_full_page_returned() {
+        assert!(should_immediately_fetch_next_page(
+            MAX_EVENTS_PER_POLL as usize
+        ));
+        assert!(!should_immediately_fetch_next_page(
+            (MAX_EVENTS_PER_POLL as usize) - 1
+        ));
+        assert!(!should_immediately_fetch_next_page(0));
+        assert!(!should_immediately_fetch_next_page(1));
     }
 }

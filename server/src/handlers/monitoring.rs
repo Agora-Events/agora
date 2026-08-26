@@ -1,171 +1,111 @@
-//! # Health Monitoring Dashboard
+//! # Monitoring Handlers
 //!
-//! Provides comprehensive system health monitoring including:
-//! - Database connectivity
-//! - Redis connectivity
-//! - Disk space availability
-//! - Memory availability
+//! Exposes internal operational metrics (DB pool utilization, etc.) for
+//! observability tooling. Protected by a static API key so that unauthenticated
+//! callers can't use it for infrastructure reconnaissance.
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, response::Response};
+use axum::{
+    extract::State,
+    http::{header::AUTHORIZATION, HeaderMap},
+    response::{IntoResponse, Response},
+};
 use serde::Serialize;
 use sqlx::PgPool;
-use sysinfo::{Disks, System};
 
-use crate::cache::RedisCache;
+use crate::utils::error::AppError;
 use crate::utils::response::success;
 
-#[derive(Serialize)]
-pub struct MonitoringDashboard {
-    pub status: String,
-    pub checks: HealthChecks,
+#[derive(Debug, Serialize)]
+pub struct MonitoringMetrics {
+    pub db_pool_size: u32,
+    pub db_pool_idle: usize,
+    pub db_pool_in_use: usize,
 }
 
-#[derive(Serialize)]
-pub struct HealthChecks {
-    pub database: ComponentHealth,
-    pub redis: ComponentHealth,
-    pub disk: DiskHealth,
-    pub memory: MemoryHealth,
+/// Validates the `Authorization: Bearer <key>` header against the
+/// `MONITORING_API_KEY` environment variable.
+fn is_authorized(headers: &HeaderMap) -> bool {
+    let expected = match std::env::var("MONITORING_API_KEY") {
+        Ok(key) if !key.is_empty() => key,
+        _ => return false,
+    };
+
+    let provided = headers
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+
+    matches!(provided, Some(token) if token == expected)
 }
 
-#[derive(Serialize)]
-pub struct ComponentHealth {
-    pub status: String,
-    pub message: String,
-}
-
-#[derive(Serialize)]
-pub struct DiskHealth {
-    pub status: String,
-    pub available_gb: f64,
-    pub total_gb: f64,
-    pub usage_percent: f64,
-}
-
-#[derive(Serialize)]
-pub struct MemoryHealth {
-    pub status: String,
-    pub available_gb: f64,
-    pub total_gb: f64,
-    pub usage_percent: f64,
-}
-
-/// Application state for monitoring
-#[derive(Clone)]
-pub struct MonitoringState {
-    pub pool: PgPool,
-    pub redis: RedisCache,
-}
-
-/// GET /api/v1/monitoring/dashboard
+/// Get internal monitoring metrics.
 ///
-/// Returns comprehensive system health status.
-/// Returns 200 OK if all systems are healthy.
-/// Returns 503 Service Unavailable if any critical component is down.
-pub async fn monitoring_dashboard(State(state): State<MonitoringState>) -> Response {
-    let mut redis = state.redis.clone();
+/// # Endpoint
+/// GET `/api/v1/monitoring`
+///
+/// Requires an `Authorization: Bearer <MONITORING_API_KEY>` header. Requests
+/// without a valid credential are rejected with 401.
+pub async fn get_monitoring(State(pool): State<PgPool>, headers: HeaderMap) -> Response {
+    if !is_authorized(&headers) {
+        return AppError::AuthError("A valid monitoring credential is required".to_string())
+            .into_response();
+    }
 
-    // Check database
-    let db_health = match sqlx::query("SELECT 1").fetch_one(&state.pool).await {
-        Ok(_) => ComponentHealth {
-            status: "healthy".to_string(),
-            message: "Database connection successful".to_string(),
-        },
-        Err(e) => ComponentHealth {
-            status: "unhealthy".to_string(),
-            message: format!("Database connection failed: {}", e),
-        },
+    let db_pool_size = pool.size();
+    let db_pool_idle = pool.num_idle();
+    let metrics = MonitoringMetrics {
+        db_pool_size,
+        db_pool_idle,
+        db_pool_in_use: (db_pool_size as usize).saturating_sub(db_pool_idle),
     };
 
-    // Check Redis
-    let redis_health = match redis.ping().await {
-        Ok(_) => ComponentHealth {
-            status: "healthy".to_string(),
-            message: "Redis connection successful".to_string(),
-        },
-        Err(e) => ComponentHealth {
-            status: "unhealthy".to_string(),
-            message: format!("Redis connection failed: {}", e),
-        },
-    };
+    success(metrics, "Monitoring metrics retrieved successfully").into_response()
+}
 
-    // Check disk space
-    let disks = Disks::new_with_refreshed_list();
-    let disk_health = if let Some(disk) = disks.iter().next() {
-        let total_bytes = disk.total_space();
-        let available_bytes = disk.available_space();
-        let total_gb = total_bytes as f64 / 1_073_741_824.0;
-        let available_gb = available_bytes as f64 / 1_073_741_824.0;
-        let usage_percent = ((total_bytes - available_bytes) as f64 / total_bytes as f64) * 100.0;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+    use std::sync::Mutex;
 
-        DiskHealth {
-            status: if available_gb > 5.0 {
-                "healthy"
-            } else {
-                "warning"
-            }
-            .to_string(),
-            available_gb,
-            total_gb,
-            usage_percent,
-        }
-    } else {
-        DiskHealth {
-            status: "unknown".to_string(),
-            available_gb: 0.0,
-            total_gb: 0.0,
-            usage_percent: 0.0,
-        }
-    };
+    // MONITORING_API_KEY is process-global env state; serialize these tests.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
-    // Check memory
-    let mut sys = System::new_all();
-    sys.refresh_memory();
-    let total_memory = sys.total_memory();
-    let available_memory = sys.available_memory();
-    let total_gb = total_memory as f64 / 1_073_741_824.0;
-    let available_gb = available_memory as f64 / 1_073_741_824.0;
-    let usage_percent = ((total_memory - available_memory) as f64 / total_memory as f64) * 100.0;
+    #[test]
+    fn test_rejects_missing_credential() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("MONITORING_API_KEY", "secret-key");
+        let headers = HeaderMap::new();
+        assert!(!is_authorized(&headers));
+        std::env::remove_var("MONITORING_API_KEY");
+    }
 
-    let memory_health = MemoryHealth {
-        status: if available_gb > 1.0 {
-            "healthy"
-        } else {
-            "warning"
-        }
-        .to_string(),
-        available_gb,
-        total_gb,
-        usage_percent,
-    };
+    #[test]
+    fn test_rejects_wrong_credential() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("MONITORING_API_KEY", "secret-key");
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer wrong-key"));
+        assert!(!is_authorized(&headers));
+        std::env::remove_var("MONITORING_API_KEY");
+    }
 
-    // Determine overall status
-    let all_healthy = db_health.status == "healthy"
-        && redis_health.status == "healthy"
-        && disk_health.status != "unhealthy"
-        && memory_health.status != "unhealthy";
+    #[test]
+    fn test_accepts_valid_credential() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("MONITORING_API_KEY", "secret-key");
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer secret-key"));
+        assert!(is_authorized(&headers));
+        std::env::remove_var("MONITORING_API_KEY");
+    }
 
-    let dashboard = MonitoringDashboard {
-        status: if all_healthy { "healthy" } else { "degraded" }.to_string(),
-        checks: HealthChecks {
-            database: db_health,
-            redis: redis_health,
-            disk: disk_health,
-            memory: memory_health,
-        },
-    };
-
-    if all_healthy {
-        success(dashboard, "All systems healthy").into_response()
-    } else {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            axum::Json(serde_json::json!({
-                "success": false,
-                "message": "One or more critical components are down",
-                "data": dashboard
-            })),
-        )
-            .into_response()
+    #[test]
+    fn test_rejects_when_key_not_configured() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::remove_var("MONITORING_API_KEY");
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer anything"));
+        assert!(!is_authorized(&headers));
     }
 }

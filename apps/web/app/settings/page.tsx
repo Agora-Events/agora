@@ -2,10 +2,13 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
+import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/components/providers/theme-context";
 
-type SettingsTab = "profile" | "notifications" | "payment";
+type SettingsTab = "profile" | "notifications" | "payment" | "appearance";
 
 interface ProfileData {
   displayName: string;
@@ -18,14 +21,28 @@ interface NotificationSettings {
   inApp: boolean;
 }
 
+interface PayoutPreferences {
+  milestonePlan: string;
+  withdrawalCap: number;
+}
+
+interface WalletData {
+  address: string;
+  usdcBalance: number;
+  payoutPreferences?: PayoutPreferences;
+}
+
 const tabs: { id: SettingsTab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "notifications", label: "Notifications" },
   { id: "payment", label: "Payment" },
+  { id: "appearance", label: "Appearance" },
 ];
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { user, isAuthenticated, isLoading: isAuthLoading, signOut } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -54,6 +71,30 @@ export default function SettingsPage() {
 
   const [avatarPreview, setAvatarPreview] = useState<string>("");
 
+  const [walletData, setWalletData] = useState<WalletData | null>(null);
+  const [isWalletLoading, setIsWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab === "payment" && isAuthenticated) {
+      const fetchWallet = async () => {
+        setIsWalletLoading(true);
+        setWalletError(null);
+        try {
+          const res = await fetch("/api/wallet");
+          if (!res.ok) throw new Error("Failed to fetch wallet");
+          const data = await res.json();
+          setWalletData(data.wallet || data);
+        } catch (err) {
+          setWalletError("Failed to load wallet data");
+        } finally {
+          setIsWalletLoading(false);
+        }
+      };
+      fetchWallet();
+    }
+  }, [activeTab, isAuthenticated]);
+
   const isDirty =
     profileData.displayName !== initialProfile.displayName ||
     profileData.bio !== initialProfile.bio ||
@@ -61,10 +102,23 @@ export default function SettingsPage() {
     notifications.email !== initialNotifications.email ||
     notifications.inApp !== initialNotifications.inApp;
 
+  // Settings are personal — send signed-out visitors to the auth page.
   useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      router.replace("/auth");
+    }
+  }, [isAuthLoading, isAuthenticated, router]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const controller = new AbortController();
+
     const fetchProfile = async () => {
       try {
-        const response = await fetch("/api/profile");
+        const response = await fetch("/api/profile", {
+          signal: controller.signal,
+        });
         if (!response.ok) {
           throw new Error(`Failed to load profile: ${response.status}`);
         }
@@ -80,13 +134,15 @@ export default function SettingsPage() {
         if (loadedProfile.avatarUrl) {
           setAvatarPreview(loadedProfile.avatarUrl);
         }
-      } catch {
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
         setSaveError("Failed to load profile data");
       }
     };
 
     fetchProfile();
-  }, []);
+    return () => controller.abort();
+  }, [isAuthenticated]);
 
   const handleBeforeUnload = useCallback(
     (event: BeforeUnloadEvent) => {
@@ -188,11 +244,30 @@ export default function SettingsPage() {
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <div className="w-full max-w-3xl mx-auto px-4 py-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-ink-soft">Settings</h1>
-          <p className="text-muted-text mt-1">
-            Manage your account preferences
-          </p>
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-ink-soft">Settings</h1>
+            <p className="text-muted-text mt-1">
+              Manage your account preferences
+            </p>
+            {user && (
+              <p className="text-muted-text mt-1 text-sm break-all">
+                Signed in as{" "}
+                <span className="font-medium text-ink-soft">
+                  {user.email ?? user.walletAddress ?? user.id}
+                </span>
+              </p>
+            )}
+          </div>
+          {user && (
+            <Button
+              variant="secondary"
+              onClick={signOut}
+              className="shrink-0"
+            >
+              Sign out
+            </Button>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl border border-border-warm shadow-[_-4px_4px_0_rgba(0,0,0,1)] overflow-hidden">
@@ -211,6 +286,12 @@ export default function SettingsPage() {
                 {tab.label}
               </button>
             ))}
+            <Link
+              href="/settings/subscriptions"
+              className="flex-1 px-6 py-4 text-sm font-semibold text-center transition-colors text-muted-text hover:text-ink-soft"
+            >
+              Subscriptions
+            </Link>
           </div>
 
           <div className="p-6 md:p-8">
@@ -398,22 +479,115 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-text">
                   Manage your payment methods and billing preferences.
                 </p>
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="w-16 h-16 rounded-full bg-surface flex items-center justify-center mb-4">
-                    <Image
-                      src="/icons/ticket.svg"
-                      alt="Payment"
-                      width={24}
-                      height={24}
+                
+                {isWalletLoading ? (
+                  <div className="py-12 text-center text-sm text-muted-text">
+                    Loading wallet data...
+                  </div>
+                ) : walletError ? (
+                  <div className="py-12 text-center text-sm text-error">
+                    {walletError}
+                  </div>
+                ) : walletData ? (
+                  <div className="space-y-8">
+                    <div className="p-6 rounded-xl border border-border-warm bg-surface space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-ink-soft">Connected Stellar Wallet</h3>
+                          <p className="text-xs text-muted-text mt-1">
+                            {walletData.address.substring(0, 4)}...{walletData.address.substring(walletData.address.length - 4)}
+                          </p>
+                        </div>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setWalletData(null)}
+                        >
+                          Disconnect
+                        </Button>
+                      </div>
+                      
+                      <div className="pt-4 border-t border-border-warm">
+                        <p className="text-sm font-medium text-ink-soft mb-1">USDC Balance</p>
+                        <p className="text-2xl font-bold text-ink-soft">
+                          {walletData.usdcBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
+                        </p>
+                      </div>
+                    </div>
+
+                    {walletData.payoutPreferences && (
+                      <div className="space-y-4">
+                        <h3 className="text-sm font-semibold text-ink-soft">Payout Preferences</h3>
+                        <div className="p-6 rounded-xl border border-border-warm bg-surface space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-ink-soft mb-1.5">
+                              Milestone Plan Selection
+                            </label>
+                            <select
+                              className="w-full h-11 px-3 rounded-xl bg-white border border-black/15 focus:border-black focus:ring-0 outline-none text-sm"
+                              defaultValue={walletData.payoutPreferences.milestonePlan}
+                            >
+                              <option value="standard">Standard</option>
+                              <option value="accelerated">Accelerated</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-ink-soft mb-1.5">
+                              Withdrawal Cap (USDC)
+                            </label>
+                            <input
+                              type="number"
+                              className="w-full h-11 px-3 rounded-xl bg-white border border-black/15 focus:border-black focus:ring-0 outline-none text-sm"
+                              defaultValue={walletData.payoutPreferences.withdrawalCap}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center border rounded-xl border-border-warm border-dashed">
+                    <div className="w-16 h-16 rounded-full bg-surface flex items-center justify-center mb-4">
+                      <Image
+                        src="/icons/ticket.svg"
+                        alt="Payment"
+                        width={24}
+                        height={24}
+                      />
+                    </div>
+                    <h3 className="text-lg font-semibold text-ink-soft mb-2">
+                      No Wallet Connected
+                    </h3>
+                    <p className="text-sm text-muted-text max-w-xs mb-6">
+                      Connect your Stellar wallet to view balances and configure payouts.
+                    </p>
+                    <Button variant="primary" onClick={() => setWalletError("Connect wallet not implemented")}>
+                      Connect Wallet
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "appearance" && (
+              <div className="space-y-6">
+                <p className="text-sm text-muted-text">
+                  Customize the look and feel of the application.
+                </p>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 rounded-xl border border-border-warm bg-surface">
+                    <div>
+                      <p className="text-sm font-semibold text-ink-soft">
+                        Dark mode
+                      </p>
+                      <p className="text-xs text-muted-text mt-0.5">
+                        Toggle between light and dark themes
+                      </p>
+                    </div>
+                    <Toggle
+                      enabled={theme === "dark"}
+                      onChange={() => toggleTheme()}
                     />
                   </div>
-                  <h3 className="text-lg font-semibold text-ink-soft mb-1">
-                    Payment settings coming soon
-                  </h3>
-                  <p className="text-sm text-muted-text max-w-xs">
-                    Configure billing and payment methods here in a future
-                    update.
-                  </p>
                 </div>
               </div>
             )}

@@ -101,4 +101,17 @@ mod tests {
             Some(custom_id)
         );
     }
+
+    #[tokio::test]
+    async fn test_generate_request_id_when_missing() {
+        let router = Router::new()
+            .route("/", get(|| async { "ok" }))
+            .layer(middleware::from_fn(propagate_request_id))
+            .layer(set_request_id_layer());
+
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert!(resp.headers().get(REQUEST_ID_HEADER).is_some());
+    }
 }

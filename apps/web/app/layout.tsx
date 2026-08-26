@@ -42,6 +42,7 @@ export const metadata: Metadata = {
 import { Suspense } from "react";
 import LoadingBar from "@/components/ui/loading-bar";
 import { ThemeProvider } from "@/components/providers/theme-context";
+import { AttributionCapture } from "@/components/analytics/attribution-capture";
 
 export default function RootLayout({
   children,
@@ -53,6 +54,7 @@ export default function RootLayout({
       <body className={`${inter.variable} antialiased`}>
         <Suspense fallback={null}>
           <LoadingBar />
+          <AttributionCapture />
         </Suspense>
         <Toaster position="bottom-right" richColors />
         <ThemeProvider>

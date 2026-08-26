@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
 import { BaseNav, type NavItem } from "./base-nav";
 
 const USER_NAV_ITEMS: NavItem[] = [
@@ -19,6 +18,12 @@ const USER_NAV_ITEMS: NavItem[] = [
     icon: "/icons/earth-yellow.svg",
     text: "Discover Events",
     isActive: (p) => p === "/discover" || p.startsWith("/events"),
+  },
+  {
+    href: "/wallet",
+    icon: "/icons/ticket.svg",
+    text: "My Wallet",
+    isActive: (p) => p === "/wallet",
   },
   {
     href: "/organizers",
@@ -89,6 +94,7 @@ function UserEndSlot() {
           className="relative w-[55.22px] h-[53px] px-0! py-0"
           textColor="text-black"
           shadowColor="rgba(0,0,0,1)"
+          aria-label="User profile"
         >
           <div className="size-[49px] rounded-full">
             <Image

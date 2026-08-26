@@ -57,11 +57,21 @@ async fn main() {
     // Note: DATABASE_URL is strictly excluded from logging for security reasons.
 
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(config.db_max_connections)
+        .min_connections(config.db_min_connections)
+        .acquire_timeout(std::time::Duration::from_secs(config.db_acquire_timeout_secs))
+        .idle_timeout(std::time::Duration::from_secs(config.db_idle_timeout_secs))
         .connect(&config.database_url)
         .await
         .expect("Failed to connect to database");
 
+    tracing::info!(
+        "Database pool: max_connections={} min_connections={} acquire_timeout={}s idle_timeout={}s",
+        config.db_max_connections,
+        config.db_min_connections,
+        config.db_acquire_timeout_secs,
+        config.db_idle_timeout_secs,
+    );
     tracing::info!("Successfully connected to database");
 
     sqlx::migrate!()
@@ -70,6 +80,14 @@ async fn main() {
         .expect("Failed to run migrations");
 
     tracing::info!("Migrations run successfully");
+
+    // Validate categories match contract (Issue #1076)
+    let categories_synced =
+        agora_server::handlers::categories::validate_categories_match_contract(&pool).await;
+    agora_server::handlers::health::set_category_sync_status(categories_synced);
+    if !categories_synced {
+        tracing::error!("Category sync validation failed - database categories do not match contract canonical list");
+    }
 
     // Initialize Redis cache
     let redis = match agora_server::cache::RedisCache::new(&config.redis_url).await {

@@ -128,9 +128,9 @@ export default function NotificationsPage() {
             <div className="w-24 h-24 bg-surface rounded-full flex items-center justify-center mb-6 border-2 border-black">
               <Image src="/icons/notification.svg" alt="No notifications" width={48} height={48} />
             </div>
-            <h2 className="text-3xl font-bold italic mb-4">You're all caught up!</h2>
+            <h2 className="text-3xl font-bold italic mb-4">You&apos;re all caught up!</h2>
             <p className="text-ink-deep/70 mb-8 max-w-md mx-auto">
-              You don't have any new notifications at the moment. Check back later for updates on your events and tickets.
+              You don&apos;t have any new notifications at the moment. Check back later for updates on your events and tickets.
             </p>
             <Link href="/discover">
               <Button backgroundColor="bg-accent" textColor="text-black" shadowColor="rgba(253,218,35,0.4)" className="px-8 font-bold text-lg">

@@ -9,6 +9,7 @@ type TicketRequestBody = {
   quantity?: number;
   buyerWallet?: string;
   recipientWallet?: string; // Optional: if provided, ticket goes to recipient instead of buyer
+  attribution?: { utmSource?: unknown; utmMedium?: unknown; utmCampaign?: unknown };
 };
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
@@ -20,6 +21,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
 
   const { eventId, quantity, buyerWallet, recipientWallet } = payload;
+  const attribution = normalizeAttribution(payload.attribution);
 
   // Validation
   if (!eventId || typeof eventId !== "string") {
@@ -31,19 +33,16 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throwApiError("Invalid quantity", 400);
   }
 
-  // Type assertion for subsequent logic
   const qty = quantity as number;
 
   if (!buyerWallet || typeof buyerWallet !== "string") {
     throwApiError("Invalid buyerWallet", 400);
   }
-  
-  // Validate recipientWallet if provided
+
   if (recipientWallet !== undefined && recipientWallet !== null && typeof recipientWallet !== "string") {
     throwApiError("Invalid recipientWallet", 400);
   }
 
-  // Determine the actual owner of the ticket
   const ownerWallet = recipientWallet || buyerWallet;
 
   const event = await prisma.event.findUnique({
@@ -54,7 +53,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throwApiError("Event not found", 404);
   }
 
-  // Check ticket availability using Prisma data
   if (event.mintedTickets + qty > event.totalTickets) {
     throwApiError("Not enough tickets available", 409);
   }
@@ -62,7 +60,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   try {
     const mintResult = await mintTicket(eventId, ownerWallet, qty);
 
-    // Atomically update event count and create ticket record
     await prisma.$transaction([
       prisma.event.update({
         where: { id: eventId },
@@ -75,6 +72,9 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
           buyerWallet,
           ownerWallet,
           quantity: qty,
+          utmSource: attribution.utmSource,
+          utmMedium: attribution.utmMedium,
+          utmCampaign: attribution.utmCampaign,
         },
       }),
     ]);
@@ -83,6 +83,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       {
         ticketId: mintResult.ticketId,
         transactionXdr: mintResult.transactionXdr,
+        requiresSignature: mintResult.unsigned !== false,
       },
       { status: 200 },
     );
@@ -92,3 +93,26 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throwApiError("Failed to mint ticket", 502);
   }
 });
+
+function normalizeAttribution(
+  value: TicketRequestBody["attribution"],
+): { utmSource?: string; utmMedium?: string; utmCampaign?: string } {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object") {
+    throwApiError("Invalid attribution", 400);
+  }
+
+  const normalize = (field: unknown, name: string) => {
+    if (field === undefined || field === null || field === "") return undefined;
+    if (typeof field !== "string" || field.length > 255) {
+      throwApiError(`Invalid ${name}`, 400);
+    }
+    return field.trim() || undefined;
+  };
+
+  return {
+    utmSource: normalize(value.utmSource, "utm_source"),
+    utmMedium: normalize(value.utmMedium, "utm_medium"),
+    utmCampaign: normalize(value.utmCampaign, "utm_campaign"),
+  };
+}

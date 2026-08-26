@@ -38,7 +38,6 @@ pub enum DataKey {
     WithdrawalCap(Address),              // token_address -> max amount per day
     DailyWithdrawalAmount(Address, u64), // (token_address, day_timestamp) -> amount withdrawn
     IsPaused,                            // bool – global circuit breaker flag
-    DisputeStatus(String),               // event_id -> bool
     EventCancelledForRefund(String),     // event_id -> bool
     PartialRefundIndex(String),          // event_id -> last processed payment index
     PartialRefundPercentage(String),     // event_id -> active refund percentage in bps
@@ -58,4 +57,30 @@ pub enum DataKey {
     ValidationHash(String),
     /// Per-event affiliate commission rate: (event_id, affiliate_addr) -> rate_bps (u32)
     AffiliateRate(String, Address),
+    /// Tracks whether a POAP has been minted for a given payment_id (Persistent)
+    PoapMinted(String),
+    /// Sharded index of POAP payment_ids per attendee address (Persistent)
+    PoapsByAttendee(Address, u32),
+    /// Total number of POAPs minted for an attendee (Persistent)
+    PoapsByAttendeeCount(Address),
+    /// Active secondary-market listing: payment_id -> ResaleListing (Persistent)
+    ResaleListing(String),
+    /// Per-event resale royalty paid to the organizer: event_id -> rate_bps (u32) (Persistent)
+    ResaleRoyaltyBps(String),
+    EscrowState(String),
+    EscrowMilestone(String, u32),
+}
+
+/// Storage keys for dynamic pricing features (Dutch auctions and bonding curves).
+///
+/// Kept as a separate enum from `DataKey` to avoid exceeding the XDR symbol
+/// count limit on the main key enum.
+#[contracttype]
+pub enum PricingKey {
+    /// Dutch auction config: (event_id, tier_id) -> DutchAuctionConfig (Persistent)
+    DutchAuction(String, String),
+    /// Bonding curve config: (event_id, tier_id) -> BondingCurveConfig (Persistent)
+    BondingCurve(String, String),
+    /// Pending commit-reveal: (event_id, tier_id, buyer) -> PendingCommit (Temporary)
+    PendingCommit(String, String, Address),
 }

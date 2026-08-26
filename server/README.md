@@ -22,7 +22,7 @@ Install `sqlx-cli`:
 cargo install sqlx-cli --no-default-features --features postgres
 ```
 
-## Environment Variables
+## Configuration
 
 The server loads configuration from a `.env` file in this directory. Start from the example file:
 
@@ -36,28 +36,52 @@ PowerShell:
 Copy-Item .env.example .env
 ```
 
+> 🚨 **SECURITY WARNING**: *Variables marked with* **[SECRET]** *contain sensitive credentials, API keys, or private tokens. They must* **never** *be committed to version control. Always supply these via a local* `.env` *file or a secure environment secrets manager.*
+
 Required variables:
 
-| Variable | Example | Description |
-| --- | --- | --- |
-| `DATABASE_URL` | `postgres://user:password@localhost:5432/agora` | PostgreSQL connection string used by the server and SQLx migrations. |
+| Concern | Variable | Required | Default | Description | Example |
+|---|---|---|---|---|---|
+| **Server / General** | `RUST_ENV` | No | `development` | The application environment. | `production` |
+| | `PORT` | Yes | - | The port the server binds to. | `8080` |
+| | `RUST_LOG` | No | `info` | The logging level. | `debug` |
+| | `BASE_URL` | No | `https://agora.events` | The base URL of the API. | `http://localhost:8080` |
+| **Database** | `DATABASE_URL` **[SECRET]** | Yes | - | PostgreSQL connection string. | `postgres://user:pass@localhost/db` |
+| | `SLOW_QUERY_THRESHOLD_MS` | Yes | - | Execution time threshold for logging slow DB queries. | `500` |
+| | `DB_MAX_CONNECTIONS` | No | `10` | Maximum connections in the PostgreSQL pool. | `25` |
+| | `DB_MIN_CONNECTIONS` | No | `1` | Minimum idle connections kept in the pool. | `2` |
+| | `DB_ACQUIRE_TIMEOUT_SECS` | No | `10` | Seconds to wait for an available connection before failing. | `30` |
+| | `DB_IDLE_TIMEOUT_SECS` | No | `600` | Seconds before an idle connection is closed. | `300` |
+| **Redis** | `REDIS_URL` | No | `redis://127.0.0.1:6379` | Redis connection string. | `redis://127.0.0.1:6379` |
+| **CORS** | `CORS_ALLOWED_ORIGINS` | No | (Code default) | Comma-separated list of allowed CORS origins. | `https://agora.events` |
+| **Security & Auth** | `JWT_SECRET` **[SECRET]** | No | `""` | Secret key used for signing JWTs. | `super_secret_string` |
+| | `MONITORING_TOKEN` **[SECRET]** | No | `None` | Token used for monitoring endpoints. | `monitor_secret_key` |
+| | `ADMIN_TOKEN` **[SECRET]** | No | `None` | Token used for administrative routes. | `admin_secret_key` |
+| | `MONITORING_API_KEY` **[SECRET]**| Yes | - | API key required by external monitoring handlers. | `api_key_12345` |
+| **Rate Limiting** | `AUTH_RATE_LIMIT_PER_MINUTE` | Yes | - | Rate limit max requests per minute for auth routes. | `10` |
+| | `RATE_LIMIT_MAX` | Yes | - | Max requests per rate limit window. | `100` |
+| | `RATE_LIMIT_WINDOW` | Yes | - | Time window for rate limiting in seconds. | `60` |
+| **Waiting Room** | `WAITING_ROOM_POW_DIFFICULTY`| Yes | - | Proof of Work difficulty setting for the waiting room. | `4` |
+| **Indexer / Soroban**| `SOROBAN_RPC_URLS` | No | - | Comma-separated RPC URLs (falls back to `SOROBAN_RPC_URL`). | `https://rpc1...,https://rpc2...` |
+| | `SOROBAN_RPC_URL` | Yes | - | Soroban RPC endpoint for the Stellar network. | `https://soroban-testnet.stellar.org` |
+| | `TICKET_PAYMENT_CONTRACT_ID` | Yes | - | Stellar Contract ID for ticket payments. | `CA...` |
+| | `EVENT_REGISTRY_CONTRACT_ID` | Yes | - | Stellar Contract ID for event registry. | `CB...` |
+| | `SOROBAN_START_LEDGER` | Yes | - | The ledger sequence number to start indexing from. | `1000000` |
+| | `INDEXER_WINDOW_LEDGERS` | Yes | - | The ledger batch window size for the indexer. | `100` |
+| | `INDEXER_CONFIRMATIONS` | Yes | - | Number of network confirmations to wait for. | `1` |
+| | `INDEXER_WORKERS` | Yes | - | Number of concurrent worker threads for the indexer. | `4` |
+| | `RATES_PROVIDER_URL` | Yes | - | External provider URL for crypto/fiat exchange rates. | `https://api.coingecko.com...` |
+| **Notifications** | `EXPO_ACCESS_TOKEN` **[SECRET]** | Yes | - | Access token for Expo push notifications. | `ExponentPushToken[...]` |
+| **Storage (S3)** | `S3_BUCKET` | No | `""` | AWS S3 Bucket Name for asset uploads. | `agora-assets` |
+| | `S3_REGION` | No | `auto` | AWS S3 Region. | `us-east-1` |
+| | `S3_ACCESS_KEY_ID` **[SECRET]** | No | `""` | Access Key ID for S3. | `AKIAIOSFODNN7EXAMPLE` |
+| | `S3_SECRET_ACCESS_KEY` **[SECRET]**| No | `""` | Secret Access Key for S3. | `wJalrXUtnFEMI/K7MDENG/b...` |
+| | `S3_ENDPOINT_URL` | No | `None` | Custom S3 endpoint URL (used for local/Minio storage). | `http://localhost:9000` |
+| | `S3_PUBLIC_URL` | No | `""` | Public CDN/URL prefix for accessing stored assets. | `https://cdn.agora.events` |
+| | `ALLOWED_UPLOAD_MIME_TYPES` | No* | - | Primary variable for allowed upload Mime types. | `image/jpeg,image/png` |
+| | `ALLOWED_MIME_TYPES` | Yes* | - | Fallback variable if `ALLOWED_UPLOAD_MIME_TYPES` is absent. | `image/jpeg,image/png` |
 
-Optional variables:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `PORT` | `3001` | HTTP port for the Axum server. |
-| `RUST_ENV` | `development` | Runtime environment. `production` enables stricter security behavior such as HSTS. |
-| `RUST_LOG` | `info` | Log filter used by `tracing-subscriber`. |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Comma-separated list of browser origins allowed by CORS. |
-| `SOROBAN_RPC_URL` | `https://soroban-testnet.stellar.org` | RPC endpoint used by blockchain health checks. |
-| `REDIS_URL` | `redis://127.0.0.1:6379` | Redis connection URL for caching. Startup currently fails if Redis is unavailable. |
-| `S3_BUCKET` | empty | Bucket name for image uploads. Required only for upload flows. |
-| `S3_REGION` | `auto` | S3/R2 region. `auto` is suitable for Cloudflare R2. |
-| `S3_ACCESS_KEY_ID` | empty | S3/R2 access key. Required only for upload flows. |
-| `S3_SECRET_ACCESS_KEY` | empty | S3/R2 secret key. Required only for upload flows. |
-| `S3_ENDPOINT_URL` | unset | Custom S3/R2 endpoint URL. Required for Cloudflare R2. |
-| `S3_PUBLIC_URL` | empty | Public base URL for uploaded files. Required only for upload flows. |
+*(Note: The server checks* `ALLOWED_UPLOAD_MIME_TYPES` *first; if it's missing, it strictly requires* `ALLOWED_MIME_TYPES` *to be set).*
 
 ## Local Setup
 
@@ -215,6 +239,20 @@ The script checks:
 - `GET /api/v1/health/ready`
 
 On Windows, run the script from Git Bash or WSL.
+
+## API Documentation
+
+The API is documented in [`openapi.yaml`](./openapi.yaml) (OpenAPI 3.0). It
+covers the health probes and event endpoints, including
+`GET /api/v1/events/:id/social-proof`, which returns recent purchases,
+average rating, waitlist count, and tickets remaining for an event (cached
+for 60 seconds, no authentication required).
+
+Lint the spec locally with:
+
+```bash
+npx @redocly/cli lint server/openapi.yaml
+```
 
 ## Pull Request Note
 

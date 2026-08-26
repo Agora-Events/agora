@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     "web-build/**",
     "scripts/**",
     "metro.config.js",
+    "**/__tests__/**",
   ]),
   ...tseslint.configs.recommended,
   {
@@ -37,6 +38,20 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-explicit-any": "off",
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
+      // Honour the leading-underscore convention already used in the codebase
+      // for deliberately-discarded bindings — e.g. ThemeContext's
+      // `const { light: _light, dark: _dark, ...palette } = Colors`, which
+      // destructures purely to omit those keys. Without this the rule flags
+      // the omission itself as an unused variable.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
     },
   },
 ]);

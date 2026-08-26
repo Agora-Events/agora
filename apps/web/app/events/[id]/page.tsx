@@ -7,6 +7,9 @@ import { RegistrationBox } from "@/components/events/registration-box";
 import { notFound } from "next/navigation";
 import MapClient from "@/components/events/map-client";
 import { buildMetadata } from "@/components/layout/seo";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { EventPageView } from "@/components/analytics/event-page-view";
+import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
 
 export async function generateMetadata({
   params,
@@ -47,9 +50,19 @@ export default async function EventDetailPage({
 
   return (
     <main className="flex flex-col min-h-screen bg-base">
+      <EventPageView eventId={event.id} />
       <Navbar />
 
       <div className="flex-1 w-full max-w-[1221px] mx-auto px-6 py-6 sm:py-12">
+        <Breadcrumb
+          className="mb-6 sm:mb-8"
+          items={[
+            { label: "Home", href: "/" },
+            { label: "Discover", href: "/discover" },
+            { label: event.title },
+          ]}
+        />
+
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-16">
           {/* LEFT COLUMN (Desktop) / TOP ITEMS (Mobile) */}
           <div className="lg:w-[55%] flex flex-col gap-8 lg:gap-10">
@@ -231,6 +244,17 @@ export default async function EventDetailPage({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Secondary Marketplace Section */}
+        <div className="w-full mt-16 sm:mt-20">
+          <div className="flex items-center gap-3 mb-6 sm:mb-8">
+            <div className="w-1 h-8 bg-accent rounded-full" aria-hidden="true" />
+            <h2 className="text-[22px] sm:text-[24px] font-bold text-black font-heading">
+              Secondary Marketplace
+            </h2>
+          </div>
+          <SecondaryMarketplaceTab eventId={eventId} />
         </div>
       </div>
 

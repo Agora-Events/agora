@@ -53,10 +53,11 @@ pub enum TicketPaymentError {
     CannotRemoveLastGovernor = 57,
     InvalidFeePercent = 58,
     EventEnded = 59,
-    NonTransferable = 60,
-    InvalidSecret = 61,
-    DiscountExpired = 62,
-    DiscountMaxUsesReached = 63,
+    TicketAlreadyListed = 60,
+    ResaleListingNotFound = 61,
+    ResaleListingNotActive = 62,
+    NonTransferable = 63,
+    InvalidRoyaltyBps = 64,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -126,10 +127,11 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             57 => TicketPaymentError::CannotRemoveLastGovernor,
             58 => TicketPaymentError::InvalidFeePercent,
             59 => TicketPaymentError::EventEnded,
-            60 => TicketPaymentError::NonTransferable,
-            61 => TicketPaymentError::InvalidSecret,
-            62 => TicketPaymentError::DiscountExpired,
-            63 => TicketPaymentError::DiscountMaxUsesReached,
+            60 => TicketPaymentError::TicketAlreadyListed,
+            61 => TicketPaymentError::ResaleListingNotFound,
+            62 => TicketPaymentError::ResaleListingNotActive,
+            63 => TicketPaymentError::NonTransferable,
+            64 => TicketPaymentError::InvalidRoyaltyBps,
             _ => TicketPaymentError::ArithmeticError,
         }
     }

@@ -1,11 +1,33 @@
-//! # Redis Cache Module
+//! # Cache Module
 //!
-//! Provides Redis caching functionality for high-traffic data like popular events.
-//! Implements a cache layer between Axum handlers and PostgreSQL database.
+//! Provides a [`CacheLayer`] trait plus Redis and in-memory implementations
+//! for caching high-traffic payloads such as the events list.
 
+use async_trait::async_trait;
+use dashmap::DashMap;
 use redis::{aio::ConnectionManager, AsyncCommands, RedisError};
 use serde::{de::DeserializeOwned, Serialize};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// Cache key for the default events list payload.
+pub const EVENTS_LIST_CACHE_KEY: &str = "events:list";
+
+/// TTL for the events list cache (60 seconds).
+pub const EVENTS_LIST_CACHE_TTL: Duration = Duration::from_secs(60);
+
+/// Abstraction over cache backends used by handlers.
+#[async_trait]
+pub trait CacheLayer: Send + Sync {
+    /// Fetch a cached string value by key.
+    async fn get(&self, key: &str) -> Option<String>;
+
+    /// Store a string value with a TTL.
+    async fn set(&self, key: &str, value: &str, ttl: Duration);
+
+    /// Remove a cached value.
+    async fn delete(&self, key: &str);
+}
 
 /// Redis cache client wrapper
 #[derive(Clone)]
@@ -69,8 +91,150 @@ impl RedisCache {
         self.client.del(key).await
     }
 
+    /// Invalidate the events list cache key.
+    pub async fn invalidate_events_list(&mut self) {
+        if let Err(e) = self.delete(EVENTS_LIST_CACHE_KEY).await {
+            tracing::warn!("Failed to invalidate {}: {:?}", EVENTS_LIST_CACHE_KEY, e);
+        }
+    }
+
     /// Check if Redis is healthy
     pub async fn ping(&mut self) -> Result<(), RedisError> {
         redis::cmd("PING").query_async(&mut self.client).await
+    }
+
+    /// Clone the underlying multiplexed connection manager so services can
+    /// issue raw Redis commands (e.g. the waiting-room queue engine, #1187).
+    pub fn connection(&self) -> redis::aio::ConnectionManager {
+        self.client.clone()
+    }
+}
+
+#[async_trait]
+impl CacheLayer for RedisCache {
+    async fn get(&self, key: &str) -> Option<String> {
+        let mut client = self.client.clone();
+        match client.get::<_, Option<String>>(key).await {
+            Ok(value) => {
+                if value.is_some() {
+                    crate::metrics::CACHE_HITS_TOTAL
+                        .with_label_values(&[key])
+                        .inc();
+                } else {
+                    crate::metrics::CACHE_MISSES_TOTAL
+                        .with_label_values(&[key])
+                        .inc();
+                }
+                value
+            }
+            Err(e) => {
+                tracing::warn!("Redis CacheLayer get error for {}: {:?}", key, e);
+                None
+            }
+        }
+    }
+
+    async fn set(&self, key: &str, value: &str, ttl: Duration) {
+        let mut client = self.client.clone();
+        if let Err(e) = client.set_ex::<_, _, ()>(key, value, ttl.as_secs()).await {
+            tracing::warn!("Redis CacheLayer set error for {}: {:?}", key, e);
+        }
+    }
+
+    async fn delete(&self, key: &str) {
+        let mut client = self.client.clone();
+        if let Err(e) = client.del::<_, ()>(key).await {
+            tracing::warn!("Redis CacheLayer delete error for {}: {:?}", key, e);
+        }
+    }
+}
+
+/// In-memory LRU-style cache backed by DashMap (used in tests and as a fallback).
+#[derive(Clone, Default)]
+pub struct MemoryCache {
+    entries: Arc<DashMap<String, CacheEntry>>,
+}
+
+struct CacheEntry {
+    value: String,
+    expires_at: Instant,
+}
+
+impl MemoryCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait]
+impl CacheLayer for MemoryCache {
+    async fn get(&self, key: &str) -> Option<String> {
+        let now = Instant::now();
+        if let Some(entry) = self.entries.get(key) {
+            if entry.expires_at > now {
+                return Some(entry.value.clone());
+            }
+        }
+        self.entries.remove(key);
+        None
+    }
+
+    async fn set(&self, key: &str, value: &str, ttl: Duration) {
+        self.entries.insert(
+            key.to_string(),
+            CacheEntry {
+                value: value.to_string(),
+                expires_at: Instant::now() + ttl,
+            },
+        );
+    }
+
+    async fn delete(&self, key: &str) {
+        self.entries.remove(key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_memory_cache_returns_cached_value_on_second_get() {
+        let cache = MemoryCache::new();
+        let payload = r#"{"items":[{"id":"1"}],"pagination":{"page_size":1,"has_more":false,"next_cursor":null}}"#;
+
+        assert!(cache.get(EVENTS_LIST_CACHE_KEY).await.is_none());
+
+        cache
+            .set(EVENTS_LIST_CACHE_KEY, payload, EVENTS_LIST_CACHE_TTL)
+            .await;
+
+        let first = cache.get(EVENTS_LIST_CACHE_KEY).await;
+        let second = cache.get(EVENTS_LIST_CACHE_KEY).await;
+
+        assert_eq!(first.as_deref(), Some(payload));
+        assert_eq!(second.as_deref(), Some(payload));
+        assert_eq!(first, second);
+    }
+
+    #[tokio::test]
+    async fn test_memory_cache_delete_purges_key() {
+        let cache = MemoryCache::new();
+        cache
+            .set(EVENTS_LIST_CACHE_KEY, "payload", EVENTS_LIST_CACHE_TTL)
+            .await;
+        cache.delete(EVENTS_LIST_CACHE_KEY).await;
+        assert!(cache.get(EVENTS_LIST_CACHE_KEY).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_memory_cache_ttl_expiry() {
+        let cache = MemoryCache::new();
+        cache
+            .set(EVENTS_LIST_CACHE_KEY, "payload", Duration::from_millis(20))
+            .await;
+        assert!(cache.get(EVENTS_LIST_CACHE_KEY).await.is_some());
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(cache.get(EVENTS_LIST_CACHE_KEY).await.is_none());
     }
 }

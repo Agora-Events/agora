@@ -16,12 +16,13 @@ use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::cache::RedisCache;
+use crate::cache::{RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL};
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
 use crate::utils::cursor_pagination::{
-    decode_cursor, encode_cursor, CursorParams, CursorResponse, EventCursor, PastEventCursor,
+    decode_cursor, encode_cursor, AttendeeCursor, CursorParams, CursorResponse, EventCursor,
+    PastEventCursor,
 };
 use crate::utils::db_timer::log_if_slow;
 use crate::utils::error::AppError;
@@ -223,6 +224,25 @@ pub struct ValidatedEventSort {
 }
 
 impl EventFilters {
+    /// True when no query filters are applied (eligible for the shared list cache).
+    fn is_unfiltered(&self) -> bool {
+        self.organizer_id.is_none()
+            && self.organizer_wallet.is_none()
+            && self.location.is_none()
+            && self.start_after.is_none()
+            && self.start_before.is_none()
+            && self.search.is_none()
+            && self.min_tickets_available.is_none()
+            && self.is_free.is_none()
+            && self.start_date.is_none()
+            && self.end_date.is_none()
+            && self.is_featured.is_none()
+            && self.followers_only.is_none()
+            && self.sort_by.is_none()
+            && self.sort_order.is_none()
+            && self.sort.is_none()
+    }
+
     /// Validate `sort_by` and `sort_order`, applying defaults when omitted.
     /// The `sort` field takes precedence when provided.
     pub fn validate_sort(&self) -> Result<ValidatedEventSort, String> {
@@ -294,50 +314,30 @@ fn build_event_where_clause(
 
     if filters.organizer_id.is_some() {
         param_count += 1;
-        where_clauses.push(format!("organizer_id = ${}", param_count));
-    }
-
-    if filters.organizer_wallet.is_some() {
-        param_count += 1;
-        where_clauses.push(format!(
-            "organizer_id = (SELECT id FROM organizers WHERE wallet_address = ${})",
-            param_count
-        ));
+        where_clauses.push(format!("e.organizer_id = ${}", param_count));
     }
 
     if filters.location.is_some() {
         param_count += 1;
-        where_clauses.push(format!("location ILIKE ${}", param_count));
+        where_clauses.push(format!("e.location ILIKE ${}", param_count));
     }
 
     if filters.start_after.is_some() {
         param_count += 1;
-        where_clauses.push(format!("start_time >= ${}", param_count));
+        where_clauses.push(format!("e.start_time >= ${}", param_count));
     }
 
     if filters.start_before.is_some() {
         param_count += 1;
-        where_clauses.push(format!("start_time <= ${}", param_count));
+        where_clauses.push(format!("e.start_time <= ${}", param_count));
     }
 
     if filters.search.is_some() {
         param_count += 1;
         where_clauses.push(format!(
-            "(title ILIKE ${0} OR description ILIKE ${0})",
-            param_count
+            "(e.title ILIKE ${} OR e.description ILIKE ${})",
+            param_count, param_count
         ));
-    }
-
-    if let Some(is_free) = filters.is_free {
-        if is_free {
-            where_clauses.push(
-                "NOT EXISTS (SELECT 1 FROM ticket_tiers tt WHERE tt.event_id = events.id AND tt.price > 0.0)".to_string(),
-            );
-        } else {
-            where_clauses.push(
-                "EXISTS (SELECT 1 FROM ticket_tiers tt WHERE tt.event_id = events.id AND tt.price > 0.0)".to_string(),
-            );
-        }
     }
 
     if let Some(_min_tickets) = filters.min_tickets_available {
@@ -371,7 +371,7 @@ fn build_event_where_clause(
         } else {
             where_clauses.push("is_featured = FALSE".to_string());
         }
-    }
+    };
 
     // Cursor condition for keyset pagination on the active sort column.
     if cursor.is_some() {
@@ -676,6 +676,75 @@ mod tests {
     }
 
     #[test]
+    fn test_start_date_and_end_date_filters_bind_expected_param_count() {
+        let filters = EventFilters {
+            is_featured: None,
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: None,
+            is_free: None,
+            start_date: Some("2026-06-15".to_string()),
+            end_date: Some("2026-06-20".to_string()),
+            followers_only: None,
+            sort_by: None,
+            sort_order: None,
+            sort: None,
+        };
+        let (where_clause, param_count) =
+            build_event_where_clause(&filters, &default_event_sort(), None);
+        assert_eq!(
+            param_count, 2,
+            "Expected param_count of 2 for start_date + end_date, got: {}. where_clause: {}",
+            param_count, where_clause
+        );
+        assert!(where_clause.contains("start_time >= $1"));
+        assert!(where_clause.contains("start_time <= $2"));
+    }
+
+    #[test]
+    fn test_whitespace_only_search_is_treated_as_no_search() {
+        let filters = EventFilters {
+            is_featured: None,
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: Some("   ".to_string()),
+            min_tickets_available: None,
+            is_free: None,
+            start_date: None,
+            end_date: None,
+            followers_only: None,
+            sort_by: None,
+            sort_order: None,
+            sort: None,
+        };
+
+        let normalized = filters
+            .search
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        assert_eq!(
+            normalized, None,
+            "Whitespace-only search should normalize to None"
+        );
+    }
+
+    #[test]
+    fn test_real_search_term_is_preserved_after_trim() {
+        let raw = "  concert  ".to_string();
+        let normalized = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
+        assert_eq!(normalized, Some("concert".to_string()));
+    }
+
+    #[test]
     fn test_followers_only_filter() {
         let filters = EventFilters {
             is_featured: None,
@@ -944,6 +1013,85 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_event_timestamps_end_time_before_start_time() {
+        let start = Utc::now();
+        let end = start - chrono::Duration::hours(1); // end before start
+        let result = validate_event_timestamps(start, Some(end));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("end_time must be strictly after start_time"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_end_time_equals_start_time() {
+        let start = Utc::now();
+        let end = start; // end equals start
+        let result = validate_event_timestamps(start, Some(end));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("end_time must be strictly after start_time"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_start_time_in_past() {
+        let start = Utc::now() - chrono::Duration::minutes(10); // 10 minutes ago
+        let end = Some(start + chrono::Duration::hours(2));
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("start_time must be in the future"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_start_time_in_grace_period() {
+        let start = Utc::now() - chrono::Duration::seconds(200); // 3.3 minutes ago (within grace period)
+        let end = Some(start + chrono::Duration::hours(2));
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_valid_future_timestamps() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let end = Some(start + chrono::Duration::hours(3));
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_no_end_time() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let result = validate_event_timestamps(start, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_duration_exceeds_max() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let end = Some(start + chrono::Duration::days(31)); // 31 days exceeds max
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("event duration must not exceed"));
+    }
+
+    #[test]
+    fn test_validate_event_timestamps_duration_at_max() {
+        let start = Utc::now() + chrono::Duration::hours(1);
+        let end = Some(start + chrono::Duration::days(30)); // exactly 30 days
+        let result = validate_event_timestamps(start, end);
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn test_ratings_summary_average_computed() {
         // 1×4 + 1×5 = 9 / 2 = 4.5
         let rows: Vec<(i16, i64)> = vec![(4, 1), (5, 1)];
@@ -1041,6 +1189,28 @@ mod tests {
     fn test_validate_event_location_rejects_too_long_location() {
         let err = validate_event_location(&"A".repeat(MAX_LOCATION_LENGTH + 1)).unwrap_err();
         assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_accepts_none() {
+        assert!(validate_event_coordinates(None, None).is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_accepts_valid_pair() {
+        assert!(validate_event_coordinates(Some(6.5244), Some(3.3792)).is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_rejects_partial_pair() {
+        assert!(validate_event_coordinates(Some(6.5244), None).is_err());
+        assert!(validate_event_coordinates(None, Some(3.3792)).is_err());
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_rejects_out_of_range() {
+        assert!(validate_event_coordinates(Some(91.0), Some(0.0)).is_err());
+        assert!(validate_event_coordinates(Some(0.0), Some(181.0)).is_err());
     }
 
     #[test]
@@ -1142,6 +1312,103 @@ mod tests {
             clause
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Issue #1263 — search query validation / sanitisation
+    // -----------------------------------------------------------------------
+
+    /// Helper that applies the same normalisation logic used in `search_events`.
+    fn normalise_search_q(raw: &str) -> Result<Option<String>, String> {
+        if raw.len() > MAX_SEARCH_QUERY_LENGTH {
+            return Err(format!(
+                "Search query must not exceed {} characters",
+                MAX_SEARCH_QUERY_LENGTH
+            ));
+        }
+        let trimmed = raw.trim().to_string();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        let sanitised = trimmed
+            .to_lowercase()
+            .replace('%', "")
+            .replace('_', " ");
+        let sanitised = sanitised.trim().to_string();
+        Ok(if sanitised.is_empty() { None } else { Some(sanitised) })
+    }
+
+    #[test]
+    fn test_search_q_over_128_chars_is_rejected() {
+        let long_q = "a".repeat(MAX_SEARCH_QUERY_LENGTH + 1);
+        assert!(
+            normalise_search_q(&long_q).is_err(),
+            "query longer than {} characters should be rejected",
+            MAX_SEARCH_QUERY_LENGTH
+        );
+    }
+
+    #[test]
+    fn test_search_q_exactly_128_chars_is_accepted() {
+        let q = "a".repeat(MAX_SEARCH_QUERY_LENGTH);
+        assert!(
+            normalise_search_q(&q).is_ok(),
+            "query of exactly {} characters should be accepted",
+            MAX_SEARCH_QUERY_LENGTH
+        );
+    }
+
+    #[test]
+    fn test_search_q_empty_string_treated_as_absent() {
+        let result = normalise_search_q("").unwrap();
+        assert_eq!(result, None, "empty query should normalise to None");
+    }
+
+    #[test]
+    fn test_search_q_whitespace_only_treated_as_absent() {
+        let result = normalise_search_q("   ").unwrap();
+        assert_eq!(
+            result, None,
+            "whitespace-only query should normalise to None"
+        );
+    }
+
+    #[test]
+    fn test_search_q_percent_wildcard_stripped() {
+        // A bare `%` must not produce a full-scan LIKE pattern.
+        let result = normalise_search_q("%").unwrap();
+        assert_eq!(
+            result, None,
+            "a bare '%' should be stripped and treated as absent"
+        );
+    }
+
+    #[test]
+    fn test_search_q_percent_mixed_stripped() {
+        // `%music%` should become `music`.
+        let result = normalise_search_q("%music%").unwrap();
+        assert_eq!(result, Some("music".to_string()));
+    }
+
+    #[test]
+    fn test_search_q_underscore_wildcard_replaced_with_space() {
+        let result = normalise_search_q("hello_world").unwrap();
+        // `_` is replaced with a space, then the result is trimmed.
+        assert!(result.is_some());
+        let inner = result.unwrap();
+        assert!(!inner.contains('_'), "underscore should be removed from query");
+    }
+
+    #[test]
+    fn test_search_q_normalised_to_lowercase() {
+        let result = normalise_search_q("CONCERT").unwrap();
+        assert_eq!(result, Some("concert".to_string()));
+    }
+
+    #[test]
+    fn test_search_q_trimmed_before_use() {
+        let result = normalise_search_q("  jazz  ").unwrap();
+        assert_eq!(result, Some("jazz".to_string()));
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1178,9 +1445,9 @@ pub struct SubmitEventRatingResponse {
 /// # Response
 /// Returns a cursor-paginated list of upcoming events with metadata
 pub async fn list_events(
-    State(state): State<EventState>,
+    State(mut state): State<EventState>,
     Query(pagination): Query<CursorParams>,
-    Query(filters): Query<EventFilters>,
+    Query(mut filters): Query<EventFilters>,
 ) -> Response {
     let validated = pagination.validate();
 
@@ -1188,6 +1455,33 @@ pub async fn list_events(
         Ok(sort) => sort,
         Err(message) => return AppError::ValidationError(message).into_response(),
     };
+
+    // Serve the default (unfiltered, first-page) list from cache when available.
+    let use_list_cache = validated.cursor.is_none()
+        && filters.is_unfiltered()
+        && validated.limit == crate::utils::cursor_pagination::DEFAULT_PAGE_SIZE;
+    if use_list_cache {
+        match state
+            .redis
+            .get::<CursorResponse<Event>>(EVENTS_LIST_CACHE_KEY)
+            .await
+        {
+            Ok(Some(cached)) => {
+                tracing::debug!("Cache hit for {}", EVENTS_LIST_CACHE_KEY);
+                return success(cached, "Events retrieved successfully (cached)").into_response();
+            }
+            Ok(None) => {
+                tracing::debug!("Cache miss for {}", EVENTS_LIST_CACHE_KEY);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Redis error for {}, falling back to database: {:?}",
+                    EVENTS_LIST_CACHE_KEY,
+                    e
+                );
+            }
+        }
+    }
 
     // Decode cursor if provided
     let cursor = match validated.cursor {
@@ -1200,6 +1494,16 @@ pub async fn list_events(
         },
         None => None,
     };
+
+    // Normalize search: treat whitespace-only search as no search term at all,
+    // so a single space doesn't match every event via `% %` ILIKE.
+    if let Some(trimmed) = filters.search.as_ref().map(|s| s.trim().to_string()) {
+        filters.search = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        };
+    }
 
     // Build the WHERE clause dynamically based on filters
     let (where_clause, param_count) = build_event_where_clause(&filters, &sort, cursor.as_ref());
@@ -1393,6 +1697,17 @@ pub async fn list_events(
     populate_is_free(&mut items, &state.pool).await;
 
     let response = CursorResponse::new(items, &validated, next_cursor);
+
+    if use_list_cache {
+        if let Err(e) = state
+            .redis
+            .set(EVENTS_LIST_CACHE_KEY, &response, EVENTS_LIST_CACHE_TTL)
+            .await
+        {
+            tracing::warn!("Failed to cache {}: {:?}", EVENTS_LIST_CACHE_KEY, e);
+        }
+    }
+
     let mut resp = success(response, "Events retrieved successfully").into_response();
     if let Ok(v) = HeaderValue::from_str(&total_count.to_string()) {
         resp.headers_mut().insert("X-Total-Count", v);
@@ -1560,6 +1875,7 @@ pub async fn get_event(
     }
 
     // Cache miss or error, fetch from database
+    let start = std::time::Instant::now();
     let event = match sqlx::query_as::<_, Event>(
         "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
@@ -1569,14 +1885,17 @@ pub async fn get_event(
     {
         Ok(Some(event)) => event,
         Ok(None) => {
+            log_if_slow("get_event", start.elapsed());
             return AppError::NotFound(format!("Event with id '{}' not found", event_id))
                 .into_response();
         }
         Err(e) => {
+            log_if_slow("get_event", start.elapsed());
             tracing::error!("Failed to fetch event: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
+    log_if_slow("get_event", start.elapsed());
 
     // Fetch organizer profile by wallet address (Issue #486)
     // Look up the organizer's Stellar wallet, then fetch their profile.
@@ -1626,7 +1945,11 @@ pub async fn get_event(
         {
             Ok(rows) => Some(rows),
             Err(e) => {
-                tracing::warn!("Failed to fetch ticket tiers for event {}: {:?}", event_id, e);
+                tracing::warn!(
+                    "Failed to fetch ticket tiers for event {}: {:?}",
+                    event_id,
+                    e
+                );
                 None
             }
         }
@@ -1726,6 +2049,9 @@ pub async fn list_similar_events(
 /// Maximum allowed length for an event title.
 pub const MAX_EVENT_TITLE_LENGTH: usize = 200;
 
+/// Maximum allowed length for an event description.
+pub const MAX_EVENT_DESCRIPTION_LENGTH: usize = 10000;
+
 /// Validates an event title for create/update requests.
 pub fn validate_event_title(title: &str) -> Result<(), String> {
     let trimmed = title.trim();
@@ -1737,6 +2063,19 @@ pub fn validate_event_title(title: &str) -> Result<(), String> {
             "title must not exceed {} characters",
             MAX_EVENT_TITLE_LENGTH
         ));
+    }
+    Ok(())
+}
+
+/// Validates an event description for create/update requests.
+pub fn validate_event_description(description: &Option<String>) -> Result<(), String> {
+    if let Some(ref desc) = description {
+        if desc.chars().count() > MAX_EVENT_DESCRIPTION_LENGTH {
+            return Err(format!(
+                "description must not exceed {} characters",
+                MAX_EVENT_DESCRIPTION_LENGTH
+            ));
+        }
     }
     Ok(())
 }
@@ -1754,6 +2093,10 @@ pub struct CreateEventRequest {
     pub image_url: Option<String>,
     /// Optional contact email for the event host.
     pub host_email: Option<String>,
+    /// Optional latitude in decimal degrees (-90 to 90) for map discovery.
+    pub latitude: Option<f64>,
+    /// Optional longitude in decimal degrees (-180 to 180) for map discovery.
+    pub longitude: Option<f64>,
 }
 
 const MAX_IMAGE_URL_LEN: usize = 2048;
@@ -1791,6 +2134,13 @@ fn is_valid_email(email: &str) -> bool {
 
 const MAX_LOCATION_LENGTH: usize = 500;
 
+/// Maximum allowed event duration in days (30 days).
+const MAX_EVENT_DURATION_DAYS: i64 = 30;
+
+/// Grace period in seconds for start_time validation (5 minutes).
+/// Allows organizers to create events that start slightly in the past.
+const START_TIME_GRACE_PERIOD_SECONDS: i64 = 300;
+
 fn validate_event_location(location: &str) -> Result<(), AppError> {
     if location.trim().is_empty() {
         return Err(AppError::ValidationError(
@@ -1802,6 +2152,73 @@ fn validate_event_location(location: &str) -> Result<(), AppError> {
             "location must be at most {MAX_LOCATION_LENGTH} characters"
         )));
     }
+    Ok(())
+}
+
+/// Validates optional event coordinates used for map-based discovery.
+/// Both must be present together; individually omitting either is allowed only
+/// when both are `None` (existing events without geocoding remain valid).
+fn validate_event_coordinates(
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+) -> Result<(), AppError> {
+    match (latitude, longitude) {
+        (None, None) => Ok(()),
+        (Some(_), None) | (None, Some(_)) => Err(AppError::ValidationError(
+            "latitude and longitude must both be provided together".to_string(),
+        )),
+        (Some(lat), Some(lng)) => {
+            if !(-90.0..=90.0).contains(&lat) {
+                return Err(AppError::ValidationError(
+                    "latitude must be between -90 and 90".to_string(),
+                ));
+            }
+            if !(-180.0..=180.0).contains(&lng) {
+                return Err(AppError::ValidationError(
+                    "longitude must be between -180 and 180".to_string(),
+                ));
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Validates event timestamps for create/update requests.
+/// Ensures start_time is not too far in the past, end_time > start_time (if provided),
+/// and event duration does not exceed the maximum allowed.
+fn validate_event_timestamps(
+    start_time: DateTime<Utc>,
+    end_time: Option<DateTime<Utc>>,
+) -> Result<(), AppError> {
+    let now = Utc::now();
+
+    // Check that start_time is not too far in the past (with grace period)
+    let grace_period = chrono::Duration::seconds(START_TIME_GRACE_PERIOD_SECONDS);
+    if start_time + grace_period < now {
+        return Err(AppError::ValidationError(
+            "start_time must be in the future or within the grace period".to_string(),
+        ));
+    }
+
+    // If end_time is provided, validate it
+    if let Some(end) = end_time {
+        // end_time must be strictly after start_time
+        if end <= start_time {
+            return Err(AppError::ValidationError(
+                "end_time must be strictly after start_time".to_string(),
+            ));
+        }
+
+        // Check event duration does not exceed maximum
+        let max_duration = chrono::Duration::days(MAX_EVENT_DURATION_DAYS);
+        if end - start_time > max_duration {
+            return Err(AppError::ValidationError(format!(
+                "event duration must not exceed {} days",
+                MAX_EVENT_DURATION_DAYS
+            )));
+        }
+    }
+
     Ok(())
 }
 
@@ -1837,9 +2254,21 @@ pub async fn create_event(
         return AppError::ValidationError(message).into_response();
     }
 
+    // Validate event timestamps
+    if let Err(e) = validate_event_timestamps(payload.start_time, payload.end_time) {
+        return e.into_response();
+    }
+    if let Err(message) = validate_event_description(&payload.description) {
+        return AppError::ValidationError(message).into_response();
+    }
+
+    if let Err(e) = validate_event_coordinates(payload.latitude, payload.longitude) {
+        return e.into_response();
+    }
+
     let event = match sqlx::query_as::<_, Event>(
-        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time, image_url, host_email)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time, image_url, host_email, latitude, longitude)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING *",
     )
     .bind(payload.organizer_id)
@@ -1850,6 +2279,8 @@ pub async fn create_event(
     .bind(payload.end_time)
     .bind(&payload.image_url)
     .bind(&payload.host_email)
+    .bind(payload.latitude)
+    .bind(payload.longitude)
     .fetch_one(&state.pool)
     .await
     {
@@ -1897,6 +2328,9 @@ pub async fn create_event(
         tracing::warn!("Cache warm-up failed for event {}: {:?}", event.id, e);
     }
 
+    // New events invalidate the shared list cache.
+    state.redis.invalidate_events_list().await;
+
     success(event, "Event created successfully").into_response()
 }
 
@@ -1914,6 +2348,7 @@ pub async fn submit_event_rating(
             .into_response();
     }
 
+    let start = std::time::Instant::now();
     let ticket = match sqlx::query_as::<_, (String, uuid::Uuid)>(
         r#"SELECT t.status, tt.event_id
            FROM tickets t
@@ -1926,10 +2361,12 @@ pub async fn submit_event_rating(
     {
         Ok(Some((status, ticket_event_id))) => (status, ticket_event_id),
         Ok(None) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             return AppError::NotFound(format!("Ticket with id '{}' not found", payload.ticket_id))
                 .into_response();
         }
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to fetch ticket for rating: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
@@ -1946,31 +2383,69 @@ pub async fn submit_event_rating(
     {
         Ok(exists) => exists,
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to check event existence for rating: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
     if !event_exists {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::NotFound(format!("Event with id '{}' not found", event_id))
             .into_response();
     }
 
     if ticket_event_id != event_id {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::Forbidden("Ticket does not belong to this event".to_string())
             .into_response();
     }
 
-    if ticket_status != "used" {
+    if ticket_status != "Scanned" {
+        log_if_slow("submit_event_rating", start.elapsed());
         return AppError::ValidationError(
-            "Only attendees with a used ticket may leave a rating".to_string(),
+            "Only attendees with a scanned ticket may leave a rating".to_string(),
         )
         .into_response();
+    }
+
+    // Verify event has ended (if end_time is set). Ratings are only allowed after event end.
+    let maybe_end_time = match sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>(
+        "SELECT end_time FROM events WHERE id = $1 AND is_flagged = FALSE",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(opt) => opt,
+        Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
+            tracing::error!("Failed to fetch event end_time for rating: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if maybe_end_time.is_none() {
+        // event not found or flagged
+        log_if_slow("submit_event_rating", start.elapsed());
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    if let Some(end_time) = maybe_end_time.unwrap() {
+        if end_time > Utc::now() {
+            log_if_slow("submit_event_rating", start.elapsed());
+            return AppError::ValidationError(
+                "Ratings may only be submitted after the event has ended".to_string(),
+            )
+            .into_response();
+        }
     }
 
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to begin transaction: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
@@ -1985,16 +2460,16 @@ pub async fn submit_event_rating(
     {
         Ok(exists) => exists.is_some(),
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to verify existing rating: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
     if already_rated {
-        return AppError::ValidationError(
-            "Each attendee may only submit one rating per event".to_string(),
-        )
-        .into_response();
+        log_if_slow("submit_event_rating", start.elapsed());
+        return AppError::Conflict("Rating already submitted for this ticket".to_string())
+            .into_response();
     }
 
     if let Err(e) = sqlx::query(
@@ -2007,6 +2482,7 @@ pub async fn submit_event_rating(
     .execute(&mut *tx)
     .await
     {
+        log_if_slow("submit_event_rating", start.elapsed());
         tracing::error!("Failed to insert event rating: {:?}", e);
         return AppError::DatabaseError(e).into_response();
     }
@@ -2021,19 +2497,23 @@ pub async fn submit_event_rating(
     {
         Ok(Some(event)) => event,
         Ok(None) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             return AppError::NotFound(format!("Event with id '{}' not found", event_id))
                 .into_response();
         }
         Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
             tracing::error!("Failed to update event rating aggregates: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
     if let Err(e) = tx.commit().await {
+        log_if_slow("submit_event_rating", start.elapsed());
         tracing::error!("Failed to commit rating transaction: {:?}", e);
         return AppError::DatabaseError(e).into_response();
     }
+    log_if_slow("submit_event_rating", start.elapsed());
 
     let cache_key = format!("event:detail:{}", event_id);
     if let Err(e) = state.redis.delete(&cache_key).await {
@@ -2043,6 +2523,7 @@ pub async fn submit_event_rating(
             e
         );
     }
+    state.redis.invalidate_events_list().await;
 
     let response = SubmitEventRatingResponse {
         sum_of_ratings: updated_event.sum_of_ratings,
@@ -2053,13 +2534,17 @@ pub async fn submit_event_rating(
     success(response, "Rating recorded successfully").into_response()
 }
 
+/// Maximum length for the free-text search query parameter `q`.
+/// Queries longer than this are rejected with a 400 to prevent expensive full-table scans.
+const MAX_SEARCH_QUERY_LENGTH: usize = 128;
+
 /// Search events with advanced filters
 ///
 /// # Endpoint
 /// GET `/api/v1/events/search`
 ///
 /// # Query Parameters
-/// - `q` (optional): Keyword search in title and description
+/// - `q` (optional): Keyword search in title and description (max 128 chars)
 /// - `category_id` (optional): Filter by category UUID
 /// - `min_price` (optional): Minimum ticket price in cents
 /// - `max_price` (optional): Maximum ticket price in cents
@@ -2075,11 +2560,38 @@ const SEARCH_CACHE_TTL: Duration = Duration::from_secs(120);
 
 pub async fn search_events(
     State(mut state): State<EventState>,
-    Query(params): Query<SearchParams>,
+    Query(mut params): Query<SearchParams>,
 ) -> Response {
     if let Err(msg) = params.validate_page_size() {
         return AppError::ValidationError(msg).into_response();
     }
+
+    // --- Issue #1263: sanitise and validate the free-text search parameter ---
+    if let Some(raw_q) = params.q.take() {
+        // Reject queries that exceed the maximum allowed length.
+        if raw_q.len() > MAX_SEARCH_QUERY_LENGTH {
+            return AppError::ValidationError(format!(
+                "Search query must not exceed {} characters",
+                MAX_SEARCH_QUERY_LENGTH
+            ))
+            .into_response();
+        }
+
+        // Trim whitespace; treat empty/whitespace-only queries as absent.
+        let trimmed = raw_q.trim().to_string();
+        if trimmed.is_empty() {
+            params.q = None;
+        } else {
+            // Normalise to lowercase and strip SQL LIKE wildcards.
+            let sanitised = trimmed
+                .to_lowercase()
+                .replace('%', "")
+                .replace('_', " ");
+            let sanitised = sanitised.trim().to_string();
+            params.q = if sanitised.is_empty() { None } else { Some(sanitised) };
+        }
+    }
+
     let pagination = PaginationParams {
         page: params.page,
         page_size: params.page_size,
@@ -2378,6 +2890,7 @@ pub async fn toggle_event_flag(
     if let Err(e) = state.redis.delete(&cache_key).await {
         tracing::warn!("Failed to invalidate cache for event {}: {:?}", event_id, e);
     }
+    state.redis.invalidate_events_list().await;
 
     let mut response = success(
         json!({ "is_flagged": new_flagged }),
@@ -2435,6 +2948,7 @@ pub async fn set_event_featured(
             e
         );
     }
+    state.redis.invalidate_events_list().await;
 
     let mut response = success(
         json!({ "is_featured": updated }),
@@ -2445,6 +2959,60 @@ pub async fn set_event_featured(
     response
         .extensions_mut()
         .insert(AuditMetadata(json!({ "featured": updated })));
+
+    response
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FlagEventRequest {
+    pub flagged: bool,
+}
+
+/// Set or clear the flagged status of an event (admin only).
+///
+/// PATCH `/api/v1/admin/events/:id/flag`
+pub async fn flag_event(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Json(payload): Json<FlagEventRequest>,
+) -> Response {
+    let updated = match sqlx::query_as::<_, (bool,)>(
+        "UPDATE events SET is_flagged = $1 WHERE id = $2 RETURNING is_flagged",
+    )
+    .bind(payload.flagged)
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(row) => row.0,
+        Err(sqlx::Error::RowNotFound) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to update event flagged status: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!(
+            "Failed to invalidate cache for flagged update on event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    let mut response = success(
+        json!({ "is_flagged": updated }),
+        "Event flagged status updated successfully",
+    )
+    .into_response();
+
+    response
+        .extensions_mut()
+        .insert(AuditMetadata(json!({ "flagged": updated })));
 
     response
 }
@@ -3272,6 +3840,156 @@ pub async fn get_event_counts(State(mut state): State<EventState>) -> Response {
     success(counts, "Event counts retrieved").into_response()
 }
 
+/// Query parameters for `GET /api/v1/events/map`.
+#[derive(Debug, Deserialize)]
+pub struct MapSearchParams {
+    /// Center latitude in decimal degrees.
+    pub latitude: f64,
+    /// Center longitude in decimal degrees.
+    pub longitude: f64,
+    /// Search radius in kilometres (default: 50, max: 500).
+    pub radius: Option<f64>,
+    /// Maximum results (default: 50, max: 200).
+    pub limit: Option<u32>,
+}
+
+/// A nearby event with computed distance from the query point.
+#[derive(Debug, Serialize)]
+pub struct MapEvent {
+    #[serde(flatten)]
+    pub event: Event,
+    /// Distance from the query point in kilometres.
+    pub distance_km: f64,
+}
+
+/// Parses a single row from the `get_events_map` distance query into an
+/// `Event` plus its computed `distance_km`. Pulled out of `get_events_map`
+/// itself because `?` can only be used in a function returning `Result`/
+/// `Option`, and that handler returns a bare `Response`.
+fn map_event_row(row: &sqlx::postgres::PgRow) -> Result<(Event, f64), sqlx::Error> {
+    let event = Event {
+        id: row.try_get("id")?,
+        organizer_id: row.try_get("organizer_id")?,
+        title: row.try_get("title")?,
+        description: row.try_get("description")?,
+        location: row.try_get("location")?,
+        start_time: row.try_get("start_time")?,
+        end_time: row.try_get("end_time")?,
+        is_flagged: row.try_get("is_flagged")?,
+        is_featured: row.try_get("is_featured")?,
+        sum_of_ratings: row.try_get("sum_of_ratings")?,
+        count_of_ratings: row.try_get("count_of_ratings")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+        image_url: row.try_get("image_url")?,
+        latitude: row.try_get("latitude")?,
+        longitude: row.try_get("longitude")?,
+        is_free: false,
+        is_free_populated: false,
+        total_tickets: 0,
+        minted_tickets: 0,
+    };
+    let distance_km: f64 = row.try_get("distance_km")?;
+    Ok((event, distance_km))
+}
+
+/// GET /api/v1/events/map
+///
+/// Returns upcoming events within a given radius of a geographic coordinate,
+/// sorted by distance ascending. Events without coordinates are excluded.
+///
+/// # Query Parameters
+/// - `latitude` (required): Center latitude in decimal degrees (-90 to 90).
+/// - `longitude` (required): Center longitude in decimal degrees (-180 to 180).
+/// - `radius` (optional): Search radius in kilometres (default: 50, max: 500).
+/// - `limit` (optional): Maximum results (default: 50, max: 200).
+///
+/// # Response
+/// Returns a list of nearby events with a `distance_km` field.
+pub async fn get_events_map(
+    State(state): State<EventState>,
+    Query(params): Query<MapSearchParams>,
+) -> Response {
+    let lat = params.latitude;
+    let lng = params.longitude;
+    let radius_km = params.radius.unwrap_or(50.0).clamp(1.0, 500.0);
+    let limit = (params.limit.unwrap_or(50) as i64).clamp(1, 200);
+
+    if !(-90.0..=90.0).contains(&lat) {
+        return AppError::ValidationError("latitude must be between -90 and 90".to_string())
+            .into_response();
+    }
+    if !(-180.0..=180.0).contains(&lng) {
+        return AppError::ValidationError("longitude must be between -180 and 180".to_string())
+            .into_response();
+    }
+
+    let rad_lat = lat.to_radians();
+    let rad_lng = lng.to_radians();
+
+    let query = r#"
+        SELECT e.*, (
+            6371 * ACOS(
+                LEAST(1.0, COS($1) * COS(RADIANS(e.latitude)) * COS(RADIANS(e.longitude) - $2)
+                      + SIN($1) * SIN(RADIANS(e.latitude)))
+            )
+        ) AS distance_km
+        FROM events e
+        WHERE e.latitude IS NOT NULL
+          AND e.longitude IS NOT NULL
+          AND e.is_flagged = FALSE
+          AND (e.end_time IS NULL OR e.end_time > NOW())
+          AND (
+              6371 * ACOS(
+                  LEAST(1.0, COS($1) * COS(RADIANS(e.latitude)) * COS(RADIANS(e.longitude) - $2)
+                        + SIN($1) * SIN(RADIANS(e.latitude)))
+              )
+          ) <= $3
+        ORDER BY distance_km ASC
+        LIMIT $4
+        "#;
+
+    let rows = match sqlx::query(query)
+        .bind(rad_lat)
+        .bind(rad_lng)
+        .bind(radius_km)
+        .bind(limit)
+        .fetch_all(&state.pool)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch map events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let mut parsed_events: Vec<Event> = Vec::with_capacity(rows.len());
+    let mut distances: Vec<f64> = Vec::with_capacity(rows.len());
+    for row in &rows {
+        match map_event_row(row) {
+            Ok((event, distance_km)) => {
+                parsed_events.push(event);
+                distances.push(distance_km);
+            }
+            Err(e) => {
+                tracing::error!("Failed to parse map event row: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        }
+    }
+
+    populate_is_free(&mut parsed_events, &state.pool).await;
+
+    let events: Vec<MapEvent> = parsed_events
+        .into_iter()
+        .zip(distances)
+        .map(|(event, distance_km)| MapEvent { event, distance_km })
+        .collect();
+
+    success(events, "Map events retrieved successfully").into_response()
+}
+
 /// GET /api/v1/events/:id/check-in-stats
 pub async fn get_checkin_stats(
     State(state): State<EventState>,
@@ -3280,7 +3998,7 @@ pub async fn get_checkin_stats(
     let row = sqlx::query(
         r#"
         SELECT
-            COUNT(*) FILTER (WHERE status = 'used') AS checked_in,
+            COUNT(*) FILTER (WHERE status IN ('used', 'Scanned')) AS checked_in,
             COUNT(*) AS total_sold
         FROM tickets
         WHERE event_id = $1
@@ -3317,9 +4035,14 @@ pub async fn get_event_organizer(
     State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    // First, verify the event exists and get the organizer_id
-    let organizer_id = match sqlx::query_scalar::<_, Uuid>(
-        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
+    let event = match sqlx::query_as::<_, Event>(
+        "SELECT e.*, \
+         COALESCE(SUM(tt.total_quantity), 0)::bigint AS total_tickets, \
+         COALESCE(SUM(tt.total_quantity - tt.available_quantity), 0)::bigint AS minted_tickets \
+         FROM events e \
+         LEFT JOIN ticket_tiers tt ON tt.event_id = e.id \
+         WHERE e.id = $1 \
+         GROUP BY e.id",
     )
     .bind(event_id)
     .fetch_optional(&state.pool)
@@ -3340,7 +4063,7 @@ pub async fn get_event_organizer(
     let wallet_address = match sqlx::query_scalar::<_, String>(
         "SELECT wallet_address FROM organizers WHERE id = $1",
     )
-    .bind(organizer_id)
+    .bind(event.organizer_id)
     .fetch_optional(&state.pool)
     .await
     {
@@ -3381,6 +4104,116 @@ pub async fn get_event_organizer(
     };
 
     success(profile, "Organizer profile retrieved successfully").into_response()
+}
+
+/// Response shape for a single attendee row.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct AttendeeResponse {
+    pub id: Uuid,
+    pub owner_wallet: Option<String>,
+    pub buyer_wallet: Option<String>,
+    pub quantity: i32,
+    pub created_at: chrono::DateTime<Utc>,
+}
+
+/// GET /api/v1/events/:id/attendees
+///
+/// Cursor-paginated list of ticket holders for an event. Default page size
+/// is 20, maximum 100. Requesting beyond the last page returns an empty
+/// list and no `next_cursor` (Issue #854).
+pub async fn list_event_attendees(
+    State(state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    Query(pagination): Query<CursorParams>,
+) -> Response {
+    let event_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to check event existence: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if !event_exists {
+        return AppError::NotFound(format!("Event with id '{event_id}' not found")).into_response();
+    }
+
+    let validated = pagination.validate();
+
+    let cursor = match validated.cursor {
+        Some(ref c) => match decode_cursor::<AttendeeCursor>(c) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::warn!("Invalid cursor provided: {}", e);
+                return AppError::ValidationError(format!("Invalid cursor: {}", e)).into_response();
+            }
+        },
+        None => None,
+    };
+
+    let items_query = if cursor.is_some() {
+        r#"
+        SELECT t.id, t.owner_wallet, t.buyer_wallet, t.quantity, t.created_at
+        FROM tickets t
+        JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+        WHERE tt.event_id = $1
+          AND (t.created_at > $3 OR (t.created_at = $3 AND t.id > $4))
+        ORDER BY t.created_at ASC, t.id ASC
+        LIMIT $2
+        "#
+    } else {
+        r#"
+        SELECT t.id, t.owner_wallet, t.buyer_wallet, t.quantity, t.created_at
+        FROM tickets t
+        JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+        WHERE tt.event_id = $1
+        ORDER BY t.created_at ASC, t.id ASC
+        LIMIT $2
+        "#
+    };
+
+    let mut query_builder = sqlx::query_as::<_, AttendeeResponse>(items_query)
+        .bind(event_id)
+        .bind(validated.query_limit());
+
+    if let Some(ref c) = cursor {
+        query_builder = query_builder.bind(c.created_at).bind(c.id);
+    }
+
+    let mut items = match query_builder.fetch_all(&state.pool).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch attendees for event {}: {:?}", event_id, e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let has_more = items.len() > validated.page_size();
+    let next_cursor = if has_more {
+        let last = items.pop().unwrap();
+        match encode_cursor(&AttendeeCursor {
+            created_at: last.created_at,
+            id: last.id,
+        }) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::error!("Failed to encode attendee cursor: {:?}", e);
+                return AppError::InternalServerError("Failed to encode cursor".to_string())
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+
+    let response = CursorResponse::new(items, &validated, next_cursor);
+    success(response, "Attendees retrieved successfully").into_response()
 }
 
 /// GET /api/v1/events/:id/export-attendees
@@ -3674,19 +4507,22 @@ pub async fn list_events_by_category(
 }
 
 /// Response shape for a single ticket tier.
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct TicketTierResponse {
     pub id: Uuid,
     pub name: String,
+    pub description: Option<String>,
     pub price: rust_decimal::Decimal,
-    pub quantity: i32,
-    pub sold: i32,
+    pub total_quantity: i32,
+    pub available_quantity: i32,
+    pub created_at: chrono::DateTime<Utc>,
 }
 
 /// GET `/api/v1/events/:id/ticket-tiers`
 ///
 /// Returns all ticket tiers for the given event ordered by price ascending.
-/// Returns 404 if the event does not exist.
+/// Returns 404 if the event does not exist; returns an empty list if the
+/// event exists but has no tiers (Issue #853).
 pub async fn list_ticket_tiers(
     State(state): State<EventState>,
     Path(event_id): Path<Uuid>,
@@ -3714,9 +4550,11 @@ pub async fn list_ticket_tiers(
         SELECT
             id,
             name,
+            description,
             price,
-            total_quantity    AS quantity,
-            (total_quantity - available_quantity) AS sold
+            total_quantity,
+            available_quantity,
+            created_at
         FROM ticket_tiers
         WHERE event_id = $1
         ORDER BY price ASC
@@ -3744,14 +4582,17 @@ fn test_ticket_tier_response_serialization() {
     let tier = TicketTierResponse {
         id: Uuid::new_v4(),
         name: "General".to_string(),
+        description: Some("General admission".to_string()),
         price: Decimal::new(2500, 2),
-        quantity: 500,
-        sold: 120,
+        total_quantity: 500,
+        available_quantity: 380,
+        created_at: Utc::now(),
     };
     let json = serde_json::to_value(&tier).unwrap();
     assert_eq!(json["name"], "General");
-    assert_eq!(json["quantity"], 500);
-    assert_eq!(json["sold"], 120);
+    assert_eq!(json["description"], "General admission");
+    assert_eq!(json["total_quantity"], 500);
+    assert_eq!(json["available_quantity"], 380);
 }
 
 #[test]
@@ -3774,8 +4615,12 @@ fn test_event_detail_tiers_omitted_when_none() {
         created_at: DateTime::default(),
         updated_at: DateTime::default(),
         image_url: None,
+        latitude: None,
+        longitude: None,
         is_free: false,
         minted_tickets: 0,
+        total_tickets: 0,
+        is_free_populated: true,
     };
 
     let detail = EventDetail {
@@ -3786,7 +4631,10 @@ fn test_event_detail_tiers_omitted_when_none() {
 
     let json = serde_json::to_value(&detail).unwrap();
     // `tiers` must not appear in the response when None.
-    assert!(json.get("tiers").is_none(), "tiers should be omitted when None");
+    assert!(
+        json.get("tiers").is_none(),
+        "tiers should be omitted when None"
+    );
 }
 
 #[test]
@@ -3810,16 +4658,22 @@ fn test_event_detail_tiers_present_when_some() {
         created_at: DateTime::default(),
         updated_at: DateTime::default(),
         image_url: None,
+        latitude: None,
+        longitude: None,
         is_free: true,
         minted_tickets: 0,
+        total_tickets: 0,
+        is_free_populated: true,
     };
 
     let tier = TicketTierResponse {
         id: Uuid::new_v4(),
         name: "VIP".to_string(),
         price: Decimal::new(0, 0),
-        quantity: 50,
-        sold: 5,
+        total_quantity: 50,
+        available_quantity: 45,
+        description: None,
+        created_at: chrono::Utc::now(),
     };
 
     let detail = EventDetail {
@@ -3829,7 +4683,9 @@ fn test_event_detail_tiers_present_when_some() {
     };
 
     let json = serde_json::to_value(&detail).unwrap();
-    let tiers = json.get("tiers").expect("tiers should be present when Some");
+    let tiers = json
+        .get("tiers")
+        .expect("tiers should be present when Some");
     assert!(tiers.is_array());
     assert_eq!(tiers.as_array().unwrap().len(), 1);
     assert_eq!(tiers[0]["name"], "VIP");
@@ -3870,6 +4726,24 @@ fn test_validate_event_title_rejects_too_long() {
     let title = "a".repeat(MAX_EVENT_TITLE_LENGTH + 1);
     let err = validate_event_title(&title).unwrap_err();
     assert!(err.contains("200"));
+}
+
+#[test]
+fn test_validate_event_description_accepts_max_length() {
+    let desc = Some("a".repeat(MAX_EVENT_DESCRIPTION_LENGTH));
+    assert!(validate_event_description(&desc).is_ok());
+}
+
+#[test]
+fn test_validate_event_description_rejects_too_long() {
+    let desc = Some("a".repeat(MAX_EVENT_DESCRIPTION_LENGTH + 1));
+    let err = validate_event_description(&desc).unwrap_err();
+    assert!(err.contains("10000"));
+}
+
+#[test]
+fn test_validate_event_description_allows_none() {
+    assert!(validate_event_description(&None).is_ok());
 }
 
 #[test]
@@ -3988,5 +4862,35 @@ mod search_cache_tests {
     #[test]
     fn test_search_cache_ttl_is_2_minutes() {
         assert_eq!(SEARCH_CACHE_TTL.as_secs(), 120);
+    }
+
+    #[test]
+    fn test_event_serialization_includes_ticket_totals() {
+        let event = Event {
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            title: "Test Event".to_string(),
+            description: None,
+            location: "Remote".to_string(),
+            start_time: Utc::now(),
+            end_time: None,
+            is_flagged: false,
+            is_featured: false,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            image_url: None,
+            latitude: None,
+            longitude: None,
+            is_free: false,
+            is_free_populated: false,
+            total_tickets: 100,
+            minted_tickets: 42,
+        };
+
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["total_tickets"], 100);
+        assert_eq!(json["minted_tickets"], 42);
     }
 }

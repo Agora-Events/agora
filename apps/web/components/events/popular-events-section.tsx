@@ -9,6 +9,10 @@ import { Button } from "../ui/button";
 import { EmptyState } from "../ui/empty-state";
 import { FilterSidebar, FilterState } from "./filter-sidebar";
 import { fetchPopularEvents, type DiscoverEvent } from "@/utils/api";
+import { useDebounce } from "@/hooks/useDebounce";
+
+/** Quiet period before a search query is applied, in milliseconds. */
+const SEARCH_DEBOUNCE_MS = 300;
 
 const container = {
   hidden: { opacity: 0 },
@@ -104,6 +108,9 @@ type PopularEventsSectionProps = {
 export function PopularEventsSection({ activeCategory, onError, onEventsChange }: PopularEventsSectionProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
+  // Keystrokes update `search` instantly for the input; filtering (and any
+  // future server-side search) only runs once typing pauses.
+  const debouncedSearch = useDebounce(search, SEARCH_DEBOUNCE_MS);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [events, setEvents] = useState<DiscoverEvent[]>([]);
@@ -172,7 +179,7 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
     let result = events;
 
     // 1. Search Query
-    const query = search.toLowerCase().trim();
+    const query = debouncedSearch.toLowerCase().trim();
     if (query) {
       result = result.filter((event) =>
         event.title.toLowerCase().includes(query),
@@ -218,8 +225,8 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
       });
     }
 
-    return sortEvents(result, sortBy);
-  }, [search, filters, events, activeCategory, sortBy]);
+    return result;
+  }, [debouncedSearch, filters, events, activeCategory]);
 
   // Notify parent whenever the visible count changes
   const prevCountRef = useRef<number | null>(null);
@@ -238,10 +245,13 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
     unfocused: { width: "8.5rem" },
   };
 
-  const widthVariantsMobile = {
-    focused: { width: "8rem", paddingLeft: "2.5rem" },
-    unfocused: { width: "2.438rem" },
-  };
+  // Surfaced next to the mobile "Filter" button so users can tell at a glance
+  // that filters are still applied after the drawer closes.
+  const activeFilterCount =
+    (filters.date ? 1 : 0) +
+    filters.categories.length +
+    filters.locations.length +
+    (filters.minPrice !== "" || filters.maxPrice !== "" ? 1 : 0);
 
   const allLoaded = total !== null && events.length >= total;
 
@@ -249,7 +259,7 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
     <section className="px-4 bg-base py-12">
       <div className="max-w-305.25 mx-auto">
         <motion.div
-          className="flex justify-between gap-3 mb-5.75"
+          className="flex flex-col sm:flex-row sm:justify-between gap-3 mb-5.75"
           variants={container}
           initial="hidden"
           animate="show"
@@ -267,7 +277,11 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
             />
           </motion.h3>
 
-          <motion.div variants={item} className="flex items-center gap-3.75">
+          {/* ── Desktop controls ── */}
+          <motion.div
+            variants={item}
+            className="max-sm:hidden flex items-center gap-3.75"
+          >
             <div className="relative">
               <Image
                 src="/icons/search.svg"
@@ -278,27 +292,15 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
               />
 
               <motion.input
-                className="max-sm:hidden pl-13 h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+                className="pl-13 h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
                 type="text"
                 placeholder="Search"
+                aria-label="Search events"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 variants={widthVariants}
-                initial="unfocused"
-                animate={isFocused ? "focused" : "unfocused"}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
-              />
-
-              <motion.input
-                className="sm:hidden h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                variants={widthVariantsMobile}
                 initial="unfocused"
                 animate={isFocused ? "focused" : "unfocused"}
                 transition={{ duration: 0.3, ease: "easeInOut" }}
@@ -330,7 +332,7 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
               <Button
                 variant="primary"
-                className="border-none sm:rounded-4xl! max-sm:p-0 h-9.75 sm:w-34 w-9.75"
+                className="border-none rounded-4xl! h-9.75 w-34"
                 onClick={() => setIsFilterOpen(true)}
                 aria-haspopup="dialog"
                 aria-expanded={isFilterOpen}
@@ -339,11 +341,66 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
                   src="/icons/filter.svg"
                   width={24}
                   height={24}
-                  alt="filter icon"
+                  alt=""
+                  aria-hidden="true"
                 />
-                <span className="max-sm:hidden">Filter</span>
+                Filter
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-black px-1.5 text-[11px] font-bold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
               </Button>
             </motion.div>
+          </motion.div>
+
+          {/* ── Mobile controls ──
+              A full-width search field plus an explicitly labelled "Filter"
+              button, so the filter drawer is reachable on small viewports. */}
+          <motion.div
+            variants={item}
+            className="sm:hidden flex items-center gap-2 w-full min-w-0"
+          >
+            <div className="relative flex-1 min-w-0">
+              <Image
+                src="/icons/search.svg"
+                width={20}
+                height={20}
+                alt=""
+                aria-hidden="true"
+                className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              />
+              <input
+                className="w-full pl-10 h-9.75 rounded-4xl bg-black pr-4 py-2 text-sm text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white/70 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+                type="text"
+                placeholder="Search events"
+                aria-label="Search events"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
+            <Button
+              variant="primary"
+              className="border-none rounded-4xl! h-9.75 px-4 shrink-0"
+              onClick={() => setIsFilterOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={isFilterOpen}
+            >
+              <Image
+                src="/icons/filter.svg"
+                width={20}
+                height={20}
+                alt=""
+                aria-hidden="true"
+              />
+              Filter
+              {activeFilterCount > 0 && (
+                <span className="inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-black px-1.5 text-[11px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
           </motion.div>
         </motion.div>
 

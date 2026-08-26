@@ -7,16 +7,24 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:ci": "vitest run --coverage --thresholds.coverageMap=80",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
     "postinstall": "node ../../scripts/fix-storybook-next.js",
     "storybook": "storybook dev -p 6006",
     "prebuild-storybook": "node ../../scripts/fix-storybook-next.js",
     "build-storybook": "storybook build",
-    "chromatic": "chromatic --exit-zero-on-changes"
+    "chromatic": "chromatic --exit-zero-on-changes",
+    "db:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^7.8.0",
+    "@stellar/freighter-api": "^2.0.0",
     "@stellar/stellar-sdk": "^13.3.0",
     "@tailwindcss/typography": "^0.5.19",
     "framer-motion": "^12.26.2",
@@ -30,12 +38,14 @@
     "react-dom": "19.2.3",
     "react-leaflet": "^5.0.0",
     "react-markdown": "^10.1.0",
+    "recharts": "^3.10.1",
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "swr": "^2.4.1",
     "zod": "3.24.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.1",
     "@storybook/addon-docs": "^10.5.3",
     "@storybook/nextjs-vite": "10.5.3",
     "@storybook/react": "^10.5.3",
@@ -60,8 +70,10 @@
     "prisma": "^7.8.0",
     "storybook": "^10.5.3",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "typescript": "^5",
     "vite": "^7.0.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@playwright/test": "1.49.1"
   }
 }

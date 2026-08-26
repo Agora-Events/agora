@@ -1,7 +1,24 @@
 use super::*;
 use crate::error::EventRegistryError;
-use crate::types::{EventRegistrationArgs, EventStatus, ParameterChange, TicketTier};
-use soroban_sdk::{testutils::Address as _, Address, Env, Map, String};
+use crate::types::{EventRegistrationArgs, EventStatus, TicketTier};
+use soroban_sdk::{testutils::Address as _, testutils::Ledger, Address, Env, Map, String};
+
+/// Registers a series with no member events — sufficient for tests that only
+/// exercise series-pass validity, not series/event membership.
+fn register_test_series(
+    client: &EventRegistryClient<'static>,
+    env: &Env,
+    series_id: &str,
+    organizer: &Address,
+) {
+    client.register_series(
+        &String::from_str(env, series_id),
+        &String::from_str(env, "Test Series"),
+        &soroban_sdk::Vec::new(env),
+        organizer,
+        &None,
+    );
+}
 
 fn test_payment_address(env: &Env) -> Address {
     Address::from_string(&String::from_str(
@@ -106,6 +123,7 @@ fn test_per_user_limit_enforced() {
         &String::from_str(&env, "tier_1"),
         &user,
         &2,
+        &Address::generate(&env),
     );
 
     // Second purchase of 1 should fail (2 + 1 > 2)
@@ -114,6 +132,7 @@ fn test_per_user_limit_enforced() {
         &String::from_str(&env, "tier_1"),
         &user,
         &1,
+        &Address::generate(&env),
     );
     assert_eq!(result, Err(Ok(EventRegistryError::PerUserLimitExceeded)));
 }
@@ -146,6 +165,7 @@ fn test_per_user_limit_zero_means_unlimited() {
             &String::from_str(&env, "tier_1"),
             &user,
             &1,
+            &Address::generate(&env),
         );
     }
 }
@@ -185,6 +205,7 @@ fn test_global_tickets_sold_increments() {
         &String::from_str(&env, "tier_1"),
         &user1,
         &3,
+        &Address::generate(&env),
     );
     assert_eq!(client.get_global_tickets_sold(), 3);
 
@@ -194,6 +215,7 @@ fn test_global_tickets_sold_increments() {
         &String::from_str(&env, "tier_1"),
         &user2,
         &2,
+        &Address::generate(&env),
     );
     assert_eq!(client.get_global_tickets_sold(), 5);
 
@@ -212,6 +234,7 @@ fn test_global_tickets_sold_increments() {
         &String::from_str(&env, "tier_1"),
         &user1,
         &4,
+        &Address::generate(&env),
     );
     assert_eq!(client.get_global_tickets_sold(), 9);
 }
@@ -360,10 +383,7 @@ fn test_set_resale_cap_bps_valid() {
     client.register_event(&args);
 
     // Setting a valid cap should succeed.
-    client.set_resale_cap_bps(
-        &String::from_str(&env, "evt_resale_valid"),
-        &Some(5000),
-    );
+    client.set_resale_cap_bps(&String::from_str(&env, "evt_resale_valid"), &Some(5000));
 
     let info = client
         .get_event(&String::from_str(&env, "evt_resale_valid"))
@@ -388,10 +408,7 @@ fn test_set_resale_cap_bps_boundary() {
     client.register_event(&args);
 
     // Exactly 10000 (100%) must be accepted.
-    client.set_resale_cap_bps(
-        &String::from_str(&env, "evt_resale_boundary"),
-        &Some(10000),
-    );
+    client.set_resale_cap_bps(&String::from_str(&env, "evt_resale_boundary"), &Some(10000));
 
     let info = client
         .get_event(&String::from_str(&env, "evt_resale_boundary"))
@@ -416,14 +433,9 @@ fn test_set_resale_cap_bps_invalid_returns_error() {
     client.register_event(&args);
 
     // Value above 10000 must return InvalidResaleCapBps.
-    let result = client.try_set_resale_cap_bps(
-        &String::from_str(&env, "evt_resale_invalid"),
-        &Some(10001),
-    );
-    assert_eq!(
-        result,
-        Err(Ok(EventRegistryError::InvalidResaleCapBps))
-    );
+    let result =
+        client.try_set_resale_cap_bps(&String::from_str(&env, "evt_resale_invalid"), &Some(10001));
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
 
 #[test]
@@ -444,13 +456,98 @@ fn test_set_resale_cap_bps_none_clears_cap() {
     client.register_event(&args);
 
     // Clearing the cap (None) must be allowed.
-    client.set_resale_cap_bps(
-        &String::from_str(&env, "evt_resale_clear"),
-        &None,
-    );
+    client.set_resale_cap_bps(&String::from_str(&env, "evt_resale_clear"), &None);
 
     let info = client
         .get_event(&String::from_str(&env, "evt_resale_clear"))
         .unwrap();
     assert_eq!(info.resale_cap_bps, None);
+}
+
+// ── Issue #888: has_valid_series_pass tests ─────────────────────────────────────
+
+#[test]
+fn test_has_valid_series_pass_returns_true_for_valid_pass() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+    let series_id = String::from_str(&env, "series_valid");
+
+    register_test_series(&client, &env, "series_valid", &organizer);
+
+    let pass_id = String::from_str(&env, "pass_valid");
+    let holder = Address::generate(&env);
+    let usage_limit = 5u32;
+    let expires_at = env.ledger().timestamp() + 1000;
+
+    client.issue_series_pass(&pass_id, &series_id, &holder, &usage_limit, &expires_at);
+
+    assert!(client.has_valid_series_pass(&holder, &series_id));
+}
+
+#[test]
+fn test_has_valid_series_pass_returns_false_if_no_pass() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let holder = Address::generate(&env);
+    let series_id = String::from_str(&env, "non_existent_series");
+
+    assert!(!client.has_valid_series_pass(&holder, &series_id));
+}
+
+#[test]
+fn test_has_valid_series_pass_returns_false_if_usage_limit_exceeded() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+    let series_id = String::from_str(&env, "series_usage_test");
+
+    register_test_series(&client, &env, "series_usage_test", &organizer);
+
+    let pass_id = String::from_str(&env, "pass_usage");
+    let holder = Address::generate(&env);
+    let usage_limit = 1u32;
+    let expires_at = env.ledger().timestamp() + 1000;
+
+    client.issue_series_pass(&pass_id, &series_id, &holder, &usage_limit, &expires_at);
+    assert!(client.has_valid_series_pass(&holder, &series_id));
+
+    // Increment usage to reach the limit
+    client.increment_series_pass_usage(&pass_id);
+    assert!(!client.has_valid_series_pass(&holder, &series_id));
+}
+
+#[test]
+fn test_has_valid_series_pass_returns_false_if_expired() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _) = setup(&env);
+    let organizer = Address::generate(&env);
+    let series_id = String::from_str(&env, "series_expire_test");
+
+    register_test_series(&client, &env, "series_expire_test", &organizer);
+
+    let pass_id = String::from_str(&env, "pass_expired");
+    let holder = Address::generate(&env);
+    let usage_limit = 10u32;
+    let expires_at = 100u64;
+
+    // Set ledger timestamp past expires_at
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+        timestamp: 500u64,
+        protocol_version: 23,
+        sequence_number: 1,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 10000,
+    });
+
+    client.issue_series_pass(&pass_id, &series_id, &holder, &usage_limit, &expires_at);
+
+    assert!(!client.has_valid_series_pass(&holder, &series_id));
 }

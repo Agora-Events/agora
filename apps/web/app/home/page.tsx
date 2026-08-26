@@ -1,22 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
-import { Button } from "@/components/ui/button";
 import { ChatSidebar } from "@/components/layout/chat-sidebar";
+import { useAuth } from "@/hooks/useAuth";
+import { UpcomingEventsEmptyState } from "@/components/empty-state/upcoming-events-empty-state";
 import CalendarIcon from "@/public/icons/calendar.svg";
 import HostingIcon from "@/public/icons/ticket-star.svg";
 import PastIcon from "@/public/icons/camera-smile-01.svg";
 import BubbleChatIcon from "@/public/icons/bubble-chat.svg";
-import ZeroIcon from "@/public/icons/zero.svg";
-import EmptyStateBg from "@/public/icons/empty-state-bg.svg";
-import useSWR from "swr";
-
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 type MyEventsTab = "upcoming" | "hosting" | "past";
 type ForYouTab = "discover" | "following";
@@ -34,6 +32,128 @@ const myEventsTabs: { id: MyEventsTab; label: string; icon?: string }[] = [
 const forYouTabs: { id: ForYouTab; label: string }[] = [
   { id: "discover", label: "Discover" },
   { id: "following", label: "Following" },
+];
+
+// Mock data types
+interface TimelineEvent {
+  id: number;
+  date: string;
+  day: string;
+  time: string;
+  title: string;
+  location: string;
+  imageUrl: string;
+  isFree: boolean;
+  price?: string;
+  attendees: number;
+  status?: string;
+}
+
+interface GridEvent {
+  id: number;
+  title: string;
+  date: string;
+  location: string;
+  price: string;
+  imageUrl: string;
+  color: string;
+}
+
+// Mock data for For You (Grid)
+const discoverEvents: GridEvent[] = [
+  {
+    id: 8,
+    title: "Stellar Consensus Protocol",
+    date: "Apr 15, 2026",
+    location: "Austin, TX",
+    price: "$0.00",
+    imageUrl: "/images/event2.png",
+    color: "bg-[#E8D5F7]",
+  },
+  {
+    id: 9,
+    title: "Real Estate Outlook 2026",
+    date: "Apr 20, 2026",
+    location: "New York, NY",
+    price: "$45.00",
+    imageUrl: "/images/event3.png",
+    color: "bg-[#F7D5D5]",
+  },
+  {
+    id: 10,
+    title: "Web3 Marketing Summit",
+    date: "May 5, 2026",
+    location: "London, UK",
+    price: "$0.00",
+    imageUrl: "/images/event4.png",
+    color: "bg-[#D5F7E8]",
+  },
+  {
+    id: 11,
+    title: "AI & Blockchain Convergence",
+    date: "May 12, 2026",
+    location: "San Francisco, CA",
+    price: "$75.00",
+    imageUrl: "/images/event5.png",
+    color: "bg-[#F7ECD5]",
+  },
+  {
+    id: 12,
+    title: "Developer Workshop Series",
+    date: "May 18, 2026",
+    location: "Virtual",
+    price: "$0.00",
+    imageUrl: "/images/event6.png",
+    color: "bg-[#D5E8F7]",
+  },
+  {
+    id: 13,
+    title: "Crypto Investment Forum",
+    date: "Jun 2, 2026",
+    location: "Singapore",
+    price: "$120.00",
+    imageUrl: "/images/event1.png",
+    color: "bg-[#F5D5F7]",
+  },
+];
+
+const followingEvents: GridEvent[] = [
+  {
+    id: 14,
+    title: "Stellar East Africa Meetup",
+    date: "Apr 10, 2026",
+    location: "Nairobi, Kenya",
+    price: "$0.00",
+    imageUrl: "/images/event3.png",
+    color: "bg-[#F7D5E8]",
+  },
+  {
+    id: 15,
+    title: "Women in Web3 Panel",
+    date: "Apr 25, 2026",
+    location: "Virtual",
+    price: "$0.00",
+    imageUrl: "/images/event2.png",
+    color: "bg-[#E8F7D5]",
+  },
+  {
+    id: 16,
+    title: "Smart Contract Security",
+    date: "May 8, 2026",
+    location: "Berlin, Germany",
+    price: "$35.00",
+    imageUrl: "/images/event5.png",
+    color: "bg-[#D5F5F7]",
+  },
+  {
+    id: 17,
+    title: "Community Builder Workshop",
+    date: "May 20, 2026",
+    location: "Toronto, Canada",
+    price: "$0.00",
+    imageUrl: "/images/event4.png",
+    color: "bg-[#F7E8D5]",
+  },
 ];
 
 function AnimatedToggle<T extends string>({
@@ -332,7 +452,17 @@ function EventCardSkeleton() {
 }
 
 // My Events Section Content
-function MyEventsContent({ activeTab, events, isLoading }: { activeTab: MyEventsTab, events: any[], isLoading: boolean }) {
+function MyEventsContent({
+  activeTab,
+  events,
+  isLoading,
+}: {
+  activeTab: MyEventsTab;
+  events: any[];
+  isLoading: boolean;
+}) {
+  const isUpcomingTab = activeTab === "upcoming";
+
   if (isLoading) {
     return (
       <div className="pt-4 space-y-13.25">
@@ -343,69 +473,15 @@ function MyEventsContent({ activeTab, events, isLoading }: { activeTab: MyEvents
   }
 
   if (events.length === 0) {
-    if (activeTab === "hosting") {
-      return (
-        <div className="w-full max-w-121.5 bg-surface h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10">
-          <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
-            <Image
-              src={EmptyStateBg}
-              alt="Empty State Background"
-              width={224}
-              height={224}
-              className="object-cover w-full h-full rounded-4xl"
-            />
-            <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-black/7 -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
-              <Image
-                src="/icons/megaphone.svg"
-                alt="Start Hosting"
-                width={64}
-                height={64}
-                className="object-contain w-full h-full"
-              />
-            </div>
-          </div>
-          <div className="flex flex-col items-center gap-4">
-            <p className="text-xl font-medium leading-5.5 text-center text-ink-deep/36">
-              You haven&apos;t created any events yet
-            </p>
-            <Link href="/create-event">
-              <Button variant="primary" className="rounded-full">
-                Start Hosting
-              </Button>
-            </Link>
-          </div>
-        </div>
-      );
+    if (isUpcomingTab) {
+      return <UpcomingEventsEmptyState />;
     }
 
     return (
-      <div className="w-full max-w-121.5 bg-surface h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10 text-ink-deep/36">
-        <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
-          <Image
-            src={EmptyStateBg}
-            alt="Empty State Background"
-            width={224}
-            height={224}
-            className="object-cover w-full h-full rounded-4xl"
-          />
-          <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-black/7 -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
-            <Image
-              src={ZeroIcon}
-              alt="Nothing Here, Yet"
-              width={16}
-              height={16}
-              className="object-center w-full h-full"
-            />
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-4">
-          <p className="text-xl font-medium leading-5.5 text-center">Nothing Here, Yet</p>
-          <Link href="/discover">
-            <Button variant="primary" className="rounded-full">
-              Discover Events
-            </Button>
-          </Link>
-        </div>
+      <div className="flex min-h-[15rem] items-center justify-center rounded-[2rem] border border-dashed border-black/20 bg-white/60 px-6 text-center">
+        <p className="text-base font-medium text-black/55">
+          No events found in this section.
+        </p>
       </div>
     );
   }
@@ -448,22 +524,40 @@ function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab,
   );
 }
 
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
 export default function HomePage() {
+  const router = useRouter();
+  const {
+    walletAddress: userWallet,
+    isAuthenticated,
+    isLoading: isAuthLoading,
+  } = useAuth();
   const [myEventsTab, setMyEventsTab] = useState<MyEventsTab>("upcoming");
   const [forYouTab, setForYouTab] = useState<ForYouTab>("discover");
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  // Authenticated user's wallet address (placeholder logic for now)
-  const userWallet = "0xUSERWALLET"; 
+  // "My Events" is personal — signed-out visitors belong on the auth page.
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      router.replace("/auth");
+    }
+  }, [isAuthLoading, isAuthenticated, router]);
 
-  const { data, isLoading } = useSWR("/api/v1/events", fetcher);
+  const { data, isLoading: isEventsLoading } = useSWR(
+    isAuthenticated ? "/api/v1/events" : null,
+    fetcher,
+  );
+  const isLoading = isAuthLoading || isEventsLoading;
   const allEvents = data?.events || [];
-  
+
   const now = new Date().getTime();
 
   // Filter for 'My Events'
   const upcomingEvents = allEvents.filter((e: any) => new Date(e.start_time).getTime() > now); // assuming user has ticket logically mapped
-  const hostingEvents = allEvents.filter((e: any) => e.organizer_wallet === userWallet);
+  const hostingEvents = userWallet
+    ? allEvents.filter((e: any) => e.organizer_wallet === userWallet)
+    : [];
   const pastEvents = allEvents.filter((e: any) => new Date(e.end_time).getTime() < now);
 
   let displayedMyEvents = [];
@@ -523,3 +617,4 @@ export default function HomePage() {
     </div>
   );
 }
+

@@ -1,5 +1,11 @@
 use soroban_sdk::contracterror;
 
+// NOTE: `#[contracterror]` enums are capped at 50 variants by the Soroban
+// SDK's spec-XDR generation (empirically confirmed — 50 compiles, 51
+// panics the macro with `LengthExceedsMax`). This enum previously had 53;
+// the six variants removed below (DeadlinePastEnd, InsufficientStake,
+// InvalidCategoryId, PropAlreadyApproved, RestockingFeeHigh, StateError)
+// were confirmed unused anywhere in this contract before removal.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum EventRegistryError {
@@ -31,7 +37,6 @@ pub enum EventRegistryError {
     // Staking / loyalty
     AlreadyStaked = 26,
     NotStaked = 27,
-    InsufficientStake = 28,
     InvalidStakeAmount = 29,
     StakingNotConfigured = 30,
     NoRewardsAvailable = 31,
@@ -42,18 +47,20 @@ pub enum EventRegistryError {
     PropAlreadyExecuted = 38,
     EventNotEnded = 39,
     InvalidMilestonePlan = 41,
-    RestockingFeeHigh = 42,
     InvalidTags = 43,
     ProposalExpired = 44,
-    PropAlreadyApproved = 45,
-    StateError = 46,
     MultisigError = 47,
     PropAlreadyCanceled = 49,
-    DeadlinePastEnd = 55,
     PerUserLimitExceeded = 60,
     InvalidDeadline = 61,
-    InvalidCategoryId = 71,
     AlreadyOnWaitlist = 75,
+    NotOnWaitlist = 76,
     TooManyTiers = 80,
     // TooManyIds = 81,
+    /// Issue #851: payment token is not in the event's accepted_tokens list.
+    TokenNotAccepted = 82,
+    DisputeNotFound = 83,
+    DisputeNotOpen = 84,
+    AlreadyVoted = 85,
+    NotTicketHolder = 86,
 }

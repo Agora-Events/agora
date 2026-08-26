@@ -553,3 +553,54 @@ pub struct WaitlistJoinedEvent {
     /// The ledger timestamp when the user joined.
     pub timestamp: u64,
 }
+
+/// Emitted when a user leaves the waitlist for an event.
+///
+/// Published with topic `(AgoraEvent::WaitlistLeft,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WaitlistLeftEvent {
+    /// The unique identifier of the event.
+    pub event_id: String,
+    /// The address of the user who left the waitlist.
+    pub user: Address,
+    /// The ledger timestamp when the user left the waitlist.
+    pub timestamp: u64,
+}
+
+/// Emitted when a dispute is opened on an event.
+///
+/// Published with topic `(AgoraEvent::DisputeOpened,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeOpenedEvent {
+    pub event_id: String,
+    pub opened_by: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a vote is cast on a dispute.
+///
+/// Published with topic `(AgoraEvent::DisputeVoted,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeVotedEvent {
+    pub event_id: String,
+    pub voter: Address,
+    pub vote: crate::types::DisputeVote,
+    pub timestamp: u64,
+}
+
+/// Emitted when a dispute is resolved.
+///
+/// Published with topic `(AgoraEvent::DisputeResolved,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeResolvedEvent {
+    pub event_id: String,
+    pub status: crate::types::DisputeStatus,
+    pub buyer_votes: u32,
+    pub organizer_votes: u32,
+    pub total_votes: u32,
+    pub timestamp: u64,
+}

@@ -1,8 +1,51 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde_json::json;
+use serde::Serialize;
 use thiserror::Error;
 use tracing::{error, warn};
+
+/// Reusable API error body returned by every error response.
+///
+/// Serializes as `{ "code": <u16>, "message": "..." }` so clients can reliably
+/// read `error.code` / top-level `code` and display a user-friendly message.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ApiError {
+    /// HTTP status code mirrored in the JSON body for client-side branching.
+    pub code: u16,
+    /// Human-readable error message safe to show to end users.
+    pub message: String,
+}
+
+impl ApiError {
+    /// Build an [`ApiError`] from an HTTP status and message.
+    pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            code: status.as_u16(),
+            message: message.into(),
+        }
+    }
+
+    /// Convenience constructor for unexpected internal failures / panics.
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, message)
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let status = StatusCode::from_u16(self.code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        (status, axum::Json(self)).into_response()
+    }
+}
+
+impl From<AppError> for ApiError {
+    fn from(err: AppError) -> Self {
+        Self {
+            code: err.status_code().as_u16(),
+            message: err.public_message(),
+        }
+    }
+}
 
 /// Classification of sqlx database errors for HTTP mapping and logging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,17 +193,14 @@ impl AppError {
 ///
 /// ```json
 /// {
-///   "success": false,
-///   "error": {
-///     "code": "NOT_FOUND",
-///     "message": "Resource with id '42' was not found"
-///   }
+///   "code": 404,
+///   "message": "Resource with id '42' was not found"
 /// }
 /// ```
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = self.status_code();
-        let code = self.error_code();
+        let machine_code = self.error_code();
         let message = self.public_message();
 
         // Log *before* the message is moved into the JSON body.
@@ -176,19 +216,17 @@ impl IntoResponse for AppError {
                 }
             },
             _ => {
-                error!(error = ?self, code, message, "Application error");
+                error!(
+                    error = ?self,
+                    code = machine_code,
+                    http_status = status.as_u16(),
+                    message,
+                    "Application error"
+                );
             }
         }
 
-        let body = json!({
-            "success": false,
-            "error": {
-                "code": code,
-                "message": message
-            }
-        });
-
-        (status, axum::Json(body)).into_response()
+        ApiError::new(status, message).into_response()
     }
 }
 
@@ -394,15 +432,12 @@ mod tests {
         let resp = AppError::DatabaseError(sqlx::Error::PoolTimedOut).into_response();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "DATABASE_UNAVAILABLE");
+        assert_eq!(json["code"], 503);
         assert_eq!(
-            json["error"]["message"],
+            json["message"],
             "Database service is temporarily unavailable"
         );
-        assert!(!json["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("timeout"));
+        assert!(!json["message"].as_str().unwrap().contains("timeout"));
     }
 
     #[tokio::test]
@@ -417,9 +452,9 @@ mod tests {
             .into_response();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "UNIQUE_VIOLATION");
+        assert_eq!(json["code"], 409);
         assert_eq!(
-            json["error"]["message"],
+            json["message"],
             "A resource with this identifier already exists"
         );
     }
@@ -430,11 +465,8 @@ mod tests {
             .into_response();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "FOREIGN_KEY_VIOLATION");
-        assert_eq!(
-            json["error"]["message"],
-            "The referenced resource does not exist"
-        );
+        assert_eq!(json["code"], 409);
+        assert_eq!(json["message"], "The referenced resource does not exist");
     }
 
     // -----------------------------------------------------------------------
@@ -442,53 +474,54 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
-    async fn test_into_response_body_has_success_false() {
+    async fn test_into_response_body_has_flat_code_and_message() {
         let resp = AppError::ValidationError("oops".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["success"], false);
+        assert_eq!(json["code"], 400);
+        assert_eq!(json["message"], "oops");
+        assert!(json.get("success").is_none());
+        assert!(json.get("error").is_none());
     }
 
     #[tokio::test]
-    async fn test_into_response_body_has_error_object() {
-        let resp = AppError::NotFound("thing".into()).into_response();
+    async fn test_api_error_into_response_shape() {
+        let resp = ApiError::new(StatusCode::NOT_FOUND, "thing").into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
         let json = body_json(resp).await;
-        assert!(
-            json["error"].is_object(),
-            "expected 'error' key to be an object"
-        );
+        assert_eq!(json["code"], 404);
+        assert_eq!(json["message"], "thing");
     }
 
     #[tokio::test]
     async fn test_into_response_validation_error_body() {
         let resp = AppError::ValidationError("name is required".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["success"], false);
-        assert_eq!(json["error"]["code"], "VALIDATION_ERROR");
-        assert_eq!(json["error"]["message"], "name is required");
+        assert_eq!(json["code"], 400);
+        assert_eq!(json["message"], "name is required");
     }
 
     #[tokio::test]
     async fn test_into_response_auth_error_body() {
         let resp = AppError::AuthError("token missing".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "AUTH_ERROR");
-        assert_eq!(json["error"]["message"], "token missing");
+        assert_eq!(json["code"], 401);
+        assert_eq!(json["message"], "token missing");
     }
 
     #[tokio::test]
     async fn test_into_response_forbidden_body() {
         let resp = AppError::Forbidden("not allowed".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "FORBIDDEN");
-        assert_eq!(json["error"]["message"], "not allowed");
+        assert_eq!(json["code"], 403);
+        assert_eq!(json["message"], "not allowed");
     }
 
     #[tokio::test]
     async fn test_into_response_not_found_body() {
         let resp = AppError::NotFound("record 42".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "NOT_FOUND");
-        assert_eq!(json["error"]["message"], "record 42");
+        assert_eq!(json["code"], 404);
+        assert_eq!(json["message"], "record 42");
     }
 
     #[tokio::test]
@@ -496,24 +529,24 @@ mod tests {
         let resp =
             AppError::ExternalServiceError("payment gateway unreachable".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "EXTERNAL_SERVICE_ERROR");
-        assert_eq!(json["error"]["message"], "payment gateway unreachable");
+        assert_eq!(json["code"], 503);
+        assert_eq!(json["message"], "payment gateway unreachable");
     }
 
     #[tokio::test]
     async fn test_into_response_internal_server_error_body() {
         let resp = AppError::InternalServerError("crash".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "INTERNAL_SERVER_ERROR");
-        assert_eq!(json["error"]["message"], "crash");
+        assert_eq!(json["code"], 500);
+        assert_eq!(json["message"], "crash");
     }
 
     #[tokio::test]
     async fn test_into_response_database_error_hides_details() {
         let resp = AppError::DatabaseError(sqlx::Error::RowNotFound).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "DATABASE_ERROR");
-        assert_eq!(json["error"]["message"], "A database error occurred");
+        assert_eq!(json["code"], 500);
+        assert_eq!(json["message"], "A database error occurred");
     }
 
     // -----------------------------------------------------------------------

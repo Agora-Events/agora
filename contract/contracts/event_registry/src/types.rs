@@ -391,6 +391,42 @@ pub enum ParameterChange {
     SetMinStakeAmount(i128),
 }
 
+/// Status of a dispute
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    Open,
+    Voting,
+    ResolvedBuyer,
+    ResolvedOrganizer,
+    Expired,
+}
+
+/// Vote type in a dispute
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum DisputeVote {
+    BuyerFavor = 1,
+    OrganizerFavor = 2,
+}
+
+/// Represents a dispute on an event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Dispute {
+    pub event_id: String,
+    pub opened_by: Address,
+    pub opened_at: u64,
+    pub closes_at: u64,
+    pub status: DisputeStatus,
+    pub total_votes: u32,
+    pub buyer_votes: u32,
+    pub organizer_votes: u32,
+    pub quorum_threshold_bps: u32,
+    pub total_eligible_tickets: i128,
+}
+
 /// Storage keys for the Event Registry contract.
 #[contracttype]
 pub enum DataKey {
@@ -485,4 +521,14 @@ pub enum DataKey {
     CategoryEvents(u32),
     /// Mapping of (event_id, team_member_address) to Role for team-based access control (Persistent)
     EventTeamRole(String, Address),
+
+    // ── Dispute Storage ───────────────────────────────────────────────────────
+    /// Mapping of event_id to Dispute (Persistent)
+    Dispute(String),
+    /// Mapping of (event_id, voter_address) to DisputeVote (Persistent)
+    DisputeVote(String, Address),
+    /// Sharded list of voters for a dispute (Persistent)
+    DisputeVoteShard(String, u32),
+    /// Total number of votes for a dispute (Persistent)
+    DisputeVoteCount(String),
 }

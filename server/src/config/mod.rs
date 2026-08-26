@@ -20,8 +20,9 @@
 //! - `CORS_ALLOWED_ORIGINS` (optional, default: localhost URLs) - CORS origins
 //! - `RUST_LOG` (optional, default: info) - Logging level
 //! - `SOROBAN_RPC_URL` (optional, default: Stellar testnet RPC) - Blockchain health probe URL
-//! - `REDIS_URL` (optional, default: redis://127.0.0.1:6379) - Redis connection URL
-//! - `BASE_URL` (optional, default: https://agora.events) - Application base URL
+//! - `REDIS_URL` (optional) - Redis connection string used to cache `/api/v1/rates` responses
+//! - `RATES_PROVIDER_URL` (optional) - External exchange rate provider base URL
+//! - `MONITORING_API_KEY` (optional) - Bearer token required to access `/api/v1/monitoring`
 
 use std::env;
 
@@ -93,6 +94,27 @@ pub struct Config {
     /// Optional static bearer token required to access admin APIs.
     /// Set via `ADMIN_TOKEN` environment variable.
     pub admin_token: Option<String>,
+
+    /// Rate limit threshold for auth/nonce endpoint in requests per minute (default: 10).
+    pub auth_rate_limit_per_minute: usize,
+
+    /// Allowed MIME types for uploaded files.
+    pub allowed_upload_mime_types: Vec<String>,
+
+    // -----------------------------------------------------------------------
+    // Database connection pool settings (Issue #1265)
+    // -----------------------------------------------------------------------
+    /// Maximum number of connections in the pool (DB_MAX_CONNECTIONS, default: 10).
+    pub db_max_connections: u32,
+
+    /// Minimum number of idle connections kept in the pool (DB_MIN_CONNECTIONS, default: 1).
+    pub db_min_connections: u32,
+
+    /// Maximum time in seconds to wait for an available connection (DB_ACQUIRE_TIMEOUT_SECS, default: 10).
+    pub db_acquire_timeout_secs: u64,
+
+    /// Time in seconds after which an idle connection is closed (DB_IDLE_TIMEOUT_SECS, default: 600).
+    pub db_idle_timeout_secs: u64,
 }
 
 /// A collection of configuration errors found during [`Config::validate`].
@@ -155,6 +177,46 @@ impl Config {
         let monitoring_token = env::var("MONITORING_TOKEN").ok();
         let admin_token = env::var("ADMIN_TOKEN").ok();
 
+        let auth_rate_limit_per_minute = env::var("AUTH_RATE_LIMIT_PER_MINUTE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10);
+
+        let allowed_upload_mime_types = env::var("ALLOWED_UPLOAD_MIME_TYPES")
+            .or_else(|_| env::var("ALLOWED_MIME_TYPES"))
+            .map(|s| s.split(',').map(|m| m.trim().to_string()).collect())
+            .unwrap_or_else(|_| {
+                vec![
+                    "image/jpeg".to_string(),
+                    "image/png".to_string(),
+                    "image/webp".to_string(),
+                    "image/gif".to_string(),
+                ]
+            });
+
+        // -----------------------------------------------------------------------
+        // Database pool settings (Issue #1265)
+        // -----------------------------------------------------------------------
+        let db_max_connections = env::var("DB_MAX_CONNECTIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10u32);
+
+        let db_min_connections = env::var("DB_MIN_CONNECTIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1u32);
+
+        let db_acquire_timeout_secs = env::var("DB_ACQUIRE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10u64);
+
+        let db_idle_timeout_secs = env::var("DB_IDLE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(600u64);
+
         Ok(Self {
             database_url,
             port,
@@ -173,6 +235,12 @@ impl Config {
             jwt_secret,
             monitoring_token,
             admin_token,
+            auth_rate_limit_per_minute,
+            allowed_upload_mime_types,
+            db_max_connections,
+            db_min_connections,
+            db_acquire_timeout_secs,
+            db_idle_timeout_secs,
         })
     }
 
@@ -274,6 +342,17 @@ impl Config {
             ));
         }
 
+        // --- DB pool settings (Issue #1265) ------------------------------
+        if self.db_min_connections > self.db_max_connections {
+            errors.push(format!(
+                "DB_MIN_CONNECTIONS ({}) must not exceed DB_MAX_CONNECTIONS ({})",
+                self.db_min_connections, self.db_max_connections
+            ));
+        }
+        if self.db_max_connections == 0 {
+            errors.push("DB_MAX_CONNECTIONS must be at least 1".to_string());
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -327,6 +406,17 @@ mod tests {
             jwt_secret: "a".repeat(JWT_SECRET_MIN_BYTES),
             monitoring_token: None,
             admin_token: None,
+            auth_rate_limit_per_minute: 10,
+            allowed_upload_mime_types: vec![
+                "image/jpeg".to_string(),
+                "image/png".to_string(),
+                "image/webp".to_string(),
+                "image/gif".to_string(),
+            ],
+            db_max_connections: 10,
+            db_min_connections: 1,
+            db_acquire_timeout_secs: 10,
+            db_idle_timeout_secs: 600,
         }
     }
 
@@ -859,6 +949,17 @@ mod tests {
             base_url: String::new(),
             monitoring_token: None,
             admin_token: None,
+            auth_rate_limit_per_minute: 10,
+            allowed_upload_mime_types: vec![
+                "image/jpeg".to_string(),
+                "image/png".to_string(),
+                "image/webp".to_string(),
+                "image/gif".to_string(),
+            ],
+            db_max_connections: 10,
+            db_min_connections: 1,
+            db_acquire_timeout_secs: 10,
+            db_idle_timeout_secs: 600,
         };
 
         let err = cfg.validate().unwrap_err();
@@ -904,5 +1005,92 @@ mod tests {
         let result = truncate_url(&url);
         assert!(result.ends_with('…'));
         assert!(result.len() < url.len());
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #1265 — DB pool configuration
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_db_pool_defaults_are_valid() {
+        // Default values (min=1, max=10) must pass validation.
+        let cfg = valid_config();
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_db_min_greater_than_max_rejected() {
+        let mut cfg = valid_config();
+        cfg.db_min_connections = 20;
+        cfg.db_max_connections = 10;
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.errors
+                .iter()
+                .any(|e| e.contains("DB_MIN_CONNECTIONS") && e.contains("DB_MAX_CONNECTIONS")),
+            "got: {:?}",
+            err.errors
+        );
+    }
+
+    #[test]
+    fn test_validate_db_max_zero_rejected() {
+        let mut cfg = valid_config();
+        cfg.db_max_connections = 0;
+        cfg.db_min_connections = 0;
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.errors.iter().any(|e| e.contains("DB_MAX_CONNECTIONS")),
+            "got: {:?}",
+            err.errors
+        );
+    }
+
+    #[test]
+    fn test_validate_db_min_equals_max_is_valid() {
+        let mut cfg = valid_config();
+        cfg.db_min_connections = 5;
+        cfg.db_max_connections = 5;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_db_pool_defaults_from_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        env::set_var("DATABASE_URL", "postgres://test:pass@localhost/db");
+        env::remove_var("DB_MAX_CONNECTIONS");
+        env::remove_var("DB_MIN_CONNECTIONS");
+        env::remove_var("DB_ACQUIRE_TIMEOUT_SECS");
+        env::remove_var("DB_IDLE_TIMEOUT_SECS");
+
+        let cfg = Config::from_env().unwrap();
+        assert_eq!(cfg.db_max_connections, 10);
+        assert_eq!(cfg.db_min_connections, 1);
+        assert_eq!(cfg.db_acquire_timeout_secs, 10);
+        assert_eq!(cfg.db_idle_timeout_secs, 600);
+
+        env::remove_var("DATABASE_URL");
+    }
+
+    #[test]
+    fn test_db_pool_custom_values_from_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        env::set_var("DATABASE_URL", "postgres://test:pass@localhost/db");
+        env::set_var("DB_MAX_CONNECTIONS", "25");
+        env::set_var("DB_MIN_CONNECTIONS", "5");
+        env::set_var("DB_ACQUIRE_TIMEOUT_SECS", "30");
+        env::set_var("DB_IDLE_TIMEOUT_SECS", "120");
+
+        let cfg = Config::from_env().unwrap();
+        assert_eq!(cfg.db_max_connections, 25);
+        assert_eq!(cfg.db_min_connections, 5);
+        assert_eq!(cfg.db_acquire_timeout_secs, 30);
+        assert_eq!(cfg.db_idle_timeout_secs, 120);
+
+        env::remove_var("DATABASE_URL");
+        env::remove_var("DB_MAX_CONNECTIONS");
+        env::remove_var("DB_MIN_CONNECTIONS");
+        env::remove_var("DB_ACQUIRE_TIMEOUT_SECS");
+        env::remove_var("DB_IDLE_TIMEOUT_SECS");
     }
 }

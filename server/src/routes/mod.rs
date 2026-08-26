@@ -19,6 +19,8 @@
 //! 3. Security headers
 //! 4. Database connection state
 
+use crate::handlers::{delta_sync, sync_status, SyncState};
+use crate::handlers::indexer::{replay_indexer, IndexerAdminState};
 use axum::{
     middleware,
     response::IntoResponse,
@@ -35,44 +37,61 @@ use crate::config::{
     create_cors_layer, create_security_headers_layer, propagate_request_id_layer,
     set_request_id_layer, Config,
 };
+use crate::middleware::catch_panic::catch_panic_layer;
+use crate::middleware::content_type::require_json_content_type;
+use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
+use crate::utils::rate_limit::RateLimitLayer;
+
 use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{get_category, list_categories, CategoryState},
     events::{
-        export_attendees_csv, get_attendee_count, get_checkin_stats, get_event, get_event_counts,
-        get_event_organizer, get_event_share_link, get_event_social_proof, get_ratings_summary,
-        list_event_ratings, list_event_tickets, list_events, list_events_by_category,
-        list_past_events, list_similar_events, list_ticket_tiers, list_upcoming_events,
-        search_events, set_event_featured, submit_event_rating, toggle_event_flag, EventState,
+        export_attendees_csv, flag_event, get_attendee_count, get_checkin_stats, get_event,
+        get_event_counts, get_event_organizer, get_event_share_link, get_event_social_proof,
+        get_events_map, get_ratings_summary, list_event_attendees, list_event_ratings,
+        list_event_tickets, list_events, list_events_by_category, list_past_events,
+        list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
+        set_event_featured, submit_event_rating, toggle_event_flag, EventState,
+    },
+    governance::{
+        cast_vote, get_dispute, get_dispute_votes, list_disputes, open_dispute,
+        resolve_dispute, GovernanceState,
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
         health_check_redis,
     },
-    leaderboard::{get_leaderboard, LeaderboardState},
-    monitoring::{monitoring_dashboard, MonitoringState},
+    marketplace::{
+        cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
+        get_listing, list_listings, list_offers, register_push_token, MarketplaceState,
+    },
+    pricing::{
+        get_bonding_curve_price, get_bonding_curve_series, get_dutch_auction_price, PricingState,
+    },
     profile::{
         delete_profile, get_my_profile, get_organizer_stats, get_profile_by_address,
-        list_events_by_organizer, list_my_transactions, patch_profile, upsert_profile,
-        ProfileState,
+        get_wallet_tickets, list_events_by_organizer, list_my_transactions, patch_profile,
+        upsert_profile, ProfileState,
     },
     qr_payload::{
-        delete_qr_payload, generate_qr_payload, list_event_qr_codes, list_qr_payloads,
-        mark_qr_used, verify_qr_payload,
+        delete_qr_payload, generate_attendee_qr, generate_qr_payload, list_event_qr_codes,
+        list_qr_payloads, mark_qr_used, scan_ticket, verify_qr_payload,
     },
     rates::{get_rates, RatesState},
-    soroban_listener::{spawn_listener, ListenerConfig},
+    waiting_room::{
+        join_queue, queue_status, queue_stream, request_challenge, WaitingRoomConfig,
+        WaitingRoomState,
+    },
     ws::{ws_purchases_handler, PurchaseBroadcaster},
+    zk_checkin::{get_ring, register_commitment, seal_bucket, zk_checkin, ZkCheckinState},
 };
 use crate::metrics::{metrics_handler, track_metrics};
 use crate::middleware::admin_auth::{require_admin_token, AdminAuthState};
 use crate::middleware::audit::audit_layer;
-use crate::middleware::content_type::require_json_content_type;
-use crate::middleware::monitoring_auth::{require_monitoring_token, MonitoringAuthState};
-use crate::middleware::rate_limit::GovernorRateLimitLayer;
-use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
-use crate::utils::rate_limit::RateLimitLayer;
+use crate::services::indexer::spawn_indexer;
+use crate::services::indexer::IndexerConfig;
+use crate::services::queue::QueueEngine;
 
 /// Sensitive routes that hit the database or expose internal state.
 /// Limited to 30 requests per IP per minute.
@@ -83,15 +102,6 @@ const SENSITIVE_WINDOW: Duration = Duration::from_secs(60);
 const GENERAL_RATE_LIMIT: usize = 120;
 const GENERAL_WINDOW: Duration = Duration::from_secs(60);
 
-/// Creates the main application router with all routes and middleware
-///
-/// # Arguments
-/// * `pool` - PostgreSQL connection pool for database operations
-/// * `config` - Application configuration
-/// * `redis` - Redis cache client
-///
-/// # Returns
-/// A configured Axum Router with all routes and middleware applied
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -100,7 +110,10 @@ use utoipa::OpenApi;
         crate::handlers::health::health_check
     ),
     components(
-        schemas(crate::handlers::health::HealthResponse)
+        schemas(
+            crate::handlers::health::HealthResponse,
+            crate::utils::error::ApiError
+        )
     ),
     tags(
         (name = "Agora API", description = "Agora Events Platform API")
@@ -111,32 +124,48 @@ pub struct ApiDoc;
 pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
 
+    // Virtual waiting room (Issue #1187): queue engine + background admission
+    // worker. Admission rate / PoW difficulty / grant TTL are env-tunable.
+    let waiting_room_config = WaitingRoomConfig::from_env();
+    let waiting_room_engine = std::sync::Arc::new(QueueEngine::new(redis.clone()));
+    QueueEngine::spawn_admission_worker(
+        waiting_room_engine.clone(),
+        Duration::from_millis(waiting_room_config.tick_interval_ms),
+        waiting_room_config.grant_ttl_minutes,
+    );
+
     let event_state = EventState {
         pool: pool.clone(),
         redis: redis.clone(),
         base_url: config.base_url.clone(),
     };
 
-    let monitoring_state = MonitoringState {
-        pool: pool.clone(),
-        redis: redis.clone(),
-    };
+    let rates_state = RatesState::new(redis.clone(), reqwest::Client::new());
 
-    let rates_state = RatesState {
-        redis: redis.clone(),
-        http: reqwest::Client::new(),
-    };
+    // Sync state for CRDT delta synchronization
+    let sync_state = SyncState::new(pool.clone());
+    // Dynamic pricing state for Dutch auction & bonding curve projections (Issue #1175)
+    let pricing_state = PricingState::new(redis.clone());
 
-    // Spawn the Soroban event listener background task (Issue #490)
-    let listener_config = ListenerConfig::from_env();
-    spawn_listener(pool.clone(), listener_config);
+    // Spawn the high-throughput, re-org resilient Soroban event indexer (Issue #1174)
+    let indexer_config = IndexerConfig::from_env();
+    spawn_indexer(
+        pool.clone(),
+        Some(redis.clone()),
+        Some(broadcaster.clone()),
+        indexer_config,
+    );
 
-    // Auth routes — challenge-response JWT flow (Issue #484)
+    // Auth routes — challenge-response JWT flow (Issue #484, #875)
     let auth_routes = Router::new()
         .route("/nonce", post(request_nonce))
         .route("/verify", post(verify_signature))
         .route("/logout", post(logout))
-        .with_state(pool.clone());
+        .with_state(pool.clone())
+        .layer(RateLimitLayer::new(
+            config.auth_rate_limit_per_minute,
+            Duration::from_secs(60),
+        ));
 
     let profile_state = ProfileState {
         pool: pool.clone(),
@@ -144,7 +173,6 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     };
 
     // Organizer profile routes (Issue #486)
-    // Routes that use Redis caching use ProfileState; stats route keeps PgPool.
     let profile_routes = Router::new()
         .route(
             "/",
@@ -154,52 +182,115 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
                 .delete(delete_profile),
         )
         .route("/transactions", get(list_my_transactions))
+        .route("/tickets", get(get_wallet_tickets))
         .route("/:address", get(get_profile_by_address))
         .route("/:address/events", get(list_events_by_organizer))
-        .with_state(profile_state)
-        .merge(
-            Router::new()
-                .route("/:address/stats", get(get_organizer_stats))
-                .with_state(pool.clone()),
-        );
+        .route("/:address/stats", get(get_organizer_stats))
+        .with_state(profile_state);
 
     // Admin sub-router — every request is recorded in audit_logs and requires admin auth.
     let admin_auth_state = AdminAuthState {
         token: config.admin_token.clone(),
     };
 
+    let governance_state = GovernanceState {
+        pool: pool.clone(),
+    };
+
+    let governance_routes = Router::new()
+        .route("/disputes", get(list_disputes).post(open_dispute))
+        .route("/disputes/:id", get(get_dispute))
+        .route(
+            "/disputes/:id/votes",
+            get(get_dispute_votes).post(cast_vote),
+        )
+        .route("/disputes/:id/resolve", post(resolve_dispute))
+        .layer(middleware::from_fn_with_state(
+            admin_auth_state.clone(),
+            require_admin_token,
+        ))
+        .layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(governance_state);
+
     let admin_routes = Router::new()
         .route("/events/:id/toggle-flag", post(toggle_event_flag))
         .route("/events/:id/feature", patch(set_event_featured))
+        .route("/events/:id/flag", patch(flag_event))
+        .merge(governance_routes)
         .route_layer(middleware::from_fn_with_state(
             admin_auth_state,
             require_admin_token,
         ))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
-        .with_state(event_state.clone());
+        .with_state(event_state.clone())
+        .merge(
+            Router::new()
+                .route("/indexer/replay", get(replay_indexer))
+                .with_state(IndexerAdminState {
+                    pool: pool.clone(),
+                    broker: Some(broadcaster.clone()),
+                }),
+        );
 
     // WebSocket sub-router for real-time purchase updates.
     let ws_routes = Router::new()
         .route("/purchases", get(ws_purchases_handler))
         .with_state(broadcaster);
 
+    // Virtual waiting room routes (Issue #1187)
+    let waiting_room_state = WaitingRoomState {
+        engine: waiting_room_engine,
+        pool: pool.clone(),
+        config: waiting_room_config,
+    };
+    let waiting_room_routes = Router::new()
+        .route("/challenge", post(request_challenge))
+        .route("/join", post(join_queue))
+        .route("/status", get(queue_status))
+        .route("/stream", get(queue_stream))
+        .with_state(waiting_room_state);
+
     // QR payload routes for cryptographically signed QR codes
     let qr_routes = Router::new()
         .route("/generate", post(generate_qr_payload))
+        .route("/attendee", post(generate_attendee_qr))
         .route("/verify", post(verify_qr_payload))
         .route("/mark-used/:id", post(mark_qr_used))
         .route("/list", get(list_qr_payloads))
         .route("/:id", delete(delete_qr_payload))
         .with_state(pool.clone());
 
+    // Zero-knowledge ticket attestation (Issue #1186). The public half is the
+    // gate: fetch an anonymity set, then present a proof. Registering
+    // commitments and sealing a set are issuer actions and live under /admin.
+    let zk_state = ZkCheckinState::new(pool.clone());
+    let zk_routes = Router::new()
+        .route("/ring", get(get_ring))
+        .route("/checkin", post(zk_checkin))
+        .with_state(zk_state.clone());
+
+    let admin_zk_routes = Router::new()
+        .route("/zk/commitments", post(register_commitment))
+        .route("/zk/buckets/seal", post(seal_bucket))
+        .route_layer(middleware::from_fn_with_state(
+            AdminAuthState {
+                token: config.admin_token.clone(),
+            },
+            require_admin_token,
+        ))
+        .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(zk_state);
+
     // Event routes with Redis caching
     let event_routes = Router::new()
         .route("/", get(list_events))
+        .route("/map", get(get_events_map))
         .route("/count", get(get_event_counts))
         .route("/past", get(list_past_events))
         .route("/upcoming", get(list_upcoming_events))
         .route("/search", get(search_events))
         .route("/:id", get(get_event))
+        .route("/:id/attendees", get(list_event_attendees))
         .route("/:id/attendees/count", get(get_attendee_count))
         .route("/:id/rate", post(submit_event_rating))
         .route("/:id/check-in-stats", get(get_checkin_stats))
@@ -220,6 +311,39 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/:id/qr-codes", get(list_event_qr_codes))
         .with_state(pool.clone());
 
+    // Ticket scan routes for organiser verification
+    let ticket_routes = Router::new()
+        .route("/:id/scan", post(scan_ticket))
+        .with_state(pool.clone());
+
+    // Secondary ticket market (Issue #1184). The key-envelope endpoints relay
+    // seller-sealed ticket secrets; see `handlers::marketplace` for the trust
+    // model. Push delivery is the first consumer of `NotificationService`.
+    let mut notification_service = crate::notifications::NotificationService::new();
+    notification_service.register(crate::notifications::push::ExpoPushProvider::new(
+        reqwest::Client::new(),
+    ));
+    let marketplace_state = MarketplaceState {
+        pool: pool.clone(),
+        notifications: std::sync::Arc::new(notification_service),
+    };
+    let marketplace_routes = Router::new()
+        .route("/listings", get(list_listings).post(create_listing))
+        .route(
+            "/listings/:payment_id",
+            get(get_listing).delete(cancel_listing),
+        )
+        .route(
+            "/listings/:payment_id/offers",
+            get(list_offers).post(create_offer),
+        )
+        .route(
+            "/listings/:payment_id/key-envelope",
+            get(get_key_envelope).post(create_key_envelope),
+        )
+        .route("/push-token", post(register_push_token))
+        .with_state(marketplace_state);
+
     // Category routes — listing is Redis-cached (Issue #583); the single-item
     // lookup keeps the bare PgPool state.
     let category_state = CategoryState {
@@ -235,12 +359,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
                 .with_state(pool.clone()),
         );
 
-    let monitoring_auth_state = MonitoringAuthState {
-        token: config.monitoring_token.clone(),
-    };
-
     let sensitive_routes = Router::new()
-        .route("/health", get(health_check))
         .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
         .route("/health/ready", get(health_check_ready))
@@ -252,27 +371,20 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         )
         .merge(
             Router::new()
-                .route("/monitoring/dashboard", get(monitoring_dashboard))
-                .route_layer(middleware::from_fn_with_state(
-                    monitoring_auth_state,
-                    require_monitoring_token,
-                ))
-                .with_state(monitoring_state),
+                .route("/health", get(health_check))
+                .with_state(crate::handlers::health::HealthState {
+                    pool: pool.clone(),
+                    redis: redis.clone(),
+                }),
         )
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
-
-    let leaderboard_state = LeaderboardState {
-        pool: pool.clone(),
-        redis: redis.clone(),
-    };
 
     // General endpoints — relaxed rate limit
     let general_routes = Router::new()
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
-        .route("/leaderboard", get(get_leaderboard))
-        .with_state(leaderboard_state)
+        .with_state(pool)
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
     // Public API routes with tower-governor rate limiting
@@ -280,18 +392,38 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/rates", get(get_rates))
         .with_state(rates_state);
 
+    // Sync routes for CRDT delta synchronization
+    let sync_routes = Router::new()
+        .route("/delta", post(delta_sync))
+        .route("/status/:node_id", get(sync_status))
+        .with_state(sync_state);
+    // Dynamic pricing routes: Dutch auction projections and bonding curve
+    // visualisation series (Issue #1175).
+    let pricing_routes = Router::new()
+        .route("/dutch-auction", get(get_dutch_auction_price))
+        .route("/bonding-curve", get(get_bonding_curve_price))
+        .route("/bonding-curve/series", get(get_bonding_curve_series))
+        .with_state(pricing_state);
+
     let public_api_routes = Router::new()
         .nest("/events", event_routes)
         .nest("/events", event_qr_routes)
+        .nest("/tickets", ticket_routes)
+        .nest("/marketplace", marketplace_routes)
         .nest("/categories", category_routes)
         .nest("/auth", auth_routes)
         .nest("/profile", profile_routes)
         .nest("/ws", ws_routes)
+        .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
+        .nest("/zk", zk_routes)
+        .nest("/pricing", pricing_routes)
+        .nest("/sync", sync_routes)
         .merge(rates_route)
         .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
-        .layer(GovernorRateLimitLayer::new(100, Duration::from_secs(60)));
+        // Per-IP token-bucket rate limit (RATE_LIMIT_MAX / RATE_LIMIT_WINDOW).
+        .layer(RateLimitLayer::from_env());
 
     let api_routes = Router::new()
         .merge(sensitive_routes)
@@ -314,8 +446,9 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     Router::new()
         .route("/metrics", get(metrics_handler))
         .nest("/api/v1", api_routes)
-        .nest("/api/v1/admin", admin_routes)
+        .nest("/api/v1/admin", admin_routes.merge(admin_zk_routes))
         .merge(deep_link_routes)
+        .fallback(handle_404)
         .layer(middleware::from_fn(track_metrics))
         .layer(create_security_headers_layer())
         .layer(create_cors_layer())
@@ -323,6 +456,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .layer(middleware::from_fn(propagate_request_id))
         .layer(propagate_request_id_layer())
         .layer(set_request_id_layer())
+        .layer(catch_panic_layer())
+}
+
+async fn handle_404() -> Response {
+    crate::utils::error::ApiError::new(axum::http::StatusCode::NOT_FOUND, "Route not found").into_response()
 }
 
 /// Serve Apple App Site Association file for iOS deep linking
@@ -449,7 +587,6 @@ mod tests {
     #[tokio::test]
     async fn test_upload_image_route_exists_under_api_v1() {
         let router = test_router();
-        // POST /api/v1/upload/image should not 404 (method-not-allowed or ok, but not 404)
         let req = Request::builder()
             .method("POST")
             .uri("/api/v1/upload/image")
@@ -489,13 +626,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // Rate-limit integration tests
-    // -----------------------------------------------------------------------
-
     fn rate_limited_test_router(sensitive_max: usize, general_max: usize) -> Router {
-        use crate::utils::rate_limit::RateLimitLayer;
-
         let sensitive = Router::new()
             .route("/api/v1/health/db", get(|| async { "ok" }))
             .route("/api/v1/health/ready", get(|| async { "ok" }))

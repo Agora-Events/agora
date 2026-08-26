@@ -39,21 +39,23 @@ pub struct Event {
     pub created_at: DateTime<Utc>,
     /// Timestamp of the last update to this record. Managed by a DB trigger.
     pub updated_at: DateTime<Utc>,
-    /// Optional HTTPS URL for the event's banner/cover image.
-    pub image_url: Option<String>,
-    /// True when the event has no paid ticket tiers.
-    /// Populated after fetch via `populate_is_free`; never read from DB.
-    #[sqlx(skip)]
-    pub is_free: bool,
-    /// Number of tickets minted for this event. Loaded from DB for sorting; omitted from API.
-    #[serde(skip)]
+    /// Sum of `total_quantity` across all of this event's ticket tiers.
+    /// Defaults to `0` for queries that don't join `ticket_tiers`.
+    #[sqlx(default)]
+    pub total_tickets: i64,
+    /// Number of tickets already sold (`total_quantity - available_quantity`
+    /// summed across tiers). Defaults to `0` for queries that don't join
+    /// `ticket_tiers`.
+    #[sqlx(default)]
     pub minted_tickets: i64,
-    /// Tracks whether `populate_is_free` has been called for this event (Issue #886).
-    /// When `false` at serialization time a warning is emitted so log-based checks
-    /// can catch any code path that forgot to call `populate_is_free` before returning
-    /// event data to clients. Never serialized or read from the database.
-    #[sqlx(skip)]
-    #[serde(skip)]
+    pub image_url: Option<String>,
+    #[sqlx(default)]
+    pub latitude: Option<f64>,
+    #[sqlx(default)]
+    pub longitude: Option<f64>,
+    #[sqlx(default)]
+    pub is_free: bool,
+    #[sqlx(default)]
     pub is_free_populated: bool,
 }
 
@@ -91,7 +93,7 @@ impl Serialize for Event {
             );
         }
 
-        let mut state = serializer.serialize_struct("Event", 15)?;
+        let mut state = serializer.serialize_struct("Event", 20)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("organizer_id", &self.organizer_id)?;
         state.serialize_field("title", &self.title)?;
@@ -106,7 +108,11 @@ impl Serialize for Event {
         state.serialize_field("created_at", &self.created_at)?;
         state.serialize_field("updated_at", &self.updated_at)?;
         state.serialize_field("image_url", &self.image_url)?;
+        state.serialize_field("latitude", &self.latitude)?;
+        state.serialize_field("longitude", &self.longitude)?;
         state.serialize_field("is_free", &self.is_free)?;
+        state.serialize_field("total_tickets", &self.total_tickets)?;
+        state.serialize_field("minted_tickets", &self.minted_tickets)?;
         state.serialize_field("average_rating", &self.average_rating())?;
         state.end()
     }
@@ -167,6 +173,9 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -191,6 +200,9 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -217,6 +229,9 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -241,6 +256,9 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -269,6 +287,9 @@ mod tests {
             created_at: created,
             updated_at: updated,
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -295,6 +316,9 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -321,6 +345,9 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
@@ -346,7 +373,10 @@ mod tests {
         apply_populate_is_free(&mut events, &[]);
 
         assert!(events[0].is_free, "event with no paid tiers should be free");
-        assert!(events[0].is_free_populated, "is_free_populated must be true after populate");
+        assert!(
+            events[0].is_free_populated,
+            "is_free_populated must be true after populate"
+        );
     }
 
     #[test]
@@ -357,8 +387,14 @@ mod tests {
         // Event ID in paid list → event is paid (is_free = false).
         apply_populate_is_free(&mut events, &[paid_id]);
 
-        assert!(!events[0].is_free, "event with paid tiers should not be free");
-        assert!(events[0].is_free_populated, "is_free_populated must be true after populate");
+        assert!(
+            !events[0].is_free,
+            "event with paid tiers should not be free"
+        );
+        assert!(
+            events[0].is_free_populated,
+            "is_free_populated must be true after populate"
+        );
     }
 
     #[test]
@@ -369,8 +405,14 @@ mod tests {
 
         apply_populate_is_free(&mut events, &[paid_id]);
 
-        assert!(events[0].is_free, "first event (no paid tiers) should be free");
-        assert!(!events[1].is_free, "second event (paid tier) should not be free");
+        assert!(
+            events[0].is_free,
+            "first event (no paid tiers) should be free"
+        );
+        assert!(
+            !events[1].is_free,
+            "second event (paid tier) should not be free"
+        );
         assert!(events[0].is_free_populated);
         assert!(events[1].is_free_populated);
     }
@@ -378,6 +420,36 @@ mod tests {
     #[test]
     fn test_is_free_populated_flag_starts_false() {
         let event = make_event(Uuid::new_v4());
-        assert!(!event.is_free_populated, "flag must default to false before populate_is_free");
+        assert!(
+            !event.is_free_populated,
+            "flag must default to false before populate_is_free"
+        );
+    }
+
+    // ── Issue #1136: event location coordinates ─────────────────────────────
+
+    #[test]
+    fn test_coordinates_default_none() {
+        let event = make_event(Uuid::new_v4());
+        assert!(event.latitude.is_none());
+        assert!(event.longitude.is_none());
+    }
+
+    #[test]
+    fn test_coordinates_serialize_when_set() {
+        let mut event = make_event(Uuid::new_v4());
+        event.latitude = Some(6.5244);
+        event.longitude = Some(3.3792);
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["latitude"], 6.5244);
+        assert_eq!(json["longitude"], 3.3792);
+    }
+
+    #[test]
+    fn test_coordinates_serialize_null_when_unset() {
+        let event = make_event(Uuid::new_v4());
+        let json = serde_json::to_value(&event).unwrap();
+        assert!(json["latitude"].is_null());
+        assert!(json["longitude"].is_null());
     }
 }

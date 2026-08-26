@@ -109,6 +109,7 @@ impl MockRegistryE2E {
         _tier_id: String,
         _user: Address,
         quantity: u32,
+        _payment_token: Address,
     ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
@@ -344,6 +345,7 @@ impl MockRegistryWithGoal {
         _tier_id: String,
         _user: Address,
         quantity: u32,
+        _payment_token: Address,
     ) {
         let key = (Symbol::new(&env, "supply"), event_id);
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
@@ -1180,6 +1182,7 @@ impl MockRegistryAuction {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}

@@ -634,10 +634,12 @@ pub fn has_organizer_receipt(env: &Env, organizer: &Address, event_id: String) -
 }
 
 /// Retrieves all event_ids associated with an organizer by iterating through shards.
+/// If the caller is not the organizer, private events are filtered out (Issue #880).
 /// NOTE: For very large lists, this may exceed gas limits. Use shard-based iteration for scale.
-pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
+pub fn get_organizer_events(env: &Env, organizer: &Address, caller: &Address) -> Vec<String> {
     let count = get_organizer_event_count(env, organizer);
     let mut all_events = vec![env];
+    let is_owner = organizer == caller;
 
     if count == 0 {
         return all_events;
@@ -651,7 +653,14 @@ pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<String> {
             .get(&DataKey::OrganizerEventShard(organizer.clone(), i))
             .unwrap_or_else(|| vec![env]);
         for id in shard.iter() {
-            all_events.push_back(id);
+            // Filter out private events if caller is not the organizer
+            if is_owner {
+                all_events.push_back(id);
+            } else if let Some(event_info) = get_event(env, id.clone()) {
+                if !event_info.is_private {
+                    all_events.push_back(id);
+                }
+            }
         }
     }
     all_events
@@ -1150,6 +1159,14 @@ pub fn add_to_waitlist(env: &Env, event_id: &String, user: &Address) {
         .set(&DataKey::Waitlist(event_id.clone(), user.clone()), &true);
 }
 
+/// Remove a user from the waitlist for an event.
+/// Storage key: DataKey::Waitlist(event_id, user). Storage type: Persistent
+pub fn remove_from_waitlist(env: &Env, event_id: &String, user: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Waitlist(event_id.clone(), user.clone()));
+}
+
 // ── Event Pause Storage ────────────────────────────────────────────────────────
 
 /// Returns whether an event is paused. Returns false if the pause status is not set (i.e., event is not paused).
@@ -1240,9 +1257,101 @@ pub fn has_event_role(
     required_role: crate::types::Role,
 ) -> bool {
     if let Some(member_role) = get_event_team_role(env, event_id, member) {
-        // Check role hierarchy: Admin (1) > Manager (2) > Scanner (3)
         (member_role as u32) <= (required_role as u32)
     } else {
         false
     }
+}
+
+// ── Dispute Storage ────────────────────────────────────────────────────────────
+
+const DISPUTE_SHARD_SIZE: u32 = 50;
+
+/// Stores a dispute for an event.
+pub fn store_dispute(env: &Env, dispute: &crate::types::Dispute) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Dispute(dispute.event_id.clone()), dispute);
+}
+
+/// Retrieves a dispute by event_id.
+pub fn get_dispute(env: &Env, event_id: String) -> Option<crate::types::Dispute> {
+    env.storage().persistent().get(&DataKey::Dispute(event_id))
+}
+
+/// Adds a vote to the dispute vote shard list.
+pub fn add_dispute_vote(env: &Env, event_id: String, voter: &Address) {
+    let count = get_dispute_vote_count(env, event_id.clone());
+    let shard_id = count / DISPUTE_SHARD_SIZE;
+
+    let mut shard: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::DisputeVoteShard(event_id.clone(), shard_id))
+        .unwrap_or_else(|| Vec::new(env));
+
+    shard.push_back(voter.clone());
+    env.storage().persistent().set(
+        &DataKey::DisputeVoteShard(event_id.clone(), shard_id),
+        &shard,
+    );
+
+    env.storage().persistent().set(
+        &DataKey::DisputeVoteCount(event_id.clone()),
+        &(count + 1),
+    );
+}
+
+/// Gets all votes for a dispute.
+pub fn get_dispute_votes(env: &Env, event_id: String) -> Vec<crate::types::DisputeVote> {
+    let count = get_dispute_vote_count(env, event_id.clone());
+    let mut votes = Vec::new(env);
+
+    if count == 0 {
+        return votes;
+    }
+
+    let num_shards = count.div_ceil(DISPUTE_SHARD_SIZE);
+    for i in 0..num_shards {
+        let shard: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::DisputeVoteShard(event_id.clone(), i))
+            .unwrap_or_else(|| Vec::new(env));
+
+        for voter in shard.iter() {
+            if let Some(vote) = env
+                .storage()
+                .persistent()
+                .get::<_, crate::types::DisputeVote>(&DataKey::DisputeVote(event_id.clone(), voter.clone()))
+            {
+                votes.push_back(vote);
+            }
+        }
+    }
+
+    votes
+}
+
+/// Gets the total number of votes for a dispute.
+pub fn get_dispute_vote_count(env: &Env, event_id: String) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DisputeVoteCount(event_id))
+        .unwrap_or(0)
+}
+
+/// Checks if a voter has already voted on a dispute.
+pub fn has_voted(env: &Env, event_id: String, voter: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::DisputeVote(event_id, voter.clone()))
+}
+
+/// Stores a dispute vote.
+pub fn store_dispute_vote(env: &Env, event_id: String, voter: &Address, vote: &crate::types::DisputeVote) {
+    env.storage().persistent().set(
+        &DataKey::DisputeVote(event_id, voter.clone()),
+        vote,
+    );
 }
