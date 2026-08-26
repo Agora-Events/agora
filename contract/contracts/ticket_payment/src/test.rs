@@ -10254,3 +10254,117 @@ fn test_poap_minting_and_duplicate_prevention() {
     assert!(res2.is_err());
 }
 
+
+/// Issue #1277 – double-mint / duplicate-payment-ID protection.
+///
+/// Verifies that submitting `process_payment` with the same `payment_id` a
+/// second time is immediately rejected with `PaymentAlreadyExists`, and that
+/// neither the escrow balance, the total supply, nor the emitted events are
+/// affected by the failed second call.
+#[test]
+fn test_double_mint_is_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128; // 1 000 USDC (matches MockEventRegistry tier_1 price)
+
+    // Fund the buyer with enough USDC for two attempted purchases.
+    usdc_token.mint(&buyer, &(amount * 2));
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &(amount * 2), &99999);
+
+    let payment_id = String::from_str(&env, "dup_pay_1");
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let (_secret, hash) = test_secret(&env);
+
+    // ── First mint: must succeed ───────────────────────────────────────────
+    let returned_id = client.process_payment(
+        &payment_id,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &amount,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+    assert_eq!(returned_id, payment_id, "first mint should succeed");
+
+    // Snapshot state after the legitimate first mint.
+    let escrow_after_first = client.get_event_escrow_balance(&event_id);
+    let events_after_first = env.events().all().len();
+
+    // ── Second mint with the same payment_id: must be rejected ────────────
+    let second_result = client.try_process_payment(
+        &payment_id,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &amount,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+        },
+        &hash,
+    );
+
+    assert!(
+        second_result.is_err(),
+        "duplicate payment_id must be rejected"
+    );
+
+    // The error must be the dedicated double-mint error code.
+    let err = second_result.unwrap_err();
+    assert_eq!(
+        err,
+        Err(TicketPaymentError::PaymentAlreadyExists.into()),
+        "expected PaymentAlreadyExists error on duplicate payment_id"
+    );
+
+    // ── Invariants: nothing should have changed after the failed second mint ──
+
+    // 1. Escrow balance unchanged.
+    let escrow_after_second = client.get_event_escrow_balance(&event_id);
+    assert_eq!(
+        escrow_after_first.platform_fee, escrow_after_second.platform_fee,
+        "platform fee escrow must not change after rejected duplicate"
+    );
+    assert_eq!(
+        escrow_after_first.organizer_amount, escrow_after_second.organizer_amount,
+        "organizer escrow must not change after rejected duplicate"
+    );
+
+    // 2. No additional events emitted for the failed call.
+    let events_after_second = env.events().all().len();
+    assert_eq!(
+        events_after_first, events_after_second,
+        "no new contract events should be emitted for a rejected duplicate mint"
+    );
+
+    // 3. The stored payment record is the one from the FIRST call (not overwritten).
+    let stored = client
+        .get_payment_status(&payment_id)
+        .expect("payment record must exist");
+    assert_eq!(
+        stored.buyer_address, buyer,
+        "stored payment should belong to the original buyer"
+    );
+    assert_eq!(
+        stored.amount, amount,
+        "stored payment amount should match the original mint"
+    );
+}

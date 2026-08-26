@@ -1,3 +1,5 @@
+// Storage key definitions – not part of the primary documentation surface.
+#![allow(missing_docs)]
 use soroban_sdk::{contracttype, Address, BytesN, String};
 
 use crate::types::PaymentStatus;

@@ -1,62 +1,123 @@
+/// Error codes returned by the Ticket Payment contract.
+///
+/// Each variant maps to a unique `u32` discriminant used in Soroban contract errors.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum TicketPaymentError {
+    /// Contract has already been initialized.
     AlreadyInitialized = 1,
+    /// The provided address is invalid.
     InvalidAddress = 2,
+    /// Contract has not been initialized.
     NotInitialized = 3,
+    /// The requested event was not found in the registry.
     EventNotFound = 4,
+    /// The event is currently inactive.
     EventInactive = 5,
+    /// The payment token is not on the whitelist.
     TokenNotWhitelisted = 6,
+    /// The event has sold out (max supply reached).
     MaxSupplyExceeded = 7,
+    /// The payment record was not found.
     PaymentNotFound = 8,
+    /// The payment is in an invalid status for the requested operation.
     InvalidPaymentStatus = 9,
+    /// The ticket tier does not support refunds.
     TicketNotRefundable = 10,
+    /// The requested ticket tier was not found.
     TierNotFound = 11,
+    /// The buyer has not approved sufficient token allowance.
     InsufficientAllowance = 12,
+    /// On-chain balance after transfer did not match expected amount.
     TransferVerificationFailed = 13,
+    /// An arithmetic overflow or underflow occurred.
     ArithmeticError = 14,
+    /// Buyer attempted to refer themselves.
     SelfReferralNotAllowed = 15,
+    /// The supplied amount did not match the tier price.
     PriceMismatch = 16,
+    /// The supplied price is invalid (e.g., negative or zero).
     InvalidPrice = 17,
+    /// The discount code preimage is invalid.
     InvalidDiscountCode = 18,
+    /// The discount code has already been used.
     DiscountCodeUsed = 19,
+    /// Caller is not authorized to perform this action.
     Unauthorized = 20,
+    /// The event has not yet completed.
     EventNotCompleted = 21,
+    /// There are no funds available to withdraw.
     NoFundsAvailable = 22,
+    /// The refund deadline has passed.
     RefundDeadlinePassed = 23,
+    /// The requested withdrawal exceeds the daily cap.
     WithdrawalCapExceeded = 24,
+    /// Platform fee balance is insufficient.
     InsufficientFees = 25,
+    /// Resale price exceeds the event's configured cap.
     ResalePriceExceedsCap = 26,
+    /// The contract is currently paused.
     ContractPaused = 27,
+    /// The event has been cancelled.
     EventCancelled = 35,
+    /// The event is under dispute.
     EventDisputed = 36,
+    /// The scanner is not authorized for this event.
     UnauthorizedScanner = 37,
+    /// The ticket has already been used (checked in).
     TicketAlreadyUsed = 38,
+    /// The event's minimum sales goal has not been met.
     GoalNotMet = 39,
+    /// No oracle contract has been configured.
     OracleNotConfigured = 40,
+    /// The oracle price feed is unavailable.
     OraclePriceUnavailable = 41,
+    /// The supplied amount is outside the slippage tolerance.
     PriceOutsideSlippage = 42,
+    /// The slippage basis points value is invalid.
     InvalidSlippageBps = 43,
+    /// No active auction exists for the specified tier.
     AuctionNotActive = 44,
+    /// Bid is too low (below minimum increment or start price).
     BidTooLow = 45,
+    /// The auction has already ended.
     AuctionEnded = 46,
+    /// The auction has not ended yet.
     AuctionNotEnded = 47,
+    /// The tier is not an auction tier.
     NotAuctionTier = 48,
+    /// Caller is not a recognized governor.
     NotGovernor = 49,
+    /// The governance proposal does not exist.
     InvalidProposal = 50,
+    /// The governance proposal is not in an active state.
     ProposalNotActive = 51,
+    /// The caller has already voted on this proposal.
     AlreadyVoted = 52,
+    /// The governance voting period has not elapsed yet.
     VotingPeriodNotMet = 53,
+    /// The proposal does not have enough votes to execute.
     InsufficientVotes = 54,
+    /// The governance proposal has expired.
     ProposalExpired = 55,
+    /// The oracle price data is stale (older than the maximum allowed age).
     OraclePriceStale = 56,
+    /// Cannot remove the last remaining governor.
     CannotRemoveLastGovernor = 57,
+    /// The fee percentage is out of range.
     InvalidFeePercent = 58,
+    /// The event has already ended and no longer accepts tickets.
     EventEnded = 59,
+    /// The ticket is non-transferable (soulbound).
     NonTransferable = 60,
+    /// The provided secret does not match the stored hash.
     InvalidSecret = 61,
+    /// The discount code has expired.
     DiscountExpired = 62,
+    /// The discount code has reached its maximum number of uses.
     DiscountMaxUsesReached = 63,
+    /// A payment with the same ID has already been processed (duplicate/double-mint guard).
+    PaymentAlreadyExists = 64,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -130,6 +191,7 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             61 => TicketPaymentError::InvalidSecret,
             62 => TicketPaymentError::DiscountExpired,
             63 => TicketPaymentError::DiscountMaxUsesReached,
+            64 => TicketPaymentError::PaymentAlreadyExists,
             _ => TicketPaymentError::ArithmeticError,
         }
     }

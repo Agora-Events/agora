@@ -34,6 +34,10 @@ model Event {
   updatedAt       DateTime @updatedAt
   tickets         Ticket[]
   analyticsEvents AnalyticsEvent[]
+
+  /// Composite index for category-browsing queries ordered by start date.
+  /// Supports: SELECT * FROM "Event" WHERE category = $1 ORDER BY "startsAt" ASC/DESC
+  @@index([category, startsAt])
 }
 
 model Ticket {
@@ -48,6 +52,12 @@ model Ticket {
   utmMedium   String?  @db.VarChar(255)
   utmCampaign String?  @db.VarChar(255)
   createdAt   DateTime @default(now())
+
+  /// Single-column index to efficiently look up all tickets belonging to a wallet address.
+  @@index([ownerWallet])
+  /// Composite index to support "newest first" wallet queries efficiently.
+  /// Supports: SELECT * FROM "Ticket" WHERE "ownerWallet" = $1 ORDER BY "createdAt" DESC
+  @@index([ownerWallet, createdAt])
 }
 
 /// Organizer brand profile keyed by Stellar wallet address.

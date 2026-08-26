@@ -1,5 +1,6 @@
 use soroban_sdk::{contracttype, Address};
 
+/// Number of seconds in a 30-day subscription month.
 pub const SECONDS_PER_MONTH: u64 = 30 * 24 * 60 * 60; // 30 days
 
 /// Subscription plan tiers
