@@ -14,7 +14,10 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { createEventSchema } from "@/lib/validation";
+import {
+  createEventSchema,
+  MAX_DESCRIPTION_LENGTH,
+} from "@/lib/validation";
 
 /** A minimal payload that satisfies every required field in the schema. */
 function validPayload(overrides: Record<string, unknown> = {}) {
@@ -106,5 +109,35 @@ describe("createEventSchema", () => {
       expect(visibilityIssue?.message).toMatch(/Public/);
       expect(visibilityIssue?.message).toMatch(/Private/);
     }
+  });
+
+  it("accepts a description at the max length", () => {
+    const result = createEventSchema.safeParse(
+      validPayload({ description: "x".repeat(MAX_DESCRIPTION_LENGTH) })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a description longer than the max length", () => {
+    const result = createEventSchema.safeParse(
+      validPayload({ description: "x".repeat(MAX_DESCRIPTION_LENGTH + 1) })
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const descriptionIssue = result.error.issues.find((issue) =>
+        issue.path.includes("description")
+      );
+      expect(descriptionIssue).toBeDefined();
+      expect(descriptionIssue?.message).toMatch(
+        new RegExp(String(MAX_DESCRIPTION_LENGTH))
+      );
+    }
+  });
+
+  it("treats a missing description as optional", () => {
+    const result = createEventSchema.safeParse(
+      validPayload({ description: undefined })
+    );
+    expect(result.success).toBe(true);
   });
 });

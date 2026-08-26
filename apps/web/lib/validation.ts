@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+/**
+ * Maximum length for an event description.
+ *
+ * Mirrors the `events_description_length_check` CHECK constraint added in
+ * `server/migrations/20260728000001_add_description_check_constraint.sql`
+ * (`LENGTH(description) <= 10000`). Shared so the schema and the form UI can
+ * never drift apart from the database rule.
+ */
+export const MAX_DESCRIPTION_LENGTH = 10000;
+
 export const authSchema = z.object({
   email: z
     .string()
@@ -14,7 +24,13 @@ export const createEventSchema = z.object({
   endDate: z.string().optional(),
   endTime: z.string().optional(),
   location: z.string().trim().min(1, "Location is required"),
-  description: z.string().optional(),
+  description: z
+    .string()
+    .max(
+      MAX_DESCRIPTION_LENGTH,
+      `Description must be at most ${MAX_DESCRIPTION_LENGTH} characters`,
+    )
+    .optional(),
   capacity: z
     .string()
     .optional()

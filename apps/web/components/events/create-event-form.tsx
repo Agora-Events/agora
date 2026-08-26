@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import { useState } from "react";
+import { MAX_DESCRIPTION_LENGTH } from "@/lib/validation";
 
 /**
  * Form data structure for creating a new event
@@ -235,11 +236,15 @@ export default function CreateEventForm() {
       <div
         className={`p-4 shadow-sm min-h-[140px] flex flex-col ${neubrutalistInputClass}`}
       >
-        <label className="block text-sm font-semibold mb-3">
+        <label
+          htmlFor="event-description"
+          className="block text-sm font-semibold mb-3"
+        >
           Add Description
         </label>
         <div className="flex items-start gap-4 flex-1">
           <textarea
+            id="event-description"
             name="description"
             value={formData.description}
             onChange={handleChange}
@@ -249,6 +254,8 @@ export default function CreateEventForm() {
               target.style.height = `${target.scrollHeight}px`;
             }}
             placeholder="Add Description about this Event..."
+            maxLength={MAX_DESCRIPTION_LENGTH}
+            aria-describedby="description-character-count"
             className="flex-1 text-base font-medium bg-transparent outline-none placeholder:text-gray-300 resize-none overflow-hidden min-h-[80px]"
           />
           <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0 mt-1">
@@ -260,6 +267,23 @@ export default function CreateEventForm() {
               className="opacity-60"
             />
           </div>
+        </div>
+        <div className="flex justify-end mt-2">
+          <span
+            id="description-character-count"
+            aria-live="polite"
+            className={`text-xs font-medium tabular-nums ${
+              formData.description.length >= MAX_DESCRIPTION_LENGTH
+                ? "text-red-500"
+                : formData.description.length >=
+                    MAX_DESCRIPTION_LENGTH * 0.9
+                  ? "text-amber-500"
+                  : "text-gray-400"
+            }`}
+          >
+            {formData.description.length.toLocaleString()} /{" "}
+            {MAX_DESCRIPTION_LENGTH.toLocaleString()}
+          </span>
         </div>
       </div>
 
