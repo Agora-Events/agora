@@ -40,6 +40,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   }
 
   const items = await prisma.event.findMany({
+    where: { status: "PUBLISHED" },
     orderBy: { startsAt: "asc" },
   });
 

@@ -11,6 +11,12 @@ datasource db {
   provider = "postgresql"
 }
 
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
 model Event {
   id              String   @id @default(uuid())
   title           String
@@ -31,10 +37,13 @@ model Event {
   mintedTickets   Int      @default(0)
   followersOnly   Boolean  @default(false)
   hostEmail       String
+  status          EventStatus @default(PUBLISHED)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   tickets         Ticket[]
   analyticsEvents AnalyticsEvent[]
+
+  @@index([status, startsAt])
 }
 
 model Ticket {
