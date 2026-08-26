@@ -18,10 +18,10 @@ enum EventStatus {
 }
 
 model Event {
-  id              String   @id @default(uuid())
+  id              String           @id @default(uuid())
   title           String
-  slug            String   @unique
-  description     String   @default("")
+  slug            String           @unique
+  description     String           @default("")
   startsAt        DateTime
   endsAt          DateTime?
   location        String
@@ -32,15 +32,15 @@ model Event {
   category        String
   organizerName   String
   organizerWallet String
-  imageUrl        String   @default("/images/event1.png")
-  ticketPrice     Float    @default(0)
-  totalTickets    Int      @default(100)
-  mintedTickets   Int      @default(0)
-  followersOnly   Boolean  @default(false)
+  imageUrl        String           @default("/images/event1.png")
+  ticketPrice     Float            @default(0)
+  totalTickets    Int              @default(100)
+  mintedTickets   Int              @default(0)
+  followersOnly   Boolean          @default(false)
   hostEmail       String
-  status          EventStatus @default(PUBLISHED)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  status          EventStatus      @default(PUBLISHED)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   tickets         Ticket[]
   analyticsEvents AnalyticsEvent[]
 
@@ -59,6 +59,10 @@ model Ticket {
   utmMedium   String?  @db.VarChar(255)
   utmCampaign String?  @db.VarChar(255)
   createdAt   DateTime @default(now())
+
+  /// Guards against a retried mint or a duplicated indexer event inserting the
+  /// same on-chain ticket twice. Rows with a null stellarId are unaffected.
+  @@unique([eventId, stellarId])
 }
 
 /// Organizer brand profile keyed by Stellar wallet address.
