@@ -196,6 +196,30 @@ http://localhost:3000
 
 If you have not already installed workspace dependencies from the repo root, do that first with `pnpm install`.
 
+### Seed local development data
+
+The events shown in `lib/events-store.ts` are in-memory mock data only and
+never reach Postgres, so a fresh checkout starts with an empty database.
+Run the frontend's seed script to populate it with ~10 sample events across
+several categories (spanning past and future dates), a few organizer
+profiles, and a handful of tickets:
+
+```bash
+cd apps/web
+pnpm exec prisma db seed
+```
+
+Or, using the shortcut script:
+
+```bash
+pnpm --filter web run db:seed
+```
+
+This requires `DATABASE_URL` to be set (see `server/.env`) and the schema
+to already be migrated. The seed script (`apps/web/prisma/seed.ts`) uses
+`upsert` with fixed ids, so it is safe to run repeatedly -- re-running it
+will not create duplicate records.
+
 ## 7. Run Contract Tests
 
 Open another terminal and run the Soroban contract test suite:
