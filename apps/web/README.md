@@ -64,6 +64,11 @@ These should be used in your page layouts (e.g., `app/page.tsx`) to maintain a c
    ```bash
    pnpm lint
    ```
+3. **Type Checking**:
+   Run TypeScript type checks across all web app files, tests, and stories:
+   ```bash
+   pnpm typecheck
+   ```
 
 ---
 

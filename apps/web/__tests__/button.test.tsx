@@ -60,7 +60,7 @@ describe("Button Component", () => {
     });
 
     it("applies ghost variant styles correctly", () => {
-      render(<Button variant="ghost">Ghost Button</Button>);
+      render(<Button variant={"ghost" as any}>Ghost Button</Button>);
       
       const button = screen.getByRole("button");
       expect(button).toHaveClass("bg-transparent");
@@ -144,7 +144,7 @@ describe("Button Component", () => {
     });
 
     it("applies ghost variant transparent shadow", () => {
-      render(<Button variant="ghost">Ghost Shadow</Button>);
+      render(<Button variant={"ghost" as any}>Ghost Shadow</Button>);
       
       const button = screen.getByRole("button");
       expect(button).toHaveStyle({ boxShadow: "-4px 4px 0px 0px transparent" });

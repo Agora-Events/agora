@@ -32,6 +32,9 @@ jobs:
       - name: Lint
         run: pnpm --filter web lint
 
+      - name: Type check
+        run: pnpm --filter web typecheck
+
       - name: Build
         run: pnpm --filter web build
 
