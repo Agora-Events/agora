@@ -65,12 +65,46 @@ export default async function EventDetailPage({
     ],
   };
 
+  const isOnline = event.location === "Online";
+  const eventUrl = `${SITE_URL}/events/${id}`;
+  const eventDescription = `Join us for ${event.title} on ${event.date} in ${event.location}. ${event.price === "Free" ? "Free entry." : `Tickets from $${event.price}.`} Secure your spot on Agora.`;
+  const parsedStartDate = new Date(event.date);
+
+  const eventJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: event.title,
+    ...(isNaN(parsedStartDate.getTime())
+      ? {}
+      : { startDate: parsedStartDate.toISOString() }),
+    location: isOnline
+      ? { "@type": "VirtualLocation", url: eventUrl }
+      : { "@type": "Place", name: event.location },
+    image: `${SITE_URL}${event.imageUrl}`,
+    description: eventDescription,
+    eventAttendanceMode: isOnline
+      ? "https://schema.org/OnlineEventAttendanceMode"
+      : "https://schema.org/OfflineEventAttendanceMode",
+    organizer: { "@type": "Organization", name: host.name },
+    offers: {
+      "@type": "Offer",
+      price: event.price === "Free" ? "0" : event.price,
+      priceCurrency: "USD",
+      availability: "https://schema.org/InStock",
+      url: eventUrl,
+    },
+  };
+
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <EventPageView eventId={event.id} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(eventJsonLd) }}
       />
       <Navbar />
 
