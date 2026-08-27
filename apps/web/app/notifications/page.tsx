@@ -2,10 +2,10 @@
 
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 
 interface NotificationItem {
   id: string;
@@ -49,9 +49,9 @@ const mockNotifications: NotificationItem[] = [
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>(mockNotifications);
-  
+
   const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    setNotifications(notifications.map((n) => ({ ...n, read: true })));
   };
 
   const clearNotifications = () => {
@@ -62,18 +62,17 @@ export default function NotificationsPage() {
     <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
       <div className="flex-1 w-full max-w-[800px] mx-auto px-4 py-12 md:py-20">
-        
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-4xl font-extrabold italic text-ink-deep">Notifications</h1>
           {notifications.length > 0 && (
             <div className="flex gap-4">
-              <button 
+              <button
                 onClick={markAllAsRead}
                 className="text-sm font-semibold text-ink-deep hover:underline"
               >
                 Mark all as read
               </button>
-              <button 
+              <button
                 onClick={clearNotifications}
                 className="text-sm font-semibold text-error hover:underline"
               >
@@ -86,30 +85,34 @@ export default function NotificationsPage() {
         {notifications.length > 0 ? (
           <div className="flex flex-col gap-4">
             {notifications.map((notification) => (
-              <div 
-                key={notification.id} 
+              <div
+                key={notification.id}
                 className={`flex gap-4 p-6 rounded-2xl border-2 border-black transition-all ${
-                  notification.read 
-                    ? "bg-white shadow-[-4px_4px_0_rgba(0,0,0,1)] opacity-70" 
+                  notification.read
+                    ? "bg-white shadow-[-4px_4px_0_rgba(0,0,0,1)] opacity-70"
                     : "bg-surface shadow-[-6px_6px_0_rgba(0,0,0,1)] hover:-translate-y-1"
                 }`}
               >
                 <div className="w-12 h-12 shrink-0 bg-white rounded-full flex items-center justify-center border-2 border-black">
-                  <Image 
+                  <Image
                     src={
-                      notification.type === "ticket_confirmation" ? "/icons/ticket.svg" :
-                      notification.type === "event_reminder" ? "/icons/calendar.svg" :
-                      "/icons/user-group.svg"
-                    } 
-                    alt={notification.type} 
-                    width={24} 
-                    height={24} 
+                      notification.type === "ticket_confirmation"
+                        ? "/icons/ticket.svg"
+                        : notification.type === "event_reminder"
+                          ? "/icons/calendar.svg"
+                          : "/icons/user-group.svg"
+                    }
+                    alt={notification.type}
+                    width={24}
+                    height={24}
                   />
                 </div>
                 <div className="flex-1">
                   <div className="flex justify-between items-start mb-1">
                     <h3 className="font-bold text-lg text-ink-deep">{notification.title}</h3>
-                    <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">{notification.time}</span>
+                    <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">
+                      {notification.time}
+                    </span>
                   </div>
                   <p className="text-ink-deep/80 mb-3">{notification.message}</p>
                   {notification.link && (
@@ -124,22 +127,21 @@ export default function NotificationsPage() {
             ))}
           </div>
         ) : (
-          <div className="bg-white p-16 rounded-[32px] border-2 border-black shadow-[-8px_8px_0_rgba(0,0,0,1)] text-center flex flex-col items-center">
-            <div className="w-24 h-24 bg-surface rounded-full flex items-center justify-center mb-6 border-2 border-black">
-              <Image src="/icons/notification.svg" alt="No notifications" width={48} height={48} />
-            </div>
-            <h2 className="text-3xl font-bold italic mb-4">You&apos;re all caught up!</h2>
-            <p className="text-ink-deep/70 mb-8 max-w-md mx-auto">
-              You don&apos;t have any new notifications at the moment. Check back later for updates on your events and tickets.
-            </p>
-            <Link href="/discover">
-              <Button backgroundColor="bg-accent" textColor="text-black" shadowColor="rgba(253,218,35,0.4)" className="px-8 font-bold text-lg">
-                Discover Events
-              </Button>
-            </Link>
-          </div>
+          <EmptyState
+            icon={
+              <Image
+                src="/icons/notification.svg"
+                alt="No notifications"
+                width={40}
+                height={40}
+                className="opacity-70"
+              />
+            }
+            title="You're all caught up!"
+            description="You don't have any new notifications at the moment. Check back later for updates on your events and tickets."
+            action={{ label: "Discover Events", href: "/discover" }}
+          />
         )}
-
       </div>
       <Footer />
     </main>
