@@ -12,7 +12,7 @@ tokio = { version = "1.37", features = ["full"] }
 
 # Middleware
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit", "catch-panic", "timeout"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit", "catch-panic", "timeout", "compression-gzip", "compression-br"] }
 pin-project = "1.1"
 
 # Serialization

@@ -32,6 +32,10 @@ use axum::{
 use sqlx::PgPool;
 use std::time::Duration;
 use tower::ServiceBuilder;
+use tower_http::compression::{
+    predicate::{DefaultPredicate, Predicate, SizeAbove},
+    CompressionLayer,
+};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 
@@ -459,6 +463,10 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
                     config.request_timeout_secs,
                 ))),
         )
+        // gzip/br response compression — excludes /metrics (mounted outside
+        // `api_routes`) and the streaming routes merged in below, and skips
+        // small bodies that wouldn't benefit (Issue #1253).
+        .layer(CompressionLayer::new().compress_when(DefaultPredicate::new().and(SizeAbove::new(1024))))
         .merge(streaming_routes)
         .layer(middleware::from_fn(crate::middleware::csrf::check_csrf));
 
