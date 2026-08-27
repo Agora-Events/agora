@@ -48,6 +48,10 @@ Required variables:
 | | `BASE_URL` | No | `https://agora.events` | The base URL of the API. | `http://localhost:8080` |
 | **Database** | `DATABASE_URL` **[SECRET]** | Yes | - | PostgreSQL connection string. | `postgres://user:pass@localhost/db` |
 | | `SLOW_QUERY_THRESHOLD_MS` | Yes | - | Execution time threshold for logging slow DB queries. | `500` |
+| | `DB_MAX_CONNECTIONS` | No | `10` | Maximum connections in the PostgreSQL pool. | `25` |
+| | `DB_MIN_CONNECTIONS` | No | `1` | Minimum idle connections kept in the pool. | `2` |
+| | `DB_ACQUIRE_TIMEOUT_SECS` | No | `10` | Seconds to wait for an available connection before failing. | `30` |
+| | `DB_IDLE_TIMEOUT_SECS` | No | `600` | Seconds before an idle connection is closed. | `300` |
 | **Redis** | `REDIS_URL` | No | `redis://127.0.0.1:6379` | Redis connection string. | `redis://127.0.0.1:6379` |
 | **CORS** | `CORS_ALLOWED_ORIGINS` | No | (Code default) | Comma-separated list of allowed CORS origins. | `https://agora.events` |
 | **Security & Auth** | `JWT_SECRET` **[SECRET]** | No | `""` | Secret key used for signing JWTs. | `super_secret_string` |

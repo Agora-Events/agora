@@ -113,6 +113,10 @@ pub enum TicketPaymentError {
     ResaleListingNotActive = 62,
     NonTransferable = 63,
     InvalidRoyaltyBps = 64,
+    /// Returned when a bulk operation receives an empty input vector.
+    EmptyBatch = 65,
+    /// Returned when a bulk operation input exceeds `MAX_BATCH_SIZE`.
+    BatchTooLarge = 66,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -157,6 +161,13 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             25 => TicketPaymentError::InsufficientFees,
             26 => TicketPaymentError::ResalePriceExceedsCap,
             27 => TicketPaymentError::ContractPaused,
+            28 => TicketPaymentError::InvalidSecret,
+            29 => TicketPaymentError::CommitExpired,
+            30 => TicketPaymentError::DiscountExpired,
+            31 => TicketPaymentError::DiscountMaxUsesReached,
+            32 => TicketPaymentError::DisputeNotResolved,
+            33 => TicketPaymentError::EscrowNotInitialized,
+            34 => TicketPaymentError::InvalidAmount,
             35 => TicketPaymentError::EventCancelled,
             36 => TicketPaymentError::EventDisputed,
             37 => TicketPaymentError::UnauthorizedScanner,
@@ -187,6 +198,8 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             62 => TicketPaymentError::ResaleListingNotActive,
             63 => TicketPaymentError::NonTransferable,
             64 => TicketPaymentError::InvalidRoyaltyBps,
+            65 => TicketPaymentError::EmptyBatch,
+            66 => TicketPaymentError::BatchTooLarge,
             _ => TicketPaymentError::ArithmeticError,
         }
     }

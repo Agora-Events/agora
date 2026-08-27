@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { type Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { getAuthFromRequest } from "@/lib/auth";
 import { withErrorHandler } from "@/lib/api-handler";
 import { throwApiError } from "@/lib/api-errors";
+import { slugify, withRandomSuffix } from "@/lib/slugify";
 
 const VALID_TABS = new Set(["upcoming", "hosting", "past"]);
 
@@ -40,6 +41,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   }
 
   const items = await prisma.event.findMany({
+    where: { status: "PUBLISHED" },
     orderBy: { startsAt: "asc" },
   });
 
@@ -66,11 +68,16 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     }
   }
 
+  if (payload.timezone !== undefined && (typeof payload.timezone !== "string" || payload.timezone.trim().length === 0)) {
+    throwApiError("Invalid field: timezone", 400);
+  }
+
   const created = await prisma.event.create({
     data: {
       title: payload.title as string,
       description: typeof payload.description === "string" ? payload.description : "",
       startsAt: new Date(payload.startsAt as string),
+      timezone: typeof payload.timezone === "string" ? payload.timezone : undefined,
       location: payload.location as string,
       category: payload.category as string,
       organizerName: payload.organizerName as string,

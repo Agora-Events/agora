@@ -11,11 +11,19 @@ datasource db {
   provider = "postgresql"
 }
 
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
 model Event {
-  id              String   @id @default(uuid())
+  id              String           @id @default(uuid())
   title           String
-  description     String   @default("")
+  slug            String           @unique
+  description     String           @default("")
   startsAt        DateTime
+  timezone        String   @default("UTC")
   location        String
   /// Optional WGS84 latitude for map discovery (-90 to 90).
   latitude        Float?
@@ -24,14 +32,15 @@ model Event {
   category        String
   organizerName   String
   organizerWallet String
-  imageUrl        String   @default("/images/event1.png")
-  ticketPrice     Float    @default(0)
-  totalTickets    Int      @default(100)
-  mintedTickets   Int      @default(0)
-  followersOnly   Boolean  @default(false)
+  imageUrl        String           @default("/images/event1.png")
+  ticketPrice     Float            @default(0)
+  totalTickets    Int              @default(100)
+  mintedTickets   Int              @default(0)
+  followersOnly   Boolean          @default(false)
   hostEmail       String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  status          EventStatus      @default(PUBLISHED)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   tickets         Ticket[]
   analyticsEvents AnalyticsEvent[]
 
