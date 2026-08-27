@@ -172,6 +172,8 @@ pub enum EventSortBy {
     Popularity,
     /// Sort by review count (alias of "popular" but exposes the underlying column).
     CountOfRatings,
+    /// Sort by minimum ticket-tier price.
+    Price,
 }
 
 impl EventSortBy {
@@ -245,29 +247,14 @@ impl EventFilters {
 
     /// Validate `sort_by` and `sort_order`, applying defaults when omitted.
     /// The `sort` field takes precedence when provided.
+    ///
+    /// Accepted `sort` values (allow-list, never interpolated into SQL):
+    /// `starts_at_asc` (default), `starts_at_desc`, `price_asc`, `price_desc`,
+    /// `popularity_desc`. Legacy values `newest` and `popular` are still accepted.
     pub fn validate_sort(&self) -> Result<ValidatedEventSort, String> {
         // Simple `sort` param takes precedence over the legacy `sort_by`/`sort_order` pair.
         if let Some(ref sort) = self.sort {
-            match sort.as_str() {
-                "newest" => {
-                    return Ok(ValidatedEventSort {
-                        sort_by: EventSortBy::StartTime,
-                        sort_order: SortOrder::Desc,
-                    });
-                }
-                "popular" => {
-                    return Ok(ValidatedEventSort {
-                        sort_by: EventSortBy::CountOfRatings,
-                        sort_order: SortOrder::Desc,
-                    });
-                }
-                other => {
-                    return Err(format!(
-                        "Invalid sort value '{}'. Supported values: newest, popular",
-                        other
-                    ));
-                }
-            }
+            return parse_sort_param(sort);
         }
 
         let sort_by = match self.sort_by.as_deref() {
@@ -285,6 +272,49 @@ impl EventFilters {
     }
 }
 
+/// Allow-listed `?sort=` values. The raw parameter is never concatenated into SQL.
+fn parse_sort_param(sort: &str) -> Result<ValidatedEventSort, String> {
+    match sort {
+        "starts_at_asc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::StartTime,
+            sort_order: SortOrder::Asc,
+        }),
+        "starts_at_desc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::StartTime,
+            sort_order: SortOrder::Desc,
+        }),
+        "price_asc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::Price,
+            sort_order: SortOrder::Asc,
+        }),
+        "price_desc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::Price,
+            sort_order: SortOrder::Desc,
+        }),
+        "popularity_desc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::Popularity,
+            sort_order: SortOrder::Desc,
+        }),
+        "newest" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::StartTime,
+            sort_order: SortOrder::Desc,
+        }),
+        "popular" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::CountOfRatings,
+            sort_order: SortOrder::Desc,
+        }),
+        other => Err(format!(
+            "Invalid sort value '{}'. Supported values: starts_at_asc, starts_at_desc, price_asc, price_desc, popularity_desc",
+            other
+        )),
+    }
+}
+
+/// Allow-listed SQL expression for the cheapest ticket-tier price.
+/// Never interpolates user input.
+const MIN_TICKET_PRICE_SQL: &str =
+    "COALESCE((SELECT MIN(tt.price) FROM ticket_tiers tt WHERE tt.event_id = events.id), 0)";
+
 /// Build the ORDER BY clause for event listings.
 fn build_event_order_by_clause(sort: &ValidatedEventSort) -> String {
     let (column, tiebreaker_direction) = match sort.sort_by {
@@ -292,6 +322,7 @@ fn build_event_order_by_clause(sort: &ValidatedEventSort) -> String {
         EventSortBy::CreatedAt => ("created_at", sort.sort_order.sql()),
         EventSortBy::Popularity => ("minted_tickets", sort.sort_order.sql()),
         EventSortBy::CountOfRatings => ("count_of_ratings", "ASC"),
+        EventSortBy::Price => (MIN_TICKET_PRICE_SQL, sort.sort_order.sql()),
     };
     let direction = sort.sort_order.sql();
     format!("ORDER BY {column} {direction}, id {tiebreaker_direction}")
@@ -389,6 +420,8 @@ fn build_event_where_clause(
             (EventSortBy::Popularity, SortOrder::Desc) => ("minted_tickets", "<", "<"),
             (EventSortBy::CountOfRatings, SortOrder::Asc) => ("count_of_ratings", ">", ">"),
             (EventSortBy::CountOfRatings, SortOrder::Desc) => ("count_of_ratings", "<", "<"),
+            (EventSortBy::Price, SortOrder::Asc) => (MIN_TICKET_PRICE_SQL, ">", ">"),
+            (EventSortBy::Price, SortOrder::Desc) => (MIN_TICKET_PRICE_SQL, "<", "<"),
         };
 
         where_clauses.push(format!(
@@ -1298,6 +1331,89 @@ mod tests {
         assert!(err.contains("Invalid sort_order value 'sideways'"));
     }
 
+    fn assert_sort(value: &str, expected_by: EventSortBy, expected_order: SortOrder, sql: &str) {
+        let filters = EventFilters {
+            sort: Some(value.to_string()),
+            ..Default::default()
+        };
+        let sort = filters.validate_sort().expect(value);
+        assert_eq!(sort.sort_by, expected_by, "sort_by for {value}");
+        assert_eq!(sort.sort_order, expected_order, "sort_order for {value}");
+        assert_eq!(build_event_order_by_clause(&sort), sql, "ORDER BY for {value}");
+        assert!(
+            !sql.contains(value) || value.chars().all(|c| c == '_' || c.is_ascii_alphabetic()),
+            "raw sort parameter must not be interpolated into SQL"
+        );
+    }
+
+    #[test]
+    fn test_sort_starts_at_asc() {
+        assert_sort(
+            "starts_at_asc",
+            EventSortBy::StartTime,
+            SortOrder::Asc,
+            "ORDER BY start_time ASC, id ASC",
+        );
+        // Omitted sort defaults to starts_at_asc.
+        let default = EventFilters::default().validate_sort().unwrap();
+        assert_eq!(default.sort_by, EventSortBy::StartTime);
+        assert_eq!(default.sort_order, SortOrder::Asc);
+    }
+
+    #[test]
+    fn test_sort_starts_at_desc() {
+        assert_sort(
+            "starts_at_desc",
+            EventSortBy::StartTime,
+            SortOrder::Desc,
+            "ORDER BY start_time DESC, id DESC",
+        );
+    }
+
+    #[test]
+    fn test_sort_price_asc() {
+        assert_sort(
+            "price_asc",
+            EventSortBy::Price,
+            SortOrder::Asc,
+            &format!("ORDER BY {MIN_TICKET_PRICE_SQL} ASC, id ASC"),
+        );
+    }
+
+    #[test]
+    fn test_sort_price_desc() {
+        assert_sort(
+            "price_desc",
+            EventSortBy::Price,
+            SortOrder::Desc,
+            &format!("ORDER BY {MIN_TICKET_PRICE_SQL} DESC, id DESC"),
+        );
+    }
+
+    #[test]
+    fn test_sort_popularity_desc() {
+        assert_sort(
+            "popularity_desc",
+            EventSortBy::Popularity,
+            SortOrder::Desc,
+            "ORDER BY minted_tickets DESC, id DESC",
+        );
+    }
+
+    #[test]
+    fn test_sort_unrecognised_value_returns_validation_error() {
+        let filters = EventFilters {
+            sort: Some("not_a_real_sort".to_string()),
+            ..Default::default()
+        };
+        let err = filters.validate_sort().unwrap_err();
+        assert!(err.contains("Invalid sort value 'not_a_real_sort'"));
+        // Handler maps this to 400 VALIDATION_FAILED, never 500.
+        let app_err = AppError::ValidationError(err);
+        assert_eq!(app_err.status_code(), axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(app_err.error_code(), crate::utils::error::ErrorCode::ValidationFailed);
+    }
+
     #[test]
     fn test_keyword_search_clause_includes_location() {
         // Mirrors the format string used inside search_events for the `q` param.
@@ -1439,8 +1555,10 @@ pub struct SubmitEventRatingResponse {
 /// - `start_before` (optional): Filter events starting before date
 /// - `search` (optional): Search in title and description
 /// - `is_free` (optional): Filter by free events (true = ticket_price = 0, false = ticket_price > 0)
-/// - `sort_by` (optional): Sort field — `start_time` (default), `created_at`, or `popularity`
-/// - `sort_order` (optional): Sort direction — `asc` (default) or `desc`
+/// - `sort` (optional): `starts_at_asc` (default), `starts_at_desc`, `price_asc`, `price_desc`, `popularity_desc`
+/// - `sort_by` (optional, legacy): Sort field — `start_time` (default), `created_at`, or `popularity`
+/// - `sort_order` (optional, legacy): Sort direction — `asc` (default) or `desc`
+/// - `count` (optional): When `false`, skip the COUNT(*) query and omit `meta.total`
 ///
 /// # Response
 /// Returns a cursor-paginated list of upcoming events with metadata
@@ -1456,9 +1574,10 @@ pub async fn list_events(
         Err(message) => return AppError::ValidationError(message).into_response(),
     };
 
-    // Serve the default (unfiltered, first-page) list from cache when available.
+    // Serve the default (unfiltered, first-page, with total) list from cache when available.
     let use_list_cache = validated.cursor.is_none()
         && filters.is_unfiltered()
+        && validated.include_count
         && validated.limit == crate::utils::cursor_pagination::DEFAULT_PAGE_SIZE;
     if use_list_cache {
         match state
@@ -1508,59 +1627,73 @@ pub async fn list_events(
     // Build the WHERE clause dynamically based on filters
     let (where_clause, param_count) = build_event_where_clause(&filters, &sort, cursor.as_ref());
 
-    // Count total matching events (no cursor so the number reflects the full filter set).
-    let (count_where, count_param_count) = build_event_where_clause(&filters, &sort, None);
-    let count_query = format!("SELECT COUNT(*) FROM events {}", count_where);
-    let mut count_builder = sqlx::query_scalar::<_, i64>(&count_query);
-    if let Some(organizer_id) = filters.organizer_id {
-        count_builder = count_builder.bind(organizer_id);
-    }
-    if let Some(ref w) = filters.organizer_wallet {
-        count_builder = count_builder.bind(w.clone());
-    }
-    if let Some(ref l) = filters.location {
-        count_builder = count_builder.bind(format!("%{}%", l));
-    }
-    if let Some(start_after) = filters.start_after {
-        count_builder = count_builder.bind(start_after);
-    }
-    if let Some(start_before) = filters.start_before {
-        count_builder = count_builder.bind(start_before);
-    }
-    if let Some(ref s) = filters.search {
-        count_builder = count_builder.bind(format!("%{}%", s));
-    }
-    if let Some(min_tickets) = filters.min_tickets_available {
-        count_builder = count_builder.bind(min_tickets);
-    }
-    if let Some(ref date_str) = filters.start_date {
-        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-            let dt: DateTime<Utc> =
-                Utc.from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
-            count_builder = count_builder.bind(dt);
+    // Count total matching events (same WHERE as the page query, no cursor).
+    // Skipped when `?count=false` so hot paths avoid the extra round-trip.
+    let total_count: Option<i64> = if validated.include_count {
+        let (count_where, count_param_count) = build_event_where_clause(&filters, &sort, None);
+        let count_query = format!("SELECT COUNT(*) FROM events {}", count_where);
+        let mut count_builder = sqlx::query_scalar::<_, i64>(&count_query);
+        if let Some(organizer_id) = filters.organizer_id {
+            count_builder = count_builder.bind(organizer_id);
         }
-    }
-    if let Some(ref date_str) = filters.end_date {
-        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-            let dt: DateTime<Utc> =
-                Utc.from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
-            count_builder = count_builder.bind(dt);
+        if let Some(ref w) = filters.organizer_wallet {
+            count_builder = count_builder.bind(w.clone());
         }
-    }
-    let _ = count_param_count; // used only to drive param numbering above
+        if let Some(ref l) = filters.location {
+            count_builder = count_builder.bind(format!("%{}%", l));
+        }
+        if let Some(start_after) = filters.start_after {
+            count_builder = count_builder.bind(start_after);
+        }
+        if let Some(start_before) = filters.start_before {
+            count_builder = count_builder.bind(start_before);
+        }
+        if let Some(ref s) = filters.search {
+            count_builder = count_builder.bind(format!("%{}%", s));
+        }
+        if let Some(min_tickets) = filters.min_tickets_available {
+            count_builder = count_builder.bind(min_tickets);
+        }
+        if let Some(ref date_str) = filters.start_date {
+            if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                let dt: DateTime<Utc> = Utc
+                    .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+                count_builder = count_builder.bind(dt);
+            }
+        }
+        if let Some(ref date_str) = filters.end_date {
+            if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                let dt: DateTime<Utc> = Utc
+                    .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+                count_builder = count_builder.bind(dt);
+            }
+        }
+        let _ = count_param_count;
 
-    let total_count: i64 = match count_builder.fetch_one(&state.pool).await {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::warn!("Failed to fetch total count for list_events: {:?}", e);
-            0
+        match count_builder.fetch_one(&state.pool).await {
+            Ok(n) => Some(n),
+            Err(e) => {
+                tracing::warn!("Failed to fetch total count for list_events: {:?}", e);
+                Some(0)
+            }
         }
+    } else {
+        None
     };
 
-    // Fetch items (limit + 1 to detect has_more)
+    // Fetch items (limit + 1 to detect has_more). Price sort selects the
+    // allow-listed MIN(price) expression so cursor pagination stays stable.
     let order_by = build_event_order_by_clause(&sort);
+    let select_list = if sort.sort_by == EventSortBy::Price {
+        format!(
+            "SELECT events.*, ({MIN_TICKET_PRICE_SQL})::float8 AS min_ticket_price FROM events"
+        )
+    } else {
+        "SELECT * FROM events".to_string()
+    };
     let items_query = format!(
-        "SELECT * FROM events {} {} LIMIT ${}",
+        "{} {} {} LIMIT ${}",
+        select_list,
         where_clause,
         order_by,
         param_count + 1
@@ -1656,6 +1789,18 @@ pub async fn list_events(
                 };
                 items_query_builder = items_query_builder.bind(sort_key).bind(c.id);
             }
+            EventSortBy::Price => {
+                let price = match c.min_ticket_price {
+                    Some(value) => value,
+                    None => {
+                        return AppError::ValidationError(
+                            "Cursor is missing min_ticket_price for price sort".to_string(),
+                        )
+                        .into_response();
+                    }
+                };
+                items_query_builder = items_query_builder.bind(price).bind(c.id);
+            }
         }
     }
 
@@ -1682,6 +1827,7 @@ pub async fn list_events(
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
             count_of_ratings: Some(last.count_of_ratings as i64),
+            min_ticket_price: Some(last.min_ticket_price),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -1696,7 +1842,8 @@ pub async fn list_events(
 
     populate_is_free(&mut items, &state.pool).await;
 
-    let response = CursorResponse::new(items, &validated, next_cursor);
+    let response = CursorResponse::new(items, &validated, next_cursor)
+        .with_total(total_count.unwrap_or(0), validated.include_count);
 
     if use_list_cache {
         if let Err(e) = state
@@ -1709,8 +1856,10 @@ pub async fn list_events(
     }
 
     let mut resp = success(response, "Events retrieved successfully").into_response();
-    if let Ok(v) = HeaderValue::from_str(&total_count.to_string()) {
-        resp.headers_mut().insert("X-Total-Count", v);
+    if let Some(total) = total_count {
+        if let Ok(v) = HeaderValue::from_str(&total.to_string()) {
+            resp.headers_mut().insert("X-Total-Count", v);
+        }
     }
     resp
 }
@@ -2595,6 +2744,7 @@ pub async fn search_events(
     let pagination = PaginationParams {
         page: params.page,
         page_size: params.page_size,
+        count: true,
     };
     let validated_pagination = pagination.validate();
 
@@ -3886,6 +4036,7 @@ fn map_event_row(row: &sqlx::postgres::PgRow) -> Result<(Event, f64), sqlx::Erro
         longitude: row.try_get("longitude")?,
         is_free: false,
         is_free_populated: false,
+        min_ticket_price: 0.0,
         total_tickets: 0,
         minted_tickets: 0,
     };
@@ -4490,6 +4641,7 @@ pub async fn list_events_by_category(
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
             count_of_ratings: Some(last.count_of_ratings as i64),
+            min_ticket_price: Some(last.min_ticket_price),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -4620,7 +4772,8 @@ fn test_event_detail_tiers_omitted_when_none() {
         is_free: false,
         minted_tickets: 0,
         total_tickets: 0,
-        is_free_populated: true,
+            is_free_populated: true,
+            min_ticket_price: 0.0,
     };
 
     let detail = EventDetail {
@@ -4663,7 +4816,8 @@ fn test_event_detail_tiers_present_when_some() {
         is_free: true,
         minted_tickets: 0,
         total_tickets: 0,
-        is_free_populated: true,
+            is_free_populated: true,
+            min_ticket_price: 0.0,
     };
 
     let tier = TicketTierResponse {
@@ -4810,6 +4964,7 @@ fn test_list_events_by_category_params() {
     let params = CursorParams {
         limit: 15,
         cursor: Some("test-cursor-token".to_string()),
+        count: true,
     };
     let validated = params.validate();
     assert_eq!(validated.page_size(), 15);
@@ -4885,6 +5040,7 @@ mod search_cache_tests {
             longitude: None,
             is_free: false,
             is_free_populated: false,
+            min_ticket_price: 0.0,
             total_tickets: 100,
             minted_tickets: 42,
         };
