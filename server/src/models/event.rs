@@ -57,6 +57,10 @@ pub struct Event {
     pub is_free: bool,
     #[sqlx(default)]
     pub is_free_populated: bool,
+    /// Minimum ticket-tier price for `price_asc` / `price_desc` sorting.
+    /// Defaults to `0` when the listing query does not select it.
+    #[sqlx(default)]
+    pub min_ticket_price: f64,
 }
 
 impl Event {
@@ -179,6 +183,7 @@ mod tests {
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         assert!(!event.is_free);
     }
@@ -206,6 +211,7 @@ mod tests {
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         event.is_free = true;
         let json = serde_json::to_value(&event).unwrap();
@@ -235,6 +241,7 @@ mod tests {
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         assert!(event.average_rating().is_none());
     }
@@ -262,6 +269,7 @@ mod tests {
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["average_rating"], 4.5);
@@ -293,6 +301,7 @@ mod tests {
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert!(!json["created_at"].is_null(), "created_at must be present");
@@ -322,6 +331,7 @@ mod tests {
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert!(json["average_rating"].is_null());
@@ -351,6 +361,7 @@ mod tests {
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         }
     }
 

@@ -122,8 +122,8 @@ async fn test_unknown_path_returns_404_in_standard_api_error_shape() {
         .unwrap();
     let json: Value = serde_json::from_slice(&bytes).expect("Valid JSON response");
 
-    // Assert standard ApiError shape: { "code": 404, "message": "..." }
-    assert_eq!(json["code"], 404);
+    // Assert standard ApiError shape: { "code": "NOT_FOUND", "message": "..." }
+    assert_eq!(json["code"], "NOT_FOUND");
     assert!(json["message"].is_string());
 }
 

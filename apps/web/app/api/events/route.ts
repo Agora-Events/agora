@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { type Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { getAuthFromRequest } from "@/lib/auth";
 import { withErrorHandler } from "@/lib/api-handler";
 import { throwApiError } from "@/lib/api-errors";
+import { slugify, withRandomSuffix } from "@/lib/slugify";
 
 const VALID_TABS = new Set(["upcoming", "hosting", "past"]);
 
@@ -40,6 +41,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   }
 
   const items = await prisma.event.findMany({
+    where: { status: "PUBLISHED" },
     orderBy: { startsAt: "asc" },
   });
 

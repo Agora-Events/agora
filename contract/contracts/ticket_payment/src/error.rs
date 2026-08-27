@@ -28,6 +28,20 @@ pub enum TicketPaymentError {
     InsufficientFees = 25,
     ResalePriceExceedsCap = 26,
     ContractPaused = 27,
+    /// Returned when a buyer provides a secret that does not match the stored hash.
+    InvalidSecret = 28,
+    /// Returned when a commit-reveal window has expired.
+    CommitExpired = 29,
+    /// Returned when a per-event discount code has passed its expiry timestamp.
+    DiscountExpired = 30,
+    /// Returned when a per-event discount code has reached its maximum usage count.
+    DiscountMaxUsesReached = 31,
+    /// Returned when a dispute cannot be resolved (e.g. insufficient votes or wrong state).
+    DisputeNotResolved = 32,
+    /// Returned when escrow has not been initialised for an event.
+    EscrowNotInitialized = 33,
+    /// Returned when a purchase amount is invalid (negative, or zero on a paid event).
+    InvalidAmount = 34,
     EventCancelled = 35,
     EventDisputed = 36,
     UnauthorizedScanner = 37,
@@ -58,6 +72,10 @@ pub enum TicketPaymentError {
     ResaleListingNotActive = 62,
     NonTransferable = 63,
     InvalidRoyaltyBps = 64,
+    /// Returned when a bulk operation receives an empty input vector.
+    EmptyBatch = 65,
+    /// Returned when a bulk operation input exceeds `MAX_BATCH_SIZE`.
+    BatchTooLarge = 66,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -102,6 +120,13 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             25 => TicketPaymentError::InsufficientFees,
             26 => TicketPaymentError::ResalePriceExceedsCap,
             27 => TicketPaymentError::ContractPaused,
+            28 => TicketPaymentError::InvalidSecret,
+            29 => TicketPaymentError::CommitExpired,
+            30 => TicketPaymentError::DiscountExpired,
+            31 => TicketPaymentError::DiscountMaxUsesReached,
+            32 => TicketPaymentError::DisputeNotResolved,
+            33 => TicketPaymentError::EscrowNotInitialized,
+            34 => TicketPaymentError::InvalidAmount,
             35 => TicketPaymentError::EventCancelled,
             36 => TicketPaymentError::EventDisputed,
             37 => TicketPaymentError::UnauthorizedScanner,
@@ -132,6 +157,8 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             62 => TicketPaymentError::ResaleListingNotActive,
             63 => TicketPaymentError::NonTransferable,
             64 => TicketPaymentError::InvalidRoyaltyBps,
+            65 => TicketPaymentError::EmptyBatch,
+            66 => TicketPaymentError::BatchTooLarge,
             _ => TicketPaymentError::ArithmeticError,
         }
     }
