@@ -95,3 +95,7 @@ dashmap = "6.2.1"
 temp-env = { version = "0.3", features = ["async_closure"] }
 tower = { version = "0.4", features = ["full"] }
 serde_yaml = "0.9"
+
+# Build-time metadata (git SHA, build timestamp) for the /version endpoint
+[build-dependencies]
+chrono = "0.4"
