@@ -27,6 +27,13 @@ export async function generateMetadata({
   });
 }
 
+const SITE_URL = "https://agora.events";
+
+function truncateTitle(title: string, maxLength = 40): string {
+  if (title.length <= maxLength) return title;
+  return `${title.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 export default async function EventDetailPage({
   params,
 }: {
@@ -48,9 +55,23 @@ export default async function EventDetailPage({
     hostPfp: "/images/pfp.png",
   };
 
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: "Discover", item: `${SITE_URL}/discover` },
+      { "@type": "ListItem", position: 3, name: event.title, item: `${SITE_URL}/events/${id}` },
+    ],
+  };
+
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <EventPageView eventId={event.id} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
       <Navbar />
 
       <div className="flex-1 w-full max-w-[1221px] mx-auto px-6 py-6 sm:py-12">
@@ -59,7 +80,7 @@ export default async function EventDetailPage({
           items={[
             { label: "Home", href: "/" },
             { label: "Discover", href: "/discover" },
-            { label: event.title },
+            { label: truncateTitle(event.title) },
           ]}
         />
 
