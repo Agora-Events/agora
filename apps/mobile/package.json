@@ -27,7 +27,7 @@
     "@react-native-community/netinfo": "11.3.1",
     "@react-native/assets-registry": "^0.86.0",
     "@react-navigation/native": "^6.0.2",
-    "@stellar/stellar-sdk": "^13.3.0",
+    "@stellar/stellar-sdk": "^16.2.0",
     "expo": "~51.0.28",
     "expo-av": "~14.0.7",
     "expo-camera": "~15.0.16",
