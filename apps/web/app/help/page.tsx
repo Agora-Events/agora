@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { HighlightText } from "@/components/ui/highlight-text";
 
 // Icon imports — all sourced from /public/icons/
 import SearchIcon from "@/public/icons/search.svg";
