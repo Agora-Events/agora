@@ -6,18 +6,18 @@ use crate::storage::{
     get_event_balance, get_event_payments, get_event_registry, get_highest_bid, get_oracle_address,
     get_partial_refund_index, get_partial_refund_percentage, get_payment, get_platform_wallet,
     get_poaps_by_attendee, get_pro_subscription_contract, get_proposal, get_slippage_bps,
-    get_total_fees_collected_by_token, get_total_governors, get_transfer_fee, get_withdrawal_cap,
-    has_price_switched, increment_proposal_count, is_auction_closed, is_discount_hash_used,
-    is_discount_hash_valid, is_governor, is_initialized, is_paused,
+    get_total_fees_collected_by_token, get_total_governors, get_transfer_fee, get_usdc_token,
+    get_withdrawal_cap, has_price_switched, increment_proposal_count, is_auction_closed,
+    is_discount_hash_used, is_discount_hash_valid, is_governor, is_initialized, is_paused,
     is_poap_minted as is_poap_minted_storage, is_token_whitelisted, mark_discount_hash_used,
     mark_poap_minted, remove_payment_from_buyer_index, remove_token_from_whitelist, set_admin,
-    set_auction_closed, set_bulk_refund_index, set_discount_code,
-    set_event_registry, set_governor, set_highest_bid, set_initialized, set_is_paused,
-    set_oracle_address, set_partial_refund_index, set_partial_refund_percentage,
-    set_platform_wallet, set_price_switched, set_proposal, set_slippage_bps, set_total_governors,
-    set_transfer_fee, set_usdc_token, set_withdrawal_cap, store_payment, store_validation_hash,
-    subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
-    subtract_from_total_fees_collected_by_token, update_event_balance, verify_secret,
+    set_auction_closed, set_bulk_refund_index, set_discount_code, set_event_registry, set_governor,
+    set_highest_bid, set_initialized, set_is_paused, set_oracle_address, set_partial_refund_index,
+    set_partial_refund_percentage, set_platform_wallet, set_price_switched, set_proposal,
+    set_slippage_bps, set_total_governors, set_transfer_fee, set_usdc_token, set_withdrawal_cap,
+    store_payment, store_validation_hash, subtract_from_active_escrow_by_token,
+    subtract_from_active_escrow_total, subtract_from_total_fees_collected_by_token,
+    update_event_balance, verify_secret,
 };
 use crate::types::{
     DataKey, DiscountData, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus,
@@ -28,13 +28,12 @@ use crate::{
     events::{
         AgoraEvent, AuctionClosedEvent, BidPlacedEvent, BulkRefundProcessedEvent,
         ContractPausedEvent, ContractUpgraded, ContractVerificationFailedEvent,
-        DiscountCodeAppliedEvent, DisputeStatusChangedEvent,
-        EscrowWithdrawalApprovedEvent, EscrowWithdrawalExecutedEvent,
-        EscrowWithdrawalProposedEvent, FeeSettledEvent,
+        DiscountCodeAppliedEvent, DisputeStatusChangedEvent, EscrowWithdrawalApprovedEvent,
+        EscrowWithdrawalExecutedEvent, EscrowWithdrawalProposedEvent, FeeSettledEvent,
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
-        PartialRefundProcessedEvent, PaymentProcessedEvent,
-        PaymentStatusChangedEvent, PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent,
-        ProposalVotedEvent, RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
+        PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
+        PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
+        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
     },
 };
 use soroban_sdk::{
@@ -47,6 +46,11 @@ const ESCROW_DELAY: u64 = 86400;
 /// Minimum claimable amount in stroops (0.01 USDC).
 /// Balances at or below this threshold are swept in full to avoid dust.
 const DUST_THRESHOLD: i128 = 10_000;
+
+/// Maximum number of items allowed in any bulk/batch entry point.
+/// Calls with more than this many items are rejected with
+/// [`TicketPaymentError::BatchTooLarge`] before any state is written.
+pub const MAX_BATCH_SIZE: u32 = 50;
 
 pub use crate::interfaces::{event_registry, price_oracle, pro_subscription};
 
@@ -492,12 +496,12 @@ impl TicketPaymentContract {
             }
         }
 
-        if amount <= 0 {
-            panic!("Amount must be positive");
+        if amount < 0 {
+            return Err(TicketPaymentError::InvalidAmount);
         }
 
         if quantity == 0 {
-            panic!("Quantity must be positive");
+            return Err(TicketPaymentError::InvalidAmount);
         }
 
         if !is_token_whitelisted(&env, &token_address) {
@@ -1081,7 +1085,12 @@ impl TicketPaymentContract {
         };
 
         // Block refunds if a dispute is Open or Voting
-        if let Some(dispute) = registry_client.try_get_dispute(&payment.event_id).ok().and_then(|r| r.ok()).flatten() {
+        if let Some(dispute) = registry_client
+            .try_get_dispute(&payment.event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+        {
             if matches!(dispute.status, event_registry::DisputeStatus::Open)
                 || matches!(dispute.status, event_registry::DisputeStatus::Voting)
             {
@@ -1475,7 +1484,12 @@ impl TicketPaymentContract {
 
         // Block if dispute is Open or Voting
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
-        if let Some(dispute) = registry_client.try_get_dispute(&event_id).ok().and_then(|r| r.ok()).flatten() {
+        if let Some(dispute) = registry_client
+            .try_get_dispute(&event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+        {
             if matches!(dispute.status, event_registry::DisputeStatus::Open)
                 || matches!(dispute.status, event_registry::DisputeStatus::Voting)
             {
@@ -1702,7 +1716,12 @@ impl TicketPaymentContract {
         // Block all claim_revenue attempts for an event while a dispute is active.
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
-        if let Some(dispute) = registry_client.try_get_dispute(&event_id).ok().and_then(|r| r.ok()).flatten() {
+        if let Some(dispute) = registry_client
+            .try_get_dispute(&event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+        {
             if matches!(dispute.status, event_registry::DisputeStatus::Open)
                 || matches!(dispute.status, event_registry::DisputeStatus::Voting)
             {
@@ -2053,7 +2072,11 @@ impl TicketPaymentContract {
                     .ok_or(TicketPaymentError::TierNotFound)?;
                 let max_price = tier
                     .price
-                    .checked_mul((MAX_BPS as i128).checked_add(cap_bps as i128).unwrap_or(i128::MAX))
+                    .checked_mul(
+                        (MAX_BPS as i128)
+                            .checked_add(cap_bps as i128)
+                            .unwrap_or(i128::MAX),
+                    )
                     .ok_or(TicketPaymentError::ArithmeticError)?
                     / MAX_BPS as i128;
                 if ask_price > max_price {
@@ -2087,10 +2110,7 @@ impl TicketPaymentContract {
     }
 
     /// Cancels an active resale listing. Only the original seller may call this.
-    pub fn cancel_resale_listing(
-        env: Env,
-        payment_id: String,
-    ) -> Result<(), TicketPaymentError> {
+    pub fn cancel_resale_listing(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
         }
@@ -2767,6 +2787,14 @@ impl TicketPaymentContract {
             panic!("Contract not initialized");
         }
 
+        // ── Batch-size guards (Issue #1274) ───────────────────────────────
+        if hashes.is_empty() {
+            return Err(TicketPaymentError::EmptyBatch);
+        }
+        if hashes.len() > MAX_BATCH_SIZE {
+            return Err(TicketPaymentError::BatchTooLarge);
+        }
+
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
 
@@ -3009,10 +3037,7 @@ impl TicketPaymentContract {
     }
 
     /// Approves a multi-sig escrow withdrawal proposal.
-    pub fn approve_escrow_withdrawal(
-        env: Env,
-        proposal_id: u64,
-    ) -> Result<(), TicketPaymentError> {
+    pub fn approve_escrow_withdrawal(env: Env, proposal_id: u64) -> Result<(), TicketPaymentError> {
         let admin = require_admin(&env)?;
 
         let mut proposal =
@@ -3048,10 +3073,7 @@ impl TicketPaymentContract {
     }
 
     /// Executes a multi-sig escrow withdrawal if threshold is met.
-    pub fn execute_escrow_withdrawal(
-        env: Env,
-        proposal_id: u64,
-    ) -> Result<(), TicketPaymentError> {
+    pub fn execute_escrow_withdrawal(env: Env, proposal_id: u64) -> Result<(), TicketPaymentError> {
         let executor = require_admin(&env)?;
 
         let mut proposal =
@@ -3092,7 +3114,10 @@ impl TicketPaymentContract {
 
     /// Triggers a refund cascade for all confirmed tickets on a disputed event
     /// if the dispute was resolved in buyer favor.
-    pub fn trigger_dispute_refund_cascade(env: Env, event_id: String) -> Result<u32, TicketPaymentError> {
+    pub fn trigger_dispute_refund_cascade(
+        env: Env,
+        event_id: String,
+    ) -> Result<u32, TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
         }
@@ -3142,7 +3167,11 @@ impl TicketPaymentContract {
                     );
 
                     subtract_from_active_escrow_total(&env, updated.amount);
-                    subtract_from_active_escrow_by_token(&env, updated.token_address.clone(), updated.amount);
+                    subtract_from_active_escrow_by_token(
+                        &env,
+                        updated.token_address.clone(),
+                        updated.amount,
+                    );
 
                     refunded += 1;
                 }
