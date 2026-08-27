@@ -233,11 +233,11 @@ export default function HelpCenterPage() {
 
                   {/* Text */}
                   <h3 className="font-bold text-base text-black leading-snug mb-1">
-                    {category.title}
-                  </h3>
+                    <HighlightText text={category.title} query={query} />
+                </h3>
                   <p className="text-sm text-gray-500 flex-1 leading-relaxed">
-                    {category.description}
-                  </p>
+                    <HighlightText text={category.description} query={query} />
+                </p>
 
                   {/* Footer row */}
                   <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
