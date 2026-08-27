@@ -30,7 +30,7 @@
     "framer-motion": "^12.26.2",
     "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",
-    "next": "16.1.3",
+    "next": "16.2.12",
     "nprogress": "^0.2.0",
     "posthog-js": "^1.393.5",
     "qrcode.react": "^4.2.0",
