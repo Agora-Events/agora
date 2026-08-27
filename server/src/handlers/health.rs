@@ -11,6 +11,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use crate::cache::RedisCache;
+use crate::notifications::health::check_notifications_health;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
@@ -64,6 +65,8 @@ struct HealthReadyResponse {
     status: &'static str,
     api: &'static str,
     database: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notifications: Option<crate::notifications::health::NotificationsHealth>,
 }
 
 #[derive(Serialize)]
@@ -149,15 +152,19 @@ pub async fn health_check_db(State(pool): State<PgPool>) -> Response {
 /// GET /health/ready – Readiness check.
 ///
 /// Returns 200 only when both the API process and the database are healthy.
+/// Includes per-provider notification health status without failing readiness.
 /// On failure the response uses [`AppError`] for a consistent error schema.
 pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
     let db_ok = sqlx::query("SELECT 1").fetch_one(&pool).await.is_ok();
 
     if db_ok {
+        let notifications_health = check_notifications_health().await;
+        
         let payload = HealthReadyResponse {
             status: "ready",
             api: "ok",
             database: "ok",
+            notifications: Some(notifications_health),
         };
         success(payload, "Service is ready").into_response()
     } else {

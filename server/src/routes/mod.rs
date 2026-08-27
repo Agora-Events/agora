@@ -107,16 +107,26 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        crate::handlers::health::health_check
+        crate::handlers::health::health_check,
+        crate::handlers::events::list_events,
+        crate::handlers::events::get_event,
+        crate::handlers::events::search_events,
+        crate::handlers::events::list_upcoming_events,
     ),
     components(
         schemas(
             crate::handlers::health::HealthResponse,
+            crate::handlers::events::Event,
+            crate::handlers::events::EventDetail,
+            crate::handlers::events::SearchParams,
+            crate::handlers::events::GetEventParams,
+            crate::handlers::events::UpcomingParams,
             crate::utils::error::ApiError
         )
     ),
     tags(
-        (name = "Agora API", description = "Agora Events Platform API")
+        (name = "Agora API", description = "Agora Events Platform API"),
+        (name = "Events", description = "Event management endpoints")
     )
 )]
 pub struct ApiDoc;

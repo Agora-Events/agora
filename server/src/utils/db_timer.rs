@@ -2,30 +2,62 @@
 //!
 //! Wrap any async database call with [`timed_query`] and a `WARN` log is
 //! emitted whenever elapsed time exceeds `SLOW_QUERY_THRESHOLD_MS` (default 500 ms).
+//! An `ERROR` log is emitted at 5x the threshold. Metrics are also incremented.
 
 use std::time::{Duration, Instant};
+
+/// Default threshold for slow query detection (milliseconds).
+const DEFAULT_SLOW_QUERY_THRESHOLD_MS: u64 = 500;
+
+/// Multiplier for the error threshold (errors logged at 5x the warn threshold).
+const ERROR_THRESHOLD_MULTIPLIER: u64 = 5;
 
 /// Read the configured slow-query threshold from the environment.
 pub fn slow_query_threshold() -> Duration {
     let ms = std::env::var("SLOW_QUERY_THRESHOLD_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(500);
+        .unwrap_or(DEFAULT_SLOW_QUERY_THRESHOLD_MS);
     Duration::from_millis(ms)
 }
 
-/// Emit a structured `WARN` log if `elapsed` exceeds the configured threshold.
+/// Emit structured logs and metrics if `elapsed` exceeds the configured threshold.
 ///
-/// Fields: `query_name`, `duration_ms`, `threshold_ms`.
+/// - WARN log when `elapsed >= threshold`
+/// - ERROR log when `elapsed >= threshold * 5`
+/// - Increments `db_slow_queries_total` metric
+///
+/// Fields in logs: `query_name`, `duration_ms`, `threshold_ms`
+///
+/// # Safety
+/// Never logs query parameter values (which may contain PII or wallet data).
 pub fn log_if_slow(query_name: &str, elapsed: Duration) {
     let threshold = slow_query_threshold();
+    let elapsed_ms = elapsed.as_millis() as u64;
+    let threshold_ms = threshold.as_millis() as u64;
+
     if elapsed >= threshold {
-        tracing::warn!(
-            query_name = query_name,
-            duration_ms = elapsed.as_millis() as u64,
-            threshold_ms = threshold.as_millis() as u64,
-            "Slow database query detected"
-        );
+        // Increment metric for any slow query
+        crate::metrics::increment_slow_query(query_name);
+
+        // Determine if this is an error-level slow query
+        let error_threshold_ms = threshold_ms * ERROR_THRESHOLD_MULTIPLIER;
+        if elapsed_ms >= error_threshold_ms {
+            tracing::error!(
+                query_name = query_name,
+                duration_ms = elapsed_ms,
+                threshold_ms = threshold_ms,
+                error_threshold_ms = error_threshold_ms,
+                "Very slow database query detected (exceeds error threshold)"
+            );
+        } else {
+            tracing::warn!(
+                query_name = query_name,
+                duration_ms = elapsed_ms,
+                threshold_ms = threshold_ms,
+                "Slow database query detected"
+            );
+        }
     }
 }
 
@@ -48,6 +80,7 @@ where
     let result = f().await;
     log_if_slow(query_name, start.elapsed());
     result
+}
 }
 
 #[cfg(test)]

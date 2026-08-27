@@ -604,3 +604,26 @@ pub struct DisputeResolvedEvent {
     pub total_votes: u32,
     pub timestamp: u64,
 }
+
+/// Emitted when a single ticket is refunded to a guest.
+///
+/// This event is published for every refund operation, carrying complete details
+/// about the refunded ticket including the beneficiary address, amount returned,
+/// and the event/ledger context. The indexer uses this event to keep the off-chain
+/// ledger in sync.
+///
+/// Published with topic `(AgoraEvent::TicketRefunded,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketRefundedEvent {
+    /// The unique identifier of the ticket being refunded.
+    pub ticket_id: String,
+    /// The unique identifier of the event the ticket was for.
+    pub event_id: String,
+    /// The wallet address of the ticket holder receiving the refund.
+    pub recipient_address: Address,
+    /// The amount refunded (in stroops, e.g., 10,000,000 stroops = 1 XLM).
+    pub refund_amount: i128,
+    /// The ledger timestamp when the refund was processed.
+    pub timestamp: u64,
+}

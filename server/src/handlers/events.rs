@@ -29,9 +29,10 @@ use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
 use axum::http::HeaderValue;
+use utoipa::ToSchema;
 
 /// Query parameters for searching events with filters
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SearchParams {
     /// Keyword search in title/description
     pub q: Option<String>,
@@ -92,7 +93,7 @@ pub struct EventState {
 }
 
 /// Event detail response that includes the organizer's public profile (Issue #486).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct EventDetail {
     #[serde(flatten)]
     pub event: Event,
@@ -105,7 +106,7 @@ pub struct EventDetail {
 }
 
 /// Query parameters for `GET /api/v1/events/:id`.
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, ToSchema)]
 pub struct GetEventParams {
     /// When `true`, includes a `tiers` array in the response (Issue #884).
     #[serde(default)]
@@ -1562,6 +1563,43 @@ pub struct SubmitEventRatingResponse {
 ///
 /// # Response
 /// Returns a cursor-paginated list of upcoming events with metadata
+/// List all events with cursor-based pagination and optional filters.
+///
+/// # Query Parameters
+/// - `limit` (optional): Number of items per page (default: 20, max: 100)
+/// - `cursor` (optional): Pagination cursor from previous response
+/// - `count` (optional): Include total count (default: true)
+/// - `organizer_id` (optional): Filter by organizer UUID
+/// - `organizer_wallet` (optional): Filter by organizer Stellar address
+/// - `location` (optional): Filter by location (partial match)
+/// - `start_after` (optional): Events starting after this timestamp
+/// - `start_before` (optional): Events starting before this timestamp
+/// - `search` (optional): Search in title and description
+/// - `min_tickets_available` (optional): Minimum available tickets
+/// - `is_free` (optional): Filter by free events only
+/// - `start_date` (optional): Filter by start date (YYYY-MM-DD)
+/// - `end_date` (optional): Filter by end date (YYYY-MM-DD)
+/// - `sort` (optional): Sort order (start_time_asc, start_time_desc, price_asc, price_desc, popularity_desc)
+///
+/// # Example Requests
+/// ```
+/// GET /api/v1/events?limit=20&sort=start_time_asc
+/// GET /api/v1/events?location=Lagos&min_price=1000&max_price=50000
+/// ```
+#[utoipa::path(
+    get,
+    path = "/events",
+    params(
+        ("limit" = Option<u32>, Query, description = "Items per page (1-100, default 20)"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("count" = Option<bool>, Query, description = "Include total count"),
+    ),
+    responses(
+        (status = 200, description = "List of events", body = Vec<Event>),
+        (status = 400, description = "Invalid parameters"),
+    ),
+    tag = "Events"
+)]
 pub async fn list_events(
     State(mut state): State<EventState>,
     Query(pagination): Query<CursorParams>,
@@ -1872,22 +1910,37 @@ pub async fn list_featured_events(State(_state): State<EventState>) -> Response 
 }
 
 /// Query parameters for `GET /api/v1/events/upcoming`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpcomingParams {
     /// Number of events to return (clamped to 1–20, default 5).
     pub limit: Option<u32>,
 }
 
-/// List the next upcoming events ordered by `start_time ASC`.
+/// List the next upcoming events ordered by start time.
 ///
-/// A simplified feed for home pages and the mobile app — no cursor contract,
-/// just a single `limit` parameter.
-///
-/// # Endpoint
-/// GET `/api/v1/events/upcoming`
+/// A simplified feed endpoint for home pages and mobile apps. Returns upcoming
+/// unflagged events in chronological order with no cursor contract — just a single
+/// limit parameter.
 ///
 /// # Query Parameters
 /// - `limit` (optional): Number of events to return (1–20, default 5)
+///
+/// # Example Requests
+/// ```
+/// GET /api/v1/events/upcoming
+/// GET /api/v1/events/upcoming?limit=10
+/// ```
+#[utoipa::path(
+    get,
+    path = "/events/upcoming",
+    params(
+        UpcomingParams,
+    ),
+    responses(
+        (status = 200, description = "List of upcoming events", body = Vec<Event>),
+    ),
+    tag = "Events"
+)]
 pub async fn list_upcoming_events(
     State(state): State<EventState>,
     Query(params): Query<UpcomingParams>,
@@ -2001,6 +2054,35 @@ pub async fn list_past_events(
 /// # Caching
 /// Event details are cached in Redis with a 5-minute TTL to reduce database load.
 /// The response includes the organizer's public profile when available (Issue #486).
+/// Retrieve a single event by ID with optional ticket tier details.
+///
+/// Returns event information including organizer profile and optionally ticket tiers.
+/// Flagged events return 404 Not Found.
+///
+/// # Path Parameters
+/// - `event_id` (UUID): The unique identifier of the event
+///
+/// # Query Parameters
+/// - `include_tiers` (optional): When true, includes ticket tier details (default: false)
+///
+/// # Example Requests
+/// ```
+/// GET /api/v1/events/550e8400-e29b-41d4-a716-446655440000
+/// GET /api/v1/events/550e8400-e29b-41d4-a716-446655440000?include_tiers=true
+/// ```
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}",
+    params(
+        ("event_id" = Uuid, Path, description = "Event identifier"),
+        ("include_tiers" = Option<bool>, Query, description = "Include ticket tiers in response"),
+    ),
+    responses(
+        (status = 200, description = "Event details", body = EventDetail),
+        (status = 404, description = "Event not found"),
+    ),
+    tag = "Events"
+)]
 pub async fn get_event(
     State(mut state): State<EventState>,
     axum::extract::Path(event_id): axum::extract::Path<Uuid>,
@@ -2707,6 +2789,41 @@ const MAX_SEARCH_QUERY_LENGTH: usize = 128;
 /// Returns a paginated list of events matching the search criteria
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(120);
 
+/// Search and filter events with advanced options.
+///
+/// Supports full-text keyword search, price filtering, date range filtering,
+/// and category/location filtering with offset-based pagination.
+///
+/// # Query Parameters
+/// - `q` (optional): Keyword search in title and description (max 128 chars)
+/// - `category_id` (optional): Filter by category ID
+/// - `category_ids` (optional): Filter by multiple categories (comma-separated)
+/// - `min_price` (optional): Minimum ticket price in cents (e.g., 1000 = $10.00)
+/// - `max_price` (optional): Maximum ticket price in cents
+/// - `location` (optional): Filter by location (partial match)
+/// - `ticket_type` (optional): Filter by ticket tier name
+/// - `date_from` (optional): Events starting after this timestamp
+/// - `date_to` (optional): Events starting before this timestamp
+/// - `page` (optional): Page number (default 1)
+/// - `page_size` (optional): Items per page (1-100, default 20)
+///
+/// # Example Requests
+/// ```
+/// GET /api/v1/events/search?q=concert&location=Lagos&page=1
+/// GET /api/v1/events/search?min_price=0&max_price=50000&page_size=50
+/// ```
+#[utoipa::path(
+    get,
+    path = "/events/search",
+    params(
+        SearchParams,
+    ),
+    responses(
+        (status = 200, description = "Search results", body = Vec<Event>),
+        (status = 400, description = "Invalid search parameters"),
+    ),
+    tag = "Events"
+)]
 pub async fn search_events(
     State(mut state): State<EventState>,
     Query(mut params): Query<SearchParams>,

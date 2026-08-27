@@ -77,4 +77,6 @@ pub enum AgoraEvent {
     DisputeVoted,
     /// A dispute has been resolved.
     DisputeResolved,
+    /// A single ticket has been refunded to a guest.
+    TicketRefunded,
 }
