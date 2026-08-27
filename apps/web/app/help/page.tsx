@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useDebounce } from "@/hooks/useDebounce";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 
@@ -96,11 +97,16 @@ const categories: TopicCategory[] = [
 export default function HelpCenterPage() {
   const [query, setQuery] = useState("");
 
-  const filtered = query.trim()
+  // Keep the raw input value for the controlled input, but filter on the
+  // debounced value so a burst of keystrokes only recomputes ~once per 250ms.
+  const debouncedQuery = useDebounce(query, 250);
+  const isSearching = query !== debouncedQuery;
+
+  const filtered = debouncedQuery.trim()
     ? categories.filter(
         (c) =>
-          c.title.toLowerCase().includes(query.toLowerCase()) ||
-          c.description.toLowerCase().includes(query.toLowerCase())
+          c.title.toLowerCase().includes(debouncedQuery.toLowerCase()) ||
+          c.description.toLowerCase().includes(debouncedQuery.toLowerCase())
       )
     : categories;
 
@@ -181,13 +187,15 @@ export default function HelpCenterPage() {
         {/* Section heading */}
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-xl font-bold text-black">
-            {query ? `Results for "${query}"` : "Browse Topics"}
+            {debouncedQuery ? `Results for "${debouncedQuery}"` : "Browse Topics"}
           </h2>
-          {query && (
+          {isSearching ? (
+            <span className="text-sm text-gray-400 italic">Searching…</span>
+          ) : debouncedQuery ? (
             <span className="text-sm text-gray-500">
               {filtered.length} topic{filtered.length !== 1 ? "s" : ""}
             </span>
-          )}
+          ) : null}
         </div>
 
         {filtered.length === 0 ? (
@@ -197,10 +205,7 @@ export default function HelpCenterPage() {
             <p className="font-semibold text-black">No topics found</p>
             <p className="text-sm text-gray-500 mt-1">
               Try a different search term, or{" "}
-              <button
-                onClick={() => setQuery("")}
-                className="underline text-black"
-              >
+              <button onClick={() => setQuery("")} className="underline text-black">
                 browse all topics
               </button>
               .
@@ -222,12 +227,7 @@ export default function HelpCenterPage() {
                 >
                   {/* Icon badge */}
                   <div className="w-12 h-12 rounded-xl border-2 border-black bg-[#FDDA23] flex items-center justify-center mb-4 shadow-[-3px_3px_0px_0px_rgba(0,0,0,1)] group-hover:shadow-[-1px_1px_0px_0px_rgba(0,0,0,1)] group-hover:-translate-x-[1px] group-hover:translate-y-[1px] transition-all">
-                    <Image
-                      src={category.icon}
-                      alt={category.title}
-                      width={22}
-                      height={22}
-                    />
+                    <Image src={category.icon} alt={category.title} width={22} height={22} />
                   </div>
 
                   {/* Text */}
@@ -241,9 +241,9 @@ export default function HelpCenterPage() {
                   {/* Footer row */}
                   <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
                     <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500">
-  {category.articleCount} article
-  {category.articleCount !== 1 ? "s" : ""}
-</span>
+                      {category.articleCount} article
+                      {category.articleCount !== 1 ? "s" : ""}
+                    </span>
 
                     {/* Arrow */}
                     <span className="text-black opacity-0 group-hover:opacity-100 transition-opacity text-sm font-bold">
@@ -261,12 +261,8 @@ export default function HelpCenterPage() {
       <section className="px-4 md:px-8 pb-24 max-w-5xl mx-auto w-full">
         <div className="border-2 border-black rounded-2xl bg-[#FDDA23] p-8 shadow-[-6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
           <div>
-            <p className="font-black text-lg text-black">
-              Still can&apos;t find what you need?
-            </p>
-            <p className="text-sm text-black/70 mt-1">
-              Our support team is happy to help you out.
-            </p>
+            <p className="font-black text-lg text-black">Still can&apos;t find what you need?</p>
+            <p className="text-sm text-black/70 mt-1">Our support team is happy to help you out.</p>
           </div>
           <Link
             href="/contact"
