@@ -1,0 +1,15 @@
+# Fallback owner for anything not matched below.
+* @Yunusabdul38
+
+# Frontend (Next.js)
+/apps/web/ @Yunusabdul38
+
+# Backend (Rust server)
+/server/ @Yunusabdul38
+
+# Smart contracts (Soroban)
+/contract/ @Yunusabdul38
+
+# Documentation
+/docs/ @Yunusabdul38
+*.md @Yunusabdul38

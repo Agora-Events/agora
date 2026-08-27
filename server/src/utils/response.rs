@@ -14,9 +14,10 @@
 //! }
 //! ```
 //!
-//! Error responses use the flat `{ "code": <u16>, "message": "..." }` shape
+//! Error responses use the flat `{ "code": "NOT_FOUND", "message": "..." }` shape
 //! (see [`crate::utils::error::ApiError`]).
 
+use crate::utils::error::ErrorCode;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -40,8 +41,8 @@ where
 /// Error response body structure — flat `{ code, message }` shape.
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct ApiErrorBody {
-    /// HTTP status code mirrored for client-side branching
-    pub code: u16,
+    /// Machine-readable error code.
+    pub code: ErrorCode,
     /// Human-readable error message
     pub message: String,
 }
@@ -84,8 +85,8 @@ pub fn empty_success(message: impl Into<String>) -> impl IntoResponse {
 
 /// Creates an error response with the standardised flat JSON body.
 ///
-/// The `code` string argument is retained for call-site compatibility but the
-/// HTTP status is the numeric `code` written into the JSON body.
+/// The `code` string argument is retained for call-site compatibility; the
+/// JSON `code` is a machine-readable [`ErrorCode`] derived from `status`.
 pub fn error(
     _code: &str,
     message: impl Into<String>,
@@ -93,7 +94,7 @@ pub fn error(
     status: StatusCode,
 ) -> Response {
     let body = ApiErrorBody {
-        code: status.as_u16(),
+        code: ErrorCode::from_status(status),
         message: message.into(),
     };
 

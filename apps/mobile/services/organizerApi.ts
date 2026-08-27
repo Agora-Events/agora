@@ -73,6 +73,22 @@ export interface BroadcastAlert {
   alert_type: 'info' | 'urgent' | 'emergency';
 }
 
+export interface TicketScanRequest {
+  payload: unknown;
+  signature: string;
+  public_key: string;
+  mode: 'checkin' | 'checkout';
+}
+
+export interface TicketScanResponse {
+  valid: boolean;
+  scanned: boolean;
+  ticket_id: string;
+  ticket_status: string;
+  scanned_at?: string;
+  message: string;
+}
+
 class OrganizerApiService {
   private async getAuthHeaders(): Promise<HeadersInit> {
     const token = await AsyncStorage.getItem('auth_token');
@@ -189,6 +205,35 @@ class OrganizerApiService {
     }
 
     return response.json();
+  }
+
+  // Scan a ticket QR code at the gate for check-in/check-out.
+  // Unlike the other methods, this does not throw on a non-2xx response:
+  // the caller needs to tell a duplicate scan (409) apart from an invalid
+  // signature/expired payload (4xx) to show the right gate feedback.
+  async scanTicket(
+    ticketId: string,
+    request: TicketScanRequest
+  ): Promise<{ status: number; result: TicketScanResponse | null; message: string }> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(`${API_BASE}/tickets/${ticketId}/scan`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(request),
+    });
+
+    let json: { data?: TicketScanResponse; message?: string } | null = null;
+    try {
+      json = await response.json();
+    } catch {
+      json = null;
+    }
+
+    return {
+      status: response.status,
+      result: json?.data ?? null,
+      message: json?.message ?? (response.ok ? 'Scan processed' : 'Scan failed'),
+    };
   }
 
   // Revoke staff authorization

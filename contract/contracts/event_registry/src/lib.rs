@@ -1,14 +1,19 @@
 #![no_std]
+#![warn(missing_docs)]
+//! Event Registry smart contract for the Agora platform.
+//!
+//! This contract manages the on-chain registry of events, including registration,
+//! inventory tracking, organizer governance, staking, and platform configuration.
 
 use crate::events::{
     AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, CustomFeeSetEvent,
     DisputeOpenedEvent, DisputeResolvedEvent, DisputeVotedEvent, EventArchivedEvent,
-    EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
-    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, FeedbackCidSetEvent,
-    GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent, InventoryIncrementedEvent,
-    LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent, MinStakeAmountUpdatedEvent,
-    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, ProposalCancelledEvent,
-    RegistryUpgradedEvent, ScannerAuthorizedEvent, ScannerRevokedEvent, StakerRewardsClaimedEvent,
+    EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent, EventStatusUpdatedEvent,
+    EventsSuspendedEvent, FeeUpdatedEvent, FeedbackCidSetEvent, GlobalPromoUpdatedEvent,
+    GoalMetEvent, InitializationEvent, InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent,
+    MetadataUpdatedEvent, MinStakeAmountUpdatedEvent, OrganizerBlacklistedEvent,
+    OrganizerRemovedFromBlacklistEvent, ProposalCancelledEvent, RegistryUpgradedEvent,
+    ScannerAuthorizedEvent, ScannerRevokedEvent, StakerRewardsClaimedEvent,
     StakerRewardsDistributedEvent, StakingTokenUpdatedEvent, WaitlistJoinedEvent,
     WaitlistLeftEvent,
 };
@@ -2187,7 +2192,11 @@ impl EventRegistry {
     // ── Dispute ───────────────────────────────────────────────────────────
 
     /// Opens a dispute on an event. Only callable by a ticket holder within 48h post-event.
-    pub fn open_dispute(env: Env, event_id: String, opened_by: Address) -> Result<(), EventRegistryError> {
+    pub fn open_dispute(
+        env: Env,
+        event_id: String,
+        opened_by: Address,
+    ) -> Result<(), EventRegistryError> {
         dispute::open_dispute(&env, event_id, opened_by)
     }
 
@@ -2202,7 +2211,10 @@ impl EventRegistry {
     }
 
     /// Resolves a dispute after voting ends. Counts votes and determines outcome.
-    pub fn resolve_dispute(env: Env, event_id: String) -> Result<crate::types::DisputeStatus, EventRegistryError> {
+    pub fn resolve_dispute(
+        env: Env,
+        event_id: String,
+    ) -> Result<crate::types::DisputeStatus, EventRegistryError> {
         dispute::resolve_dispute(&env, event_id)
     }
 

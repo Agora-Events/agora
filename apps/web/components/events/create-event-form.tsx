@@ -32,13 +32,21 @@ export type EventFormData = {
   price: string;
 };
 
+function getBrowserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 const initialFormState: EventFormData = {
   title: "",
   startDate: "",
   startTime: "",
   endDate: "",
   endTime: "",
-  timezone: "GMT+00:00 UTC",
+  timezone: getBrowserTimezone(),
   location: "",
   description: "",
   visibility: "Public",
@@ -295,8 +303,7 @@ export default function CreateEventForm() {
 
         <div className="bg-base-alt rounded-xl p-4 shadow-sm w-full sm:w-auto min-w-[140px] flex items-center justify-between gap-4 border border-black shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]">
           <div className="flex flex-col">
-            <span className="text-sm font-semibold">GMT+00:00</span>
-            <span className="text-xs text-gray-500">UTC</span>
+            <span className="text-sm font-semibold">{formData.timezone}</span>
           </div>
           <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center border border-black shadow-sm">
             <Image src="/icons/global.svg" width={20} height={20} alt="Globe" />

@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 import { Button } from "@/components/ui/button";
+import { WalletAddress } from "@/components/ui/wallet-address";
 import Link from "next/link";
 
 const fallbackCardsData: DiscoverOrganizer[] = [
@@ -16,6 +17,7 @@ const fallbackCardsData: DiscoverOrganizer[] = [
     description:
       "Building and empowering the Stellar ecosystem in West Africa through education, developer support, and real-world blockchain adoption.",
     image: "/icons/stellar-west-africa.svg",
+    wallet: "GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   },
   {
     id: "stellar-east-african-community",
@@ -23,6 +25,7 @@ const fallbackCardsData: DiscoverOrganizer[] = [
     description:
       "Building and empowering the Stellar ecosystem in East Africa through education, developer support, and real-world blockchain adoption.",
     image: "/icons/stellar-east-africa.svg",
+    wallet: "GDBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
   },
   {
     id: "stellar-india",
@@ -30,6 +33,7 @@ const fallbackCardsData: DiscoverOrganizer[] = [
     description:
       "Building and empowering the Stellar ecosystem in West Africa through education, developer support, and real-world blockchain adoption.",
     image: "/icons/stellar-india.svg",
+    wallet: "GDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
   },
   {
     id: "stellar-portugal",
@@ -37,6 +41,7 @@ const fallbackCardsData: DiscoverOrganizer[] = [
     description:
       "Building and empowering the Stellar ecosystem in West Africa through education, developer support, and real-world blockchain adoption.",
     image: "/icons/stellar-portugal.svg",
+    wallet: "GDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
   },
 ];
 
@@ -166,6 +171,14 @@ export function OrganizerComponent({
               <p className="text-xs absolute left-25 top-20 w-65">
                 {card.description}
               </p>
+              {card.wallet && (
+                <div
+                  className="absolute bottom-4 left-5 right-28 overflow-hidden"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <WalletAddress address={card.wallet} className="text-white/90" />
+                </div>
+              )}
               <div onClick={(e) => e.preventDefault()}>
                 <SubscribeButton />
               </div>

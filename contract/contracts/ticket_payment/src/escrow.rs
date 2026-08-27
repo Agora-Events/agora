@@ -42,8 +42,8 @@ pub fn release_escrow_milestone(
 
     event_info.organizer_address.require_auth();
 
-    let mut escrow_state = get_escrow_state(env, event_id.clone())
-        .ok_or(TicketPaymentError::EscrowNotInitialized)?;
+    let mut escrow_state =
+        get_escrow_state(env, event_id.clone()).ok_or(TicketPaymentError::EscrowNotInitialized)?;
 
     let milestones = get_escrow_milestones(env, event_id.clone());
 
@@ -101,10 +101,9 @@ pub fn release_escrow_milestone(
 
     set_event_balance(env, event_id.clone(), new_balance);
 
-    env.storage().persistent().set(
-        &DataKey::EscrowState(event_id.clone()),
-        &escrow_state,
-    );
+    env.storage()
+        .persistent()
+        .set(&DataKey::EscrowState(event_id.clone()), &escrow_state);
 
     #[allow(deprecated)]
     env.events().publish(
@@ -131,15 +130,15 @@ fn get_escrow_milestones(env: &Env, event_id: String) -> Vec<EscrowMilestone> {
     for i in 0..u32::MAX {
         let key = DataKey::EscrowMilestone(event_id.clone(), i);
         if env.storage().persistent().has(&key) {
-            let milestone: EscrowMilestone = env
-                .storage()
-                .persistent()
-                .get(&key)
-                .unwrap_or_else(|| EscrowMilestone {
-                    sales_threshold: 0,
-                    release_percent: 0,
-                    released: false,
-                });
+            let milestone: EscrowMilestone =
+                env.storage()
+                    .persistent()
+                    .get(&key)
+                    .unwrap_or_else(|| EscrowMilestone {
+                        sales_threshold: 0,
+                        release_percent: 0,
+                        released: false,
+                    });
             result.push_back(milestone);
         } else if i > 0 && result.is_empty() {
             break;

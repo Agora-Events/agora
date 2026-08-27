@@ -3,6 +3,7 @@ export type EventRecord = {
   title: string;
   description: string;
   startsAt: string;
+  endsAt?: string;
   location: string;
   category: string;
   organizerName: string;
@@ -19,6 +20,7 @@ type CreateEventInput = {
   title: string;
   description?: string;
   startsAt: string;
+  endsAt?: string;
   location: string;
   category: string;
   organizerName: string;
@@ -92,6 +94,7 @@ export function createEvent(input: CreateEventInput, hostEmail: string): EventRe
     title: input.title,
     description: input.description || "",
     startsAt: input.startsAt,
+    endsAt: input.endsAt,
     location: input.location,
     category: input.category,
     organizerName: input.organizerName,

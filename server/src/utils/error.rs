@@ -4,46 +4,136 @@ use serde::Serialize;
 use thiserror::Error;
 use tracing::{error, warn};
 
+/// Stable, machine-readable API error code.
+///
+/// Serializes as `SCREAMING_SNAKE_CASE` so clients can branch on a specific
+/// failure without string-matching the human-readable message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[schema(as = String)]
+pub enum ErrorCode {
+    /// Request body or query parameters failed validation.
+    ValidationFailed,
+    /// Missing or invalid authentication credentials.
+    Unauthorized,
+    /// Authenticated caller is not allowed to perform this action.
+    Forbidden,
+    /// The requested resource does not exist.
+    NotFound,
+    /// The request conflicts with the current resource state.
+    Conflict,
+    /// The caller has exceeded the allowed request rate.
+    RateLimited,
+    /// An unexpected internal failure.
+    InternalError,
+    /// A required downstream service is temporarily unavailable.
+    ServiceUnavailable,
+}
+
+impl ErrorCode {
+    /// Wire-format string (`VALIDATION_FAILED`, `NOT_FOUND`, …).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ValidationFailed => "VALIDATION_FAILED",
+            Self::Unauthorized => "UNAUTHORIZED",
+            Self::Forbidden => "FORBIDDEN",
+            Self::NotFound => "NOT_FOUND",
+            Self::Conflict => "CONFLICT",
+            Self::RateLimited => "RATE_LIMITED",
+            Self::InternalError => "INTERNAL_ERROR",
+            Self::ServiceUnavailable => "SERVICE_UNAVAILABLE",
+        }
+    }
+
+    /// Map an HTTP status to the closest machine-readable code.
+    ///
+    /// Status codes themselves are unchanged; this only chooses the `code`
+    /// field written into the JSON body.
+    pub fn from_status(status: StatusCode) -> Self {
+        match status {
+            StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => Self::ValidationFailed,
+            StatusCode::UNAUTHORIZED => Self::Unauthorized,
+            StatusCode::FORBIDDEN => Self::Forbidden,
+            StatusCode::NOT_FOUND => Self::NotFound,
+            StatusCode::CONFLICT => Self::Conflict,
+            StatusCode::TOO_MANY_REQUESTS => Self::RateLimited,
+            StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::BAD_GATEWAY
+            | StatusCode::GATEWAY_TIMEOUT => Self::ServiceUnavailable,
+            _ => Self::InternalError,
+        }
+    }
+}
+
+impl std::fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Reusable API error body returned by every error response.
 ///
-/// Serializes as `{ "code": <u16>, "message": "..." }` so clients can reliably
-/// read `error.code` / top-level `code` and display a user-friendly message.
+/// Serializes as `{ "code": "NOT_FOUND", "message": "..." }` so clients can
+/// branch on [`ErrorCode`] without depending on message copy. The HTTP status
+/// is carried on the response, not in this JSON body.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ApiError {
-    /// HTTP status code mirrored in the JSON body for client-side branching.
-    pub code: u16,
+    /// Machine-readable error code.
+    pub code: ErrorCode,
     /// Human-readable error message safe to show to end users.
     pub message: String,
+    /// HTTP status used by [`IntoResponse`]. Omitted from the JSON body.
+    #[serde(skip)]
+    #[schema(ignore)]
+    status: u16,
 }
 
 impl ApiError {
     /// Build an [`ApiError`] from an HTTP status and message.
+    ///
+    /// The status code is preserved; the JSON `code` is derived from it.
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self::with_code(ErrorCode::from_status(status), status, message)
+    }
+
+    /// Build an [`ApiError`] with an explicit machine-readable code.
+    pub fn with_code(
+        code: ErrorCode,
+        status: StatusCode,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
-            code: status.as_u16(),
+            code,
             message: message.into(),
+            status: status.as_u16(),
         }
     }
 
     /// Convenience constructor for unexpected internal failures / panics.
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, message)
+        Self::with_code(
+            ErrorCode::InternalError,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            message,
+        )
+    }
+
+    /// HTTP status associated with this error.
+    pub fn status(&self) -> StatusCode {
+        StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
     }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let status = StatusCode::from_u16(self.code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let status = self.status();
         (status, axum::Json(self)).into_response()
     }
 }
 
 impl From<AppError> for ApiError {
     fn from(err: AppError) -> Self {
-        Self {
-            code: err.status_code().as_u16(),
-            message: err.public_message(),
-        }
+        Self::with_code(err.error_code(), err.status_code(), err.public_message())
     }
 }
 
@@ -141,21 +231,21 @@ impl AppError {
     }
 
     /// Return a stable, machine-readable error code for the variant.
-    pub fn error_code(&self) -> &'static str {
+    pub fn error_code(&self) -> ErrorCode {
         match self {
-            AppError::ValidationError(_) => "VALIDATION_ERROR",
-            AppError::AuthError(_) => "AUTH_ERROR",
-            AppError::Forbidden(_) => "FORBIDDEN",
-            AppError::NotFound(_) => "NOT_FOUND",
-            AppError::Conflict(_) => "CONFLICT",
+            AppError::ValidationError(_) => ErrorCode::ValidationFailed,
+            AppError::AuthError(_) => ErrorCode::Unauthorized,
+            AppError::Forbidden(_) => ErrorCode::Forbidden,
+            AppError::NotFound(_) => ErrorCode::NotFound,
+            AppError::Conflict(_) => ErrorCode::Conflict,
             AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {
-                DatabaseErrorCategory::Connection => "DATABASE_UNAVAILABLE",
-                DatabaseErrorCategory::UniqueViolation => "UNIQUE_VIOLATION",
-                DatabaseErrorCategory::ForeignKeyViolation => "FOREIGN_KEY_VIOLATION",
-                DatabaseErrorCategory::Query => "DATABASE_ERROR",
+                DatabaseErrorCategory::Connection => ErrorCode::ServiceUnavailable,
+                DatabaseErrorCategory::UniqueViolation
+                | DatabaseErrorCategory::ForeignKeyViolation => ErrorCode::Conflict,
+                DatabaseErrorCategory::Query => ErrorCode::InternalError,
             },
-            AppError::ExternalServiceError(_) => "EXTERNAL_SERVICE_ERROR",
-            AppError::InternalServerError(_) => "INTERNAL_SERVER_ERROR",
+            AppError::ExternalServiceError(_) => ErrorCode::ServiceUnavailable,
+            AppError::InternalServerError(_) => ErrorCode::InternalError,
         }
     }
 
@@ -193,7 +283,7 @@ impl AppError {
 ///
 /// ```json
 /// {
-///   "code": 404,
+///   "code": "NOT_FOUND",
 ///   "message": "Resource with id '42' was not found"
 /// }
 /// ```
@@ -216,9 +306,9 @@ impl IntoResponse for AppError {
                 }
             },
             _ => {
-                error!(
+                    error!(
                     error = ?self,
-                    code = machine_code,
+                    code = %machine_code,
                     http_status = status.as_u16(),
                     message,
                     "Application error"
@@ -226,7 +316,7 @@ impl IntoResponse for AppError {
             }
         }
 
-        ApiError::new(status, message).into_response()
+        ApiError::with_code(machine_code, status, message).into_response()
     }
 }
 
@@ -288,18 +378,45 @@ mod tests {
     fn test_error_codes() {
         assert_eq!(
             AppError::ValidationError("x".into()).error_code(),
-            "VALIDATION_ERROR"
+            ErrorCode::ValidationFailed
         );
-        assert_eq!(AppError::AuthError("x".into()).error_code(), "AUTH_ERROR");
-        assert_eq!(AppError::Forbidden("x".into()).error_code(), "FORBIDDEN");
-        assert_eq!(AppError::NotFound("x".into()).error_code(), "NOT_FOUND");
+        assert_eq!(
+            AppError::AuthError("x".into()).error_code(),
+            ErrorCode::Unauthorized
+        );
+        assert_eq!(
+            AppError::Forbidden("x".into()).error_code(),
+            ErrorCode::Forbidden
+        );
+        assert_eq!(
+            AppError::NotFound("x".into()).error_code(),
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            AppError::Conflict("x".into()).error_code(),
+            ErrorCode::Conflict
+        );
         assert_eq!(
             AppError::ExternalServiceError("x".into()).error_code(),
-            "EXTERNAL_SERVICE_ERROR"
+            ErrorCode::ServiceUnavailable
         );
         assert_eq!(
             AppError::InternalServerError("x".into()).error_code(),
-            "INTERNAL_SERVER_ERROR"
+            ErrorCode::InternalError
+        );
+    }
+
+    #[test]
+    fn test_error_code_serializes_screaming_snake_case() {
+        let json = serde_json::to_value(ErrorCode::ValidationFailed).unwrap();
+        assert_eq!(json, "VALIDATION_FAILED");
+        assert_eq!(
+            serde_json::to_value(ErrorCode::RateLimited).unwrap(),
+            "RATE_LIMITED"
+        );
+        assert_eq!(
+            serde_json::to_value(ErrorCode::InternalError).unwrap(),
+            "INTERNAL_ERROR"
         );
     }
 
@@ -432,7 +549,7 @@ mod tests {
         let resp = AppError::DatabaseError(sqlx::Error::PoolTimedOut).into_response();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 503);
+        assert_eq!(json["code"], "SERVICE_UNAVAILABLE");
         assert_eq!(
             json["message"],
             "Database service is temporarily unavailable"
@@ -452,7 +569,7 @@ mod tests {
             .into_response();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 409);
+        assert_eq!(json["code"], "CONFLICT");
         assert_eq!(
             json["message"],
             "A resource with this identifier already exists"
@@ -465,7 +582,7 @@ mod tests {
             .into_response();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 409);
+        assert_eq!(json["code"], "CONFLICT");
         assert_eq!(json["message"], "The referenced resource does not exist");
     }
 
@@ -477,7 +594,7 @@ mod tests {
     async fn test_into_response_body_has_flat_code_and_message() {
         let resp = AppError::ValidationError("oops".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 400);
+        assert_eq!(json["code"], "VALIDATION_FAILED");
         assert_eq!(json["message"], "oops");
         assert!(json.get("success").is_none());
         assert!(json.get("error").is_none());
@@ -488,7 +605,7 @@ mod tests {
         let resp = ApiError::new(StatusCode::NOT_FOUND, "thing").into_response();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 404);
+        assert_eq!(json["code"], "NOT_FOUND");
         assert_eq!(json["message"], "thing");
     }
 
@@ -496,7 +613,7 @@ mod tests {
     async fn test_into_response_validation_error_body() {
         let resp = AppError::ValidationError("name is required".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 400);
+        assert_eq!(json["code"], "VALIDATION_FAILED");
         assert_eq!(json["message"], "name is required");
     }
 
@@ -504,7 +621,7 @@ mod tests {
     async fn test_into_response_auth_error_body() {
         let resp = AppError::AuthError("token missing".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 401);
+        assert_eq!(json["code"], "UNAUTHORIZED");
         assert_eq!(json["message"], "token missing");
     }
 
@@ -512,7 +629,7 @@ mod tests {
     async fn test_into_response_forbidden_body() {
         let resp = AppError::Forbidden("not allowed".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 403);
+        assert_eq!(json["code"], "FORBIDDEN");
         assert_eq!(json["message"], "not allowed");
     }
 
@@ -520,7 +637,7 @@ mod tests {
     async fn test_into_response_not_found_body() {
         let resp = AppError::NotFound("record 42".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 404);
+        assert_eq!(json["code"], "NOT_FOUND");
         assert_eq!(json["message"], "record 42");
     }
 
@@ -529,7 +646,7 @@ mod tests {
         let resp =
             AppError::ExternalServiceError("payment gateway unreachable".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 503);
+        assert_eq!(json["code"], "SERVICE_UNAVAILABLE");
         assert_eq!(json["message"], "payment gateway unreachable");
     }
 
@@ -537,7 +654,7 @@ mod tests {
     async fn test_into_response_internal_server_error_body() {
         let resp = AppError::InternalServerError("crash".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 500);
+        assert_eq!(json["code"], "INTERNAL_ERROR");
         assert_eq!(json["message"], "crash");
     }
 
@@ -545,7 +662,7 @@ mod tests {
     async fn test_into_response_database_error_hides_details() {
         let resp = AppError::DatabaseError(sqlx::Error::RowNotFound).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["code"], 500);
+        assert_eq!(json["code"], "INTERNAL_ERROR");
         assert_eq!(json["message"], "A database error occurred");
     }
 

@@ -287,6 +287,28 @@ export function PopularEventsSection({
               />
             </div>
 
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="discover-sort"
+                className="text-sm font-medium text-ink-soft max-sm:sr-only"
+              >
+                Sort by
+              </label>
+              <select
+                id="discover-sort"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as EventSort)}
+                aria-label="Sort events"
+                className="h-9.75 max-w-[10.5rem] sm:max-w-none rounded-4xl bg-black px-3 text-sm text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
               <Button
                 variant="primary"
