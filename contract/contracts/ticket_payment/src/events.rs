@@ -1,3 +1,5 @@
+// Contract event payload types – not part of the primary documentation surface.
+#![allow(missing_docs)]
 use crate::types::PaymentStatus;
 use soroban_sdk::{contracttype, Address, BytesN, String};
 

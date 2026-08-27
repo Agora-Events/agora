@@ -1,6 +1,7 @@
 //! # Storage Module
 //!
 //! This module is the single point of contact between the EventRegistry contract
+#![allow(missing_docs)]
 //! logic and the Soroban persistent ledger. Every read and write to on-chain state
 //! goes through a thin wrapper function defined here, keeping the rest of the codebase
 //! free of raw storage calls.

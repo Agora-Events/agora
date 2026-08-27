@@ -1,3 +1,5 @@
+// Payment-related helper types – not part of the primary documentation surface.
+#![allow(missing_docs)]
 use soroban_sdk::{contracttype, Address};
 
 #[contracttype]

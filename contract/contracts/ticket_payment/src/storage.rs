@@ -1,3 +1,5 @@
+// Internal storage accessors – not part of the public documentation surface.
+#![allow(missing_docs)]
 use crate::{
     error::TicketPaymentError,
     types::{

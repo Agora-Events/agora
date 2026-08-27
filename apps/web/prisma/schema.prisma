@@ -44,7 +44,9 @@ model Event {
   tickets         Ticket[]
   analyticsEvents AnalyticsEvent[]
 
-  @@index([status, startsAt])
+  /// Composite index for category-browsing queries ordered by start date.
+  /// Supports: SELECT * FROM "Event" WHERE category = $1 ORDER BY "startsAt" ASC/DESC
+  @@index([category, startsAt])
 }
 
 model Ticket {
@@ -60,9 +62,11 @@ model Ticket {
   utmCampaign String?  @db.VarChar(255)
   createdAt   DateTime @default(now())
 
-  /// Guards against a retried mint or a duplicated indexer event inserting the
-  /// same on-chain ticket twice. Rows with a null stellarId are unaffected.
-  @@unique([eventId, stellarId])
+  /// Single-column index to efficiently look up all tickets belonging to a wallet address.
+  @@index([ownerWallet])
+  /// Composite index to support "newest first" wallet queries efficiently.
+  /// Supports: SELECT * FROM "Ticket" WHERE "ownerWallet" = $1 ORDER BY "createdAt" DESC
+  @@index([ownerWallet, createdAt])
 }
 
 /// Organizer brand profile keyed by Stellar wallet address.

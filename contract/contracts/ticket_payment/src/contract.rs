@@ -226,6 +226,20 @@ impl TicketPaymentContract {
         get_discount_code(&env, &event_id, &code)
     }
 
+    /// Upgrades the contract WASM to a new hash. Only callable by the admin.
+    ///
+    /// After the upgrade, the function performs post-upgrade state verification
+    /// to ensure that critical persistent storage keys are still present.
+    /// If any key is missing, a `ContractVerificationFailed` event is emitted for each.
+    ///
+    /// # Arguments
+    /// * `new_wasm_hash` - The 32-byte WASM hash of the replacement contract.
+    ///
+    /// # Authorization
+    /// Requires the contract admin to have signed the transaction.
+    ///
+    /// # Panics
+    /// Panics if the admin has not been set (contract not initialized).
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         require_admin(&env).expect("Admin not set");
 
@@ -438,6 +452,10 @@ impl TicketPaymentContract {
         Ok(())
     }
 
+    /// Returns true if the given token address is on the global payment whitelist.
+    ///
+    /// # Arguments
+    /// * `token` - The token contract address to check.
     pub fn is_token_allowed(env: Env, token: Address) -> bool {
         is_token_whitelisted(&env, &token)
     }
@@ -486,6 +504,11 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::ContractPaused);
         }
         buyer_address.require_auth();
+
+        // Guard against double-minting: reject if this payment_id was already processed.
+        if get_payment(&env, payment_id.clone()).is_some() {
+            return Err(TicketPaymentError::PaymentAlreadyExists);
+        }
 
         // Determine the actual owner of the ticket (recipient or buyer)
         let owner_address = recipient_address.unwrap_or_else(|| buyer_address.clone());
@@ -968,6 +991,16 @@ impl TicketPaymentContract {
         );
     }
 
+    /// Requests a refund for a specific payment on behalf of the ticket buyer.
+    ///
+    /// # Arguments
+    /// * `payment_id` - The unique payment identifier to refund.
+    ///
+    /// # Errors
+    /// Returns `PaymentNotFound` if no matching payment record exists.
+    /// Returns `TicketNotRefundable` if the tier is not marked refundable.
+    /// Returns `RefundDeadlinePassed` if the refund window has closed.
+    /// Returns `InvalidPaymentStatus` if the payment is not in a refundable state.
     pub fn request_guest_refund(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
             panic!("Contract not initialized");
@@ -1216,6 +1249,10 @@ impl TicketPaymentContract {
 
         Ok(())
     }
+    /// Returns the full payment record for a given payment ID, or `None` if not found.
+    ///
+    /// # Arguments
+    /// * `payment_id` - The unique payment identifier to look up.
     pub fn get_payment_status(env: Env, payment_id: String) -> Option<Payment> {
         get_payment(&env, payment_id)
     }
@@ -2497,10 +2534,18 @@ impl TicketPaymentContract {
         crate::storage::get_active_escrow_by_token(&env, token_address)
     }
 
+    /// Returns the configured daily withdrawal cap for the given token, or 0 if uncapped.
+    ///
+    /// # Arguments
+    /// * `token` - The token contract address.
     pub fn get_withdrawal_cap(env: Env, token: Address) -> i128 {
         crate::storage::get_withdrawal_cap(&env, token)
     }
 
+    /// Returns the cumulative amount of the given token withdrawn today.
+    ///
+    /// # Arguments
+    /// * `token` - The token contract address.
     pub fn get_daily_withdrawn_amount(env: Env, token: Address) -> i128 {
         let current_day = env.ledger().timestamp() / 86400;
         crate::storage::get_daily_withdrawn_amount(&env, token, current_day)
