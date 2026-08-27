@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { GuestNav } from "./navbar/guest-nav";
 
 // GuestNav is the simpler variant — doesn't require auth context.
