@@ -320,6 +320,20 @@ impl IntoResponse for AppError {
     }
 }
 
+/// Converts a boxed middleware error into the standard [`ApiError`] body.
+///
+/// Paired with [`tower_http::timeout::TimeoutLayer`] via `HandleErrorLayer` so
+/// a request that exceeds `REQUEST_TIMEOUT_SECS` returns a `504` in the same
+/// shape as every other error response, instead of tower's default plaintext
+/// error body.
+pub async fn handle_timeout_error(err: axum::BoxError) -> ApiError {
+    if err.is::<tower_http::timeout::error::Elapsed>() {
+        ApiError::new(StatusCode::GATEWAY_TIMEOUT, "Request timed out")
+    } else {
+        ApiError::internal(format!("Unhandled internal error: {err}"))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
