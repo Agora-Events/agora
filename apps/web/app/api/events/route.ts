@@ -68,44 +68,27 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     }
   }
 
-  const baseSlug = slugify(payload.title as string);
-  let slug = baseSlug;
-  let created;
-
-  // Retry with a random suffix instead of failing the insert on a slug collision.
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      created = await prisma.event.create({
-        data: {
-          slug,
-          title: payload.title as string,
-          description: typeof payload.description === "string" ? payload.description : "",
-          startsAt: new Date(payload.startsAt as string),
-          location: payload.location as string,
-          category: payload.category as string,
-          organizerName: payload.organizerName as string,
-          organizerWallet: payload.organizerWallet as string,
-          imageUrl: typeof payload.imageUrl === "string" ? payload.imageUrl : undefined,
-          ticketPrice: typeof payload.ticketPrice === "number" ? payload.ticketPrice : 0,
-          totalTickets: typeof payload.totalTickets === "number" ? payload.totalTickets : 100,
-          followersOnly: typeof payload.followersOnly === "boolean" ? payload.followersOnly : false,
-          hostEmail: auth.email,
-        },
-      });
-      break;
-    } catch (error) {
-      const isSlugConflict =
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002" &&
-        (error.meta?.target as string[] | undefined)?.includes("slug");
-
-      if (!isSlugConflict || attempt >= 4) {
-        throw error;
-      }
-
-      slug = withRandomSuffix(baseSlug);
-    }
+  if (payload.timezone !== undefined && (typeof payload.timezone !== "string" || payload.timezone.trim().length === 0)) {
+    throwApiError("Invalid field: timezone", 400);
   }
+
+  const created = await prisma.event.create({
+    data: {
+      title: payload.title as string,
+      description: typeof payload.description === "string" ? payload.description : "",
+      startsAt: new Date(payload.startsAt as string),
+      timezone: typeof payload.timezone === "string" ? payload.timezone : undefined,
+      location: payload.location as string,
+      category: payload.category as string,
+      organizerName: payload.organizerName as string,
+      organizerWallet: payload.organizerWallet as string,
+      imageUrl: typeof payload.imageUrl === "string" ? payload.imageUrl : undefined,
+      ticketPrice: typeof payload.ticketPrice === "number" ? payload.ticketPrice : 0,
+      totalTickets: typeof payload.totalTickets === "number" ? payload.totalTickets : 100,
+      followersOnly: typeof payload.followersOnly === "boolean" ? payload.followersOnly : false,
+      hostEmail: auth.email,
+    },
+  });
 
   return NextResponse.json({ event: created }, { status: 201 });
 });

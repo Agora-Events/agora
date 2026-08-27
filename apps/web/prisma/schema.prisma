@@ -23,7 +23,7 @@ model Event {
   slug            String           @unique
   description     String           @default("")
   startsAt        DateTime
-  endsAt          DateTime?
+  timezone        String   @default("UTC")
   location        String
   /// Optional WGS84 latitude for map discovery (-90 to 90).
   latitude        Float?
