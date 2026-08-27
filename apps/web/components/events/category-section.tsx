@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { motion, type Transition } from "framer-motion";
+import Image from "next/image";
 import useSWR from "swr";
 import { fetchCategories, type DiscoverCategory } from "@/utils/api";
 import { CategoryChips } from "./category-chips";
@@ -42,48 +43,15 @@ const item = {
   },
 };
 
-type CategorySectionProps = {
-  activeCategory: string;
+interface CategorySectionProps {
+  selectedCategory: string;
   onCategoryChange: (category: string) => void;
-  onError: (message: string) => void;
-};
+}
 
-export function CategorySection({ activeCategory, onCategoryChange, onError }: CategorySectionProps) {
-  const { data: categories, error, isLoading } = useSWR<DiscoverCategory[]>(
-    "/api/events/discover/categories",
-    () => fetchCategories(),
-    {
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
-      revalidateIfStale: false,
-      keepPreviousData: true,
-      dedupingInterval: 2000,
-    }
-  );
-
-  // Fire onError once per error occurrence — not on every render.
-  useEffect(() => {
-    if (error) {
-      onError("Could not load categories");
-    }
-  }, [error, onError]);
-
-  // While loading: show skeleton pills (pass empty array + isLoading=true).
-  // After load: use API data when available, otherwise fall back to defaults.
-  // If both are exhausted (error + no cache): still use defaults so the
-  // section never renders as an empty gap.
-  const loaded = !isLoading;
-  const apiCategories = categories && categories.length > 0 ? categories : null;
-  const categoriesToRender: DiscoverCategory[] = loaded
-    ? (apiCategories ?? defaultCategories)
-    : [];
-
-  // Hide the entire block only when loading has finished, the fetch failed,
-  // AND we somehow ended up with zero categories (shouldn't happen given the
-  // defaultCategories fallback above, but guards against future regressions).
-  const hasCategories = isLoading || categoriesToRender.length > 0;
-  if (!hasCategories) return null;
-
+export function CategorySection({
+  selectedCategory,
+  onCategoryChange,
+}: CategorySectionProps) {
   return (
     <section className="px-4 bg-base pt-12 pb-6">
       <div className="mx-auto max-w-[1221px]">
@@ -116,12 +84,38 @@ export function CategorySection({ activeCategory, onCategoryChange, onError }: C
             <div className="h-7 w-48 rounded-md bg-black/10 animate-pulse mb-6" />
           )}
 
-          <CategoryChips
-            categories={categoriesToRender}
-            activeCategory={activeCategory}
-            onCategoryChange={onCategoryChange}
-            isLoading={isLoading}
-          />
+          <motion.div variants={container} className="flex flex-wrap gap-4">
+            {categories.map((category) => (
+              <motion.div key={category.name} variants={item}>
+                <button
+                  onClick={() =>
+                    onCategoryChange(
+                      selectedCategory === category.name ? "" : category.name,
+                    )
+                  }
+                  aria-pressed={selectedCategory === category.name}
+                  style={{ backgroundColor: category.color }}
+                  className={`
+                    flex items-center gap-2 px-[26px] py-[13px] rounded-full border-2 border-black
+                    font-medium text-[15px] whitespace-nowrap transition-all
+                    shadow-[-4px_4px_0px_0px_rgba(0,0,0,1)]
+                    active:translate-x-[2px] active:translate-y-[2px] active:shadow-none
+                    hover:opacity-90 min-w-32 justify-center
+                    ${selectedCategory === category.name ? "ring-4 ring-black/30" : ""}
+                  `}
+                >
+                  <Image
+                    src={category.icon}
+                    alt={`${category.name} icon`}
+                    width={20}
+                    height={20}
+                    className="mr-[2px] object-contain"
+                  />
+                  <span className="text-black capitalize">{category.name}</span>
+                </button>
+              </motion.div>
+            ))}
+          </motion.div>
         </motion.div>
       </div>
     </section>

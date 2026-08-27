@@ -7,7 +7,7 @@
 
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Toaster } from "sonner";
+import { CookieBanner } from "@/components/layout/cookie-banner";
 import "./globals.css";
 
 const inter = Inter({
@@ -50,16 +50,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" dir="ltr">
+    <html lang="en">
       <body className={`${inter.variable} antialiased`}>
-        <Suspense fallback={null}>
-          <LoadingBar />
-          <AttributionCapture />
-        </Suspense>
-        <Toaster position="bottom-right" richColors />
-        <ThemeProvider>
-          {children}
-        </ThemeProvider>
+        {children}
+        <CookieBanner />
       </body>
     </html>
   );

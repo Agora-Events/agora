@@ -61,7 +61,15 @@ type OrganizerComponentProps = {
   onError: (message: string) => void;
 };
 
-export function OrganizerComponent({ onError }: OrganizerComponentProps) {
+interface OrganizerComponentProps {
+  selectedOrganizer: string;
+  onOrganizerChange: (organizer: string) => void;
+}
+
+export function OrganizerComponent({
+  selectedOrganizer,
+  onOrganizerChange,
+}: OrganizerComponentProps) {
   const cardsRef = useRef<HTMLDivElement>(null);
   const [cardsData, setCardsData] = useState<DiscoverOrganizer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -130,8 +138,22 @@ export function OrganizerComponent({ onError }: OrganizerComponentProps) {
           <Link key={card.id} href={`/organizers/${card.id}`} className="relative h-full block">
             <section className="absolute border-10 rounded-2xl bg-yellow-400 border-yellow-400 w-102 h-58 -left-2 top-2 z-0"></section>
             <div
-              className="relative z-10 bg-black text-white p-5x border rounded-2xl lg:min-w-100
-                     h-40 lg:h-58 cursor-pointer hover:-translate-y-1 transition-transform"
+              role="button"
+              tabIndex={0}
+              aria-pressed={selectedOrganizer === card.id}
+              onClick={() =>
+                onOrganizerChange(selectedOrganizer === card.id ? "" : card.id)
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOrganizerChange(
+                    selectedOrganizer === card.id ? "" : card.id,
+                  );
+                }
+              }}
+              className={`relative z-10 bg-black text-white p-5x border rounded-2xl lg:min-w-100
+                     h-40 lg:h-58 ${selectedOrganizer === card.id ? "ring-4 ring-black/30" : ""}`}
             >
               <div className="absolute top-5 left-5">
                 <Image
