@@ -8,6 +8,7 @@ import { PopularEventsSection } from "@/components/events/popular-events-section
 import { OrganizerComponent } from "@/components/events/organizer-component";
 import { Footer } from "@/components/layout/footer";
 import { EmptyState } from "@/components/ui/empty-state";
+import { BackToTop } from "@/components/ui/back-to-top";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 
 function DiscoverContent() {
@@ -47,6 +48,7 @@ function DiscoverContent() {
         onOrganizerChange={(value) => updateFilter("organizer", value)}
       />
       <Footer />
+      <BackToTop />
     </main>
   );
 }

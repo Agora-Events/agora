@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { BackToTop } from "@/components/ui/back-to-top";
 
 // Icon imports — all sourced from /public/icons/
 import SearchIcon from "@/public/icons/search.svg";
@@ -283,6 +284,7 @@ export default function HelpCenterPage() {
       </section>
 
       <Footer />
+      <BackToTop />
     </main>
   );
 }
