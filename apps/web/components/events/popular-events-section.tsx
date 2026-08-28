@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, Transition } from "framer-motion";
 import Image from "next/image";
 import { EventCard } from "./event-card";
@@ -79,6 +79,54 @@ export function PopularEventsSection({
     ...DEFAULT_FILTERS,
     categories: category ? [category] : [],
   });
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if modifier keys are held
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {
+        return;
+      }
+
+      // 1. Pressing '/' to focus search input
+      if (e.key === "/" || e.code === "Slash") {
+        const target = e.target as HTMLElement | null;
+        if (
+          target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable)
+        ) {
+          return;
+        }
+
+        e.preventDefault();
+
+        if (window.innerWidth < 640 && mobileSearchInputRef.current) {
+          mobileSearchInputRef.current.focus();
+        } else if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+      }
+
+      // 2. Pressing 'Escape' to blur and clear search field
+      if (e.key === "Escape") {
+        const isDesktopFocused = document.activeElement === searchInputRef.current;
+        const isMobileFocused = document.activeElement === mobileSearchInputRef.current;
+
+        if (isDesktopFocused || isMobileFocused || isFocused) {
+          searchInputRef.current?.blur();
+          mobileSearchInputRef.current?.blur();
+          setSearch("");
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFocused]);
 
   useEffect(() => {
     setFilters((currentFilters) => ({
@@ -290,7 +338,8 @@ export function PopularEventsSection({
               />
 
               <motion.input
-                className="pl-13 h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+                ref={searchInputRef}
+                className="pl-13 h-9.75 rounded-4xl bg-black pr-9 py-2 text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
                 type="text"
                 placeholder="Search"
                 aria-label="Search events"
@@ -303,6 +352,14 @@ export function PopularEventsSection({
                 animate={isFocused ? "focused" : "unfocused"}
                 transition={{ duration: 0.3, ease: "easeInOut" }}
               />
+              {!isFocused && !search && (
+                <kbd
+                  aria-hidden="true"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none hidden sm:inline-flex h-5 min-w-5 items-center justify-center rounded border border-white/30 bg-white/10 px-1.5 text-[11px] font-mono text-white/70 shadow-xs select-none"
+                >
+                  /
+                </kbd>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -369,13 +426,22 @@ export function PopularEventsSection({
                 className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
               />
               <input
-                className="w-full pl-10 h-9.75 rounded-4xl bg-black pr-4 py-2 text-sm text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white/70 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+                ref={mobileSearchInputRef}
+                className="w-full pl-10 pr-9 h-9.75 rounded-4xl bg-black py-2 text-sm text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white/70 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
                 type="text"
                 placeholder="Search events"
                 aria-label="Search events"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+              {!search && (
+                <kbd
+                  aria-hidden="true"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none inline-flex h-5 min-w-5 items-center justify-center rounded border border-white/30 bg-white/10 px-1.5 text-[11px] font-mono text-white/70 shadow-xs select-none"
+                >
+                  /
+                </kbd>
+              )}
             </div>
 
             <Button
