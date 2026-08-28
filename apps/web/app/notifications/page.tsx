@@ -6,6 +6,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface NotificationItem {
   id: string;
@@ -49,9 +50,13 @@ const mockNotifications: NotificationItem[] = [
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>(mockNotifications);
-  
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
   const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    if (unreadCount === 0) return;
+    setNotifications(notifications.map((n) => ({ ...n, read: true })));
+    toast.success("All notifications marked as read");
   };
 
   const clearNotifications = () => {
@@ -62,18 +67,30 @@ export default function NotificationsPage() {
     <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
       <div className="flex-1 w-full max-w-[800px] mx-auto px-4 py-12 md:py-20">
-        
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-4xl font-extrabold italic text-ink-deep">Notifications</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-extrabold italic text-ink-deep">Notifications</h1>
+            {unreadCount > 0 && (
+              <span
+                data-testid="unread-badge"
+                aria-label={`${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
+                className="inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded-full bg-accent text-black text-sm font-bold border-2 border-black"
+              >
+                {unreadCount}
+              </span>
+            )}
+          </div>
           {notifications.length > 0 && (
             <div className="flex gap-4">
-              <button 
+              <button
                 onClick={markAllAsRead}
-                className="text-sm font-semibold text-ink-deep hover:underline"
+                disabled={unreadCount === 0}
+                aria-label="Mark all notifications as read"
+                className="text-sm font-semibold text-ink-deep hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
               >
                 Mark all as read
               </button>
-              <button 
+              <button
                 onClick={clearNotifications}
                 className="text-sm font-semibold text-error hover:underline"
               >
@@ -86,30 +103,34 @@ export default function NotificationsPage() {
         {notifications.length > 0 ? (
           <div className="flex flex-col gap-4">
             {notifications.map((notification) => (
-              <div 
-                key={notification.id} 
+              <div
+                key={notification.id}
                 className={`flex gap-4 p-6 rounded-2xl border-2 border-black transition-all ${
-                  notification.read 
-                    ? "bg-white shadow-[-4px_4px_0_rgba(0,0,0,1)] opacity-70" 
+                  notification.read
+                    ? "bg-white shadow-[-4px_4px_0_rgba(0,0,0,1)] opacity-70"
                     : "bg-surface shadow-[-6px_6px_0_rgba(0,0,0,1)] hover:-translate-y-1"
                 }`}
               >
                 <div className="w-12 h-12 shrink-0 bg-white rounded-full flex items-center justify-center border-2 border-black">
-                  <Image 
+                  <Image
                     src={
-                      notification.type === "ticket_confirmation" ? "/icons/ticket.svg" :
-                      notification.type === "event_reminder" ? "/icons/calendar.svg" :
-                      "/icons/user-group.svg"
-                    } 
-                    alt={notification.type} 
-                    width={24} 
-                    height={24} 
+                      notification.type === "ticket_confirmation"
+                        ? "/icons/ticket.svg"
+                        : notification.type === "event_reminder"
+                          ? "/icons/calendar.svg"
+                          : "/icons/user-group.svg"
+                    }
+                    alt={notification.type}
+                    width={24}
+                    height={24}
                   />
                 </div>
                 <div className="flex-1">
                   <div className="flex justify-between items-start mb-1">
                     <h3 className="font-bold text-lg text-ink-deep">{notification.title}</h3>
-                    <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">{notification.time}</span>
+                    <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">
+                      {notification.time}
+                    </span>
                   </div>
                   <p className="text-ink-deep/80 mb-3">{notification.message}</p>
                   {notification.link && (
@@ -130,16 +151,21 @@ export default function NotificationsPage() {
             </div>
             <h2 className="text-3xl font-bold italic mb-4">You&apos;re all caught up!</h2>
             <p className="text-ink-deep/70 mb-8 max-w-md mx-auto">
-              You don&apos;t have any new notifications at the moment. Check back later for updates on your events and tickets.
+              You don&apos;t have any new notifications at the moment. Check back later for updates
+              on your events and tickets.
             </p>
             <Link href="/discover">
-              <Button backgroundColor="bg-accent" textColor="text-black" shadowColor="rgba(253,218,35,0.4)" className="px-8 font-bold text-lg">
+              <Button
+                backgroundColor="bg-accent"
+                textColor="text-black"
+                shadowColor="rgba(253,218,35,0.4)"
+                className="px-8 font-bold text-lg"
+              >
                 Discover Events
               </Button>
             </Link>
           </div>
         )}
-
       </div>
       <Footer />
     </main>
