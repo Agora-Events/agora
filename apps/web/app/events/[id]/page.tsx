@@ -10,6 +10,7 @@ import { buildMetadata } from "@/components/layout/seo";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EventPageView } from "@/components/analytics/event-page-view";
 import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
+import { ShareEventButton } from "@/components/events/share-event-button";
 
 export async function generateMetadata({
   params,
@@ -128,9 +129,12 @@ export default async function EventDetailPage({
           {/* RIGHT COLUMN (Desktop) / BOTTOM ITEMS (Mobile) */}
           <div className="lg:w-[45%] flex flex-col gap-8 lg:gap-10">
             {/* Title */}
-            <h1 className="text-[36px] sm:text-[56px] font-bold leading-[1.1] text-black font-heading">
-              {event.title}
-            </h1>
+            <div className="flex items-start justify-between gap-4">
+              <h1 className="text-[36px] sm:text-[56px] font-bold leading-[1.1] text-black font-heading">
+                {event.title}
+              </h1>
+              <ShareEventButton title={event.title} />
+            </div>
 
             {/* Details (Location & Date) */}
             <div className="flex flex-col gap-6">
