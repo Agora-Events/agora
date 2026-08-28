@@ -136,6 +136,15 @@ impl TicketPaymentContract {
         Ok(())
     }
 
+    /// Returns the version of the contract as a String.
+    ///
+    /// The version is sourced from the package version at compile time via `env!("CARGO_PKG_VERSION")`.
+    /// This allows verification of which build is deployed at a given contract address without
+    /// diffing WASM hashes.
+    pub fn version(_env: Env) -> String {
+        String::from_str(&_env, env!("CARGO_PKG_VERSION"))
+    }
+
     /// Pauses or resumes the contract. Only callable by the multi-sig admin.
     /// Upgrade and emergency-withdrawal remain available while the contract is paused.
     pub fn set_pause(env: Env, paused: bool) -> Result<(), TicketPaymentError> {
