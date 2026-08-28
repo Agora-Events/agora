@@ -1,0 +1,6 @@
+{
+  "_comment": "Performance baseline for scripts/generate_perf_report.mjs (Issue #1178). Empty until a maintainer runs `node scripts/generate_perf_report.mjs --update-baseline` against a known-good build. With no entries, regression comparisons have nothing to compare against and report zero regressions rather than failing spuriously.",
+  "generatedAt": null,
+  "criterion": [],
+  "k6": null
+}
