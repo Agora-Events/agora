@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+// Description length constraint matches DB CHECK constraint
+export const MAX_DESCRIPTION_LENGTH = 10000;
+
 export const authSchema = z.object({
   email: z
     .string()
