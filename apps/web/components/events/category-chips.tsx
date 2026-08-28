@@ -57,6 +57,7 @@ export function CategoryChips({
                 className={`
                   flex items-center gap-2 px-[26px] py-[13px] rounded-full
                   font-medium text-[15px] whitespace-nowrap transition-all justify-center h-[54px] min-w-[100px]
+                  focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black dark:focus-visible:outline-white
                   ${
                     isActive
                       ? "border-2 border-black shadow-[-4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none hover:opacity-90"

@@ -53,6 +53,8 @@ const DEFAULT_FILTERS: FilterState = {
 interface PopularEventsSectionProps {
   category: string;
   onCategoryChange: (category: string) => void;
+  selectedOrganizer?: string;
+  onOrganizerChange?: (organizer: string) => void;
 }
 
 type ActiveFilter = {
@@ -64,6 +66,8 @@ type ActiveFilter = {
 export function PopularEventsSection({
   category,
   onCategoryChange,
+  selectedOrganizer,
+  onOrganizerChange,
 }: PopularEventsSectionProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
@@ -174,8 +178,22 @@ export function PopularEventsSection({
       });
     }
 
+    // 6. Organizer Filter
+    if (
+      selectedOrganizer &&
+      selectedOrganizer !== "" &&
+      selectedOrganizer.toLowerCase() !== "all" &&
+      selectedOrganizer.toLowerCase() !== "all organizers"
+    ) {
+      result = result.filter((event: any) => {
+        const org = (event.organizer || event.organizerId || event.organizer_id || "").toLowerCase();
+        const sel = selectedOrganizer.toLowerCase();
+        return org === sel || event.title.toLowerCase().includes(sel);
+      });
+    }
+
     return result;
-  }, [debouncedSearch, filters, events, activeCategory]);
+  }, [debouncedSearch, filters, events, activeCategory, selectedOrganizer]);
 
   // Notify parent whenever the visible count changes
   const prevCountRef = useRef<number | null>(null);
