@@ -66,7 +66,7 @@ function OrganizerEvents({ address }: { address: string }) {
       ) : hostedEvents.length > 0 ? (
         <div className="p-8 flex flex-col gap-6" data-testid="hosted-events-list">
           {hostedEvents.map((event) => (
-            <EventCard key={event.id} {...event as any} />
+            <EventCard key={event.id} {...event as any} startsAt={event.start_time} />
           ))}
         </div>
       ) : (

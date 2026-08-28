@@ -416,6 +416,7 @@ export function PopularEventsSection({
                 location={event.location}
                 price={event.price}
                 imageUrl={event.imageUrl}
+                startsAt={event.startsAt}
               />
             </motion.div>
             ))}
