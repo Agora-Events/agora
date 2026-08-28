@@ -115,6 +115,10 @@ pub struct Config {
 
     /// Time in seconds after which an idle connection is closed (DB_IDLE_TIMEOUT_SECS, default: 600).
     pub db_idle_timeout_secs: u64,
+
+    /// Maximum time in seconds a request may take before the server returns
+    /// a 504 (REQUEST_TIMEOUT_SECS, default: 30).
+    pub request_timeout_secs: u64,
 }
 
 /// A collection of configuration errors found during [`Config::validate`].
@@ -217,6 +221,11 @@ impl Config {
             .and_then(|v| v.parse().ok())
             .unwrap_or(600u64);
 
+        let request_timeout_secs = env::var("REQUEST_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(30u64);
+
         Ok(Self {
             database_url,
             port,
@@ -241,6 +250,7 @@ impl Config {
             db_min_connections,
             db_acquire_timeout_secs,
             db_idle_timeout_secs,
+            request_timeout_secs,
         })
     }
 
@@ -417,6 +427,7 @@ mod tests {
             db_min_connections: 1,
             db_acquire_timeout_secs: 10,
             db_idle_timeout_secs: 600,
+            request_timeout_secs: 30,
         }
     }
 
@@ -960,6 +971,7 @@ mod tests {
             db_min_connections: 1,
             db_acquire_timeout_secs: 10,
             db_idle_timeout_secs: 600,
+            request_timeout_secs: 30,
         };
 
         let err = cfg.validate().unwrap_err();

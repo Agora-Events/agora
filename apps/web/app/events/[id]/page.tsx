@@ -11,6 +11,11 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EventPageView } from "@/components/analytics/event-page-view";
 import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
 
+function truncateDescription(text: string, maxLength = 160): string {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -18,10 +23,12 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const event = dataEvents.find((e) => e.id === parseInt(id));
-  if (!event) return {};
+  if (!event) return { title: "Event not found" };
   return buildMetadata({
     title: event.title,
-    description: `Join us for ${event.title} on ${event.date} in ${event.location}. ${event.price === "Free" ? "Free entry." : `Tickets from $${event.price}.`} Secure your spot on Agora.`,
+    description: truncateDescription(
+      `Join us for ${event.title} on ${event.date} in ${event.location}. ${event.price === "Free" ? "Free entry." : `Tickets from $${event.price}.`} Secure your spot on Agora.`
+    ),
     image: event.imageUrl,
     path: `/events/${id}`,
   });

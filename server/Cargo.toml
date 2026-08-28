@@ -12,7 +12,7 @@ tokio = { version = "1.37", features = ["full"] }
 
 # Middleware
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit", "catch-panic"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit", "catch-panic", "timeout", "compression-gzip", "compression-br"] }
 pin-project = "1.1"
 
 # Serialization
@@ -96,21 +96,6 @@ temp-env = { version = "0.3", features = ["async_closure"] }
 tower = { version = "0.4", features = ["full"] }
 serde_yaml = "0.9"
 
-# Criterion benchmark harness (Issue #1178)
-criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
-
-[[bench]]
-name = "serialization_bench"
-harness = false
-
-[[bench]]
-name = "handler_bench"
-harness = false
-
-[[bench]]
-name = "db_query_bench"
-harness = false
-
-[[bench]]
-name = "reorg_indexer_bench"
-harness = false
+# Build-time metadata (git SHA, build timestamp) for the /version endpoint
+[build-dependencies]
+chrono = "0.4"

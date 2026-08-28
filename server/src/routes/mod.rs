@@ -22,6 +22,7 @@
 use crate::handlers::{delta_sync, sync_status, SyncState};
 use crate::handlers::indexer::{replay_indexer, IndexerAdminState};
 use axum::{
+    error_handling::HandleErrorLayer,
     middleware,
     response::IntoResponse,
     response::Response,
@@ -30,7 +31,13 @@ use axum::{
 };
 use sqlx::PgPool;
 use std::time::Duration;
+use tower::ServiceBuilder;
+use tower_http::compression::{
+    predicate::{DefaultPredicate, Predicate, SizeAbove},
+    CompressionLayer,
+};
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::timeout::TimeoutLayer;
 
 use crate::cache::RedisCache;
 use crate::config::{
@@ -60,7 +67,7 @@ use crate::handlers::{
     example_empty_success, example_not_found, example_validation_error,
     health::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
-        health_check_redis,
+        health_check_redis, version,
     },
     marketplace::{
         cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
@@ -247,6 +254,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/challenge", post(request_challenge))
         .route("/join", post(join_queue))
         .route("/status", get(queue_status))
+        .with_state(waiting_room_state.clone());
+
+    // Long-lived SSE stream — kept out of the request timeout layer below so
+    // it isn't cut off while a client is still connected (Issue #1252).
+    let waiting_room_stream_routes = Router::new()
         .route("/stream", get(queue_stream))
         .with_state(waiting_room_state);
 
@@ -384,6 +396,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
+        .route("/version", get(version))
         .with_state(pool)
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
@@ -413,7 +426,6 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/categories", category_routes)
         .nest("/auth", auth_routes)
         .nest("/profile", profile_routes)
-        .nest("/ws", ws_routes)
         .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
         .nest("/zk", zk_routes)
@@ -425,6 +437,17 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         // Per-IP token-bucket rate limit (RATE_LIMIT_MAX / RATE_LIMIT_WINDOW).
         .layer(RateLimitLayer::from_env());
 
+    // WebSocket and SSE routes get the same content-type/body-limit/rate-limit
+    // protections as the rest of the public API, but are exempt from the
+    // request timeout below since they are meant to stay connected
+    // indefinitely (Issue #1252).
+    let streaming_routes = Router::new()
+        .nest("/ws", ws_routes)
+        .nest("/waiting-room", waiting_room_stream_routes)
+        .layer(middleware::from_fn(require_json_content_type))
+        .layer(RequestBodyLimitLayer::new(1024 * 1024))
+        .layer(RateLimitLayer::from_env());
+
     let api_routes = Router::new()
         .merge(sensitive_routes)
         .merge(general_routes)
@@ -433,6 +456,18 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
             utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
                 .url("/openapi.json", ApiDoc::openapi()),
         )
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(crate::utils::error::handle_timeout_error))
+                .layer(TimeoutLayer::new(Duration::from_secs(
+                    config.request_timeout_secs,
+                ))),
+        )
+        // gzip/br response compression — excludes /metrics (mounted outside
+        // `api_routes`) and the streaming routes merged in below, and skips
+        // small bodies that wouldn't benefit (Issue #1253).
+        .layer(CompressionLayer::new().compress_when(DefaultPredicate::new().and(SizeAbove::new(1024))))
+        .merge(streaming_routes)
         .layer(middleware::from_fn(crate::middleware::csrf::check_csrf));
 
     // Deep linking routes
@@ -696,5 +731,42 @@ mod tests {
 
         let status = router.oneshot(req).await.unwrap().status();
         assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn test_slow_handler_returns_504_gateway_timeout() {
+        use axum::body::Body;
+        use tower::ServiceExt;
+
+        let router = Router::new()
+            .route(
+                "/slow",
+                get(|| async {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    "too slow"
+                }),
+            )
+            .layer(
+                ServiceBuilder::new()
+                    .layer(HandleErrorLayer::new(
+                        crate::utils::error::handle_timeout_error,
+                    ))
+                    .layer(TimeoutLayer::new(Duration::from_millis(10))),
+            );
+
+        let req = Request::builder()
+            .uri("/slow")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::GATEWAY_TIMEOUT);
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["code"], "SERVICE_UNAVAILABLE");
     }
 }
