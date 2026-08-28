@@ -41,6 +41,8 @@ function DiscoverContent() {
       <PopularEventsSection
         category={category}
         onCategoryChange={(value) => updateFilter("category", value)}
+        selectedOrganizer={organizer}
+        onOrganizerChange={(value) => updateFilter("organizer", value)}
       />
       <OrganizerComponent
         selectedOrganizer={organizer}

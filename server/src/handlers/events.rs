@@ -4367,6 +4367,16 @@ pub async fn list_event_attendees(
     success(response, "Attendees retrieved successfully").into_response()
 }
 
+/// Sanitizes a string field to prevent CSV formula injection when opened in spreadsheet applications.
+/// Fields starting with '=', '+', '-', or '@' are escaped with a leading single quote (').
+pub fn sanitize_csv_field(field: &str) -> String {
+    if field.starts_with('=') || field.starts_with('+') || field.starts_with('-') || field.starts_with('@') {
+        format!("'{}", field)
+    } else {
+        field.to_string()
+    }
+}
+
 /// GET /api/v1/events/:id/export-attendees
 ///
 /// Exports all attendees for an event as a CSV file.
@@ -4425,10 +4435,10 @@ pub async fn export_attendees_csv(
     for (owner_wallet, buyer_wallet, quantity, created_at) in tickets {
         csv.push_str(&format!(
             "{},{},{},{}\n",
-            owner_wallet,
-            buyer_wallet,
-            quantity,
-            created_at.to_rfc3339()
+            sanitize_csv_field(&owner_wallet),
+            sanitize_csv_field(&buyer_wallet),
+            sanitize_csv_field(&quantity.to_string()),
+            sanitize_csv_field(&created_at.to_rfc3339())
         ));
     }
 
@@ -5048,5 +5058,18 @@ mod search_cache_tests {
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["total_tickets"], 100);
         assert_eq!(json["minted_tickets"], 42);
+    }
+
+    #[test]
+    fn test_sanitize_csv_field() {
+        assert_eq!(sanitize_csv_field("=1+2"), "'=1+2");
+        assert_eq!(sanitize_csv_field("+cmd|' /C calc'!A0"), "'+cmd|' /C calc'!A0");
+        assert_eq!(sanitize_csv_field("-100"), "'-100");
+        assert_eq!(sanitize_csv_field("@SUM(A1:A10)"), "'@SUM(A1:A10)");
+        assert_eq!(sanitize_csv_field("10"), "10");
+        assert_eq!(
+            sanitize_csv_field("GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+            "GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
     }
 }
