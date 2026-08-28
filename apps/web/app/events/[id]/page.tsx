@@ -34,6 +34,13 @@ export async function generateMetadata({
   });
 }
 
+const SITE_URL = "https://agora.events";
+
+function truncateTitle(title: string, maxLength = 40): string {
+  if (title.length <= maxLength) return title;
+  return `${title.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 export default async function EventDetailPage({
   params,
 }: {
@@ -55,9 +62,57 @@ export default async function EventDetailPage({
     hostPfp: "/images/pfp.png",
   };
 
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: "Discover", item: `${SITE_URL}/discover` },
+      { "@type": "ListItem", position: 3, name: event.title, item: `${SITE_URL}/events/${id}` },
+    ],
+  };
+
+  const isOnline = event.location === "Online";
+  const eventUrl = `${SITE_URL}/events/${id}`;
+  const eventDescription = `Join us for ${event.title} on ${event.date} in ${event.location}. ${event.price === "Free" ? "Free entry." : `Tickets from $${event.price}.`} Secure your spot on Agora.`;
+  const parsedStartDate = new Date(event.date);
+
+  const eventJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: event.title,
+    ...(isNaN(parsedStartDate.getTime())
+      ? {}
+      : { startDate: parsedStartDate.toISOString() }),
+    location: isOnline
+      ? { "@type": "VirtualLocation", url: eventUrl }
+      : { "@type": "Place", name: event.location },
+    image: `${SITE_URL}${event.imageUrl}`,
+    description: eventDescription,
+    eventAttendanceMode: isOnline
+      ? "https://schema.org/OnlineEventAttendanceMode"
+      : "https://schema.org/OfflineEventAttendanceMode",
+    organizer: { "@type": "Organization", name: host.name },
+    offers: {
+      "@type": "Offer",
+      price: event.price === "Free" ? "0" : event.price,
+      priceCurrency: "USD",
+      availability: "https://schema.org/InStock",
+      url: eventUrl,
+    },
+  };
+
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <EventPageView eventId={event.id} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(eventJsonLd) }}
+      />
       <Navbar />
 
       <div className="flex-1 w-full max-w-[1221px] mx-auto px-6 py-6 sm:py-12">
@@ -66,7 +121,7 @@ export default async function EventDetailPage({
           items={[
             { label: "Home", href: "/" },
             { label: "Discover", href: "/discover" },
-            { label: event.title },
+            { label: truncateTitle(event.title) },
           ]}
         />
 

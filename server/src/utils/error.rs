@@ -82,6 +82,10 @@ pub struct ApiError {
     pub code: ErrorCode,
     /// Human-readable error message safe to show to end users.
     pub message: String,
+    /// Correlates this error with the `x-request-id` response header and
+    /// server logs. Absent (not `null`) when no request id is available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     /// HTTP status used by [`IntoResponse`]. Omitted from the JSON body.
     #[serde(skip)]
     #[schema(ignore)]
@@ -102,9 +106,13 @@ impl ApiError {
         status: StatusCode,
         message: impl Into<String>,
     ) -> Self {
+        let request_id = crate::middleware::request_id_tracing::REQUEST_ID
+            .try_with(|id| id.clone())
+            .ok();
         Self {
             code,
             message: message.into(),
+            request_id,
             status: status.as_u16(),
         }
     }
@@ -284,7 +292,8 @@ impl AppError {
 /// ```json
 /// {
 ///   "code": "NOT_FOUND",
-///   "message": "Resource with id '42' was not found"
+///   "message": "Resource with id '42' was not found",
+///   "request_id": "b3b3f9b0-1c1e-4c9a-9c1b-2f6a7e9d0c1a"
 /// }
 /// ```
 impl IntoResponse for AppError {
@@ -735,6 +744,40 @@ mod tests {
     // -----------------------------------------------------------------------
     // Content-Type header
     // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // request_id
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_request_id_in_body_matches_response_header() {
+        use crate::config::request_id::{
+            propagate_request_id_layer, set_request_id_layer, REQUEST_ID_HEADER,
+        };
+        use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
+        use axum::{body::Body, http::Request, middleware, routing::get, Router};
+        use tower::ServiceExt;
+
+        let router = Router::new()
+            .route("/", get(|| async { AppError::NotFound("missing".into()) }))
+            .layer(middleware::from_fn(trace_request_id))
+            .layer(middleware::from_fn(propagate_request_id))
+            .layer(propagate_request_id_layer())
+            .layer(set_request_id_layer());
+
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+
+        let header_id = resp
+            .headers()
+            .get(REQUEST_ID_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .expect("x-request-id header should be present")
+            .to_owned();
+
+        let json = body_json(resp).await;
+        assert_eq!(json["request_id"], header_id);
+    }
 
     #[tokio::test]
     async fn test_into_response_content_type_is_json() {

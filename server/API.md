@@ -20,12 +20,17 @@ This document summarizes the public backend endpoints available.
 Every error body is a flat JSON object:
 
 ```json
-{ "code": "NOT_FOUND", "message": "Resource with id '42' was not found" }
+{
+  "code": "NOT_FOUND",
+  "message": "Resource with id '42' was not found",
+  "request_id": "b3b3f9b0-1c1e-4c9a-9c1b-2f6a7e9d0c1a"
+}
 ```
 
 `code` is a stable machine-readable [`ErrorCode`](src/utils/error.rs). HTTP status
 and `message` text are unchanged from previous behaviour; clients should branch
-on `code` rather than string-matching `message`.
+on `code` rather than string-matching `message`. `request_id` matches the
+`x-request-id` response header and is omitted when no request id is available.
 
 | Code | HTTP status | When it is returned |
 |---|---|---|
