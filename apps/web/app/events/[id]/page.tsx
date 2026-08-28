@@ -10,6 +10,7 @@ import { buildMetadata } from "@/components/layout/seo";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EventPageView } from "@/components/analytics/event-page-view";
 import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
+import { EventTimeDisplay } from "@/components/events/event-time-display";
 
 function truncateDescription(text: string, maxLength = 160): string {
   if (text.length <= maxLength) return text;
@@ -210,7 +211,7 @@ export default async function EventDetailPage({
                   {event.location}
                 </span>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-start gap-4">
                 <div className="w-11 h-11 rounded-full border border-black flex items-center justify-center shrink-0">
                   <Image
                     src="/icons/notification.svg"
@@ -220,9 +221,13 @@ export default async function EventDetailPage({
                     loading="lazy"
                   />
                 </div>
-                <span className="text-[18px] sm:text-[19px] font-medium text-black">
-                  {event.date}
-                </span>
+                {event.startsAt ? (
+                  <EventTimeDisplay startsAt={event.startsAt} />
+                ) : (
+                  <span className="text-[18px] sm:text-[19px] font-medium text-black">
+                    {event.date}
+                  </span>
+                )}
               </div>
             </div>
 
