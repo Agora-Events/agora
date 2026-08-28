@@ -432,6 +432,8 @@ pub struct Dispute {
 pub enum DataKey {
     /// The administrator address for contract management (legacy, kept for backward compatibility)
     Admin,
+    /// Proposed new administrator address awaiting acceptance
+    PendingAdmin,
     /// Multi-signature configuration
     MultiSigConfig,
     /// The platform wallet address for fee collection

@@ -604,3 +604,45 @@ pub struct DisputeResolvedEvent {
     pub total_votes: u32,
     pub timestamp: u64,
 }
+
+/// Emitted when a new admin is proposed by the current admin.
+///
+/// Published with topic `(AgoraEvent::AdminProposed,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminProposedEvent {
+    /// The current admin who made the proposal.
+    pub current_admin: Address,
+    /// The proposed new admin address awaiting acceptance.
+    pub proposed_admin: Address,
+    /// The ledger timestamp when the proposal was made.
+    pub timestamp: u64,
+}
+
+/// Emitted when a proposed admin accepts and becomes the active admin.
+///
+/// Published with topic `(AgoraEvent::AdminTransferred,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminTransferredEvent {
+    /// The previous admin address.
+    pub previous_admin: Address,
+    /// The new admin address that accepted the proposal.
+    pub new_admin: Address,
+    /// The ledger timestamp when the transfer was completed.
+    pub timestamp: u64,
+}
+
+/// Emitted when a pending admin proposal is cancelled by the current admin.
+///
+/// Published with topic `(AgoraEvent::AdminProposalCancelled,)`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminProposalCancelledEvent {
+    /// The current admin who cancelled the proposal.
+    pub admin: Address,
+    /// The proposed admin address that was cancelled.
+    pub cancelled_proposed_admin: Address,
+    /// The ledger timestamp when the cancellation occurred.
+    pub timestamp: u64,
+}
