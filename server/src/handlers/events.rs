@@ -2482,6 +2482,22 @@ pub async fn create_event(
     // New events invalidate the shared list cache.
     state.redis.invalidate_events_list().await;
 
+    // Notify followers of the organiser (Issue #1346) – fire-and-forget
+    if let Ok(Some(Some(wallet))) = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(event.organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        let pool = state.pool.clone();
+        let eid = event.id;
+        let w = wallet.clone();
+        tokio::spawn(async move {
+            crate::handlers::follows::notify_followers_on_new_event(&pool, &w, eid).await;
+        });
+    }
+
     success(event, "Event created successfully").into_response()
 }
 

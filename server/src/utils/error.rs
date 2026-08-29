@@ -335,12 +335,8 @@ impl IntoResponse for AppError {
 /// a request that exceeds `REQUEST_TIMEOUT_SECS` returns a `504` in the same
 /// shape as every other error response, instead of tower's default plaintext
 /// error body.
-pub async fn handle_timeout_error(err: axum::BoxError) -> ApiError {
-    if err.is::<tower_http::timeout::error::Elapsed>() {
-        ApiError::new(StatusCode::GATEWAY_TIMEOUT, "Request timed out")
-    } else {
-        ApiError::internal(format!("Unhandled internal error: {err}"))
-    }
+pub async fn handle_timeout_error(_err: axum::BoxError) -> ApiError {
+    ApiError::new(StatusCode::GATEWAY_TIMEOUT, "Request timed out")
 }
 
 // ---------------------------------------------------------------------------
