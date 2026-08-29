@@ -32,7 +32,7 @@ function DiscoverContent() {
   };
 
   return (
-    <main className="flex flex-col min-h-screen bg-base">
+    <main id="main-content" tabIndex={-1} className="flex flex-col min-h-screen bg-base">
       <Navbar />
       <CategorySection
         selectedCategory={category}
