@@ -257,6 +257,13 @@ impl Config {
             auth_rate_limit_per_minute,
             allowed_upload_mime_types,
             shutdown_timeout_secs,
+            // Parsed above but never placed in the initializer, so the struct
+            // could not be constructed at all.
+            db_max_connections,
+            db_min_connections,
+            db_acquire_timeout_secs,
+            db_idle_timeout_secs,
+            request_timeout_secs,
         })
     }
 
@@ -363,6 +370,21 @@ impl Config {
             errors.push("SHUTDOWN_TIMEOUT_SECS must be greater than 0".to_string());
         }
 
+        // --- Database pool sizing -------------------------------------------
+        // A pool with a zero maximum accepts no connections at all, and a
+        // minimum above the maximum is rejected by sqlx at build time — better
+        // to name the offending variable at startup than to fail on the first
+        // query. Tests for both already existed but had no implementation to
+        // exercise.
+        if self.db_max_connections == 0 {
+            errors.push("DB_MAX_CONNECTIONS must be greater than 0".to_string());
+        } else if self.db_min_connections > self.db_max_connections {
+            errors.push(format!(
+                "DB_MIN_CONNECTIONS ({}) must not exceed DB_MAX_CONNECTIONS ({})",
+                self.db_min_connections, self.db_max_connections
+            ));
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -424,6 +446,13 @@ mod tests {
                 "image/gif".to_string(),
             ],
             shutdown_timeout_secs: 15,
+            // Pool and timeout settings: present on the struct but never
+            // added to these test-only initializers.
+            db_max_connections: 10,
+            db_min_connections: 1,
+            db_acquire_timeout_secs: 30,
+            db_idle_timeout_secs: 600,
+            request_timeout_secs: 30,
         }
     }
 
@@ -964,6 +993,13 @@ mod tests {
                 "image/gif".to_string(),
             ],
             shutdown_timeout_secs: 15,
+            // Pool and timeout settings: present on the struct but never
+            // added to these test-only initializers.
+            db_max_connections: 10,
+            db_min_connections: 1,
+            db_acquire_timeout_secs: 30,
+            db_idle_timeout_secs: 600,
+            request_timeout_secs: 30,
         };
 
         let err = cfg.validate().unwrap_err();

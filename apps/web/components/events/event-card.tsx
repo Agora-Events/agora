@@ -187,7 +187,7 @@ export function EventCard({
             loading="lazy"
           />
         </div>
-      </div>
+      </motion.div>
     </Link>
   );
 }

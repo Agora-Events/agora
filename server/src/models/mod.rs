@@ -16,6 +16,7 @@ pub mod audit_log;
 pub mod category;
 pub mod dispute;
 pub mod event;
+pub mod event_affiliate;
 pub mod event_rating;
 pub mod geo;
 pub mod organizer;

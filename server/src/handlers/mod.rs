@@ -1,7 +1,9 @@
 pub mod api_keys;
 pub mod auth;
+pub mod affiliates;
 pub mod categories;
 pub mod events;
+pub mod geo;
 pub mod follows;
 pub mod governance;
 pub mod health;
