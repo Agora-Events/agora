@@ -90,3 +90,17 @@ model AnalyticsEvent {
 
   @@index([eventId, type, createdAt])
 }
+
+/// Custodial wallets created for email-only (guest) purchases.
+/// Private keys are encrypted client-side using a key derived from the
+/// purchaser's email + a server-side secret and stored only in ciphertext.
+/// The plaintext private key is never persisted.
+model CustodialWallet {
+  id                    String   @id @default(uuid())
+  email                 String   @unique
+  publicKey             String
+  encryptedPrivateKey   String
+  createdAt             DateTime @default(now())
+
+  @@index([email])
+}

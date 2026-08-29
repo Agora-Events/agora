@@ -28,6 +28,8 @@ export interface TicketCardProps {
   status: TicketStatus;
   /** Optional price label, e.g. "25.00" or "Free". */
   price?: string;
+  /** Called when the user clicks the Sell Ticket button. */
+  onSell?: () => void;
   /** Called when the user taps/clicks the card. */
   onClick?: () => void;
   /** Additional Tailwind classes applied to the outer wrapper. */
@@ -107,6 +109,7 @@ export function TicketCard({
   ticketType,
   status,
   price,
+  onSell,
   onClick,
   className = "",
 }: TicketCardProps) {
@@ -204,25 +207,43 @@ export function TicketCard({
           )}
         </div>
 
-        {/* Footer: status badge + price */}
+        {/* Footer: status badge + price + sell action */}
         <div className="mt-2 flex items-center justify-between flex-wrap gap-2">
-          <span
-            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${statusCfg.className}`}
-          >
-            {statusCfg.label}
-          </span>
-
-          {price !== undefined && (
-            <span className="text-xs font-semibold text-ink-soft">
-              {price === "0" || price?.toLowerCase() === "free"
-                ? "Free"
-                : `$${price}`}
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${statusCfg.className}`}
+            >
+              {statusCfg.label}
             </span>
+
+            {price !== undefined && (
+              <span className="text-xs font-semibold text-ink-soft">
+                {price === "0" || price?.toLowerCase() === "free"
+                  ? "Free"
+                  : `$${price}`}
+              </span>
+            )}
+          </div>
+
+          {/* Sell Ticket action button */}
+          {onSell && status === "active" && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSell();
+              }}
+              className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-lg bg-surface border border-border-warm text-ink-soft hover:bg-surface-alt transition-colors"
+              aria-label={`Sell ticket for ${event.title}`}
+            >
+              <span>Sell Ticket</span>
+            </button>
           )}
         </div>
       </div>
     </article>
   );
 }
+
 
 export default TicketCard;

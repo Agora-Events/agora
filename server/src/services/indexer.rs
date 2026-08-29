@@ -44,6 +44,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
 // Tunables (also overridable via env in [`IndexerConfig::from_env`])
@@ -463,6 +464,7 @@ pub fn spawn_indexer(
     redis: Option<RedisCache>,
     broker: Option<PurchaseBroadcaster>,
     config: IndexerConfig,
+    shutdown: CancellationToken,
 ) {
     if !config.is_enabled() {
         tracing::info!(
@@ -482,8 +484,14 @@ pub fn spawn_indexer(
         let config = config.clone();
         let rx = Arc::clone(&job_rx);
         let broker = broker.clone();
+        let shutdown = shutdown.clone();
         tokio::spawn(async move {
-            run_persister(worker_id, pool, config, rx, broker).await;
+            tokio::select! {
+                _ = shutdown.cancelled() => {
+                    tracing::info!(worker = worker_id, "indexer persister stopping");
+                }
+                _ = run_persister(worker_id, pool, config, rx, broker) => {}
+            }
         });
     }
 
@@ -492,8 +500,14 @@ pub fn spawn_indexer(
         let config = config.clone();
         let broker = broker.clone();
         let latest = Arc::clone(&latest_ledger);
+        let shutdown = shutdown.clone();
         tokio::spawn(async move {
-            run_finalizer(pool, config, broker, latest).await;
+            tokio::select! {
+                _ = shutdown.cancelled() => {
+                    tracing::info!("indexer finalizer stopping");
+                }
+                _ = run_finalizer(pool, config, broker, latest) => {}
+            }
         });
     }
 
@@ -501,8 +515,14 @@ pub fn spawn_indexer(
         let pool = pool.clone();
         let config = config.clone();
         let latest = Arc::clone(&latest_ledger);
+        let shutdown = shutdown.clone();
         tokio::spawn(async move {
-            run_producer(pool, redis, config, job_tx, latest).await;
+            tokio::select! {
+                _ = shutdown.cancelled() => {
+                    tracing::info!("indexer producer stopping");
+                }
+                _ = run_producer(pool, redis, config, job_tx, latest) => {}
+            }
         });
     }
 

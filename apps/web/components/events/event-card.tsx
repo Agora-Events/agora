@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { motion, useReducedMotion } from "framer-motion";
 import { LazyImage } from "@/components/ui/LazyImage";
 import { useIsMounted } from "@/hooks/useIsMounted";
 import { getRelativeTime } from "@/utils/relative-time";
@@ -43,6 +44,7 @@ export function EventCard({
   startsAt,
 }: EventCardProps) {
   const isMounted = useIsMounted();
+  const shouldReduceMotion = useReducedMotion();
   const locationImageSrc = location.toLowerCase().includes("discord")
     ? "/icons/discord.svg"
     : "/icons/location.svg";
@@ -64,7 +66,11 @@ export function EventCard({
 
   return (
     <Link href={`/events/${id}`} className="block w-full">
-      <div className="w-full sm:max-w-147.5 shadow-[-6px_6px_0_rgba(0,0,0,1)] sm:shadow-[-9px_9px_0_rgba(0,0,0,1)] flex flex-col bg-surface pb-4.75 sm:pl-12.5 pl-4 pt-5 sm:pt-9.75 rounded-xl sm:pr-5 pr-3.75 transition-transform hover:scale-[1.02] overflow-hidden relative">
+      <motion.div
+        whileHover={shouldReduceMotion ? undefined : { scale: 1.02 }}
+        transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 20 }}
+        className="w-full sm:max-w-147.5 shadow-[-6px_6px_0_rgba(0,0,0,1)] sm:shadow-[-9px_9px_0_rgba(0,0,0,1)] flex flex-col bg-surface pb-4.75 sm:pl-12.5 pl-4 pt-5 sm:pt-9.75 rounded-xl sm:pr-5 pr-3.75 overflow-hidden relative"
+      >
         {/* Loading overlay spinner */}
         {loading && (
           <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center rounded-xl">

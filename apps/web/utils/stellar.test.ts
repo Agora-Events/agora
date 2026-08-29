@@ -81,4 +81,26 @@ describe("mintTicket", () => {
     expect(result.unsigned).toBe(true);
     expect(result.transactionXdr).toBe("xdr_value");
   });
+
+  it("builds and submits resale listing transaction with expected parameters", async () => {
+    const { listTicketForResale } = await import("./stellar");
+    const result = await listTicketForResale("tkt_123", "GSELLER", 50);
+
+    expect(callMock).toHaveBeenCalledWith(
+      "list_resale_ticket",
+      "tkt_123",
+      "GSELLER",
+      500_000_000,
+    );
+    expect(result.listingId).toContain("resale_");
+    expect(result.transactionXdr).toBe("xdr_value");
+  });
+
+  it("throws error for invalid resale parameters", async () => {
+    const { buildUnsignedResaleTicketTx } = await import("./stellar");
+    await expect(buildUnsignedResaleTicketTx("", "GSELLER", 50)).rejects.toThrow("Invalid resale listing parameters");
+    await expect(buildUnsignedResaleTicketTx("tkt_123", "", 50)).rejects.toThrow("Invalid resale listing parameters");
+    await expect(buildUnsignedResaleTicketTx("tkt_123", "GSELLER", 0)).rejects.toThrow("Invalid resale listing parameters");
+  });
 });
+
