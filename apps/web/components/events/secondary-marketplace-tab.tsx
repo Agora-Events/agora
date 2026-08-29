@@ -65,12 +65,38 @@ function formatPrice(amount: number): string {
 export function SecondaryMarketplaceTab({
   eventId,
 }: SecondaryMarketplaceTabProps) {
-  const [listings] = useState<ResaleListing[]>(mockResaleListings);
+  const [listings, setListings] = useState<ResaleListing[]>(mockResaleListings);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    async function fetchResaleListings() {
+      try {
+        setIsLoading(true);
+        const res = await fetch(`/api/v1/events/${eventId}/resale`);
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted && Array.isArray(json.data)) {
+            setListings(json.data);
+          }
+        }
+      } catch {
+        // Retain initial fallback mock listings on error
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    fetchResaleListings();
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId]);
 
   const hasListings = listings.length > 0;
 
   const handlePurchase = async (listing: ResaleListing) => {
+
     setPurchasingId(listing.id);
     try {
       // TODO: Replace with real API call when #1145 is implemented
