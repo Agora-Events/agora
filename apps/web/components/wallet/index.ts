@@ -17,3 +17,6 @@ export type { PoapCollectible, PoapCardProps } from "./PoapCard";
 
 export { PastEventsSection } from "./PastEventsSection";
 export type { PastEventsSectionProps } from "./PastEventsSection";
+
+export { SellTicketModal } from "./SellTicketModal";
+
