@@ -132,20 +132,23 @@ mod tests {
     #[test]
     fn rejects_zero_start_ledger() {
         let err = validate_replay_range(0, 10).unwrap_err();
-        assert_eq!(err.code, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(err.code, crate::utils::error::ErrorCode::ValidationFailed);
+        assert_eq!(err.status(), StatusCode::BAD_REQUEST);
     }
 
     #[test]
     fn rejects_inverted_range() {
         let err = validate_replay_range(20, 10).unwrap_err();
-        assert_eq!(err.code, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(err.code, crate::utils::error::ErrorCode::ValidationFailed);
+        assert_eq!(err.status(), StatusCode::BAD_REQUEST);
         assert!(err.message.contains("end_ledger"));
     }
 
     #[test]
     fn rejects_huge_ranges() {
         let err = validate_replay_range(1, MAX_REPLAY_LEDGERS + 100).unwrap_err();
-        assert_eq!(err.code, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(err.code, crate::utils::error::ErrorCode::ValidationFailed);
+        assert_eq!(err.status(), StatusCode::BAD_REQUEST);
         assert!(err.message.contains("limit"));
     }
 

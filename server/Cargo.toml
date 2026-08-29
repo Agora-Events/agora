@@ -13,7 +13,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 
 # Middleware
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit", "catch-panic"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit", "catch-panic", "timeout", "compression-gzip", "compression-br"] }
 pin-project = "1.1"
 
 # Serialization
@@ -96,3 +96,7 @@ dashmap = "6.2.1"
 temp-env = { version = "0.3", features = ["async_closure"] }
 tower = { version = "0.4", features = ["full"] }
 serde_yaml = "0.9"
+
+# Build-time metadata (git SHA, build timestamp) for the /version endpoint
+[build-dependencies]
+chrono = "0.4"

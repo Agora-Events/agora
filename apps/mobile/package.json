@@ -30,6 +30,7 @@
     "@stellar/stellar-sdk": "^13.3.0",
     "expo": "~51.0.28",
     "expo-av": "~14.0.7",
+    "expo-camera": "~15.0.16",
     "expo-clipboard": "~5.0.1",
     "expo-constants": "~16.0.2",
     "expo-font": "~12.0.9",

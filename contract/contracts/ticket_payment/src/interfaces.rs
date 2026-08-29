@@ -1,3 +1,5 @@
+// External contract interface definitions – not part of the primary documentation surface.
+#![allow(missing_docs)]
 // Price Oracle interface
 pub mod price_oracle {
     use soroban_sdk::{contractclient, Address, Env};

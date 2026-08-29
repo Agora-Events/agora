@@ -758,6 +758,7 @@ pub async fn list_events_by_organizer(
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
             count_of_ratings: Some(last.count_of_ratings as i64),
+            min_ticket_price: Some(last.min_ticket_price),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -1060,6 +1061,7 @@ mod tests {
         let params = CursorParams {
             limit: 10,
             cursor: None,
+            count: true,
         };
         let validated = params.validate();
         assert_eq!(validated.page_size(), 10);
@@ -1072,6 +1074,7 @@ mod tests {
         let params = CursorParams {
             limit: 5,
             cursor: Some("some-cursor-value".to_string()),
+            count: true,
         };
         let validated = params.validate();
         assert_eq!(validated.cursor.as_deref(), Some("some-cursor-value"));

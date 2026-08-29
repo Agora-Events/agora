@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0F0F10"
     },
     "ios": {
       "supportsTablet": true
@@ -18,7 +18,12 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0F0F10"
+      },
+      "statusBar": {
+        "barStyle": "light-content",
+        "backgroundColor": "#0F0F10",
+        "translucent": false
       }
     },
     "web": {
@@ -28,7 +33,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-local-authentication"
+      "expo-local-authentication",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Agora uses the camera to scan attendee ticket QR codes at the gate."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

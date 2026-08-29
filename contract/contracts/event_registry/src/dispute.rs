@@ -13,11 +13,15 @@ pub trait TicketPaymentInterface {
 const DISPUTE_VOTING_DURATION: u64 = 172800;
 const DEFAULT_QUORUM_BPS: u32 = 3000;
 
-pub fn open_dispute(env: &Env, event_id: String, opened_by: Address) -> Result<(), EventRegistryError> {
+pub fn open_dispute(
+    env: &Env,
+    event_id: String,
+    opened_by: Address,
+) -> Result<(), EventRegistryError> {
     opened_by.require_auth();
 
-    let event_info = storage::get_event(env, event_id.clone())
-        .ok_or(EventRegistryError::EventNotFound)?;
+    let event_info =
+        storage::get_event(env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
 
     if storage::get_dispute(env, event_id.clone()).is_some() {
         return Err(EventRegistryError::EventAlreadyExists);
@@ -28,8 +32,8 @@ pub fn open_dispute(env: &Env, event_id: String, opened_by: Address) -> Result<(
         return Err(EventRegistryError::EventNotEnded);
     }
 
-    let ticket_payment_addr = storage::get_ticket_payment_contract(env)
-        .ok_or(EventRegistryError::NotInitialized)?;
+    let ticket_payment_addr =
+        storage::get_ticket_payment_contract(env).ok_or(EventRegistryError::NotInitialized)?;
     let tp_client = TicketPaymentClient::new(env, &ticket_payment_addr);
     if !tp_client.has_confirmed_ticket(&event_id, &opened_by) {
         return Err(EventRegistryError::NotTicketHolder);
@@ -72,8 +76,8 @@ pub fn vote_on_dispute(
 ) -> Result<(), EventRegistryError> {
     voter.require_auth();
 
-    let mut dispute = storage::get_dispute(env, event_id.clone())
-        .ok_or(EventRegistryError::DisputeNotFound)?;
+    let mut dispute =
+        storage::get_dispute(env, event_id.clone()).ok_or(EventRegistryError::DisputeNotFound)?;
 
     if dispute.status != DisputeStatus::Open && dispute.status != DisputeStatus::Voting {
         return Err(EventRegistryError::DisputeNotOpen);
@@ -91,13 +95,22 @@ pub fn vote_on_dispute(
         dispute.status = DisputeStatus::Voting;
     }
 
-    dispute.total_votes = dispute.total_votes.checked_add(1).ok_or(EventRegistryError::SupplyOverflow)?;
+    dispute.total_votes = dispute
+        .total_votes
+        .checked_add(1)
+        .ok_or(EventRegistryError::SupplyOverflow)?;
     match vote {
         DisputeVote::BuyerFavor => {
-            dispute.buyer_votes = dispute.buyer_votes.checked_add(1).ok_or(EventRegistryError::SupplyOverflow)?;
+            dispute.buyer_votes = dispute
+                .buyer_votes
+                .checked_add(1)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
         }
         DisputeVote::OrganizerFavor => {
-            dispute.organizer_votes = dispute.organizer_votes.checked_add(1).ok_or(EventRegistryError::SupplyOverflow)?;
+            dispute.organizer_votes = dispute
+                .organizer_votes
+                .checked_add(1)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
         }
     }
 
@@ -119,14 +132,16 @@ pub fn vote_on_dispute(
 }
 
 pub fn resolve_dispute(env: &Env, event_id: String) -> Result<DisputeStatus, EventRegistryError> {
-    let mut dispute = storage::get_dispute(env, event_id.clone())
-        .ok_or(EventRegistryError::DisputeNotFound)?;
+    let mut dispute =
+        storage::get_dispute(env, event_id.clone()).ok_or(EventRegistryError::DisputeNotFound)?;
 
     if env.ledger().timestamp() <= dispute.closes_at {
         return Err(EventRegistryError::ProposalExpired);
     }
 
-    if dispute.status == DisputeStatus::ResolvedBuyer || dispute.status == DisputeStatus::ResolvedOrganizer {
+    if dispute.status == DisputeStatus::ResolvedBuyer
+        || dispute.status == DisputeStatus::ResolvedOrganizer
+    {
         return Ok(dispute.status);
     }
 

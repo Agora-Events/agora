@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { ProfileSidebar } from "@/components/profile/profile-sidebar";
+import { FollowButton } from "@/components/profile/follow-button";
 import { EventCard } from "@/components/events/event-card";
 import Image from "next/image";
 import Link from "next/link";
@@ -65,7 +66,7 @@ function OrganizerEvents({ address }: { address: string }) {
       ) : hostedEvents.length > 0 ? (
         <div className="p-8 flex flex-col gap-6" data-testid="hosted-events-list">
           {hostedEvents.map((event) => (
-            <EventCard key={event.id} {...event as any} />
+            <EventCard key={event.id} {...event as any} startsAt={event.start_time} />
           ))}
         </div>
       ) : (
@@ -88,8 +89,9 @@ export default function OrganizerProfilePage({ params }: { params: { id: string 
       <Suspense fallback={<div className="flex-1" />}>
         <div className="flex-1 w-full max-w-6xl mx-auto px-4 py-10 md:py-20">
           <div className="flex flex-col md:flex-row gap-10 items-start">
-            <div className="w-full md:w-[32%] md:sticky md:top-24">
+            <div className="w-full md:w-[32%] md:sticky md:top-24 flex flex-col gap-4">
               <ProfileSidebar address={params.id} />
+              <FollowButton organizerId={params.id} />
             </div>
 
             <div className="flex-1 flex flex-col gap-10 w-full">

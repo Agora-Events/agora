@@ -1,14 +1,20 @@
 #![no_std]
+#![warn(missing_docs)]
+//! Event Registry smart contract for the Agora platform.
+//!
+//! This contract manages the on-chain registry of events, including registration,
+//! inventory tracking, organizer governance, staking, and platform configuration.
 
 use crate::events::{
-    AgoraEvent, CollateralStakedEvent, CollateralUnstakedEvent, CustomFeeSetEvent,
-    DisputeOpenedEvent, DisputeResolvedEvent, DisputeVotedEvent, EventArchivedEvent,
-    EventCancelledEvent, EventPostponedEvent, EventRegisteredEvent,
-    EventStatusUpdatedEvent, EventsSuspendedEvent, FeeUpdatedEvent, FeedbackCidSetEvent,
-    GlobalPromoUpdatedEvent, GoalMetEvent, InitializationEvent, InventoryIncrementedEvent,
-    LoyaltyScoreUpdatedEvent, MetadataUpdatedEvent, MinStakeAmountUpdatedEvent,
-    OrganizerBlacklistedEvent, OrganizerRemovedFromBlacklistEvent, ProposalCancelledEvent,
-    RegistryUpgradedEvent, ScannerAuthorizedEvent, ScannerRevokedEvent, StakerRewardsClaimedEvent,
+    AdminProposalCancelledEvent, AdminProposedEvent, AdminTransferredEvent, AgoraEvent,
+    CollateralStakedEvent, CollateralUnstakedEvent, CustomFeeSetEvent, DisputeOpenedEvent,
+    DisputeResolvedEvent, DisputeVotedEvent, EventArchivedEvent, EventCancelledEvent,
+    EventPostponedEvent, EventRegisteredEvent, EventStatusUpdatedEvent, EventsSuspendedEvent,
+    FeeUpdatedEvent, FeedbackCidSetEvent, GlobalPromoUpdatedEvent, GoalMetEvent,
+    InitializationEvent, InventoryIncrementedEvent, LoyaltyScoreUpdatedEvent,
+    MetadataUpdatedEvent, MinStakeAmountUpdatedEvent, OrganizerBlacklistedEvent,
+    OrganizerRemovedFromBlacklistEvent, ProposalCancelledEvent, RegistryUpgradedEvent,
+    ScannerAuthorizedEvent, ScannerRevokedEvent, StakerRewardsClaimedEvent,
     StakerRewardsDistributedEvent, StakingTokenUpdatedEvent, WaitlistJoinedEvent,
     WaitlistLeftEvent,
 };
@@ -200,6 +206,15 @@ impl EventRegistry {
             },
         );
         Ok(())
+    }
+
+    /// Returns the version of the contract as a Symbol.
+    ///
+    /// The version is sourced from the package version at compile time via `env!("CARGO_PKG_VERSION")`.
+    /// This allows verification of which build is deployed at a given contract address without
+    /// diffing WASM hashes.
+    pub fn version(_env: Env) -> String {
+        String::from_str(&_env, env!("CARGO_PKG_VERSION"))
     }
 
     /// Adds a token address to the payment token whitelist. Only callable by the administrator.
@@ -741,6 +756,86 @@ impl EventRegistry {
     /// Returns the current administrator address.
     pub fn get_admin(env: Env) -> Result<Address, EventRegistryError> {
         storage::get_admin(&env).ok_or(EventRegistryError::NotInitialized)
+    }
+
+    /// Proposes a new administrator by the current admin.
+    /// The proposed admin must accept the proposal to become the active admin.
+    ///
+    /// # Arguments
+    /// * `new_admin` - The address of the proposed new administrator
+    ///
+    /// # Errors
+    /// Returns `Unauthorized` if the caller is not the current admin.
+    pub fn propose_admin(env: Env, new_admin: Address) -> Result<(), EventRegistryError> {
+        let current_admin = auth::require_admin(&env)?;
+        validate_address(&env, &new_admin)?;
+
+        storage::set_pending_admin(&env, &new_admin);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::AdminProposed,),
+            AdminProposedEvent {
+                current_admin,
+                proposed_admin: new_admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Accepts a pending admin proposal, making the caller the active admin.
+    ///
+    /// # Errors
+    /// Returns `Unauthorized` if the caller is not the proposed admin.
+    pub fn accept_admin(env: Env) -> Result<(), EventRegistryError> {
+        let proposed_admin = storage::get_pending_admin(&env)
+            .ok_or(EventRegistryError::Unauthorized)?;
+        
+        proposed_admin.require_auth();
+
+        let previous_admin = storage::get_admin(&env)
+            .ok_or(EventRegistryError::NotInitialized)?;
+
+        storage::set_admin(&env, &proposed_admin);
+        storage::clear_pending_admin(&env);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::AdminTransferred,),
+            AdminTransferredEvent {
+                previous_admin,
+                new_admin: proposed_admin.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Cancels a pending admin proposal by the current admin.
+    ///
+    /// # Errors
+    /// Returns `Unauthorized` if the caller is not the current admin.
+    pub fn cancel_admin_proposal(env: Env) -> Result<(), EventRegistryError> {
+        let current_admin = auth::require_admin(&env)?;
+        let proposed_admin = storage::get_pending_admin(&env)
+            .ok_or(EventRegistryError::Unauthorized)?;
+
+        storage::clear_pending_admin(&env);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::AdminProposalCancelled,),
+            AdminProposalCancelledEvent {
+                admin: current_admin,
+                cancelled_proposed_admin: proposed_admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
     /// Returns the current platform wallet address.
@@ -2187,7 +2282,11 @@ impl EventRegistry {
     // ── Dispute ───────────────────────────────────────────────────────────
 
     /// Opens a dispute on an event. Only callable by a ticket holder within 48h post-event.
-    pub fn open_dispute(env: Env, event_id: String, opened_by: Address) -> Result<(), EventRegistryError> {
+    pub fn open_dispute(
+        env: Env,
+        event_id: String,
+        opened_by: Address,
+    ) -> Result<(), EventRegistryError> {
         dispute::open_dispute(&env, event_id, opened_by)
     }
 
@@ -2202,7 +2301,10 @@ impl EventRegistry {
     }
 
     /// Resolves a dispute after voting ends. Counts votes and determines outcome.
-    pub fn resolve_dispute(env: Env, event_id: String) -> Result<crate::types::DisputeStatus, EventRegistryError> {
+    pub fn resolve_dispute(
+        env: Env,
+        event_id: String,
+    ) -> Result<crate::types::DisputeStatus, EventRegistryError> {
         dispute::resolve_dispute(&env, event_id)
     }
 
@@ -2333,6 +2435,12 @@ mod test_issue_fixes;
 
 #[cfg(test)]
 mod test_global_promo;
+
+#[cfg(test)]
+mod test_version;
+
+#[cfg(test)]
+mod test_admin_transfer;
 
 // The legacy monolithic test modules are stale against the current contract API.
 // Keep default `cargo test -p event-registry` focused on compilable coverage.

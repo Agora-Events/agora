@@ -5,6 +5,10 @@ pub mod contract;
 pub mod error;
 pub mod escrow;
 pub mod events;
+pub mod governance;
+pub mod interfaces;
+pub mod keys;
+pub mod payment_types;
 pub mod resale;
 pub mod storage;
 pub mod types;
@@ -14,3 +18,6 @@ mod test;
 
 #[cfg(test)]
 mod test_e2e;
+
+#[cfg(test)]
+mod test_version;

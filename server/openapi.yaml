@@ -82,6 +82,73 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse'
 
+  /api/v1/events:
+    get:
+      tags: [Events]
+      summary: List upcoming events
+      description: |
+        Returns a cursor-paginated list of upcoming (not-ended, not-flagged) events.
+
+        The response `data` object includes `items`, cursor `pagination`, and a
+        compact `meta` object with `total`, `page_size`, and `has_more`.
+        Pass `count=false` to skip the extra COUNT(*) query; `meta.total` is
+        then omitted.
+
+        `sort` is an allow-listed ORDER BY. Unrecognised values return 400
+        with `VALIDATION_FAILED`. Default is `starts_at_asc`. A secondary
+        `id` tiebreaker keeps pagination stable.
+      operationId: listEvents
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Items per page (default 20, max 100).
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from a previous page's `pagination.next_cursor`.
+          schema:
+            type: string
+        - name: count
+          in: query
+          required: false
+          description: When false, skip COUNT(*) and omit `meta.total`.
+          schema:
+            type: boolean
+            default: true
+        - name: sort
+          in: query
+          required: false
+          description: |
+            Ordering. Allow-listed values only; never interpolated into SQL.
+          schema:
+            type: string
+            enum:
+              - starts_at_asc
+              - starts_at_desc
+              - price_asc
+              - price_desc
+              - popularity_desc
+            default: starts_at_asc
+      responses:
+        '200':
+          description: Paginated list of upcoming events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+        '400':
+          description: Invalid query parameter (for example an unrecognised `sort` value)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/events/map:
     get:
       tags: [Events]
@@ -272,13 +339,74 @@ components:
 
     ErrorResponse:
       type: object
+      description: Flat error body returned by every failed request.
       properties:
-        success:
-          type: boolean
-          example: false
+        code:
+          type: string
+          description: Stable machine-readable error code (SCREAMING_SNAKE_CASE).
+          enum:
+            - VALIDATION_FAILED
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - RATE_LIMITED
+            - INTERNAL_ERROR
+            - SERVICE_UNAVAILABLE
+          example: NOT_FOUND
         message:
           type: string
-      required: [success]
+          description: Human-readable error message safe to show to end users.
+      required: [code, message]
+
+    ListMeta:
+      type: object
+      description: Compact pagination metadata for list UIs ("Showing 12 of 340").
+      properties:
+        total:
+          type: integer
+          format: int64
+          description: COUNT(*) of matching rows. Omitted when `count=false`.
+        page_size:
+          type: integer
+          description: Requested page size.
+        has_more:
+          type: boolean
+          description: Whether another page of results exists.
+      required: [page_size, has_more]
+
+    CursorPagination:
+      type: object
+      properties:
+        page_size:
+          type: integer
+        has_more:
+          type: boolean
+        next_cursor:
+          type: string
+          nullable: true
+      required: [page_size, has_more]
+
+    EventListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        pagination:
+          $ref: '#/components/schemas/CursorPagination'
+        meta:
+          $ref: '#/components/schemas/ListMeta'
+      required: [items, pagination, meta]
+
+    EventListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/EventListData'
 
     EventSocialProof:
       type: object
