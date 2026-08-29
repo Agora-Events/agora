@@ -6,6 +6,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 
 interface NotificationItem {
@@ -140,19 +141,15 @@ export default function NotificationsPage() {
             ))}
           </div>
         ) : (
-          <div className="bg-white p-16 rounded-[32px] border-2 border-black shadow-[-8px_8px_0_rgba(0,0,0,1)] text-center flex flex-col items-center">
-            <div className="w-24 h-24 bg-surface rounded-full flex items-center justify-center mb-6 border-2 border-black">
-              <Image src="/icons/notification.svg" alt="No notifications" width={48} height={48} />
+          <div className="flex min-h-[45vh] items-center justify-center">
+            <div className="w-full max-w-lg">
+              <EmptyState
+                title="No notifications yet"
+                description="Ticket purchases, event reminders, and organizer updates will appear here."
+                ctaLabel="Discover events"
+                ctaLink="/discover"
+              />
             </div>
-            <h2 className="text-3xl font-bold italic mb-4">You&apos;re all caught up!</h2>
-            <p className="text-ink-deep/70 mb-8 max-w-md mx-auto">
-              You don&apos;t have any new notifications at the moment. Check back later for updates on your events and tickets.
-            </p>
-            <Link href="/discover">
-              <Button backgroundColor="bg-accent" textColor="text-black" shadowColor="rgba(253,218,35,0.4)" className="px-8 font-bold text-lg">
-                Discover Events
-              </Button>
-            </Link>
           </div>
         )}
 
