@@ -98,6 +98,7 @@ use crate::middleware::audit::audit_layer;
 use crate::services::indexer::spawn_indexer;
 use crate::services::indexer::IndexerConfig;
 use crate::services::queue::QueueEngine;
+use tokio_util::sync::CancellationToken;
 
 /// Sensitive routes that hit the database or expose internal state.
 /// Limited to 30 requests per IP per minute.
@@ -127,7 +128,12 @@ use utoipa::OpenApi;
 )]
 pub struct ApiDoc;
 
-pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> Router {
+pub async fn create_routes(
+    pool: PgPool,
+    config: Config,
+    redis: RedisCache,
+    shutdown: CancellationToken,
+) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
 
     // Virtual waiting room (Issue #1187): queue engine + background admission
@@ -138,6 +144,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         waiting_room_engine.clone(),
         Duration::from_millis(waiting_room_config.tick_interval_ms),
         waiting_room_config.grant_ttl_minutes,
+        shutdown.clone(),
     );
 
     let event_state = EventState {
@@ -160,6 +167,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         Some(redis.clone()),
         Some(broadcaster.clone()),
         indexer_config,
+        shutdown.clone(),
     );
 
     // Auth routes — challenge-response JWT flow (Issue #484, #875)
@@ -360,10 +368,26 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     notification_service.register(crate::notifications::push::ExpoPushProvider::new(
         reqwest::Client::new(),
     ));
+    let notifications = std::sync::Arc::new(notification_service);
     let marketplace_state = MarketplaceState {
         pool: pool.clone(),
-        notifications: std::sync::Arc::new(notification_service),
+        notifications: notifications.clone(),
     };
+
+    // Geo / spatial endpoints (Issue #1259): nearby-event discovery and device
+    // geofence registration. Share the same `NotificationService` so proximity
+    // push alerts reuse the Expo provider.
+    let geo_state = crate::handlers::geo::GeoState {
+        pool: pool.clone(),
+        notifications: notifications.clone(),
+    };
+    // Geofence proximity-push worker (stops when the shutdown token fires,
+    // Issue #1261).
+    tokio::spawn(crate::handlers::geo::run_geofence_worker(
+        pool.clone(),
+        notifications.clone(),
+        shutdown.clone(),
+    ));
     let marketplace_routes = Router::new()
         .route("/listings", get(list_listings).post(create_listing))
         .route(
@@ -452,6 +476,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/events", following_events_route)
         .nest("/events", event_routes)
         .nest("/events", event_qr_routes)
+        .nest("/events", geo_nearby_routes)
         .nest("/tickets", ticket_routes)
         .nest("/tickets", ticket_pdf_routes)
         .nest("/marketplace", marketplace_routes)
@@ -460,6 +485,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
         .nest("/zk", zk_routes)
+        .nest("/geo", geo_geofence_routes)
         .nest("/pricing", pricing_routes)
         .nest("/sync", sync_routes)
         .merge(rates_route)

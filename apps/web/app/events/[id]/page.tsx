@@ -11,6 +11,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EventPageView } from "@/components/analytics/event-page-view";
 import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
 import { EventTimeDisplay } from "@/components/events/event-time-display";
+import { AddToCalendar } from "@/components/events/add-to-calendar";
 
 function truncateDescription(text: string, maxLength = 160): string {
   if (text.length <= maxLength) return text;
@@ -211,23 +212,26 @@ export default async function EventDetailPage({
                   {event.location}
                 </span>
               </div>
-              <div className="flex items-start gap-4">
-                <div className="w-11 h-11 rounded-full border border-black flex items-center justify-center shrink-0">
-                  <Image
-                    src="/icons/notification.svg"
-                    width={22}
-                    height={22}
-                    alt="Date"
-                    loading="lazy"
-                  />
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="flex items-start gap-4">
+                  <div className="w-11 h-11 rounded-full border border-black flex items-center justify-center shrink-0">
+                    <Image
+                      src="/icons/notification.svg"
+                      width={22}
+                      height={22}
+                      alt="Date"
+                      loading="lazy"
+                    />
+                  </div>
+                  {event.startsAt ? (
+                    <EventTimeDisplay startsAt={event.startsAt} />
+                  ) : (
+                    <span className="text-[18px] sm:text-[19px] font-medium text-black">
+                      {event.date}
+                    </span>
+                  )}
                 </div>
-                {event.startsAt ? (
-                  <EventTimeDisplay startsAt={event.startsAt} />
-                ) : (
-                  <span className="text-[18px] sm:text-[19px] font-medium text-black">
-                    {event.date}
-                  </span>
-                )}
+                <AddToCalendar event={event} />
               </div>
             </div>
 
