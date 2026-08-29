@@ -55,6 +55,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use crate::utils::extract::ValidatedJson;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -167,6 +168,7 @@ pub struct KeyEnvelopeRow {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateListingRequest {
     /// On-chain `payment_id` of the ticket being sold.
     pub payment_id: String,
@@ -193,6 +195,7 @@ pub struct ListListingsQuery {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateOfferRequest {
     /// Base64 X25519 public key (32 raw bytes) the seller should seal to.
     pub buyer_public_key: String,
@@ -200,6 +203,7 @@ pub struct CreateOfferRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateKeyEnvelopeRequest {
     /// Wallet the envelope is sealed for. Must have an offer on this listing.
     pub buyer_wallet: String,
@@ -214,6 +218,7 @@ pub struct CreateKeyEnvelopeRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegisterPushTokenRequest {
     pub token: String,
     /// `ios`, `android`, or `web`.
@@ -317,7 +322,7 @@ async fn load_listing_as_seller(
 pub async fn create_listing(
     State(state): State<MarketplaceState>,
     headers: HeaderMap,
-    Json(payload): Json<CreateListingRequest>,
+    ValidatedJson(payload): ValidatedJson<CreateListingRequest>,
 ) -> Response {
     let seller = match extract_auth(&headers) {
         Ok(a) => a,
@@ -543,7 +548,7 @@ pub async fn create_offer(
     State(state): State<MarketplaceState>,
     headers: HeaderMap,
     Path(payment_id): Path<String>,
-    Json(payload): Json<CreateOfferRequest>,
+    ValidatedJson(payload): ValidatedJson<CreateOfferRequest>,
 ) -> Response {
     let buyer = match extract_auth(&headers) {
         Ok(a) => a,
@@ -687,7 +692,7 @@ pub async fn create_key_envelope(
     State(state): State<MarketplaceState>,
     headers: HeaderMap,
     Path(payment_id): Path<String>,
-    Json(payload): Json<CreateKeyEnvelopeRequest>,
+    ValidatedJson(payload): ValidatedJson<CreateKeyEnvelopeRequest>,
 ) -> Response {
     let seller = match extract_auth(&headers) {
         Ok(a) => a,
@@ -891,7 +896,7 @@ pub async fn get_key_envelope(
 pub async fn register_push_token(
     State(state): State<MarketplaceState>,
     headers: HeaderMap,
-    Json(payload): Json<RegisterPushTokenRequest>,
+    ValidatedJson(payload): ValidatedJson<RegisterPushTokenRequest>,
 ) -> Response {
     let wallet = match extract_auth(&headers) {
         Ok(a) => a,

@@ -30,6 +30,7 @@ use serde::Serialize;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::handlers::auth::extract_auth;
@@ -53,7 +54,7 @@ pub struct GeoState {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_RADIUS_M: f64 = 5_000.0;
-const MAX_RADIUS_M: f64 = 100_000.0;
+const MAX_RADIUS_M: f64 = 500_000.0; // 500 km — matches models::geo::MAX_RADIUS_M (Issue #1259)
 const DEFAULT_LIMIT: i64 = 50;
 const MAX_LIMIT: i64 = 200;
 /// Geofence alert perimeter — mirrors the mobile 150 m perimeter.
@@ -86,16 +87,9 @@ pub async fn get_nearby_events(
     State(state): State<GeoState>,
     Query(q): Query<NearbyQuery>,
 ) -> Result<Response, AppError> {
-    if !(-90.0..=90.0).contains(&q.lat) {
-        return Err(AppError::ValidationError(
-            "lat must be between -90 and 90".into(),
-        ));
-    }
-    if !(-180.0..=180.0).contains(&q.lng) {
-        return Err(AppError::ValidationError(
-            "lng must be between -180 and 180".into(),
-        ));
-    }
+    // Reject malformed / out-of-range coordinates and radii at the edge (Issue #1259)
+    // so we never surface a database constraint violation as a 500.
+    q.validate()?;
 
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
 
@@ -239,16 +233,9 @@ pub async fn register_geofence(
 ) -> Result<Response, AppError> {
     let wallet = extract_auth(&headers)?;
 
-    if !(-90.0..=90.0).contains(&payload.venue_lat) {
-        return Err(AppError::ValidationError(
-            "venue_lat must be between -90 and 90".into(),
-        ));
-    }
-    if !(-180.0..=180.0).contains(&payload.venue_lng) {
-        return Err(AppError::ValidationError(
-            "venue_lng must be between -180 and 180".into(),
-        ));
-    }
+    // Reject malformed / out-of-range venue coordinates at the edge (Issue #1259).
+    payload.validate()?;
+
     if payload.push_token.trim().is_empty() {
         return Err(AppError::ValidationError("push_token cannot be empty".into()));
     }
@@ -294,14 +281,28 @@ pub async fn register_geofence(
 ///
 /// Spawn once at server startup:
 /// ```rust
-/// tokio::spawn(run_geofence_worker(pool.clone(), notifications.clone()));
+/// tokio::spawn(run_geofence_worker(pool.clone(), notifications.clone(), shutdown.clone()));
 /// ```
-pub async fn run_geofence_worker(pool: PgPool, notifications: Arc<NotificationService>) {
+///
+/// `shutdown` is a [`tokio_util::sync::CancellationToken`] used for graceful
+/// shutdown (Issue #1261); the worker exits cleanly when it is cancelled.
+pub async fn run_geofence_worker(
+    pool: PgPool,
+    notifications: Arc<NotificationService>,
+    shutdown: CancellationToken,
+) {
     let mut ticker = interval(Duration::from_secs(WORKER_INTERVAL_SECS));
     loop {
-        ticker.tick().await;
-        if let Err(e) = process_geofence_batch(&pool, &notifications).await {
-            tracing::error!(error = %e, "Geofence worker batch failed");
+        tokio::select! {
+            _ = shutdown.cancelled() => {
+                tracing::info!("Geofence worker stopping");
+                break;
+            }
+            _ = ticker.tick() => {
+                if let Err(e) = process_geofence_batch(&pool, &notifications).await {
+                    tracing::error!(error = %e, "Geofence worker batch failed");
+                }
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { TicketAvailabilityDisplay } from "./ticket-availability-display";
 import { parsePriceValue } from "@/lib/validation";
 import { trackFunnelEvent } from "@/utils/funnel-analytics";
+import { EventCountdown } from "./event-countdown";
 
 interface RegistrationBoxProps {
   event: {
@@ -16,6 +17,7 @@ interface RegistrationBoxProps {
     price: string;
     location: string;
     date: string;
+    startsAt?: string;
   };
   host: {
     name: string;
@@ -85,6 +87,13 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
             pollInterval={5000}
           />
         </div>
+
+        {/* Event Countdown */}
+        {event.startsAt && (
+          <div className="z-10 flex items-center gap-2">
+            <EventCountdown startsAt={event.startsAt} />
+          </div>
+        )}
 
         <p className="text-[16px] sm:text-[19px] text-black font-medium z-10">
           Welcome! To join the event, please register below.

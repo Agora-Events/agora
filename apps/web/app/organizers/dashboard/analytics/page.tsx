@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { ErrorBoundary } from "@/components/layout/error-boundary";
 import {
   AnalyticsKpiCard,
   AnalyticsChartPlaceholder,
@@ -101,6 +102,30 @@ function EventSelector({
         ))}
       </select>
     </div>
+  );
+}
+
+function ChartErrorBoundary({ children }: { children: React.ReactNode }) {
+  const [retryKey, setRetryKey] = useState(0);
+
+  return (
+    <ErrorBoundary
+      key={retryKey}
+      fallback={
+        <div className="rounded-2xl border-2 border-black bg-white p-6 shadow-[-4px_4px_0_rgba(0,0,0,1)] text-center flex flex-col items-center justify-center min-h-[200px]">
+          <p className="text-base font-semibold text-ink-deep mb-3">This chart couldn't be loaded</p>
+          <button
+            type="button"
+            onClick={() => setRetryKey((prev) => prev + 1)}
+            className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-black rounded-xl border border-black hover:bg-gray-800 transition-colors shadow-[-2px_2px_0_rgba(0,0,0,1)] cursor-pointer"
+          >
+            Try again
+          </button>
+        </div>
+      }
+    >
+      {children}
+    </ErrorBoundary>
   );
 }
 
@@ -275,16 +300,20 @@ export default function OrganizerAnalyticsDashboard() {
 
                   {/* Charts section */}
                   <section aria-label="Analytics charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <AnalyticsChartPlaceholder
-                      title="Attendance Trends"
-                      description="Ticket sales over time. Shows how tickets are selling day by day leading up to your event."
-                      height="h-72"
-                    />
-                    <AnalyticsChartPlaceholder
-                      title="Ticket Tier Popularity"
-                      description="Breakdown of ticket tiers by price range. Understand which price points attract the most buyers."
-                      height="h-72"
-                    />
+                    <ChartErrorBoundary>
+                      <AnalyticsChartPlaceholder
+                        title="Attendance Trends"
+                        description="Ticket sales over time. Shows how tickets are selling day by day leading up to your event."
+                        height="h-72"
+                      />
+                    </ChartErrorBoundary>
+                    <ChartErrorBoundary>
+                      <AnalyticsChartPlaceholder
+                        title="Ticket Tier Popularity"
+                        description="Breakdown of ticket tiers by price range. Understand which price points attract the most buyers."
+                        height="h-72"
+                      />
+                    </ChartErrorBoundary>
                   </section>
                 </div>
               )}

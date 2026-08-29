@@ -98,6 +98,11 @@ pub struct Config {
     /// Rate limit threshold for auth/nonce endpoint in requests per minute (default: 10).
     pub auth_rate_limit_per_minute: usize,
 
+    /// Graceful-shutdown drain timeout in seconds (default: 15). When a
+    /// SIGTERM/SIGINT is received, in-flight requests are given up to this long
+    /// to finish before the process exits (Issue #1261).
+    pub shutdown_timeout_secs: u64,
+
     /// Allowed MIME types for uploaded files.
     pub allowed_upload_mime_types: Vec<String>,
 
@@ -115,6 +120,10 @@ pub struct Config {
 
     /// Time in seconds after which an idle connection is closed (DB_IDLE_TIMEOUT_SECS, default: 600).
     pub db_idle_timeout_secs: u64,
+
+    /// Maximum time in seconds a request may take before the server returns
+    /// a 504 (REQUEST_TIMEOUT_SECS, default: 30).
+    pub request_timeout_secs: u64,
 }
 
 /// A collection of configuration errors found during [`Config::validate`].
@@ -182,6 +191,11 @@ impl Config {
             .and_then(|v| v.parse().ok())
             .unwrap_or(10);
 
+        let shutdown_timeout_secs = env::var("SHUTDOWN_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(15);
+
         let allowed_upload_mime_types = env::var("ALLOWED_UPLOAD_MIME_TYPES")
             .or_else(|_| env::var("ALLOWED_MIME_TYPES"))
             .map(|s| s.split(',').map(|m| m.trim().to_string()).collect())
@@ -217,6 +231,11 @@ impl Config {
             .and_then(|v| v.parse().ok())
             .unwrap_or(600u64);
 
+        let request_timeout_secs = env::var("REQUEST_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(30u64);
+
         Ok(Self {
             database_url,
             port,
@@ -237,10 +256,7 @@ impl Config {
             admin_token,
             auth_rate_limit_per_minute,
             allowed_upload_mime_types,
-            db_max_connections,
-            db_min_connections,
-            db_acquire_timeout_secs,
-            db_idle_timeout_secs,
+            shutdown_timeout_secs,
         })
     }
 
@@ -342,15 +358,9 @@ impl Config {
             ));
         }
 
-        // --- DB pool settings (Issue #1265) ------------------------------
-        if self.db_min_connections > self.db_max_connections {
-            errors.push(format!(
-                "DB_MIN_CONNECTIONS ({}) must not exceed DB_MAX_CONNECTIONS ({})",
-                self.db_min_connections, self.db_max_connections
-            ));
-        }
-        if self.db_max_connections == 0 {
-            errors.push("DB_MAX_CONNECTIONS must be at least 1".to_string());
+        // --- SHUTDOWN_TIMEOUT_SECS -----------------------------------------
+        if self.shutdown_timeout_secs == 0 {
+            errors.push("SHUTDOWN_TIMEOUT_SECS must be greater than 0".to_string());
         }
 
         if errors.is_empty() {
@@ -413,10 +423,7 @@ mod tests {
                 "image/webp".to_string(),
                 "image/gif".to_string(),
             ],
-            db_max_connections: 10,
-            db_min_connections: 1,
-            db_acquire_timeout_secs: 10,
-            db_idle_timeout_secs: 600,
+            shutdown_timeout_secs: 15,
         }
     }
 
@@ -956,10 +963,7 @@ mod tests {
                 "image/webp".to_string(),
                 "image/gif".to_string(),
             ],
-            db_max_connections: 10,
-            db_min_connections: 1,
-            db_acquire_timeout_secs: 10,
-            db_idle_timeout_secs: 600,
+            shutdown_timeout_secs: 15,
         };
 
         let err = cfg.validate().unwrap_err();

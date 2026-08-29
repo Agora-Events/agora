@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, token, Address, Env};
+use soroban_sdk::{contract, contractimpl, token, Address, Env, String};
 
 use crate::{
     error::ProSubscriptionError,
@@ -67,6 +67,15 @@ impl ProSubscriptionContract {
         );
 
         Ok(())
+    }
+
+    /// Returns the version of the contract as a String.
+    ///
+    /// The version is sourced from the package version at compile time via `env!("CARGO_PKG_VERSION")`.
+    /// This allows verification of which build is deployed at a given contract address without
+    /// diffing WASM hashes.
+    pub fn version(_env: Env) -> String {
+        String::from_str(&_env, env!("CARGO_PKG_VERSION"))
     }
 
     /// Subscribe an organizer to the Pro tier

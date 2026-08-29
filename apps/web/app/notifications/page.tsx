@@ -6,6 +6,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface NotificationItem {
   id: string;
@@ -50,8 +51,12 @@ const mockNotifications: NotificationItem[] = [
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>(mockNotifications);
   
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
   const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    if (unreadCount === 0) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    toast.success("All notifications marked as read");
   };
 
   const clearNotifications = () => {
@@ -64,18 +69,29 @@ export default function NotificationsPage() {
       <div className="flex-1 w-full max-w-[800px] mx-auto px-4 py-12 md:py-20">
         
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-4xl font-extrabold italic text-ink-deep">Notifications</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-extrabold italic text-ink-deep">Notifications</h1>
+            {unreadCount > 0 && (
+              <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-sm font-bold bg-[#FDDA23] text-black border-2 border-black">
+                {unreadCount}
+              </span>
+            )}
+          </div>
           {notifications.length > 0 && (
-            <div className="flex gap-4">
+            <div className="flex gap-4 items-center">
               <button 
+                type="button"
                 onClick={markAllAsRead}
-                className="text-sm font-semibold text-ink-deep hover:underline"
+                disabled={unreadCount === 0}
+                aria-label="Mark all notifications as read"
+                className="text-sm font-semibold text-ink-deep hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FDDA23] rounded-md px-1 py-0.5"
               >
                 Mark all as read
               </button>
               <button 
+                type="button"
                 onClick={clearNotifications}
-                className="text-sm font-semibold text-error hover:underline"
+                className="text-sm font-semibold text-error hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FDDA23] rounded-md px-1 py-0.5"
               >
                 Clear all
               </button>

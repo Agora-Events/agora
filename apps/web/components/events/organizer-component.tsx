@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 import { Button } from "@/components/ui/button";
 import { WalletAddress } from "@/components/ui/wallet-address";
+import { announce } from "@/components/ui/live-announcer";
 import Link from "next/link";
 
 const fallbackCardsData: DiscoverOrganizer[] = [
@@ -87,6 +88,7 @@ export function OrganizerComponent({
         // Ignore abort errors — they are intentional and not user-facing.
         if (err instanceof Error && err.name === "AbortError") return;
         setCardsData([]);
+        announce("Could not load organizers");
         onError("Could not load organizers");
       } finally {
         // Only update loading state if the fetch was not aborted.
