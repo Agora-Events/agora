@@ -2,7 +2,7 @@
 
 import { Navbar } from "@/components/layout/navbar";
 import { Button } from "@/components/ui/button";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useId } from "react";
@@ -133,22 +133,27 @@ function Tooltip({
   label: string;
 }) {
   const [isFocused, setIsFocused] = useState(false);
+  const shouldReduceMotion = useReducedMotion();
   const id = useId();
 
   return (
     <motion.div
       id={id}
-      initial={{ scale: 0, opacity: 0, y: 10 }}
-      whileInView={{ scale: 1, opacity: 1, y: 0 }}
-      animate={isFocused ? { scale: 1.1 } : {}}
-      whileHover={{ scale: 1.1 }}
+      initial={shouldReduceMotion ? { opacity: 1, scale: 1, y: 0 } : { scale: 0, opacity: 0, y: 10 }}
+      whileInView={shouldReduceMotion ? { opacity: 1, scale: 1, y: 0 } : { scale: 1, opacity: 1, y: 0 }}
+      animate={isFocused ? (shouldReduceMotion ? { scale: 1 } : { scale: 1.1 }) : {}}
+      whileHover={shouldReduceMotion ? undefined : { scale: 1.1 }}
       viewport={{ once: false, margin: "-50px" }}
-      transition={{
-        delay,
-        type: "spring",
-        stiffness: 260,
-        damping: 20,
-      }}
+      transition={
+        shouldReduceMotion
+          ? { duration: 0 }
+          : {
+              delay,
+              type: "spring",
+              stiffness: 260,
+              damping: 20,
+            }
+      }
       className={`absolute ${className} z-20 w-16 h-16 md:w-24 md:h-24 outline-none focus-visible:ring-4 focus-visible:ring-accent rounded-full cursor-pointer transition-shadow`}
       tabIndex={0}
       role="tooltip"
