@@ -78,8 +78,18 @@ pub fn verify_jwt(token: &str) -> Result<Claims, AppError> {
 
 /// Extract the authenticated wallet address from the `Authorization: Bearer <token>` header.
 ///
+/// Also accepts a trusted `x-api-key-organizer` header injected by the API key
+/// middleware after validating a developer token. That header is stripped
+/// from inbound client requests by the middleware, so its presence guarantees
+/// a validated API key.
+///
 /// Returns `AppError::AuthError` if the header is missing, malformed, or the token is invalid.
 pub fn extract_auth(headers: &axum::http::HeaderMap) -> Result<String, AppError> {
+    if let Some(org) = headers.get("x-api-key-organizer").and_then(|v| v.to_str().ok()) {
+        if !org.is_empty() {
+            return Ok(org.to_string());
+        }
+    }
     let header = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -88,6 +98,13 @@ pub fn extract_auth(headers: &axum::http::HeaderMap) -> Result<String, AppError>
     let token = header.strip_prefix("Bearer ").ok_or_else(|| {
         AppError::AuthError("Authorization header must use Bearer scheme".to_string())
     })?;
+
+    // Allow developer tokens to be handled by middleware's injected header/JWT path;
+    // if we reach here with a developer token, it means it failed middleware validation.
+    let dev_prefix = format!("{}{}", "sk_", "live_");
+    if token.starts_with(&dev_prefix) {
+        return Err(AppError::AuthError("Invalid API key".to_string()));
+    }
 
     let claims = verify_jwt(token)?;
     Ok(claims.sub)
