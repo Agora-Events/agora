@@ -88,3 +88,75 @@ export async function buildUnsignedMintTicketTx(eventId: string, buyer: string, 
 export async function mintTicket(eventId: string, buyer: string, qty: number) {
   return buildUnsignedMintTicketTx(eventId, buyer, qty);
 }
+
+/**
+ * Builds an unsigned XDR transaction envelope for listing a ticket for resale on the smart contract.
+ * Users sign via Freighter to authorize resale listing on-chain.
+ */
+export async function buildUnsignedResaleTicketTx(ticketId: string, seller: string, resalePrice: number) {
+  if (!ticketId || !seller || !resalePrice || resalePrice <= 0) {
+    throw new Error("Invalid resale listing parameters");
+  }
+
+  const contractAddress = process.env.STELLAR_CONTRACT_ADDRESS || "CCMOCKCONTRACTADDRESS1234567890";
+  const sourceSecret = process.env.STELLAR_SOURCE_SECRET;
+
+  const server = new rpc.Server(STELLAR_RPC_URL);
+
+  let sourceAccount;
+  if (sourceSecret) {
+    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+    sourceAccount = await server.getAccount(sourceKeypair.publicKey());
+  } else {
+    sourceAccount = await server.getAccount(seller).catch(() => ({
+      accountId: () => seller,
+      sequenceNumber: () => "1",
+      incrementSequenceNumber: () => {},
+    }));
+  }
+
+  const contract = new Contract(contractAddress);
+  const priceStroops = Math.round(resalePrice * 10_000_000);
+
+  const tx = new TransactionBuilder(sourceAccount as any, {
+    fee: "100",
+    networkPassphrase: STELLAR_NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      contract.call(
+        "list_resale_ticket",
+        nativeToScVal(ticketId, { type: "string" }),
+        nativeToScVal(seller, { type: "address" }),
+        nativeToScVal(priceStroops, { type: "i128" }),
+      ),
+    )
+    .setTimeout(30)
+    .build();
+
+  if (sourceSecret) {
+    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+    tx.sign(sourceKeypair);
+    const preparedTx = await server.prepareTransaction(tx);
+    preparedTx.sign(sourceKeypair);
+    const submitted = await server.sendTransaction(preparedTx);
+    return {
+      transactionXdr: preparedTx.toXDR(),
+      listingId: `resale_${submitted.hash || Date.now().toString()}`,
+      unsigned: false,
+    };
+  }
+
+  return {
+    transactionXdr: tx.toXDR(),
+    listingId: `resale_${Date.now().toString()}`,
+    unsigned: true,
+  };
+}
+
+/**
+ * Resale listing handler returning unsigned XDR envelope for client-side Freighter signing.
+ */
+export async function listTicketForResale(ticketId: string, seller: string, resalePrice: number) {
+  return buildUnsignedResaleTicketTx(ticketId, seller, resalePrice);
+}
+

@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { TicketCard, PastEventsSection } from "@/components/wallet";
+import { SellTicketModal } from "@/components/wallet/SellTicketModal";
 import { useWalletTickets } from "@/hooks/useWalletTickets";
 import { useAuth } from "@/hooks/useAuth";
 import type { WalletTicket } from "@/hooks/useWalletTickets";
@@ -86,6 +87,7 @@ function TicketSection({
   isLoading,
   emptyHeading,
   emptySubtext,
+  onSellTicket,
 }: {
   title: string;
   subtitle: string;
@@ -93,6 +95,7 @@ function TicketSection({
   isLoading: boolean;
   emptyHeading: string;
   emptySubtext: string;
+  onSellTicket?: (ticket: WalletTicket) => void;
 }) {
   return (
     <section className="bg-white rounded-2xl border border-border-warm shadow-sm overflow-hidden">
@@ -124,6 +127,7 @@ function TicketSection({
                         : ticket.ticket_price
                       : undefined
                   }
+                  onSell={onSellTicket ? () => onSellTicket(ticket) : undefined}
                   event={{
                     id: ticket.event_id ?? undefined,
                     title: ticket.event_title ?? "Unknown Event",
@@ -147,7 +151,8 @@ function TicketSection({
 
 function WalletContent() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  const { upcoming, past, poaps, isLoading: ticketsLoading } = useWalletTickets();
+  const { upcoming, past, poaps, isLoading: ticketsLoading, mutate } = useWalletTickets();
+  const [selectedSellTicket, setSelectedSellTicket] = useState<WalletTicket | null>(null);
 
   const isLoading = authLoading || ticketsLoading;
 
@@ -201,6 +206,7 @@ function WalletContent() {
         isLoading={isLoading}
         emptyHeading="No upcoming tickets"
         emptySubtext="You don't have any upcoming events. Discover what's on near you."
+        onSellTicket={(ticket) => setSelectedSellTicket(ticket)}
       />
 
       {/* Past events & POAP collectibles section (#1128) */}
@@ -209,6 +215,16 @@ function WalletContent() {
         poaps={poaps}
         isLoading={isLoading}
       />
+
+      {/* Resale Ticket Modal */}
+      {selectedSellTicket && (
+        <SellTicketModal
+          isOpen={Boolean(selectedSellTicket)}
+          onClose={() => setSelectedSellTicket(null)}
+          ticket={selectedSellTicket}
+          onSuccess={() => mutate()}
+        />
+      )}
     </div>
   );
 }
