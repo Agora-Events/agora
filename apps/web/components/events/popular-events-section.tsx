@@ -71,8 +71,6 @@ export function PopularEventsSection({
 }: PopularEventsSectionProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
-  // Keystrokes update `search` instantly for the input; filtering (and any
-  // future server-side search) only runs once typing pauses.
   const debouncedSearch = useDebounce(search, SEARCH_DEBOUNCE_MS);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
@@ -176,7 +174,7 @@ export function PopularEventsSection({
     handleFiltersChange(nextFilters);
   };
 
-  const filteredEvents = useMemo(() => {
+  const filteredAndSortedEvents = useMemo(() => {
     let result = events;
 
     // 1. Search Query
@@ -205,14 +203,7 @@ export function PopularEventsSection({
       );
     }
 
-    // 4. Date
-    if (filters.date && filters.date !== "Any time") {
-      // Note: Since mockup dates are static strings like "Thu, 22 Jan, 1:00",
-      // strict parsing for "Today", "Tomorrow" is omitted for now.
-      // In a real app with timestamps, you would check the date ranges here.
-    }
-
-    // 5. Price Range
+    // 4. Price Range
     if (filters.minPrice !== "" || filters.maxPrice !== "") {
       result = result.filter((event) => {
         const isFree = event.price.toLowerCase() === "free";
@@ -226,52 +217,60 @@ export function PopularEventsSection({
       });
     }
 
-    // 6. Organizer Filter
-    if (
-      selectedOrganizer &&
-      selectedOrganizer !== "" &&
-      selectedOrganizer.toLowerCase() !== "all" &&
-      selectedOrganizer.toLowerCase() !== "all organizers"
-    ) {
-      result = result.filter((event: any) => {
-        const org = (event.organizer || event.organizerId || event.organizer_id || "").toLowerCase();
-        const sel = selectedOrganizer.toLowerCase();
-        return org === sel || event.title.toLowerCase().includes(sel);
+    return sortEvents(result, sortBy);
+  }, [debouncedSearch, filters, events, activeCategory, sortBy]);
+
+  // Calculate pagination slices (at most 12 cards in the DOM)
+  const totalPages = Math.ceil(filteredAndSortedEvents.length / ITEMS_PER_PAGE);
+  const validCurrentPage = Math.min(Math.max(currentPage, 1), totalPages || 1);
+  const startIndex = (validCurrentPage - 1) * ITEMS_PER_PAGE;
+  const paginatedEvents = useMemo(() => {
+    return filteredAndSortedEvents.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredAndSortedEvents, startIndex]);
+
+  // Handle page changes with smooth scroll respecting reduced motion
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages || newPage === validCurrentPage) return;
+
+    setCurrentPage(newPage);
+
+    if (gridSectionRef.current) {
+      const prefersReducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+
+      gridSectionRef.current.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "start",
       });
     }
-
-    return result;
-  }, [debouncedSearch, filters, events, activeCategory, selectedOrganizer]);
+  };
 
   // Notify parent whenever the visible count changes
   const prevCountRef = useRef<number | null>(null);
   useEffect(() => {
     if (!isLoading && onEventsChange) {
-      const count = filteredEvents.length;
+      const count = filteredAndSortedEvents.length;
       if (prevCountRef.current !== count) {
         prevCountRef.current = count;
         onEventsChange(count);
       }
     }
-  }, [filteredEvents.length, isLoading, onEventsChange]);
+  }, [filteredAndSortedEvents.length, isLoading, onEventsChange]);
 
   const widthVariants = {
     focused: { width: "12rem" },
     unfocused: { width: "8.5rem" },
   };
 
-  // Surfaced next to the mobile "Filter" button so users can tell at a glance
-  // that filters are still applied after the drawer closes.
   const activeFilterCount =
     (filters.date ? 1 : 0) +
     filters.categories.length +
     filters.locations.length +
     (filters.minPrice !== "" || filters.maxPrice !== "" ? 1 : 0);
 
-  const allLoaded = total !== null && events.length >= total;
-
   return (
-    <section className="px-4 bg-base py-12">
+    <section ref={gridSectionRef} className="px-4 bg-base py-12">
       <div className="max-w-305.25 mx-auto">
         {getActiveFilterCount(filters) > 0 && (
           <div
@@ -409,9 +408,7 @@ export function PopularEventsSection({
             </motion.div>
           </motion.div>
 
-          {/* ── Mobile controls ──
-              A full-width search field plus an explicitly labelled "Filter"
-              button, so the filter drawer is reachable on small viewports. */}
+          {/* ── Mobile controls ── */}
           <motion.div
             variants={item}
             className="sm:hidden flex items-center gap-2 w-full min-w-0"
@@ -468,8 +465,9 @@ export function PopularEventsSection({
           </motion.div>
         </motion.div>
 
+        {/* ── Events Grid (Renders up to 12 cards per page) ── */}
         <motion.div
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 place-content-center "
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 place-content-center"
           variants={container}
           initial="hidden"
           animate="show"
@@ -484,28 +482,28 @@ export function PopularEventsSection({
                 <EventCardSkeleton />
               </motion.div>
             ))}
+
           {!isLoading &&
-            filteredEvents.map((event) => (
-            <motion.div
-              key={event.id}
-              variants={item}
-              whileHover={{ scale: 1.02 }}
-              transition={{ type: "spring", stiffness: 280, damping: 20 }}
-              className="flex"
-            >
-              <EventCard
-                id={event.id}
-                title={event.title}
-                date={event.date}
-                location={event.location}
-                price={event.price}
-                imageUrl={event.imageUrl}
-                startsAt={event.startsAt}
-              />
-            </motion.div>
+            paginatedEvents.map((event) => (
+              <motion.div
+                key={event.id}
+                variants={item}
+                whileHover={{ scale: 1.02 }}
+                transition={{ type: "spring", stiffness: 280, damping: 20 }}
+                className="flex"
+              >
+                <EventCard
+                  id={event.id}
+                  title={event.title}
+                  date={event.date}
+                  location={event.location}
+                  price={event.price}
+                  imageUrl={event.imageUrl}
+                />
+              </motion.div>
             ))}
 
-          {!isLoading && filteredEvents.length === 0 && (
+          {!isLoading && filteredAndSortedEvents.length === 0 && (
             <div className="col-span-full">
               <EmptyState
                 icon={
@@ -525,42 +523,56 @@ export function PopularEventsSection({
           )}
         </motion.div>
 
-        <motion.div
-          className="ml-auto w-fit mt-11"
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.4 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.97 }}
-        >
-          {!allLoaded && (
-            <Button
-              variant="primary"
-              className="border-none rounded-[13px]! h-11 flex items-center gap-3"
-              onClick={loadMore}
+        {/* ── Pagination Controls (Hidden when totalPages <= 1) ── */}
+        {!isLoading && totalPages > 1 && (
+          <nav
+            aria-label="Events pagination"
+            className="flex items-center justify-center gap-2 mt-11"
+          >
+            <button
+              type="button"
+              disabled={validCurrentPage === 1}
+              aria-disabled={validCurrentPage === 1}
+              onClick={() => handlePageChange(validCurrentPage - 1)}
+              className="px-3.5 h-9.5 text-sm font-medium rounded-xl border border-white/15 bg-black/40 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/10 transition-colors"
             >
-              {isLoadingMore ? (
-                // Simple spinner using CSS
-                <span className="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  View all Events
-                  <Image
-                    src="/icons/arrow-right.svg"
-                    width={24}
-                    height={24}
-                    alt="arrow-right icon"
-                  />
-                </>
-              )}
-            </Button>
-          )}
+              Previous
+            </button>
 
-          {allLoaded && (
-            <div className="text-sm text-gray-500">All events loaded</div>
-          )}
-        </motion.div>
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: totalPages }, (_, index) => {
+                const pageNum = index + 1;
+                const isCurrent = pageNum === validCurrentPage;
+
+                return (
+                  <button
+                    key={`page-${pageNum}`}
+                    type="button"
+                    onClick={() => handlePageChange(pageNum)}
+                    aria-current={isCurrent ? "page" : undefined}
+                    className={`min-w-9.5 h-9.5 px-3 text-sm font-medium rounded-xl transition-colors ${
+                      isCurrent
+                        ? "bg-[#FDDA23] text-black font-semibold"
+                        : "bg-black/40 text-white border border-white/15 hover:bg-white/10"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              disabled={validCurrentPage === totalPages}
+              aria-disabled={validCurrentPage === totalPages}
+              onClick={() => handlePageChange(validCurrentPage + 1)}
+              className="px-3.5 h-9.5 text-sm font-medium rounded-xl border border-white/15 bg-black/40 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/10 transition-colors"
+            >
+              Next
+            </button>
+          </nav>
+        )}
       </div>
 
       {/* ── Filter Sidebar ── */}

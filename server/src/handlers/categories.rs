@@ -4,10 +4,11 @@
 
 use axum::{
     extract::{Query, State},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     response::Response,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;
@@ -16,11 +17,81 @@ use crate::cache::RedisCache;
 use crate::models::category::Category;
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
-use crate::utils::response::success;
+use crate::utils::response::ApiResponse;
 
 /// TTL for cached category listings. Categories are effectively static, so a
 /// long TTL (1 hour) sharply reduces database load under traffic (Issue #583).
 const CATEGORIES_CACHE_TTL: Duration = Duration::from_secs(3600);
+
+/// `Cache-Control` applied to successful category responses (Issue #1260).
+///
+/// `max-age=300` lets clients/CDNs serve for 5 minutes; `stale-while-revalidate=600`
+/// lets them serve a stale body for a further 10 minutes while revalidating.
+const CATEGORY_CACHE_CONTROL: &str = "public, max-age=300, stale-while-revalidate=600";
+
+/// Build a cacheable success response for the categories endpoints.
+///
+/// * Sets `Cache-Control: public, max-age=300, stale-while-revalidate=600`.
+/// * Computes a weak `ETag` from a hash of the serialised payload.
+/// * Returns `304 Not Modified` (empty body) when the client's `If-None-Match`
+///   header matches the generated `ETag`.
+fn cached_success_response<T: Serialize>(
+    data: T,
+    message: &str,
+    if_none_match: Option<&HeaderValue>,
+) -> Response {
+    let envelope = ApiResponse {
+        success: true,
+        data: Some(data),
+        message: Some(message.to_string()),
+    };
+    let json = match serde_json::to_string(&envelope) {
+        Ok(j) => j,
+        Err(_) => {
+            return no_store_error(AppError::InternalServerError(
+                "failed to serialize category response".into(),
+            ))
+        }
+    };
+
+    let etag = weak_etag(&json);
+    if if_none_match
+        .map(|v| v.as_bytes() == etag.as_bytes())
+        .unwrap_or(false)
+    {
+        return Response::builder()
+            .status(StatusCode::NOT_MODIFIED)
+            .header(header::CACHE_CONTROL, CATEGORY_CACHE_CONTROL)
+            .header(header::ETAG, etag)
+            .body(axum::body::Body::empty())
+            .unwrap();
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CACHE_CONTROL, CATEGORY_CACHE_CONTROL)
+        .header(header::ETAG, etag)
+        .body(axum::body::Body::from(json))
+        .unwrap()
+}
+
+/// Return an error response that is explicitly marked `no-store` so caches never
+/// retain error bodies (Issue #1260).
+fn no_store_error(err: AppError) -> Response {
+    let mut resp = err.into_response();
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    resp
+}
+
+/// Compute a weak `ETag` (`W/"<hash>"`) from the serialised payload bytes.
+fn weak_etag(payload: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(payload.as_bytes());
+    format!("W/\"{}\"", hex::encode(hasher.finalize()))
+}
 
 /// Application state for category handlers: database pool + Redis cache.
 #[derive(Clone)]
@@ -64,10 +135,12 @@ fn categories_cache_key(parent_id: &str, search: &str, page: u32, page_size: u32
 /// Returns a paginated list of categories with metadata
 pub async fn list_categories(
     State(mut state): State<CategoryState>,
+    headers: HeaderMap,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<CategoryFilters>,
 ) -> Response {
     let validated_pagination = pagination.validate();
+    let if_none_match = headers.get(header::IF_NONE_MATCH);
 
     // Attempt to serve from cache first; a Redis miss or error falls through
     // to the database without failing the request.
@@ -84,7 +157,11 @@ pub async fn list_categories(
     {
         Ok(Some(cached)) => {
             tracing::debug!("Cache hit for categories key: {}", cache_key);
-            return success(cached, "Categories retrieved successfully (cached)").into_response();
+            return cached_success_response(
+                cached,
+                "Categories retrieved successfully (cached)",
+                if_none_match,
+            );
         }
         Ok(None) => {}
         Err(e) => tracing::warn!(
@@ -149,7 +226,7 @@ pub async fn list_categories(
         Ok(count) => count,
         Err(e) => {
             tracing::error!("Failed to count categories: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
+            return no_store_error(AppError::DatabaseError(e));
         }
     };
 
@@ -178,7 +255,7 @@ pub async fn list_categories(
         Ok(categories) => categories,
         Err(e) => {
             tracing::error!("Failed to fetch categories: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
+            return no_store_error(AppError::DatabaseError(e));
         }
     };
 
@@ -193,7 +270,11 @@ pub async fn list_categories(
         tracing::warn!("Failed to cache categories: {:?}", e);
     }
 
-    success(response, "Categories retrieved successfully").into_response()
+    cached_success_response(
+        response,
+        "Categories retrieved successfully",
+        if_none_match,
+    )
 }
 
 /// Get a single category by ID
@@ -202,8 +283,10 @@ pub async fn list_categories(
 /// GET `/api/v1/categories/:id`
 pub async fn get_category(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     axum::extract::Path(category_id): axum::extract::Path<Uuid>,
 ) -> Response {
+    let if_none_match = headers.get(header::IF_NONE_MATCH);
     let category = match sqlx::query_as::<_, Category>("SELECT * FROM categories WHERE id = $1")
         .bind(category_id)
         .fetch_optional(&pool)
@@ -211,16 +294,18 @@ pub async fn get_category(
     {
         Ok(Some(category)) => category,
         Ok(None) => {
-            return AppError::NotFound(format!("Category with id '{}' not found", category_id))
-                .into_response();
+            return no_store_error(AppError::NotFound(format!(
+                "Category with id '{}' not found",
+                category_id
+            )));
         }
         Err(e) => {
             tracing::error!("Failed to fetch category: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
+            return no_store_error(AppError::DatabaseError(e));
         }
     };
 
-    success(category, "Category retrieved successfully").into_response()
+    cached_success_response(category, "Category retrieved successfully", if_none_match)
 }
 
 /// Canonical categories defined in the contract's Category enum.
@@ -359,5 +444,54 @@ mod tests {
         assert_eq!(mapping.get(&9), Some(&"Community"));
         assert_eq!(mapping.get(&10), Some(&"Other"));
         assert_eq!(mapping.len(), 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // Caching headers / ETag / 304 (Issue #1260)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_cached_success_response_sets_cache_headers() {
+        let resp = cached_success_response(vec![1i32, 2, 3], "ok", None);
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).unwrap(),
+            CATEGORY_CACHE_CONTROL
+        );
+        assert!(resp.headers().get(header::ETAG).is_some());
+    }
+
+    #[test]
+    fn test_cached_success_response_returns_304_on_match() {
+        let first = cached_success_response(vec![1i32, 2, 3], "ok", None);
+        let etag = first.headers().get(header::ETAG).unwrap().clone();
+
+        let resp = cached_success_response(vec![1i32, 2, 3], "ok", Some(&etag));
+        assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(resp.headers().get(header::ETAG).unwrap(), &etag);
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).unwrap(),
+            CATEGORY_CACHE_CONTROL
+        );
+    }
+
+    #[test]
+    fn test_cached_success_response_mismatched_etag_returns_200() {
+        let first = cached_success_response(vec![1i32, 2, 3], "ok", None);
+        let etag = first.headers().get(header::ETAG).unwrap().clone();
+        let other = HeaderValue::from_static("W/\"different-etag\"");
+
+        let resp = cached_success_response(vec![1i32, 2, 3], "ok", Some(&other));
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get(header::ETAG).unwrap(), &etag);
+    }
+
+    #[test]
+    fn test_no_store_error_sets_no_store() {
+        let resp = no_store_error(AppError::NotFound("missing".into()));
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
     }
 }

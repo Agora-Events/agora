@@ -30,6 +30,7 @@ pub struct OrganizerProfile {
 
 /// Payload accepted by `PUT /api/v1/profile`.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpsertProfileRequest {
     /// Public display name (max 50 chars).
     pub display_name: String,

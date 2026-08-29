@@ -15,61 +15,52 @@ This document summarizes the public backend endpoints available.
 
 *(This file is maintained manually for quick reference. For a comprehensive machine-readable API, see `/openapi.json`)*
 
-## Error responses
+## Request validation (Issue #1262)
 
-Every error body is a flat JSON object:
-
-```json
-{
-  "code": "NOT_FOUND",
-  "message": "Resource with id '42' was not found",
-  "request_id": "b3b3f9b0-1c1e-4c9a-9c1b-2f6a7e9d0c1a"
-}
-```
-
-`code` is a stable machine-readable [`ErrorCode`](src/utils/error.rs). HTTP status
-and `message` text are unchanged from previous behaviour; clients should branch
-on `code` rather than string-matching `message`. `request_id` matches the
-`x-request-id` response header and is omitted when no request id is available.
-
-| Code | HTTP status | When it is returned |
-|---|---|---|
-| `VALIDATION_FAILED` | 400, 422 | Query/body failed validation (including an unrecognised `?sort=` value) |
-| `UNAUTHORIZED` | 401 | Missing or invalid authentication credentials |
-| `FORBIDDEN` | 403 | Authenticated caller is not allowed to perform this action |
-| `NOT_FOUND` | 404 | The requested resource does not exist |
-| `CONFLICT` | 409 | The request conflicts with current resource state (duplicate, unique/FK violation) |
-| `RATE_LIMITED` | 429 | The caller exceeded the allowed request rate |
-| `INTERNAL_ERROR` | 500 | Unexpected internal failure |
-| `SERVICE_UNAVAILABLE` | 502, 503, 504 | Database or downstream service is temporarily unavailable |
-
-## Rate limiting
-
-Sensitive routes are limited to **30 requests per IP per minute**; general routes
-to **120 requests per IP per minute**. Every response (allowed or rejected)
-includes:
-
-| Header | Meaning |
-|---|---|
-| `X-RateLimit-Limit` | Maximum requests in the current window |
-| `X-RateLimit-Remaining` | Requests remaining in the current window |
-| `X-RateLimit-Reset` | Unix timestamp (seconds) when the window refreshes |
-
-A `429` response always includes `Retry-After` set to the seconds remaining in
-the current window. The value is an integer ≥ 1.
-
-## Events list
-
-`GET /api/v1/events` returns a cursor-paginated list. Successful `data` includes:
+Request DTOs in `handlers/events.rs`, `handlers/profile.rs` and
+`handlers/marketplace.rs` are annotated with `#[serde(deny_unknown_fields)]`.
+Posting a JSON body that contains an unrecognised field now returns **`400
+Bad Request`** (not `422`) whose message names the offending field, e.g.:
 
 ```json
-{
-  "items": [ /* Event */ ],
-  "pagination": { "page_size": 20, "has_more": true, "next_cursor": "..." },
-  "meta": { "total": 340, "page_size": 20, "has_more": true }
-}
+{ "code": 400, "message": "unknown field `organiser_name`, there are remaining ..." }
 ```
 
-- `meta.total` is the COUNT(*) of rows matching the same filters (not just the current page).
-- Pass `?count=false` to skip the extra COUNT query; `meta.total` is then omitted.
-- `?sort=` accepts `starts_at_asc` (default), `starts_at_desc`, `price_asc`, `price_desc`, `popularity_desc`. Any other value returns `400` with `VALIDATION_FAILED`. Sorting always uses an allow-listed `ORDER BY` plus `id` as a tiebreaker.
+All previously valid payloads continue to succeed.
+
+## Categories caching (Issue #1260)
+
+`GET /api/v1/categories` and `GET /api/v1/categories/:id` now send cache
+headers and support conditional requests:
+
+- `Cache-Control: public, max-age=300, stale-while-revalidate=600`
+- A weak `ETag` (SHA-256 of the serialised payload) on `200` responses.
+- A client that repeats the request with a matching `If-None-Match` header
+  receives **`304 Not Modified`** with an empty body.
+- Error responses are marked `Cache-Control: no-store` and are never cached.
+
+## Geo coordinate validation (Issue #1259)
+
+`GET /api/v1/events/nearby` and `POST /api/v1/geo/geofences` validate
+coordinates at the edge:
+
+- `lat` must be finite and within `[-90, 90]`; `lng` within `[-180, 180]`.
+- `NaN` / `inf` inputs are rejected.
+- `radius_m` (when supplied) must be `> 0` and `<= 500000` metres (500 km).
+
+Invalid input returns **`400 Bad Request`** naming the offending field, so a
+bad request can never surface as a `500` database-constraint error.
+
+## Graceful shutdown (Issue #1261)
+
+The server traps `SIGTERM` and `SIGINT`. On shutdown it:
+
+1. Stops accepting new connections and drains in-flight requests for up to
+   `SHUTDOWN_TIMEOUT_SECS` (default `15`).
+2. Signals background tasks (Soroban indexer, waiting-room admission worker,
+   nonce cleanup) to stop via a cancellation token.
+3. Closes the SQLx pool and Redis connection explicitly and logs
+   `shutdown complete` with the elapsed duration before exiting `0`.
+
+Set `SHUTDOWN_TIMEOUT_SECS` in the environment to tune the drain window.
+
