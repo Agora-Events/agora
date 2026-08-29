@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { mintTicket } from "@/utils/stellar";
+import crypto from "crypto";
+import { Keypair } from "@stellar/stellar-sdk";
 import { withErrorHandler } from "@/lib/api-handler";
 import { throwApiError, ApiError } from "@/lib/api-errors";
 
@@ -37,6 +39,73 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   if (!buyerWallet || typeof buyerWallet !== "string") {
     throwApiError("Invalid buyerWallet", 400);
+  }
+
+  // If buyerWallet looks like an email address, generate a custodial
+  // Stellar keypair server-side and store the encrypted private key.
+  // Detection heuristic: presence of an '@' character. Wallets on Stellar
+  // start with 'G' so emails are distinguished.
+  let buyerIdentifier = buyerWallet as string;
+  if (buyerIdentifier.includes("@")) {
+    const email = buyerIdentifier.trim().toLowerCase();
+
+    // Generate a fresh Stellar keypair
+    const pair = Keypair.random();
+    const publicKey = pair.publicKey();
+    const privateKey = pair.secret();
+
+    // Derive a 32-byte AES key from the server-side secret + email
+    const serverSecret = process.env.CUSTODIAL_ENCRYPTION_KEY;
+    if (!serverSecret) {
+      console.error("Missing CUSTODIAL_ENCRYPTION_KEY env var");
+      throwApiError("Server encryption key not configured", 500);
+    }
+    /*
+     Security note — Custodial wallet encryption
+
+     - Scheme: AES-256-GCM
+     - Key derivation: HMAC-SHA256(email) keyed by `CUSTODIAL_ENCRYPTION_KEY`.
+       This produces a 32-byte symmetric key unique to the email + server secret.
+     - Stored blob: base64(iv || authTag || ciphertext)
+
+     Key rotation plan:
+     - Rotate `CUSTODIAL_ENCRYPTION_KEY` by running a migration which
+       decrypts all stored blobs using the old secret and re-encrypts them
+       with the new secret. For higher assurance, use a KMS-backed master
+       key (envelope encryption) so rotation does not require bulk decryption
+       on the application server.
+
+     Important: The plaintext private key is never logged or persisted.
+     Decryption should only occur in a tightly-scoped signing context.
+    */
+    // Use HMAC-SHA256(email) keyed by server secret to derive the AES key.
+    // This yields a stable, per-email key that can be rotated by changing
+    // the server secret. The encrypted blob includes a random IV and auth tag.
+    const aesKey = crypto.createHmac("sha256", serverSecret).update(email).digest();
+
+    // AES-256-GCM encryption
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", aesKey, iv);
+    const encrypted = Buffer.concat([cipher.update(privateKey, "utf8"), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+
+    const payload = Buffer.concat([iv, authTag, encrypted]).toString("base64");
+
+    try {
+      await prisma.custodialWallet.create({
+        data: {
+          email,
+          publicKey,
+          encryptedPrivateKey: payload,
+        },
+      });
+    } catch (err) {
+      console.error("Failed to store custodial wallet:", err);
+      throwApiError("Failed to create custodial wallet", 500);
+    }
+
+    // Use the newly created public key as the buyerWallet for downstream flows
+    buyerWallet = publicKey;
   }
 
   if (recipientWallet !== undefined && recipientWallet !== null && typeof recipientWallet !== "string") {

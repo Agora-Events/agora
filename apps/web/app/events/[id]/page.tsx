@@ -11,6 +11,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EventPageView } from "@/components/analytics/event-page-view";
 import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
 import { EventTimeDisplay } from "@/components/events/event-time-display";
+import ShareButton from "@/components/events/ShareButton";
 
 function truncateDescription(text: string, maxLength = 160): string {
   if (text.length <= maxLength) return text;
@@ -25,12 +26,13 @@ export async function generateMetadata({
   const { id } = await params;
   const event = dataEvents.find((e) => e.id === parseInt(id));
   if (!event) return { title: "Event not found" };
+  const ogImageUrl = `${SITE_URL}/api/og?eventId=${id}`;
   return buildMetadata({
     title: event.title,
     description: truncateDescription(
       `Join us for ${event.title} on ${event.date} in ${event.location}. ${event.price === "Free" ? "Free entry." : `Tickets from $${event.price}.`} Secure your spot on Agora.`
     ),
-    image: event.imageUrl,
+    image: ogImageUrl,
     path: `/events/${id}`,
   });
 }
@@ -191,9 +193,14 @@ export default async function EventDetailPage({
           {/* RIGHT COLUMN (Desktop) / BOTTOM ITEMS (Mobile) */}
           <div className="lg:w-[45%] flex flex-col gap-8 lg:gap-10">
             {/* Title */}
-            <h1 className="text-[36px] sm:text-[56px] font-bold leading-[1.1] text-black font-heading">
-              {event.title}
-            </h1>
+            <div className="flex items-start justify-between gap-4">
+              <h1 className="text-[36px] sm:text-[56px] font-bold leading-[1.1] text-black font-heading">
+                {event.title}
+              </h1>
+              <div className="mt-2">
+                <ShareButton title={event.title} text={event.description} />
+              </div>
+            </div>
 
             {/* Details (Location & Date) */}
             <div className="flex flex-col gap-6">
