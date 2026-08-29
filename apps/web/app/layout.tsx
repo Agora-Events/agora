@@ -53,6 +53,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased`}>
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
         <LiveAnnouncer />
         {children}
         <CookieBanner />
