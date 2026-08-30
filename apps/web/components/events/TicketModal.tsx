@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2, Gift } from "@/components/ui/icons";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import CardOnramp from "@/components/payments/CardOnramp";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { CheckoutAttribution, getCheckoutAttribution } from "@/utils/attribution";
 
@@ -66,6 +67,7 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
   const [recipientWallet, setRecipientWallet] = useState<string>("");
   const [isGiftMode, setIsGiftMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<"wallet" | "card">("wallet");
 
   const modalRef = useFocusTrap<HTMLDivElement>(isOpen);
 
@@ -159,6 +161,47 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
     }
   };
 
+  // ── Onramp (card) success handler ──────────────────────────────────────────
+  const handleOnrampSuccess = async (fundedWallet: string) => {
+    setIsPurchasing(true);
+    try {
+      const requestBody: {
+        eventId: string;
+        quantity: number;
+        buyerWallet: string;
+        recipientWallet?: string;
+        attribution?: CheckoutAttribution;
+      } = {
+        eventId: event.id.toString(),
+        quantity: quantity,
+        buyerWallet: fundedWallet,
+      };
+
+      requestBody.attribution = getCheckoutAttribution();
+
+      if (isGiftMode && recipientWallet.trim()) {
+        requestBody.recipientWallet = recipientWallet.trim();
+      }
+
+      const response = await fetch("/api/payments/ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to purchase ticket");
+
+      setPurchasedTicket({ id: data.ticketId });
+      setView("purchased");
+      toast.success("Ticket purchased successfully!");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
   // ── Waitlist handler ────────────────────────────────────────────────────────
   const handleJoinWaitlist = async () => {
     setIsJoiningWaitlist(true);
@@ -236,7 +279,33 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                   </p>
                 </div>
 
-                <div className="bg-white/50 rounded-2xl p-6 border border-black/5 flex flex-col gap-6">
+                {/* Tabs: Pay with Wallet / Pay with Card */}
+                {!isFree && (
+                  <div className="flex items-center gap-2 bg-white/40 rounded-xl p-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("wallet")}
+                      className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
+                        activeTab === "wallet" ? "bg-accent text-white" : "bg-transparent text-black/70"
+                      }`}
+                    >
+                      Pay with Wallet
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("card")}
+                      className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
+                        activeTab === "card" ? "bg-accent text-white" : "bg-transparent text-black/70"
+                      }`}
+                    >
+                      Pay with Card
+                    </button>
+                  </div>
+                )}
+
+                {/* Wallet flow */}
+                {activeTab === "wallet" && (
+                  <div className="bg-white/50 rounded-2xl p-6 border border-black/5 flex flex-col gap-6">
                   {/* Quantity */}
                   <div className="flex justify-between items-center">
                     <span className="text-lg font-bold text-black">Quantity</span>
@@ -348,6 +417,25 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                     </>
                   )}
                 </Button>
+
+                {/* Card onramp flow */}
+                {activeTab === "card" && (
+                  <div className="bg-white/50 rounded-2xl p-6 border border-black/5 flex flex-col gap-6">
+                    <CardOnramp
+                      amountUsd={totalPrice}
+                      receivingAddress={process.env.NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID || ""}
+                      onSuccess={(fundedWallet) => handleOnrampSuccess(fundedWallet)}
+                      onCancel={() => {
+                        toast.info("Payment cancelled");
+                        setActiveTab("wallet");
+                      }}
+                      onError={(err) => {
+                        toast.error(err.message || "Onramp error");
+                        setActiveTab("wallet");
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             )}
 

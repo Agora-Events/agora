@@ -30,7 +30,13 @@ use axum::{
 };
 use sqlx::PgPool;
 use std::time::Duration;
+use tower::ServiceBuilder;
+use tower_http::compression::{
+    predicate::{DefaultPredicate, Predicate, SizeAbove},
+    CompressionLayer,
+};
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::timeout::TimeoutLayer;
 
 use crate::cache::RedisCache;
 use crate::config::{
@@ -60,7 +66,7 @@ use crate::handlers::{
     example_empty_success, example_not_found, example_validation_error,
     health::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
-        health_check_redis,
+        health_check_redis, version,
     },
     marketplace::{
         cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
@@ -92,6 +98,7 @@ use crate::middleware::audit::audit_layer;
 use crate::services::indexer::spawn_indexer;
 use crate::services::indexer::IndexerConfig;
 use crate::services::queue::QueueEngine;
+use tokio_util::sync::CancellationToken;
 
 /// Sensitive routes that hit the database or expose internal state.
 /// Limited to 30 requests per IP per minute.
@@ -131,7 +138,12 @@ use utoipa::OpenApi;
 )]
 pub struct ApiDoc;
 
-pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> Router {
+pub async fn create_routes(
+    pool: PgPool,
+    config: Config,
+    redis: RedisCache,
+    shutdown: CancellationToken,
+) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
 
     // Virtual waiting room (Issue #1187): queue engine + background admission
@@ -142,6 +154,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         waiting_room_engine.clone(),
         Duration::from_millis(waiting_room_config.tick_interval_ms),
         waiting_room_config.grant_ttl_minutes,
+        shutdown.clone(),
     );
 
     let event_state = EventState {
@@ -164,6 +177,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         Some(redis.clone()),
         Some(broadcaster.clone()),
         indexer_config,
+        shutdown.clone(),
     );
 
     // Auth routes — challenge-response JWT flow (Issue #484, #875)
@@ -181,6 +195,41 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         pool: pool.clone(),
         redis: redis.clone(),
     };
+
+    // Developer API keys (Issue #1340)
+    let api_keys_state = crate::handlers::api_keys::ApiKeysState { pool: pool.clone() };
+    let api_keys_routes = Router::new()
+        .route("/api-keys", post(crate::handlers::api_keys::create_api_key).get(crate::handlers::api_keys::list_api_keys))
+        .route("/api-keys/:id", delete(crate::handlers::api_keys::revoke_api_key))
+        .with_state(api_keys_state);
+
+    // Follow organiser social graph (Issue #1346)
+    let follow_state = crate::handlers::follows::FollowState { pool: pool.clone() };
+    let follow_routes = Router::new()
+        .route("/organizers/:id/follow", post(crate::handlers::follows::follow_organizer).delete(crate::handlers::follows::unfollow_organizer))
+        .route("/organizers/:id/followers/count", get(crate::handlers::follows::get_followers_count))
+        .with_state(follow_state.clone());
+    let profile_following_route = Router::new()
+        .route("/following", get(crate::handlers::follows::list_following))
+        .with_state(follow_state.clone());
+    let following_events_route = Router::new()
+        .route("/following", get(crate::handlers::follows::list_following_events))
+        .with_state(follow_state);
+
+    // Affiliate registration (Issue #1150)
+    let affiliate_state = crate::handlers::affiliates::AffiliateState { pool: pool.clone() };
+    let affiliate_routes = Router::new()
+        .route(
+            "/:id/affiliates",
+            post(crate::handlers::affiliates::register_affiliate),
+        )
+        .with_state(affiliate_state);
+
+    // Ticket PDF route (Issue #1341)
+    let ticket_pdf_state = crate::handlers::tickets::TicketState { pool: pool.clone(), redis: redis.clone() };
+    let ticket_pdf_routes = Router::new()
+        .route("/:id/pdf", get(crate::handlers::tickets::get_ticket_pdf))
+        .with_state(ticket_pdf_state);
 
     // Organizer profile routes (Issue #486)
     let profile_routes = Router::new()
@@ -257,6 +306,11 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/challenge", post(request_challenge))
         .route("/join", post(join_queue))
         .route("/status", get(queue_status))
+        .with_state(waiting_room_state.clone());
+
+    // Long-lived SSE stream — kept out of the request timeout layer below so
+    // it isn't cut off while a client is still connected (Issue #1252).
+    let waiting_room_stream_routes = Router::new()
         .route("/stream", get(queue_stream))
         .with_state(waiting_room_state);
 
@@ -333,10 +387,36 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
     notification_service.register(crate::notifications::push::ExpoPushProvider::new(
         reqwest::Client::new(),
     ));
+    let notifications = std::sync::Arc::new(notification_service);
     let marketplace_state = MarketplaceState {
         pool: pool.clone(),
-        notifications: std::sync::Arc::new(notification_service),
+        notifications: notifications.clone(),
     };
+
+    // Geo / spatial endpoints (Issue #1259): nearby-event discovery and device
+    // geofence registration. Share the same `NotificationService` so proximity
+    // push alerts reuse the Expo provider.
+    let geo_state = crate::handlers::geo::GeoState {
+        pool: pool.clone(),
+        notifications: notifications.clone(),
+    };
+    // Routers for the two geo endpoints. `geo_state` and the nest() calls below
+    // already existed; these routers did not, so the crate could not build.
+    // Paths match the handler docs and API.md.
+    let geo_nearby_routes = Router::new()
+        .route("/nearby", get(crate::handlers::geo::get_nearby_events))
+        .with_state(geo_state.clone());
+    let geo_geofence_routes = Router::new()
+        .route("/geofences", post(crate::handlers::geo::register_geofence))
+        .with_state(geo_state);
+
+    // Geofence proximity-push worker (stops when the shutdown token fires,
+    // Issue #1261).
+    tokio::spawn(crate::handlers::geo::run_geofence_worker(
+        pool.clone(),
+        notifications.clone(),
+        shutdown.clone(),
+    ));
     let marketplace_routes = Router::new()
         .route("/listings", get(list_listings).post(create_listing))
         .route(
@@ -394,7 +474,8 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
-        .with_state(pool)
+        .route("/version", get(version))
+        .with_state(pool.clone())
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
 
     // Public API routes with tower-governor rate limiting
@@ -415,24 +496,44 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/bonding-curve/series", get(get_bonding_curve_series))
         .with_state(pricing_state);
 
+    let api_key_auth_state = crate::middleware::api_key_auth::ApiKeyAuthState::new(pool.clone());
     let public_api_routes = Router::new()
+        .nest("/settings", api_keys_routes)
+        .nest("/profile", profile_following_route)
+        .nest("/profile", profile_routes)
+        .merge(follow_routes)
+        .nest("/events", following_events_route)
         .nest("/events", event_routes)
         .nest("/events", event_qr_routes)
+        .nest("/events", geo_nearby_routes)
+        .nest("/events", affiliate_routes)
         .nest("/tickets", ticket_routes)
+        .nest("/tickets", ticket_pdf_routes)
         .nest("/marketplace", marketplace_routes)
         .nest("/categories", category_routes)
         .nest("/auth", auth_routes)
-        .nest("/profile", profile_routes)
-        .nest("/ws", ws_routes)
         .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
         .nest("/zk", zk_routes)
+        .nest("/geo", geo_geofence_routes)
         .nest("/pricing", pricing_routes)
         .nest("/sync", sync_routes)
         .merge(rates_route)
+        .layer(middleware::from_fn_with_state(api_key_auth_state, crate::middleware::api_key_auth::api_key_auth_middleware))
         .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         // Per-IP token-bucket rate limit (RATE_LIMIT_MAX / RATE_LIMIT_WINDOW).
+        .layer(RateLimitLayer::from_env());
+
+    // WebSocket and SSE routes get the same content-type/body-limit/rate-limit
+    // protections as the rest of the public API, but are exempt from the
+    // request timeout below since they are meant to stay connected
+    // indefinitely (Issue #1252).
+    let streaming_routes = Router::new()
+        .nest("/ws", ws_routes)
+        .nest("/waiting-room", waiting_room_stream_routes)
+        .layer(middleware::from_fn(require_json_content_type))
+        .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(RateLimitLayer::from_env());
 
     let api_routes = Router::new()
@@ -443,6 +544,17 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
             utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
                 .url("/openapi.json", ApiDoc::openapi()),
         )
+        .layer(
+            ServiceBuilder::new()
+                .layer(TimeoutLayer::new(Duration::from_secs(
+                    config.request_timeout_secs,
+                ))),
+        )
+        // gzip/br response compression — excludes /metrics (mounted outside
+        // `api_routes`) and the streaming routes merged in below, and skips
+        // small bodies that wouldn't benefit (Issue #1253).
+        .layer(CompressionLayer::new().compress_when(DefaultPredicate::new().and(SizeAbove::new(1024))))
+        .merge(streaming_routes)
         .layer(middleware::from_fn(crate::middleware::csrf::check_csrf));
 
     // Deep linking routes
@@ -706,5 +818,38 @@ mod tests {
 
         let status = router.oneshot(req).await.unwrap().status();
         assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn test_slow_handler_returns_504_gateway_timeout() {
+        use axum::body::Body;
+        use tower::ServiceExt;
+
+        let router = Router::new()
+            .route(
+                "/slow",
+                get(|| async {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    "too slow"
+                }),
+            )
+            .layer(TimeoutLayer::new(Duration::from_millis(10)));
+
+        let req = Request::builder()
+            .uri("/slow")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+
+        // TimeoutLayer without HandleError returns 408 or 504 depending on tower version;
+        // we assert it's a timeout-class status.
+        assert!(
+            resp.status() == StatusCode::GATEWAY_TIMEOUT
+                || resp.status() == StatusCode::REQUEST_TIMEOUT
+                || resp.status() == StatusCode::SERVICE_UNAVAILABLE,
+            "expected timeout status, got {}",
+            resp.status()
+        );
     }
 }

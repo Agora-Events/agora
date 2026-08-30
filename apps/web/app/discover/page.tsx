@@ -32,7 +32,7 @@ function DiscoverContent() {
   };
 
   return (
-    <main className="flex flex-col min-h-screen bg-base">
+    <main id="main-content" tabIndex={-1} className="flex flex-col min-h-screen bg-base">
       <Navbar />
       <CategorySection
         selectedCategory={category}
@@ -41,6 +41,8 @@ function DiscoverContent() {
       <PopularEventsSection
         category={category}
         onCategoryChange={(value) => updateFilter("category", value)}
+        selectedOrganizer={organizer}
+        onOrganizerChange={(value) => updateFilter("organizer", value)}
       />
       <OrganizerComponent
         selectedOrganizer={organizer}

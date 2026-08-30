@@ -7,8 +7,8 @@ use axum::{
     extract::{Path, Query, State},
     response::IntoResponse,
     response::Response,
-    Json,
 };
+use crate::utils::extract::ValidatedJson;
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -1529,6 +1529,7 @@ mod tests {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubmitEventRatingRequest {
     pub ticket_id: Uuid,
     pub rating: i16,
@@ -2313,6 +2314,7 @@ pub fn validate_event_description(description: &Option<String>) -> Result<(), St
 
 /// Request body for creating a new event
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateEventRequest {
     pub organizer_id: Uuid,
     pub title: String,
@@ -2459,7 +2461,7 @@ fn validate_event_timestamps(
 /// POST `/api/v1/events`
 pub async fn create_event(
     State(mut state): State<EventState>,
-    Json(payload): Json<CreateEventRequest>,
+    ValidatedJson(payload): ValidatedJson<CreateEventRequest>,
 ) -> Response {
     if let Some(ref url) = payload.image_url {
         if let Err(e) = validate_image_url(url) {
@@ -2562,6 +2564,22 @@ pub async fn create_event(
     // New events invalidate the shared list cache.
     state.redis.invalidate_events_list().await;
 
+    // Notify followers of the organiser (Issue #1346) – fire-and-forget
+    if let Ok(Some(Some(wallet))) = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(event.organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        let pool = state.pool.clone();
+        let eid = event.id;
+        let w = wallet.clone();
+        tokio::spawn(async move {
+            crate::handlers::follows::notify_followers_on_new_event(&pool, &w, eid).await;
+        });
+    }
+
     success(event, "Event created successfully").into_response()
 }
 
@@ -2572,7 +2590,7 @@ pub async fn create_event(
 pub async fn submit_event_rating(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    Json(payload): Json<SubmitEventRatingRequest>,
+    ValidatedJson(payload): ValidatedJson<SubmitEventRatingRequest>,
 ) -> Response {
     if payload.rating < 1 || payload.rating > 5 {
         return AppError::ValidationError("Rating must be between 1 and 5".to_string())
@@ -3176,6 +3194,7 @@ pub async fn toggle_event_flag(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SetEventFeaturedRequest {
     pub featured: bool,
 }
@@ -3186,7 +3205,7 @@ pub struct SetEventFeaturedRequest {
 pub async fn set_event_featured(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    Json(payload): Json<SetEventFeaturedRequest>,
+    ValidatedJson(payload): ValidatedJson<SetEventFeaturedRequest>,
 ) -> Response {
     let updated = match sqlx::query_as::<_, (bool,)>(
         "UPDATE events SET is_featured = $1 WHERE id = $2 RETURNING is_featured",
@@ -3231,6 +3250,7 @@ pub async fn set_event_featured(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FlagEventRequest {
     pub flagged: bool,
 }
@@ -3241,7 +3261,7 @@ pub struct FlagEventRequest {
 pub async fn flag_event(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    Json(payload): Json<FlagEventRequest>,
+    ValidatedJson(payload): ValidatedJson<FlagEventRequest>,
 ) -> Response {
     let updated = match sqlx::query_as::<_, (bool,)>(
         "UPDATE events SET is_flagged = $1 WHERE id = $2 RETURNING is_flagged",
@@ -4180,7 +4200,12 @@ pub async fn get_events_map(
 ) -> Response {
     let lat = params.latitude;
     let lng = params.longitude;
-    let radius_km = params.radius.unwrap_or(50.0).clamp(1.0, 500.0);
+    let radius_km = params.radius.unwrap_or(50.0);
+    if !radius_km.is_finite() {
+        return AppError::ValidationError("radius must be a finite number".to_string())
+            .into_response();
+    }
+    let radius_km = radius_km.clamp(1.0, 500.0);
     let limit = (params.limit.unwrap_or(50) as i64).clamp(1, 200);
 
     if !(-90.0..=90.0).contains(&lat) {
@@ -4484,6 +4509,16 @@ pub async fn list_event_attendees(
     success(response, "Attendees retrieved successfully").into_response()
 }
 
+/// Sanitizes a string field to prevent CSV formula injection when opened in spreadsheet applications.
+/// Fields starting with '=', '+', '-', or '@' are escaped with a leading single quote (').
+pub fn sanitize_csv_field(field: &str) -> String {
+    if field.starts_with('=') || field.starts_with('+') || field.starts_with('-') || field.starts_with('@') {
+        format!("'{}", field)
+    } else {
+        field.to_string()
+    }
+}
+
 /// GET /api/v1/events/:id/export-attendees
 ///
 /// Exports all attendees for an event as a CSV file.
@@ -4542,10 +4577,10 @@ pub async fn export_attendees_csv(
     for (owner_wallet, buyer_wallet, quantity, created_at) in tickets {
         csv.push_str(&format!(
             "{},{},{},{}\n",
-            owner_wallet,
-            buyer_wallet,
-            quantity,
-            created_at.to_rfc3339()
+            sanitize_csv_field(&owner_wallet),
+            sanitize_csv_field(&buyer_wallet),
+            sanitize_csv_field(&quantity.to_string()),
+            sanitize_csv_field(&created_at.to_rfc3339())
         ));
     }
 
@@ -5165,5 +5200,18 @@ mod search_cache_tests {
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["total_tickets"], 100);
         assert_eq!(json["minted_tickets"], 42);
+    }
+
+    #[test]
+    fn test_sanitize_csv_field() {
+        assert_eq!(sanitize_csv_field("=1+2"), "'=1+2");
+        assert_eq!(sanitize_csv_field("+cmd|' /C calc'!A0"), "'+cmd|' /C calc'!A0");
+        assert_eq!(sanitize_csv_field("-100"), "'-100");
+        assert_eq!(sanitize_csv_field("@SUM(A1:A10)"), "'@SUM(A1:A10)");
+        assert_eq!(sanitize_csv_field("10"), "10");
+        assert_eq!(
+            sanitize_csv_field("GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+            "GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
     }
 }

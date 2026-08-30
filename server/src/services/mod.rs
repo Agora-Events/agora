@@ -9,6 +9,7 @@
 //!   with producer-consumer pipeline, ledger cursor checkpoints, and
 //!   historical replay (Issue #1174).
 
+pub mod email_dispatch;
 pub mod pow;
 pub mod queue;
 pub mod indexer;

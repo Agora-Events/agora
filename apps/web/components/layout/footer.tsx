@@ -46,13 +46,13 @@ export function Footer() {
           <div className="flex flex-col gap-2">
             <Link
               href="/events"
-              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200"
+              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               Discover Events
             </Link>
             <Link
               href="/pricing"
-              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200"
+              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               Pricing
             </Link>
@@ -60,19 +60,19 @@ export function Footer() {
               href="https://stellar.org"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200"
+              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               Stellar Ecosystem
             </Link>
             <Link
               href="/help"
-              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200"
+              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               FAQs
             </Link>
             <Link
               href="/settings#cookie-preferences"
-              className="text-gray-300 hover:text-white transition-colors"
+              className="text-gray-300 hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               Cookie preferences
             </Link>
@@ -85,7 +85,7 @@ export function Footer() {
               href="https://instagram.com/agora"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group"
+              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Image src="/icons/instagram.svg" width={20} height={20} alt="Instagram" className="text-gray-300 group-hover:text-white" />
               <span className="text-sm">Instagram</span>
@@ -96,7 +96,7 @@ export function Footer() {
               href="https://x.com/agora"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group"
+              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Image src="/icons/x.svg" width={20} height={20} alt="X" className="text-gray-300 group-hover:text-white" />
               <span className="text-sm">X</span>
@@ -105,7 +105,7 @@ export function Footer() {
             {/* Mail: Integrated hello@agora.com */}
             <a
               href="mailto:hello@agora.com"
-              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group"
+              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Image src="/icons/mail.svg" width={20} height={20} alt="Mail" className="text-gray-300 group-hover:text-white" />
               <span className="text-sm">Mail</span>
@@ -114,7 +114,7 @@ export function Footer() {
             {/* Stellar Link (Internal/Help) */}
             <Link
               href="/stellar"
-              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group"
+              className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center p-1">
                 <Image

@@ -257,6 +257,22 @@ pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&DataKey::Admin)
 }
 
+/// Sets a pending administrator address awaiting acceptance.
+pub fn set_pending_admin(env: &Env, admin: &Address) {
+    env.storage().persistent().set(&DataKey::PendingAdmin, admin);
+    bump_persistent(env, &DataKey::PendingAdmin);
+}
+
+/// Retrieves the pending administrator address, if any.
+pub fn get_pending_admin(env: &Env) -> Option<Address> {
+    env.storage().persistent().get(&DataKey::PendingAdmin)
+}
+
+/// Clears the pending administrator address.
+pub fn clear_pending_admin(env: &Env) {
+    env.storage().persistent().remove(&DataKey::PendingAdmin);
+}
+
 /// Sets the multi-signature configuration.
 pub fn set_multisig_config(env: &Env, config: &MultiSigConfig) {
     env.storage()

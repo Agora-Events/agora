@@ -10,6 +10,13 @@ import { buildMetadata } from "@/components/layout/seo";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EventPageView } from "@/components/analytics/event-page-view";
 import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
+import { EventTimeDisplay } from "@/components/events/event-time-display";
+import ShareButton from "@/components/events/ShareButton";
+
+function truncateDescription(text: string, maxLength = 160): string {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}
 
 export async function generateMetadata({
   params,
@@ -18,13 +25,23 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const event = dataEvents.find((e) => e.id === parseInt(id));
-  if (!event) return {};
+  if (!event) return { title: "Event not found" };
+  const ogImageUrl = `${SITE_URL}/api/og?eventId=${id}`;
   return buildMetadata({
     title: event.title,
-    description: `Join us for ${event.title} on ${event.date} in ${event.location}. ${event.price === "Free" ? "Free entry." : `Tickets from $${event.price}.`} Secure your spot on Agora.`,
-    image: event.imageUrl,
+    description: truncateDescription(
+      `Join us for ${event.title} on ${event.date} in ${event.location}. ${event.price === "Free" ? "Free entry." : `Tickets from $${event.price}.`} Secure your spot on Agora.`
+    ),
+    image: ogImageUrl,
     path: `/events/${id}`,
   });
+}
+
+const SITE_URL = "https://agora.events";
+
+function truncateTitle(title: string, maxLength = 40): string {
+  if (title.length <= maxLength) return title;
+  return `${title.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 export default async function EventDetailPage({
@@ -48,9 +65,57 @@ export default async function EventDetailPage({
     hostPfp: "/images/pfp.png",
   };
 
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: "Discover", item: `${SITE_URL}/discover` },
+      { "@type": "ListItem", position: 3, name: event.title, item: `${SITE_URL}/events/${id}` },
+    ],
+  };
+
+  const isOnline = event.location === "Online";
+  const eventUrl = `${SITE_URL}/events/${id}`;
+  const eventDescription = `Join us for ${event.title} on ${event.date} in ${event.location}. ${event.price === "Free" ? "Free entry." : `Tickets from $${event.price}.`} Secure your spot on Agora.`;
+  const parsedStartDate = new Date(event.date);
+
+  const eventJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: event.title,
+    ...(isNaN(parsedStartDate.getTime())
+      ? {}
+      : { startDate: parsedStartDate.toISOString() }),
+    location: isOnline
+      ? { "@type": "VirtualLocation", url: eventUrl }
+      : { "@type": "Place", name: event.location },
+    image: `${SITE_URL}${event.imageUrl}`,
+    description: eventDescription,
+    eventAttendanceMode: isOnline
+      ? "https://schema.org/OnlineEventAttendanceMode"
+      : "https://schema.org/OfflineEventAttendanceMode",
+    organizer: { "@type": "Organization", name: host.name },
+    offers: {
+      "@type": "Offer",
+      price: event.price === "Free" ? "0" : event.price,
+      priceCurrency: "USD",
+      availability: "https://schema.org/InStock",
+      url: eventUrl,
+    },
+  };
+
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <EventPageView eventId={event.id} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(eventJsonLd) }}
+      />
       <Navbar />
 
       <div className="flex-1 w-full max-w-[1221px] mx-auto px-6 py-6 sm:py-12">
@@ -59,7 +124,7 @@ export default async function EventDetailPage({
           items={[
             { label: "Home", href: "/" },
             { label: "Discover", href: "/discover" },
-            { label: event.title },
+            { label: truncateTitle(event.title) },
           ]}
         />
 
@@ -128,9 +193,14 @@ export default async function EventDetailPage({
           {/* RIGHT COLUMN (Desktop) / BOTTOM ITEMS (Mobile) */}
           <div className="lg:w-[45%] flex flex-col gap-8 lg:gap-10">
             {/* Title */}
-            <h1 className="text-[36px] sm:text-[56px] font-bold leading-[1.1] text-black font-heading">
-              {event.title}
-            </h1>
+            <div className="flex items-start justify-between gap-4">
+              <h1 className="text-[36px] sm:text-[56px] font-bold leading-[1.1] text-black font-heading">
+                {event.title}
+              </h1>
+              <div className="mt-2">
+                <ShareButton title={event.title} text={event.description} />
+              </div>
+            </div>
 
             {/* Details (Location & Date) */}
             <div className="flex flex-col gap-6">
@@ -148,19 +218,26 @@ export default async function EventDetailPage({
                   {event.location}
                 </span>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-full border border-black flex items-center justify-center shrink-0">
-                  <Image
-                    src="/icons/notification.svg"
-                    width={22}
-                    height={22}
-                    alt="Date"
-                    loading="lazy"
-                  />
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="flex items-start gap-4">
+                  <div className="w-11 h-11 rounded-full border border-black flex items-center justify-center shrink-0">
+                    <Image
+                      src="/icons/notification.svg"
+                      width={22}
+                      height={22}
+                      alt="Date"
+                      loading="lazy"
+                    />
+                  </div>
+                  {event.startsAt ? (
+                    <EventTimeDisplay startsAt={event.startsAt} />
+                  ) : (
+                    <span className="text-[18px] sm:text-[19px] font-medium text-black">
+                      {event.date}
+                    </span>
+                  )}
                 </div>
-                <span className="text-[18px] sm:text-[19px] font-medium text-black">
-                  {event.date}
-                </span>
+                <AddToCalendar event={event} />
               </div>
             </div>
 

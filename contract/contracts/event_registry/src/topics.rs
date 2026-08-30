@@ -57,6 +57,12 @@ pub enum AgoraEvent {
     /// A custom fee override has been set for a specific event by an admin.
     CustomFeeSet,
     AdminUpdated,
+    /// A new admin has been proposed by the current admin, awaiting acceptance.
+    AdminProposed,
+    /// A proposed admin has been accepted and is now the active admin.
+    AdminTransferred,
+    /// A pending admin proposal has been cancelled by the current admin.
+    AdminProposalCancelled,
     /// Post-event feedback CID has been set by the organizer after event end_time.
     FeedbackCidSet,
     /// An event's token whitelist has been updated (token added or removed).
