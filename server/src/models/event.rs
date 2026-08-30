@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Represents a ticketed event created by an organizer.
@@ -11,7 +12,7 @@ use uuid::Uuid;
 ///
 /// Maps to the `events` table in the database.
 #[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize, FromRow)]
+#[derive(Debug, Clone, Deserialize, FromRow, ToSchema)]
 pub struct Event {
     /// Unique identifier for the event (UUID v4).
     pub id: Uuid,
