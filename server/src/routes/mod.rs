@@ -206,6 +206,15 @@ pub async fn create_routes(
         .route("/following", get(crate::handlers::follows::list_following_events))
         .with_state(follow_state);
 
+    // Affiliate registration (Issue #1150)
+    let affiliate_state = crate::handlers::affiliates::AffiliateState { pool: pool.clone() };
+    let affiliate_routes = Router::new()
+        .route(
+            "/:id/affiliates",
+            post(crate::handlers::affiliates::register_affiliate),
+        )
+        .with_state(affiliate_state);
+
     // Ticket PDF route (Issue #1341)
     let ticket_pdf_state = crate::handlers::tickets::TicketState { pool: pool.clone(), redis: redis.clone() };
     let ticket_pdf_routes = Router::new()
@@ -381,6 +390,16 @@ pub async fn create_routes(
         pool: pool.clone(),
         notifications: notifications.clone(),
     };
+    // Routers for the two geo endpoints. `geo_state` and the nest() calls below
+    // already existed; these routers did not, so the crate could not build.
+    // Paths match the handler docs and API.md.
+    let geo_nearby_routes = Router::new()
+        .route("/nearby", get(crate::handlers::geo::get_nearby_events))
+        .with_state(geo_state.clone());
+    let geo_geofence_routes = Router::new()
+        .route("/geofences", post(crate::handlers::geo::register_geofence))
+        .with_state(geo_state);
+
     // Geofence proximity-push worker (stops when the shutdown token fires,
     // Issue #1261).
     tokio::spawn(crate::handlers::geo::run_geofence_worker(
@@ -477,6 +496,7 @@ pub async fn create_routes(
         .nest("/events", event_routes)
         .nest("/events", event_qr_routes)
         .nest("/events", geo_nearby_routes)
+        .nest("/events", affiliate_routes)
         .nest("/tickets", ticket_routes)
         .nest("/tickets", ticket_pdf_routes)
         .nest("/marketplace", marketplace_routes)

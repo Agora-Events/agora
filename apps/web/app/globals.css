@@ -157,3 +157,40 @@ select:focus-visible,
 .lazy-image--revealed {
   filter: blur(0);
 }
+
+/* Event map cluster badges (Issue #1140).
+   Built with Leaflet's divIcon, so the count is live text rather than an
+   image and stays legible as it changes on zoom. */
+.agora-cluster-marker {
+  background: transparent;
+  border: none;
+}
+
+.agora-cluster-marker span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: rgb(24 24 27 / 0.92);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 4px rgb(24 24 27 / 0.18);
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.agora-cluster-marker:hover span {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 6px rgb(24 24 27 / 0.22);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agora-cluster-marker span {
+    transition: none;
+  }
+  .agora-cluster-marker:hover span {
+    transform: none;
+  }
+}

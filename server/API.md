@@ -64,3 +64,58 @@ The server traps `SIGTERM` and `SIGINT`. On shutdown it:
 
 Set `SHUTDOWN_TIMEOUT_SECS` in the environment to tune the drain window.
 
+
+## Affiliate registration (Issues #1150, #1151)
+
+`POST /api/v1/events/:id/affiliates`
+
+Registers the authenticated wallet as an affiliate for an event and returns a
+unique referral code.
+
+**Auth:** required — the wallet is taken from the request's credentials, never
+from the body, so a caller cannot register a code against someone else's
+wallet.
+
+**Response** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "Registered as an affiliate",
+  "data": {
+    "id": "0e2f...",
+    "event_id": "7a41...",
+    "wallet_address": "GA...",
+    "referral_code": "K3M9TQ7XZ2",
+    "already_registered": false
+  }
+}
+```
+
+**Duplicate registrations.** The call is idempotent. A wallet already
+registered for the event receives its *existing* code back with
+`already_registered: true`. Re-issuing a fresh code would silently invalidate
+links the affiliate had already shared, and returning an error would make a
+retried request look like a failure. Uniqueness of `(event_id,
+wallet_address)` is enforced by the database, so two concurrent requests
+cannot both create a registration.
+
+**Errors**
+
+| Status | When |
+| --- | --- |
+| `400` | `:id` is not a valid UUID |
+| `401` | missing or invalid credentials |
+| `404` | no event with that id — a code is never minted for an event that does not exist |
+| `409` | a unique referral code could not be allocated; safe to retry |
+
+**Referral codes** are 10 characters from a Crockford-style base32 alphabet
+(no `I`, `L`, `O` or `U`), so a code stays unambiguous when read off a poster
+or read aloud. Codes are globally unique rather than unique per event, so a
+code arriving on a checkout link resolves on its own.
+
+**Attribution.** `transactions.referred_by` carries the referral code for a
+purchase made through an affiliate link. It is nullable — existing and direct
+purchases simply carry no attribution — and the foreign key is
+`ON DELETE SET NULL`, so removing an affiliate registration never deletes the
+record of a completed purchase.
