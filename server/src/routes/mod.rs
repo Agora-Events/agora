@@ -123,7 +123,7 @@ use utoipa::OpenApi;
     components(
         schemas(
             crate::handlers::health::HealthResponse,
-            crate::handlers::events::Event,
+            crate::models::event::Event,
             crate::handlers::events::EventDetail,
             crate::handlers::events::SearchParams,
             crate::handlers::events::GetEventParams,
