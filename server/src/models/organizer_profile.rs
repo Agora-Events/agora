@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
+use utoipa::ToSchema;
 
 /// Represents an organizer's public-facing brand profile.
 ///
@@ -10,7 +11,7 @@ use sqlx::FromRow;
 /// and holds display metadata that organizers manage themselves.
 ///
 /// Maps to the `organizer_profiles` table in the database.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct OrganizerProfile {
     /// Stellar wallet address — primary key.
     pub address: String,

@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
+use uuid::Uuid;
 
 /// Minimum ledger confirmations before an event is considered final.
 const MIN_CONFIRMATIONS: u32 = 2;
@@ -619,6 +620,36 @@ async fn handle_ticket_purchased(pool: &PgPool, event: &SorobanEvent) -> Result<
                     event_id,
                     buyer_wallet
                 );
+
+                // Fire outgoing webhooks (Issue #1339) – PaymentProcessed
+                if let Ok(event_uuid) = event_id.parse::<Uuid>() {
+                    let pool = pool.clone();
+                    let tick_event_id = event_uuid;
+                    let buyer = buyer_wallet.to_string();
+                    let stellar = stellar_id.to_string();
+                    tokio::spawn(async move {
+                        if let Some(organizer_id) =
+                            crate::services::webhook_dispatcher::organizer_for_event(
+                                &pool,
+                                tick_event_id,
+                            )
+                            .await
+                        {
+                            let data = serde_json::json!({
+                                "event_id": tick_event_id,
+                                "buyer_wallet": buyer,
+                                "stellar_tx_hash": stellar,
+                                "processed_at": chrono::Utc::now(),
+                            });
+                            crate::services::webhook_dispatcher::dispatch_webhooks(
+                                pool,
+                                organizer_id,
+                                crate::models::webhook::WEBHOOK_EVENT_PAYMENT_PROCESSED,
+                                data,
+                            );
+                        }
+                    });
+                }
             }
             Ok(())
         }

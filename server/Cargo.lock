@@ -28,6 +28,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-util",
  "hex",
+ "hmac 0.12.1",
  "http-body-util",
  "jsonwebtoken",
  "once_cell",
@@ -4714,6 +4715,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+ "uuid",
 ]
 
 [[package]]
