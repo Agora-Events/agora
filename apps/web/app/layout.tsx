@@ -9,6 +9,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { CookieBanner } from "@/components/layout/cookie-banner";
 import { LiveAnnouncer } from "@/components/ui/live-announcer";
+import { LocaleProvider } from "@/lib/i18n/locale-context";
 import "./globals.css";
 
 const inter = Inter({
@@ -51,14 +52,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased`}>
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>
-        <LiveAnnouncer />
-        {children}
-        <CookieBanner />
+        <LocaleProvider>
+          <LiveAnnouncer />
+          {children}
+          <CookieBanner />
+        </LocaleProvider>
       </body>
     </html>
   );

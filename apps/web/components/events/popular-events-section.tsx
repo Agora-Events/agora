@@ -8,6 +8,7 @@ import { EventCardSkeleton } from "./event-card-skeleton";
 import { EmptyState } from "../ui/empty-state";
 import { Button } from "../ui/button";
 import { dataEvents } from "./mockups";
+import { useTranslations } from "next-intl";
 import {
   FilterSidebar,
   FilterState,
@@ -69,6 +70,7 @@ export function PopularEventsSection({
   selectedOrganizer,
   onOrganizerChange,
 }: PopularEventsSectionProps) {
+  const t = useTranslations("discover");
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, SEARCH_DEBOUNCE_MS);
@@ -139,7 +141,7 @@ export function PopularEventsSection({
   };
 
   const activeFilters: ActiveFilter[] = [
-    ...(filters.date && filters.date !== "Any time"
+    ...(filters.date && filters.date !== t("anyTime")
       ? [{ key: "date" as const, label: filters.date }]
       : []),
     ...filters.categories.map((category) => ({
@@ -275,7 +277,7 @@ export function PopularEventsSection({
         {getActiveFilterCount(filters) > 0 && (
           <div
             className="flex flex-wrap items-center gap-2 mb-6"
-            aria-label="Active filters"
+            aria-label={t("activeFilters")}
           >
             {activeFilters.map((filter) => (
               <span
@@ -341,7 +343,7 @@ export function PopularEventsSection({
                 className="pl-13 h-9.75 rounded-4xl bg-black pr-9 py-2 text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
                 type="text"
                 placeholder="Search"
-                aria-label="Search events"
+                aria-label={t("searchEvents")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setIsFocused(true)}
@@ -372,7 +374,7 @@ export function PopularEventsSection({
                 id="discover-sort"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as EventSort)}
-                aria-label="Sort events"
+                aria-label={t("sortEvents")}
                 className="h-9.75 max-w-[10.5rem] sm:max-w-none rounded-4xl bg-black px-3 text-sm text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
               >
                 {SORT_OPTIONS.map((option) => (
@@ -427,7 +429,7 @@ export function PopularEventsSection({
                 className="w-full pl-10 pr-9 h-9.75 rounded-4xl bg-black py-2 text-sm text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white/70 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
                 type="text"
                 placeholder="Search events"
-                aria-label="Search events"
+                aria-label={t("searchEvents")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -517,7 +519,7 @@ export function PopularEventsSection({
                 }
                 title="No events found"
                 description="Try adjusting your search or filters to find what you're looking for."
-                action={{ label: "Clear Search", onClick: () => setSearch("") }}
+                action={{ label: t("clearSearch"), onClick: () => setSearch("") }}
               />
             </div>
           )}

@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { ChatSidebar } from "@/components/layout/chat-sidebar";
@@ -19,19 +20,19 @@ import BubbleChatIcon from "@/public/icons/bubble-chat.svg";
 type MyEventsTab = "upcoming" | "hosting" | "past";
 type ForYouTab = "discover" | "following";
 
-const myEventsTabs: { id: MyEventsTab; label: string; icon?: string }[] = [
+const myEventsTabs = (t: (key: string) => string): { id: MyEventsTab; label: string; icon?: string }[] => [
   {
     id: "upcoming",
-    label: "Upcoming",
+    label: t("tabUpcoming"),
     icon: CalendarIcon,
   },
-  { id: "hosting", label: "Hosting", icon: HostingIcon },
-  { id: "past", label: "Past", icon: PastIcon },
+  { id: "hosting", label: t("tabHosting"), icon: HostingIcon },
+  { id: "past", label: t("tabPast"), icon: PastIcon },
 ];
 
-const forYouTabs: { id: ForYouTab; label: string }[] = [
-  { id: "discover", label: "Discover" },
-  { id: "following", label: "Following" },
+const forYouTabs = (t: (key: string) => string): { id: ForYouTab; label: string }[] => [
+  { id: "discover", label: t("tabDiscover") },
+  { id: "following", label: t("tabFollowing") },
 ];
 
 // Mock data types
@@ -227,6 +228,7 @@ function SectionHeader<T extends string>({
   hasNotifications?: boolean;
   onChatClick?: () => void;
 }) {
+  const t = useTranslations("home");
   return (
     <div className="flex flex-col  gap-3 sm:gap-8 mb-6 sm:mb-8">
       <h2 className="text-[24px] sm:text-[28px] lg:text-[3.6rem] leading-16.5 tracking-[0px] font-semibold text-ink-deep italic">
@@ -240,7 +242,7 @@ function SectionHeader<T extends string>({
           layoutId={layoutId}
         />
         {hasNotifications && (
-          <button type="button" onClick={onChatClick} aria-label="Open messages">
+          <button type="button" onClick={onChatClick} aria-label={t("openMessages")}>
             <div className="w-13.75 h-13.75 rounded-full bg-surface flex items-center justify-center  relative">
               <div className="absolute -top-1 right-1 rounded-full size-4.75 bg-error text-white flex items-center justify-center">
                 <p>1</p>
@@ -262,6 +264,7 @@ function SectionHeader<T extends string>({
 
 // Timeline Event Card Component
 function TimelineEventCard({ event }: { event: any }) {
+  const t = useTranslations("home");
   const locationImageSrc =
     (event.location || "").toLowerCase().includes("discord") ||
     (event.location || "").toLowerCase().includes("virtual") ||
@@ -274,7 +277,7 @@ function TimelineEventCard({ event }: { event: any }) {
       {/* Timeline Column */}
       <div className="flex  w-39 max-w-39 shrink-0  mb-3">
         <span className="text-[1.625rem] text-left font-medium text-black  leading-10.25">
-          {event.date || "TBD"}
+          {event.date || t("tbd")}
         </span>
       </div>
 
@@ -325,7 +328,7 @@ function TimelineEventCard({ event }: { event: any }) {
                       className="object-contain"
                     />
                     <span className="text-[12px] text-black ">
-                      {event.location || "Virtual"}
+                      {event.location || t("virtual")}
                     </span>
                   </div>
 
@@ -355,13 +358,13 @@ function TimelineEventCard({ event }: { event: any }) {
                         ))}
                       </div>
                       <span className="text-[11px] sm:text-[12px] text-black/60">
-                        {event.attendees || 0} going
+                        {event.attendees || 0} {t("going")}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-1 text-black text-[12px] sm:text-[13px] font-medium">
-                      <span className="hidden sm:inline">View Event</span>
-                      <span className="sm:hidden">View</span>
+                      <span className="hidden sm:inline">{t("viewEvent")}</span>
+                      <span className="sm:hidden">{t("view")}</span>
                       <Image
                         src="/icons/arrow-right.svg"
                         width={16}
@@ -383,6 +386,7 @@ function TimelineEventCard({ event }: { event: any }) {
 
 // Grid Event Card Component
 function GridEventCard({ event }: { event: any }) {
+  const t = useTranslations("home");
   const color = event.color || "bg-[#E8D5F7]";
   return (
     <Link href={`/events/${event.id}`} className="block">
@@ -407,7 +411,7 @@ function GridEventCard({ event }: { event: any }) {
           </h3>
 
           <p className="text-[11px] sm:text-[12px] text-black/60 mb-1">
-            {event.date || "TBD"}
+            {event.date || t("tbd")}
           </p>
 
           <div className="flex items-center gap-1 text-black/70 mb-2 sm:mb-3">
@@ -419,16 +423,16 @@ function GridEventCard({ event }: { event: any }) {
               className="object-contain w-3 h-3 sm:w-[14px] sm:h-[14px]"
             />
             <span className="text-[11px] sm:text-[12px] line-clamp-1">
-              {event.location || "Virtual"}
+              {event.location || t("virtual")}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-[12px] sm:text-[13px] font-medium text-black">
-              {event.price === "$0.00" || !event.price ? "Free" : event.price}
+              {event.price === "$0.00" || !event.price ? t("free") : event.price}
             </span>
             <div className="flex items-center gap-1 text-black text-[11px] sm:text-[12px] font-medium">
-              <span className="hidden sm:inline">View</span>
+              <span className="hidden sm:inline">{t("view")}</span>
               <Image
                 src="/icons/arrow-right.svg"
                 width={14}
@@ -461,6 +465,7 @@ function MyEventsContent({
   events: any[];
   isLoading: boolean;
 }) {
+  const t = useTranslations("home");
   const isUpcomingTab = activeTab === "upcoming";
 
   if (isLoading) {
@@ -480,7 +485,7 @@ function MyEventsContent({
     return (
       <div className="flex min-h-[15rem] items-center justify-center rounded-[2rem] border border-dashed border-black/20 bg-white/60 px-6 text-center">
         <p className="text-base font-medium text-black/55">
-          No events found in this section.
+          {t("noEventsFound")}
         </p>
       </div>
     );
@@ -497,6 +502,7 @@ function MyEventsContent({
 
 // For You Section Content
 function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab, events: any[], isLoading: boolean }) {
+  const t = useTranslations("home");
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
@@ -510,7 +516,7 @@ function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab,
   if (events.length === 0) {
     return (
       <div className="min-h-[200px] rounded-xl border-2 border-dashed border-black/20 flex items-center justify-center">
-        <p className="text-black/50 text-lg">No events found</p>
+        <p className="text-black/50 text-lg">{t("noEventsFound")}</p>
       </div>
     );
   }
@@ -528,6 +534,7 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 export default function HomePage() {
   const router = useRouter();
+  const t = useTranslations("home");
   const {
     walletAddress: userWallet,
     isAuthenticated,
@@ -581,8 +588,8 @@ export default function HomePage() {
         {/* My Events Section */}
         <section className="mb-10 sm:mb-16 space-y-15">
           <SectionHeader
-            title="My Events"
-            tabs={myEventsTabs}
+            title={t("myEvents")}
+            tabs={myEventsTabs(t)}
             activeTab={myEventsTab}
             onTabChange={setMyEventsTab}
             layoutId="my-events-toggle"
@@ -603,8 +610,8 @@ export default function HomePage() {
         {/* For You Section */}
         <section>
           <SectionHeader
-            title="For You"
-            tabs={forYouTabs}
+            title={t("forYou")}
+            tabs={forYouTabs(t)}
             activeTab={forYouTab}
             onTabChange={setForYouTab}
             layoutId="for-you-toggle"

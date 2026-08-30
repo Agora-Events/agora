@@ -120,7 +120,7 @@ export function OrganizerComponent({
   return (
     <div className="p-10 pl-45 hidden lg:block bg-base">
       <div className="flex justify-start items-center gap-4 p-5 pb-10">
-        <h1 className="font-semibold md:text-4xl pl-3">Explore organizers</h1>
+        <h1 className="font-semibold md:text-4xl pl-3">{t("exploreOrganizers")}</h1>
         <Image
           src={group}
           alt="User Group Icon"
@@ -191,7 +191,7 @@ export function OrganizerComponent({
           </Link>
           ))}
         {!isLoading && cardsData.length === 0 && (
-          <p className="text-sm text-black/60">No data available</p>
+          <p className="text-sm text-black/60">{t("noDataAvailable")}</p>
         )}
       </section>
       {!isLoading && organizersToRender.length > VISIBLE_ORGANIZER_COUNT && (

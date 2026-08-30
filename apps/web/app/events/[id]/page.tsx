@@ -12,6 +12,7 @@ import { EventPageView } from "@/components/analytics/event-page-view";
 import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketplace-tab";
 import { EventTimeDisplay } from "@/components/events/event-time-display";
 import ShareButton from "@/components/events/ShareButton";
+import { T } from "@/components/ui/t";
 
 function truncateDescription(text: string, maxLength = 160): string {
   if (text.length <= maxLength) return text;
@@ -147,7 +148,7 @@ export default async function EventDetailPage({
             {/* Hosted By */}
             <div className="flex flex-col gap-4">
               <h2 className="text-xl font-bold text-black font-heading">
-                Hosted By
+                <T ns="eventDetail" k="hostedBy" />
               </h2>
               <div className="flex items-center gap-3">
                 <div className="relative w-8 h-8 rounded-full border border-black overflow-hidden bg-white">
@@ -178,7 +179,7 @@ export default async function EventDetailPage({
                   />
                 </div>
                 <h2 className="text-xl font-bold text-black font-heading">
-                  Location
+                  <T ns="eventDetail" k="location" />
                 </h2>
               </div>
               <p className="text-[18px] font-medium text-black -mt-2">
@@ -247,7 +248,7 @@ export default async function EventDetailPage({
             {/* About Section */}
             <div className="flex flex-col gap-6 pt-4">
               <h2 className="text-[20px] sm:text-[22px] font-bold text-black font-heading">
-                About Event
+                <T ns="eventDetail" k="aboutEvent" />
               </h2>
               <div className="text-[16px] sm:text-[17px] text-black leading-relaxed font-normal flex flex-col gap-6">
                 <p>
