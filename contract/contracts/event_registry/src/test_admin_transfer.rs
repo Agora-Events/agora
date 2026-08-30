@@ -28,7 +28,7 @@ mod tests {
         client.accept_admin();
 
         // Verify the new admin is now the admin
-        let current_admin = client.get_admin().unwrap();
+        let current_admin = client.get_admin();
         assert_eq!(current_admin, new_admin);
     }
 
@@ -60,7 +60,7 @@ mod tests {
         client.cancel_admin_proposal();
 
         // Verify admin is still the same
-        let current_admin = client.get_admin().unwrap();
+        let current_admin = client.get_admin();
         assert_eq!(current_admin, admin);
     }
 
@@ -84,7 +84,7 @@ mod tests {
         client.accept_admin();
 
         // Verify correct admin is now in charge
-        let current_admin = client.get_admin().unwrap();
+        let current_admin = client.get_admin();
         assert_eq!(current_admin, correct_admin);
     }
 }

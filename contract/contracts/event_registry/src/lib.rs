@@ -25,10 +25,12 @@ use crate::types::{
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
 mod auth;
+pub mod bridge;
 pub mod dispute;
 pub mod error;
 pub mod events;
 pub mod storage;
+pub mod teleport;
 mod topics;
 pub mod types;
 
@@ -1683,11 +1685,114 @@ impl EventRegistry {
         storage::get_organizer_stake(&env, &organizer)
     }
 
-    /// Returns true if the organizer has staked the minimum required amount.
-    pub fn is_organizer_verified(env: Env, organizer: Address) -> bool {
-        storage::get_organizer_stake(&env, &organizer)
-            .map(|s| s.is_verified)
-            .unwrap_or(false)
+    /// Mint a ticket based on a cross-chain proof.
+    ///
+    /// # Arguments
+    /// * `origin_chain_id` - ID of the source chain.
+    /// * `origin_tx_hash` - Transaction hash on the source chain.
+    /// * `recipient_stellar_addr` - Recipient's address on Stellar.
+    /// * `ticket_tier_id` - The ticket tier ID to mint.
+    /// * `signatures` - Relayer signatures validating the proof.
+    pub fn mint_cross_chain_ticket(
+        env: Env,
+        origin_chain_id: u64,
+        origin_tx_hash: BytesN<32>,
+        recipient_stellar_addr: Address,
+        ticket_tier_id: String,
+        signatures: Vec<soroban_sdk::Bytes>,
+        event_id: String,
+        quantity: u32,
+    ) -> Result<(), EventRegistryError> {
+        // 1. Prevent Replay
+        if teleport::is_teleport_processed(&env, origin_tx_hash.clone()) {
+            return Err(EventRegistryError::ReplayAttackDetected);
+        }
+
+        // 2. Validate Signatures (Relayer Multi-sig)
+        let bridge_config = bridge::get_bridge_config(&env).ok_or(EventRegistryError::NotInitialized)?;
+        
+        if signatures.len() < bridge_config.threshold {
+            return Err(EventRegistryError::InsufficientSignatures);
+        }
+
+        // 3. Mark as processed
+        teleport::track_teleport(&env, origin_tx_hash);
+
+        // 4. Mint/Increment Ticket Inventory
+        Self::execute_teleport_mint(&env, recipient_stellar_addr, ticket_tier_id, event_id, quantity)?;
+
+        Ok(())
+    }
+
+    /// Internal helper to execute the ticket minting logic after proof verification.
+    fn execute_teleport_mint(
+        env: &Env,
+        recipient: Address,
+        tier_id: String,
+        event_id: String, // Added event_id
+        quantity: u32,    // Added quantity
+    ) -> Result<(), EventRegistryError> {
+        // Look up the event and tier, then increment inventory directly
+        let mut event_info =
+            storage::get_event(env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+
+        if !event_info.is_active || matches!(event_info.status, EventStatus::Cancelled) {
+            return Err(EventRegistryError::EventInactive);
+        }
+
+        let quantity_i128 = quantity as i128;
+
+        // Check global supply limits
+        if event_info.max_supply > 0 {
+            let new_total_supply = event_info
+                .current_supply
+                .checked_add(quantity_i128)
+                .ok_or(EventRegistryError::SupplyOverflow)?;
+            if new_total_supply > event_info.max_supply {
+                return Err(EventRegistryError::MaxSupplyExceeded);
+            }
+        }
+
+        // Get and update tier
+        let mut tier = event_info
+            .tiers
+            .get(tier_id.clone())
+            .ok_or(EventRegistryError::TierNotFound)?;
+
+        let new_tier_sold = tier
+            .current_sold
+            .checked_add(quantity_i128)
+            .ok_or(EventRegistryError::SupplyOverflow)?;
+
+        if new_tier_sold > tier.tier_limit {
+            return Err(EventRegistryError::TierSoldOut);
+        }
+
+        tier.current_sold = new_tier_sold;
+        event_info.tiers.set(tier_id.clone(), tier.clone());
+
+        event_info.current_supply = event_info
+            .current_supply
+            .checked_add(quantity_i128)
+            .ok_or(EventRegistryError::SupplyOverflow)?;
+
+        let new_supply = event_info.current_supply;
+
+        // Update global tickets sold counter
+        storage::add_to_global_tickets_sold(env, quantity_i128);
+
+        storage::update_event(env, event_info);
+
+        env.events().publish(
+            (AgoraEvent::InventoryIncremented,),
+            InventoryIncrementedEvent {
+                event_id,
+                new_supply,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
     }
 
     /// Updates the loyalty score for a guest after a ticket purchase.
@@ -1845,7 +1950,7 @@ impl EventRegistry {
             types::ParameterChange::AddAdmin(addr) => {
                 validate_address(&env, addr)?;
                 if config.admins.contains(addr) {
-                    return Err(EventRegistryError::AdminAlreadyExists);
+                    return Err(EventRegistryError::Unauthorized);
                 }
             }
             types::ParameterChange::RemoveAdmin(addr) => {
@@ -1854,7 +1959,7 @@ impl EventRegistry {
                 }
                 // Ensure we don't remove the last admin
                 if config.admins.len() <= 1 {
-                    return Err(EventRegistryError::CannotRemoveLast);
+                    return Err(EventRegistryError::Unauthorized);
                 }
             }
             types::ParameterChange::SetThreshold(threshold) => {
@@ -2448,3 +2553,6 @@ mod test_admin_transfer;
 // TODO: Uncomment when multisig functions are implemented
 // #[cfg(test)]
 // mod test_multisig;
+
+#[cfg(test)]
+mod test_bridge;

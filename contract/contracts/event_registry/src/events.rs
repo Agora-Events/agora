@@ -346,6 +346,33 @@ pub struct ThresholdUpdatedEvent {
     pub timestamp: u64,
 }
 
+/// Emitted when a new admin is added to the multi-sig configuration.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminProposedEvent {
+    pub current_admin: Address,
+    pub proposed_admin: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a proposed admin has been accepted and is now the active admin.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminTransferredEvent {
+    pub previous_admin: Address,
+    pub new_admin: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a pending admin proposal is cancelled.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminProposalCancelledEvent {
+    pub admin: Address,
+    pub cancelled_proposed_admin: Address,
+    pub timestamp: u64,
+}
+
 /// Emitted when a scanner wallet is authorized for ticket validation at an event.
 ///
 /// Scanners are wallets authorized by the organizer to validate/check-in tickets
