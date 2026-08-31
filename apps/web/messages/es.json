@@ -1,0 +1,63 @@
+{
+  "footer": {
+    "copyright": "© 2026 agora. Todos los derechos reservados.",
+    "discoverEvents": "Descubrir eventos",
+    "pricing": "Precios",
+    "stellarEcosystem": "Ecosistema Stellar",
+    "faqs": "Preguntas frecuentes",
+    "cookiePreferences": "Preferencias de cookies",
+    "instagram": "Instagram",
+    "x": "X",
+    "mail": "Correo",
+    "stellar": "Stellar"
+  },
+  "languageSwitcher": {
+    "label": "Idioma",
+    "english": "English",
+    "spanish": "Español",
+    "french": "Français"
+  },
+  "home": {
+    "tabUpcoming": "Próximos",
+    "tabHosting": "Organizando",
+    "tabPast": "Pasados",
+    "tabDiscover": "Descubrir",
+    "tabFollowing": "Siguiendo",
+    "myEvents": "Mis eventos",
+    "forYou": "Para ti",
+    "noEventsFound": "No se encontraron eventos",
+    "viewEvent": "Ver evento",
+    "view": "Ver",
+    "free": "Gratis",
+    "tbd": "Por confirmar",
+    "virtual": "Virtual",
+    "going": "asisten",
+    "openMessages": "Abrir mensajes",
+    "event": "Evento"
+  },
+  "discover": {
+    "searchEvents": "Buscar eventos",
+    "anyTime": "Cualquier momento",
+    "sortEvents": "Ordenar eventos",
+    "activeFilters": "Filtros activos",
+    "clearSearch": "Limpiar búsqueda",
+    "eventsPagination": "Paginación de eventos",
+    "exploreOrganizers": "Explorar organizadores",
+    "noDataAvailable": "Sin datos disponibles"
+  },
+  "eventDetail": {
+    "share": "Compartir",
+    "free": "Gratis",
+    "date": "Fecha",
+    "location": "Ubicación",
+    "eventNotFound": "Evento no encontrado",
+    "register": "Registrarse",
+    "getTickets": "Obtener entradas",
+    "securedSpot": "Asegura tu lugar en Agora",
+    "freeEntry": "Entrada gratuita",
+    "joinUs": "Únete a {title} el {date} en {location}. {priceNote} Asegura tu lugar en Agora.",
+    "ticketsFrom": "Entradas desde ${price}.",
+    "hostedBy": "Organizado por",
+    "aboutEvent": "Sobre el evento"
+  }
+}

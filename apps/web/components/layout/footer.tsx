@@ -2,6 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { LanguageSwitcher } from "./language-switcher";
 
 /**
  * SOLUTION FOR ISSUE #448:
@@ -9,9 +11,12 @@ import Link from "next/link";
  * 2. Added `hover:bg-white/5` and `transition-all` to create a professional hover "pill" effect.
  * 3. Integrated `mailto:hello@agora.com` for the contact link.
  * 4. Ensured mobile responsiveness via existing `flex-col md:flex-row` logic.
+ * 5. Translated all strings (and added the language switcher) in Issue #1343.
  */
 
 export function Footer() {
+  const t = useTranslations("footer");
+
   return (
     <footer className="w-full bg-ink pt-20 pb-12 relative overflow-hidden text-white select-none">
       {/* Background Graphic */}
@@ -34,9 +39,8 @@ export function Footer() {
             height={54}
             className="w-auto h-12"
           />
-          <p className="text-gray-400 text-sm">
-            © 2026 agora. All rights reserved.
-          </p>
+          <p className="text-gray-400 text-sm">{t("copyright")}</p>
+          <LanguageSwitcher />
         </div>
 
         {/* Right Columns Container */}
@@ -48,13 +52,13 @@ export function Footer() {
               href="/events"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              Discover Events
+              {t("discoverEvents")}
             </Link>
             <Link
               href="/pricing"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              Pricing
+              {t("pricing")}
             </Link>
             <Link
               href="https://stellar.org"
@@ -62,19 +66,19 @@ export function Footer() {
               rel="noopener noreferrer"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              Stellar Ecosystem
+              {t("stellarEcosystem")}
             </Link>
             <Link
               href="/help"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              FAQs
+              {t("faqs")}
             </Link>
             <Link
               href="/settings#cookie-preferences"
               className="text-gray-300 hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              Cookie preferences
+              {t("cookiePreferences")}
             </Link>
           </div>
 
@@ -88,7 +92,7 @@ export function Footer() {
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Image src="/icons/instagram.svg" width={20} height={20} alt="Instagram" className="text-gray-300 group-hover:text-white" />
-              <span className="text-sm">Instagram</span>
+              <span className="text-sm">{t("instagram")}</span>
             </a>
 
             {/* X (Twitter) */}
@@ -99,7 +103,7 @@ export function Footer() {
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Image src="/icons/x.svg" width={20} height={20} alt="X" className="text-gray-300 group-hover:text-white" />
-              <span className="text-sm">X</span>
+              <span className="text-sm">{t("x")}</span>
             </a>
 
             {/* Mail: Integrated hello@agora.com */}
@@ -108,7 +112,7 @@ export function Footer() {
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Image src="/icons/mail.svg" width={20} height={20} alt="Mail" className="text-gray-300 group-hover:text-white" />
-              <span className="text-sm">Mail</span>
+              <span className="text-sm">{t("mail")}</span>
             </a>
 
             {/* Stellar Link (Internal/Help) */}
@@ -125,7 +129,7 @@ export function Footer() {
                   className="w-full h-full object-contain"
                 />
               </div>
-              <span className="text-sm">Stellar</span>
+              <span className="text-sm">{t("stellar")}</span>
             </Link>
           </div>
         </div>

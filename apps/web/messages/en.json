@@ -1,0 +1,63 @@
+{
+  "footer": {
+    "copyright": "© 2026 agora. All rights reserved.",
+    "discoverEvents": "Discover Events",
+    "pricing": "Pricing",
+    "stellarEcosystem": "Stellar Ecosystem",
+    "faqs": "FAQs",
+    "cookiePreferences": "Cookie preferences",
+    "instagram": "Instagram",
+    "x": "X",
+    "mail": "Mail",
+    "stellar": "Stellar"
+  },
+  "languageSwitcher": {
+    "label": "Language",
+    "english": "English",
+    "spanish": "Español",
+    "french": "Français"
+  },
+  "home": {
+    "tabUpcoming": "Upcoming",
+    "tabHosting": "Hosting",
+    "tabPast": "Past",
+    "tabDiscover": "Discover",
+    "tabFollowing": "Following",
+    "myEvents": "My Events",
+    "forYou": "For You",
+    "noEventsFound": "No events found",
+    "viewEvent": "View Event",
+    "view": "View",
+    "free": "Free",
+    "tbd": "TBD",
+    "virtual": "Virtual",
+    "going": "going",
+    "openMessages": "Open messages",
+    "event": "Event"
+  },
+  "discover": {
+    "searchEvents": "Search events",
+    "anyTime": "Any time",
+    "sortEvents": "Sort events",
+    "activeFilters": "Active filters",
+    "clearSearch": "Clear Search",
+    "eventsPagination": "Events pagination",
+    "exploreOrganizers": "Explore organizers",
+    "noDataAvailable": "No data available"
+  },
+  "eventDetail": {
+    "share": "Share",
+    "free": "Free",
+    "date": "Date",
+    "location": "Location",
+    "eventNotFound": "Event not found",
+    "register": "Register",
+    "getTickets": "Get Tickets",
+    "securedSpot": "Secure your spot on Agora",
+    "freeEntry": "Free entry",
+    "joinUs": "Join us for {title} on {date} in {location}. {priceNote} Secure your spot on Agora.",
+    "ticketsFrom": "Tickets from ${price}.",
+    "hostedBy": "Hosted By",
+    "aboutEvent": "About Event"
+  }
+}
