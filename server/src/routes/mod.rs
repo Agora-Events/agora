@@ -19,8 +19,8 @@
 //! 3. Security headers
 //! 4. Database connection state
 
-use crate::handlers::{delta_sync, sync_status, SyncState};
 use crate::handlers::indexer::{replay_indexer, IndexerAdminState};
+use crate::handlers::{delta_sync, sync_status, SyncState};
 use axum::{
     middleware,
     response::IntoResponse,
@@ -59,11 +59,11 @@ use crate::handlers::{
         list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
         set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
-    governance::{
-        cast_vote, get_dispute, get_dispute_votes, list_disputes, open_dispute,
-        resolve_dispute, GovernanceState,
-    },
     example_empty_success, example_not_found, example_validation_error,
+    governance::{
+        cast_vote, get_dispute, get_dispute_votes, list_disputes, open_dispute, resolve_dispute,
+        GovernanceState,
+    },
     health::{
         health_check, health_check_blockchain, health_check_db, health_check_ready,
         health_check_redis, version,
@@ -123,7 +123,7 @@ use utoipa::OpenApi;
     components(
         schemas(
             crate::handlers::health::HealthResponse,
-            crate::handlers::events::Event,
+            crate::models::event::Event,
             crate::handlers::events::EventDetail,
             crate::handlers::events::SearchParams,
             crate::handlers::events::GetEventParams,
@@ -199,21 +199,38 @@ pub async fn create_routes(
     // Developer API keys (Issue #1340)
     let api_keys_state = crate::handlers::api_keys::ApiKeysState { pool: pool.clone() };
     let api_keys_routes = Router::new()
-        .route("/api-keys", post(crate::handlers::api_keys::create_api_key).get(crate::handlers::api_keys::list_api_keys))
-        .route("/api-keys/:id", delete(crate::handlers::api_keys::revoke_api_key))
+        .route(
+            "/api-keys",
+            post(crate::handlers::api_keys::create_api_key)
+                .get(crate::handlers::api_keys::list_api_keys),
+        )
+        .route(
+            "/api-keys/:id",
+            delete(crate::handlers::api_keys::revoke_api_key),
+        )
         .with_state(api_keys_state);
 
     // Follow organiser social graph (Issue #1346)
     let follow_state = crate::handlers::follows::FollowState { pool: pool.clone() };
     let follow_routes = Router::new()
-        .route("/organizers/:id/follow", post(crate::handlers::follows::follow_organizer).delete(crate::handlers::follows::unfollow_organizer))
-        .route("/organizers/:id/followers/count", get(crate::handlers::follows::get_followers_count))
+        .route(
+            "/organizers/:id/follow",
+            post(crate::handlers::follows::follow_organizer)
+                .delete(crate::handlers::follows::unfollow_organizer),
+        )
+        .route(
+            "/organizers/:id/followers/count",
+            get(crate::handlers::follows::get_followers_count),
+        )
         .with_state(follow_state.clone());
     let profile_following_route = Router::new()
         .route("/following", get(crate::handlers::follows::list_following))
         .with_state(follow_state.clone());
     let following_events_route = Router::new()
-        .route("/following", get(crate::handlers::follows::list_following_events))
+        .route(
+            "/following",
+            get(crate::handlers::follows::list_following_events),
+        )
         .with_state(follow_state);
 
     // Affiliate registration (Issue #1150)
@@ -226,7 +243,10 @@ pub async fn create_routes(
         .with_state(affiliate_state);
 
     // Ticket PDF route (Issue #1341)
-    let ticket_pdf_state = crate::handlers::tickets::TicketState { pool: pool.clone(), redis: redis.clone() };
+    let ticket_pdf_state = crate::handlers::tickets::TicketState {
+        pool: pool.clone(),
+        redis: redis.clone(),
+    };
     let ticket_pdf_routes = Router::new()
         .route("/:id/pdf", get(crate::handlers::tickets::get_ticket_pdf))
         .with_state(ticket_pdf_state);
@@ -252,9 +272,7 @@ pub async fn create_routes(
         token: config.admin_token.clone(),
     };
 
-    let governance_state = GovernanceState {
-        pool: pool.clone(),
-    };
+    let governance_state = GovernanceState { pool: pool.clone() };
 
     let governance_routes = Router::new()
         .route("/disputes", get(list_disputes).post(open_dispute))
@@ -344,6 +362,17 @@ pub async fn create_routes(
         ))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
         .with_state(zk_state);
+
+    // Outgoing webhook endpoints for organisers (Issue #1339)
+    let webhook_state = crate::handlers::webhooks::WebhookState { pool: pool.clone() };
+    let webhook_routes = Router::new()
+        .route(
+            "/",
+            post(crate::handlers::webhooks::create_webhook)
+                .get(crate::handlers::webhooks::list_webhooks),
+        )
+        .route("/:id", delete(crate::handlers::webhooks::delete_webhook))
+        .with_state(webhook_state);
 
     // Event routes with Redis caching
     let event_routes = Router::new()
@@ -514,12 +543,16 @@ pub async fn create_routes(
         .nest("/auth", auth_routes)
         .nest("/waiting-room", waiting_room_routes)
         .nest("/qr", qr_routes)
+        .nest("/webhooks", webhook_routes)
         .nest("/zk", zk_routes)
         .nest("/geo", geo_geofence_routes)
         .nest("/pricing", pricing_routes)
         .nest("/sync", sync_routes)
         .merge(rates_route)
-        .layer(middleware::from_fn_with_state(api_key_auth_state, crate::middleware::api_key_auth::api_key_auth_middleware))
+        .layer(middleware::from_fn_with_state(
+            api_key_auth_state,
+            crate::middleware::api_key_auth::api_key_auth_middleware,
+        ))
         .layer(middleware::from_fn(require_json_content_type))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         // Per-IP token-bucket rate limit (RATE_LIMIT_MAX / RATE_LIMIT_WINDOW).
@@ -545,15 +578,17 @@ pub async fn create_routes(
                 .url("/openapi.json", ApiDoc::openapi()),
         )
         .layer(
-            ServiceBuilder::new()
-                .layer(TimeoutLayer::new(Duration::from_secs(
-                    config.request_timeout_secs,
-                ))),
+            ServiceBuilder::new().layer(TimeoutLayer::new(Duration::from_secs(
+                config.request_timeout_secs,
+            ))),
         )
         // gzip/br response compression — excludes /metrics (mounted outside
         // `api_routes`) and the streaming routes merged in below, and skips
         // small bodies that wouldn't benefit (Issue #1253).
-        .layer(CompressionLayer::new().compress_when(DefaultPredicate::new().and(SizeAbove::new(1024))))
+        .layer(
+            CompressionLayer::new()
+                .compress_when(DefaultPredicate::new().and(SizeAbove::new(1024))),
+        )
         .merge(streaming_routes)
         .layer(middleware::from_fn(crate::middleware::csrf::check_csrf));
 
@@ -582,7 +617,8 @@ pub async fn create_routes(
 }
 
 async fn handle_404() -> Response {
-    crate::utils::error::ApiError::new(axum::http::StatusCode::NOT_FOUND, "Route not found").into_response()
+    crate::utils::error::ApiError::new(axum::http::StatusCode::NOT_FOUND, "Route not found")
+        .into_response()
 }
 
 /// Serve Apple App Site Association file for iOS deep linking
@@ -835,10 +871,7 @@ mod tests {
             )
             .layer(TimeoutLayer::new(Duration::from_millis(10)));
 
-        let req = Request::builder()
-            .uri("/slow")
-            .body(Body::empty())
-            .unwrap();
+        let req = Request::builder().uri("/slow").body(Body::empty()).unwrap();
 
         let resp = router.oneshot(req).await.unwrap();
 

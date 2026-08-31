@@ -3,12 +3,12 @@
 //! This module provides HTTP handlers for event-related operations including
 //! listing, creating, updating, and deleting events.
 
+use crate::utils::extract::ValidatedJson;
 use axum::{
     extract::{Path, Query, State},
     response::IntoResponse,
     response::Response,
 };
-use crate::utils::extract::ValidatedJson;
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -32,7 +32,7 @@ use axum::http::HeaderValue;
 use utoipa::ToSchema;
 
 /// Query parameters for searching events with filters
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
 pub struct SearchParams {
     /// Keyword search in title/description
     pub q: Option<String>,
@@ -1340,7 +1340,11 @@ mod tests {
         let sort = filters.validate_sort().expect(value);
         assert_eq!(sort.sort_by, expected_by, "sort_by for {value}");
         assert_eq!(sort.sort_order, expected_order, "sort_order for {value}");
-        assert_eq!(build_event_order_by_clause(&sort), sql, "ORDER BY for {value}");
+        assert_eq!(
+            build_event_order_by_clause(&sort),
+            sql,
+            "ORDER BY for {value}"
+        );
         assert!(
             !sql.contains(value) || value.chars().all(|c| c == '_' || c.is_ascii_alphabetic()),
             "raw sort parameter must not be interpolated into SQL"
@@ -1412,7 +1416,10 @@ mod tests {
         // Handler maps this to 400 VALIDATION_FAILED, never 500.
         let app_err = AppError::ValidationError(err);
         assert_eq!(app_err.status_code(), axum::http::StatusCode::BAD_REQUEST);
-        assert_eq!(app_err.error_code(), crate::utils::error::ErrorCode::ValidationFailed);
+        assert_eq!(
+            app_err.error_code(),
+            crate::utils::error::ErrorCode::ValidationFailed
+        );
     }
 
     #[test]
@@ -1446,12 +1453,13 @@ mod tests {
         if trimmed.is_empty() {
             return Ok(None);
         }
-        let sanitised = trimmed
-            .to_lowercase()
-            .replace('%', "")
-            .replace('_', " ");
+        let sanitised = trimmed.to_lowercase().replace('%', "").replace('_', " ");
         let sanitised = sanitised.trim().to_string();
-        Ok(if sanitised.is_empty() { None } else { Some(sanitised) })
+        Ok(if sanitised.is_empty() {
+            None
+        } else {
+            Some(sanitised)
+        })
     }
 
     #[test]
@@ -1512,7 +1520,10 @@ mod tests {
         // `_` is replaced with a space, then the result is trimmed.
         assert!(result.is_some());
         let inner = result.unwrap();
-        assert!(!inner.contains('_'), "underscore should be removed from query");
+        assert!(
+            !inner.contains('_'),
+            "underscore should be removed from query"
+        );
     }
 
     #[test]
@@ -1724,9 +1735,7 @@ pub async fn list_events(
     // allow-listed MIN(price) expression so cursor pagination stays stable.
     let order_by = build_event_order_by_clause(&sort);
     let select_list = if sort.sort_by == EventSortBy::Price {
-        format!(
-            "SELECT events.*, ({MIN_TICKET_PRICE_SQL})::float8 AS min_ticket_price FROM events"
-        )
+        format!("SELECT events.*, ({MIN_TICKET_PRICE_SQL})::float8 AS min_ticket_price FROM events")
     } else {
         "SELECT * FROM events".to_string()
     };
@@ -1911,7 +1920,7 @@ pub async fn list_featured_events(State(_state): State<EventState>) -> Response 
 }
 
 /// Query parameters for `GET /api/v1/events/upcoming`.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
 pub struct UpcomingParams {
     /// Number of events to return (clamped to 1–20, default 5).
     pub limit: Option<u32>,
@@ -2580,6 +2589,29 @@ pub async fn create_event(
         });
     }
 
+    // Fire outgoing webhooks (Issue #1339) – EventCreated
+    {
+        let pool = state.pool.clone();
+        let organizer_id = event.organizer_id;
+        let event_id = event.id;
+        let title = event.title.clone();
+        let description = event.description.clone();
+        tokio::spawn(async move {
+            let data = serde_json::json!({
+                "event_id": event_id,
+                "title": title,
+                "description": description,
+                "created_at": Utc::now(),
+            });
+            crate::services::webhook_dispatcher::dispatch_webhooks(
+                pool,
+                organizer_id,
+                crate::models::webhook::WEBHOOK_EVENT_EVENT_CREATED,
+                data,
+            );
+        });
+    }
+
     success(event, "Event created successfully").into_response()
 }
 
@@ -2867,12 +2899,13 @@ pub async fn search_events(
             params.q = None;
         } else {
             // Normalise to lowercase and strip SQL LIKE wildcards.
-            let sanitised = trimmed
-                .to_lowercase()
-                .replace('%', "")
-                .replace('_', " ");
+            let sanitised = trimmed.to_lowercase().replace('%', "").replace('_', " ");
             let sanitised = sanitised.trim().to_string();
-            params.q = if sanitised.is_empty() { None } else { Some(sanitised) };
+            params.q = if sanitised.is_empty() {
+                None
+            } else {
+                Some(sanitised)
+            };
         }
     }
 
@@ -4512,7 +4545,11 @@ pub async fn list_event_attendees(
 /// Sanitizes a string field to prevent CSV formula injection when opened in spreadsheet applications.
 /// Fields starting with '=', '+', '-', or '@' are escaped with a leading single quote (').
 pub fn sanitize_csv_field(field: &str) -> String {
-    if field.starts_with('=') || field.starts_with('+') || field.starts_with('-') || field.starts_with('@') {
+    if field.starts_with('=')
+        || field.starts_with('+')
+        || field.starts_with('-')
+        || field.starts_with('@')
+    {
         format!("'{}", field)
     } else {
         field.to_string()
@@ -4811,7 +4848,7 @@ pub async fn list_events_by_category(
 }
 
 /// Response shape for a single ticket tier.
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct TicketTierResponse {
     pub id: Uuid,
     pub name: String,
@@ -4924,8 +4961,8 @@ fn test_event_detail_tiers_omitted_when_none() {
         is_free: false,
         minted_tickets: 0,
         total_tickets: 0,
-            is_free_populated: true,
-            min_ticket_price: 0.0,
+        is_free_populated: true,
+        min_ticket_price: 0.0,
     };
 
     let detail = EventDetail {
@@ -4968,8 +5005,8 @@ fn test_event_detail_tiers_present_when_some() {
         is_free: true,
         minted_tickets: 0,
         total_tickets: 0,
-            is_free_populated: true,
-            min_ticket_price: 0.0,
+        is_free_populated: true,
+        min_ticket_price: 0.0,
     };
 
     let tier = TicketTierResponse {
@@ -5205,7 +5242,10 @@ mod search_cache_tests {
     #[test]
     fn test_sanitize_csv_field() {
         assert_eq!(sanitize_csv_field("=1+2"), "'=1+2");
-        assert_eq!(sanitize_csv_field("+cmd|' /C calc'!A0"), "'+cmd|' /C calc'!A0");
+        assert_eq!(
+            sanitize_csv_field("+cmd|' /C calc'!A0"),
+            "'+cmd|' /C calc'!A0"
+        );
         assert_eq!(sanitize_csv_field("-100"), "'-100");
         assert_eq!(sanitize_csv_field("@SUM(A1:A10)"), "'@SUM(A1:A10)");
         assert_eq!(sanitize_csv_field("10"), "10");

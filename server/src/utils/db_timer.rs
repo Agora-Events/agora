@@ -81,7 +81,6 @@ where
     log_if_slow(query_name, start.elapsed());
     result
 }
-}
 
 #[cfg(test)]
 mod tests {

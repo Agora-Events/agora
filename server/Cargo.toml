@@ -53,6 +53,7 @@ hex = "0.4"
 
 # SHA-256 for the waiting-room proof-of-work challenge (Issue #1187)
 sha2 = "0.10"
+hmac = "0.12"
 
 # ristretto255 group arithmetic for the zero-knowledge ticket attestation
 # (Issue #1186). Already in the tree transitively via ed25519-dalek; named
@@ -81,7 +82,7 @@ aws-config = "1.5"
 once_cell = "1.19"
 stellar-strkey = "0.0.18"
 stellar-xdr = { version = "23.0.0", features = ["base64"] }
-utoipa = "5.5.0"
+utoipa = { version = "5.5.0", features = ["uuid","chrono","decimal"] }
 utoipa-swagger-ui = { version = "8.0.3", features = ["axum"] }
 axum-extra = { version = "0.12.6", features = ["cookie"] }
 
