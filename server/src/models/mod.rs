@@ -19,6 +19,7 @@ pub mod dispute;
 pub mod event;
 pub mod event_affiliate;
 pub mod event_rating;
+pub mod event_translation;
 pub mod geo;
 pub mod indexer_event;
 pub mod organizer;
