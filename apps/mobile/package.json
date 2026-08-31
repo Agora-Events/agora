@@ -35,6 +35,7 @@
     "expo-constants": "~16.0.2",
     "expo-font": "~12.0.9",
     "expo-haptics": "~13.0.1",
+    "expo-image-picker": "~15.0.0",
     "expo-linking": "~6.3.1",
     "expo-local-authentication": "~14.0.1",
     "expo-notifications": "~0.28.19",
