@@ -440,9 +440,9 @@ pub async fn scan_ticket(
         return AppError::ValidationError("Payload has expired".to_string()).into_response();
     }
 
-    let ticket = match sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+    let ticket = match sqlx::query_as::<_, (String, Option<String>, Option<String>, Option<Uuid>)>(
         r#"
-        SELECT status, owner_wallet, buyer_wallet
+        SELECT status, owner_wallet, buyer_wallet, event_id
         FROM tickets
         WHERE id = $1
         "#,
@@ -459,7 +459,7 @@ pub async fn scan_ticket(
         Err(e) => return AppError::DatabaseError(e).into_response(),
     };
 
-    let (ticket_status, owner_wallet, buyer_wallet) = ticket;
+    let (ticket_status, owner_wallet, buyer_wallet, event_id) = ticket;
     if ticket_status == "Revoked" {
         return AppError::Conflict("Ticket has been revoked".to_string()).into_response();
     }
@@ -563,6 +563,31 @@ pub async fn scan_ticket(
         scanned_at: Some(now),
         message: "Ticket scan verified successfully".to_string(),
     };
+
+    // Fire outgoing webhooks (Issue #1339) – TicketScanned
+    if let Some(event_id) = event_id {
+        let pool = pool.clone();
+        let ticket_id = ticket_id;
+        let owner = owner_wallet.unwrap_or_default();
+        tokio::spawn(async move {
+            if let Some(organizer_id) =
+                crate::services::webhook_dispatcher::organizer_for_event(&pool, event_id).await
+            {
+                let data = serde_json::json!({
+                    "ticket_id": ticket_id,
+                    "event_id": event_id,
+                    "owner_wallet": owner,
+                    "scanned_at": now,
+                });
+                crate::services::webhook_dispatcher::dispatch_webhooks(
+                    pool,
+                    organizer_id,
+                    crate::models::webhook::WEBHOOK_EVENT_TICKET_SCANNED,
+                    data,
+                );
+            }
+        });
+    }
 
     success(response, "Ticket scan verified successfully").into_response()
 }

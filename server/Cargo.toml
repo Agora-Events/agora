@@ -53,6 +53,7 @@ hex = "0.4"
 
 # SHA-256 for the waiting-room proof-of-work challenge (Issue #1187)
 sha2 = "0.10"
+hmac = "0.12"
 
 # ristretto255 group arithmetic for the zero-knowledge ticket attestation
 # (Issue #1186). Already in the tree transitively via ed25519-dalek; named

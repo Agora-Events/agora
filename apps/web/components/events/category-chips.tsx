@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, type Transition, type Variants } from "framer-motion";
+import { useTranslations } from "next-intl";
 import Image from "next/image";
 import type { DiscoverCategory } from "@/utils/api";
 
@@ -30,6 +31,7 @@ export function CategoryChips({
   onCategoryChange,
   isLoading,
 }: CategoryChipsProps) {
+  const t = useTranslations("discover");
   const allCategory = { name: "All", icon: "", color: "#FDDA23" };
   const displayCategories = [allCategory, ...categories];
 
@@ -82,7 +84,7 @@ export function CategoryChips({
           );
         })}
       {!isLoading && categories.length === 0 && (
-        <p className="text-sm text-black/60 shrink-0">No data available</p>
+        <p className="text-sm text-black/60 shrink-0">{t("noDataAvailable")}</p>
       )}
     </div>
   );
