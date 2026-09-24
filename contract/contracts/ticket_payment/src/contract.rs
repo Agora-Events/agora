@@ -522,7 +522,9 @@ impl TicketPaymentContract {
         // Determine the actual owner of the ticket (recipient or buyer)
         let owner_address = recipient_address.unwrap_or_else(|| buyer_address.clone());
 
-        if let Some(ref ref_addr) = options.referrer {
+        let affiliate_addr_opt = options.affiliate_address.clone().or_else(|| options.referrer.clone());
+
+        if let Some(ref ref_addr) = affiliate_addr_opt {
             if ref_addr == &buyer_address {
                 return Err(TicketPaymentError::SelfReferralNotAllowed);
             }
@@ -754,7 +756,7 @@ impl TicketPaymentContract {
             .checked_sub(total_platform_fee)
             .ok_or(TicketPaymentError::ArithmeticError)?;
 
-        let referral_reward = if let Some(ref ref_addr) = options.referrer {
+        let referral_reward = if let Some(ref ref_addr) = affiliate_addr_opt {
             // Use affiliate-specific rate if registered; otherwise fall back to 20% of platform fee.
             let rate_bps =
                 crate::storage::get_affiliate_rate(&env, &event_id, ref_addr).unwrap_or(2000u32); // default: 20% = 2000 bps
@@ -809,8 +811,8 @@ impl TicketPaymentContract {
             return Err(TicketPaymentError::TransferVerificationFailed);
         }
 
-        // Transfer referral reward if applicable
-        if let Some(ref ref_addr) = options.referrer {
+        // Transfer referral / affiliate commission if applicable
+        if let Some(ref ref_addr) = affiliate_addr_opt {
             if referral_reward > 0 {
                 token_client.transfer(&contract_address, ref_addr, &referral_reward);
             }
@@ -891,7 +893,7 @@ impl TicketPaymentContract {
                 is_soulbound: false,
                 last_checked_in_at: 0,
                 referral_amount: referral_amount_per_ticket,
-                referrer: options.referrer.clone(),
+                referrer: affiliate_addr_opt.clone(),
             };
 
             store_payment(&env, payment);

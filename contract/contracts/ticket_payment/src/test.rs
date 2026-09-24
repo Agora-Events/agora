@@ -11135,3 +11135,90 @@ fn test_add_discount_hashes_batch_over_max_rejected() {
         "batch of 51 must return BatchTooLarge"
     );
 }
+
+#[test]
+fn test_process_payment_with_affiliate_commission() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let affiliate = Address::generate(&env);
+    let amount = 1000_0000000i128;
+
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let payment_id = String::from_str(&env, "pay_aff_1");
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let (_secret, hash) = test_secret(&env);
+
+    let result_id = client.process_payment(
+        &payment_id,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &amount,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+            affiliate_address: Some(affiliate.clone()),
+        },
+        &hash,
+    );
+    assert_eq!(result_id, payment_id);
+
+    let affiliate_balance = token::Client::new(&env, &usdc_id).balance(&affiliate);
+    // Platform fee = 1000 * 500 / 10000 = 50 USDC. Default affiliate rate = 20% = 10 USDC.
+    let expected_commission = (50_0000000i128 * 2000) / 10000;
+    assert_eq!(affiliate_balance, expected_commission);
+}
+
+#[test]
+fn test_process_payment_self_affiliate_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _) = setup_test(&env);
+    let usdc_token = token::StellarAssetClient::new(&env, &usdc_id);
+
+    let buyer = Address::generate(&env);
+    let amount = 1000_0000000i128;
+
+    usdc_token.mint(&buyer, &amount);
+    token::Client::new(&env, &usdc_id).approve(&buyer, &client.address, &amount, &99999);
+
+    let payment_id = String::from_str(&env, "pay_aff_self");
+    let event_id = String::from_str(&env, "event_1");
+    let tier_id = String::from_str(&env, "tier_1");
+    let (_secret, hash) = test_secret(&env);
+
+    let result = client.try_process_payment(
+        &payment_id,
+        &event_id,
+        &tier_id,
+        &buyer,
+        &None::<Address>,
+        &usdc_id,
+        &amount,
+        &1u32,
+        &crate::types::PurchaseOptions {
+            code_preimage: None,
+            referrer: None,
+            discount_code: None,
+            affiliate_address: Some(buyer.clone()),
+        },
+        &hash,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(TicketPaymentError::SelfReferralNotAllowed.into()))
+    );
+}
