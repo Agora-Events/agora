@@ -9,8 +9,8 @@ interface ErrorBannerProps {
   message: string;
   /** Optional detailed description of the error */
   description?: string;
-  /** Callback fired when the "Retry" button is clicked */
-  onRetry: () => void;
+  /** Callback fired when the "Retry" button is clicked; the button is hidden when omitted */
+  onRetry?: () => void;
 }
 
 export function ErrorBanner({ message, description, onRetry }: ErrorBannerProps) {
@@ -42,13 +42,15 @@ export function ErrorBanner({ message, description, onRetry }: ErrorBannerProps)
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={onRetry}
-        className="shrink-0 rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-red-500 transition-colors"
-      >
-        Retry
-      </button>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="shrink-0 rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-red-500 transition-colors"
+        >
+          Retry
+        </button>
+      )}
     </div>
   );
 }
