@@ -1,0 +1,26 @@
+name: Documentation
+description: Report a problem or missing information in documentation
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: textarea
+    id: page_or_file
+    attributes:
+      label: Which page or file
+      description: Specify the documentation page or filepath that has an issue.
+    validations:
+      required: true
+  - type: textarea
+    id: whats_wrong
+    attributes:
+      label: What is wrong or missing
+      description: Describe the incorrect, outdated, or missing information.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested_fix
+    attributes:
+      label: Suggested Fix
+      description: How should this documentation be updated or corrected?
+    validations:
+      required: false
