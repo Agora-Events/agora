@@ -417,3 +417,189 @@ fn haversine_m(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
         + lat1.to_radians().cos() * lat2.to_radians().cos() * (dlng / 2.0).sin().powi(2);
     R * 2.0 * a.sqrt().asin()
 }
+
+// ---------------------------------------------------------------------------
+// Tests (Issue #1431)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::geo::{
+        validate_latitude, validate_longitude, validate_radius, GeofenceRegistration,
+    };
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        middleware,
+        routing::get,
+        Router,
+    };
+    use tower::ServiceExt;
+
+    fn test_state() -> GeoState {
+        GeoState {
+            pool: PgPool::connect_lazy("postgresql://localhost/test")
+                .expect("test pool"),
+            notifications: Arc::new(NotificationService::default()),
+        }
+    }
+
+    async fn call(router: Router, uri: &str) -> StatusCode {
+        let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        router.oneshot(req).await.unwrap().status()
+    }
+
+    async fn call_with_query(router: Router, query: &str) -> StatusCode {
+        let req = Request::builder()
+            .uri(format!("/api/v1/events/nearby?{}", query))
+            .body(Body::empty())
+            .unwrap();
+        router.oneshot(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn test_nearby_valid_coordinates_pass() {
+        // Valid Lagos coordinates with a small radius should not return 400.
+        let router = Router::new()
+            .route("/api/v1/events/nearby", get(get_nearby_events))
+            .with_state(test_state());
+
+        let status = call_with_query(router, "lat=6.52&lng=3.37&radius_m=1000").await;
+        // 400 would mean validation failed; anything else means it passed.
+        assert_ne!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_nearby_latitude_out_of_range_rejected() {
+        let router = Router::new()
+            .route("/api/v1/events/nearby", get(get_nearby_events))
+            .with_state(test_state());
+
+        let status = call_with_query(router, "lat=91&lng=3.37&radius_m=1000").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_nearby_longitude_out_of_range_rejected() {
+        let router = Router::new()
+            .route("/api/v1/events/nearby", get(get_nearby_events))
+            .with_state(test_state());
+
+        let status = call_with_query(router, "lat=6.52&lng=181&radius_m=1000").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_nearby_zero_radius_rejected() {
+        let router = Router::new()
+            .route("/api/v1/events/nearby", get(get_nearby_events))
+            .with_state(test_state());
+
+        let status = call_with_query(router, "lat=6.52&lng=3.37&radius_m=0").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_nearby_negative_radius_rejected() {
+        let router = Router::new()
+            .route("/api/v1/events/nearby", get(get_nearby_events))
+            .with_state(test_state());
+
+        let status = call_with_query(router, "lat=6.52&lng=3.37&radius_m=-500").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_nearby_too_large_radius_rejected() {
+        let router = Router::new()
+            .route("/api/v1/events/nearby", get(get_nearby_events))
+            .with_state(test_state());
+
+        let status = call_with_query(router, "lat=6.52&lng=3.37&radius_m=600000").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_nearby_bbox_and_radius_mutually_exclusive() {
+        let router = Router::new()
+            .route("/api/v1/events/nearby", get(get_nearby_events))
+            .with_state(test_state());
+
+        let status = call_with_query(
+            router,
+            "lat=6.52&lng=3.37&radius_m=1000&bbox_sw_lat=6.0&bbox_sw_lng=3.0&bbox_ne_lat=7.0&bbox_ne_lng=4.0",
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    // -----------------------------------------------------------------------
+    // Pure validation helpers (extracted from models/geo.rs)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_latitude_boundaries() {
+        assert!(validate_latitude(-90.0).is_ok());
+        assert!(validate_latitude(90.0).is_ok());
+        assert!(validate_latitude(0.0).is_ok());
+        assert!(validate_latitude(6.52).is_ok());
+    }
+
+    #[test]
+    fn test_validate_latitude_out_of_range() {
+        assert!(validate_latitude(-90.0001).is_err());
+        assert!(validate_latitude(90.0001).is_err());
+    }
+
+    #[test]
+    fn test_validate_longitude_boundaries() {
+        assert!(validate_longitude(-180.0).is_ok());
+        assert!(validate_longitude(180.0).is_ok());
+        assert!(validate_longitude(3.37).is_ok());
+    }
+
+    #[test]
+    fn test_validate_longitude_out_of_range() {
+        assert!(validate_longitude(-180.0001).is_err());
+        assert!(validate_longitude(180.0001).is_err());
+    }
+
+    #[test]
+    fn test_validate_radius_rejects_zero_and_negative() {
+        assert!(validate_radius(0.0).is_err());
+        assert!(validate_radius(-5.0).is_err());
+    }
+
+    #[test]
+    fn test_validate_radius_accepts_max_and_rejects_above() {
+        assert!(validate_radius(500_000.0).is_ok());
+        assert!(validate_radius(500_000.1).is_err());
+    }
+
+    #[test]
+    fn test_validate_radius_rejects_nan() {
+        assert!(validate_radius(f64::NAN).is_err());
+        assert!(validate_radius(f64::INFINITY).is_err());
+        assert!(validate_radius(f64::NEG_INFINITY).is_err());
+    }
+
+    #[test]
+    fn test_geofence_registration_validates_venue_coords() {
+        let reg = GeofenceRegistration {
+            event_id: Uuid::nil(),
+            push_token: "tok".into(),
+            venue_lat: -90.0,
+            venue_lng: 180.0,
+        };
+        assert!(reg.validate().is_ok());
+
+        let reg = GeofenceRegistration {
+            event_id: Uuid::nil(),
+            push_token: "tok".into(),
+            venue_lat: f64::NAN,
+            venue_lng: 0.0,
+        };
+        assert!(reg.validate().is_err());
+    }
+}

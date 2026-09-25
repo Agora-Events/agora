@@ -51,6 +51,8 @@ pub struct HealthResponse {
     category_sync: bool,
     database: &'static str,
     redis: &'static str,
+    /// Seconds since the server process started (Issue #1428).
+    uptime_seconds: u64,
 }
 
 #[derive(Serialize)]
@@ -106,6 +108,7 @@ pub async fn health_check(
             category_sync,
             database: "ok",
             redis: "ok",
+            uptime_seconds: agora_server::runtime::uptime_seconds(),
         };
         return success(payload, "API is healthy").into_response();
     }
@@ -327,6 +330,7 @@ mod tests {
                     category_sync: true,
                     database: "ok",
                     redis: "ok",
+                    uptime_seconds: agora_server::runtime::uptime_seconds(),
                 };
                 success(payload, "API is healthy").into_response()
             }),
@@ -373,5 +377,40 @@ mod tests {
         assert_eq!(json["success"], true);
         assert!(!json["data"]["version"].as_str().unwrap().is_empty());
         assert!(!json["data"]["git_sha"].as_str().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_health_response_includes_uptime_seconds() {
+        let router = Router::new().route(
+            "/health",
+            get(|| async {
+                let payload = HealthResponse {
+                    status: "ok",
+                    timestamp: Utc::now().to_rfc3339(),
+                    category_sync: true,
+                    database: "ok",
+                    redis: "ok",
+                    uptime_seconds: agora_server::runtime::uptime_seconds(),
+                };
+                success(payload, "API is healthy").into_response()
+            }),
+        );
+
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert!(json["data"]["uptime_seconds"].is_number());
+        assert!(json["data"]["uptime_seconds"].as_u64().unwrap() >= 0);
     }
 }
