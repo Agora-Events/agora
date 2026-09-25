@@ -40,6 +40,7 @@ use agora_server::utils::logging::init_logging;
 /// 6. Starting the HTTP server with configured routes
 #[tokio::main]
 async fn main() {
+    agora_server::handlers::health::init_start_time();
     dotenv().ok();
     init_logging();
 
