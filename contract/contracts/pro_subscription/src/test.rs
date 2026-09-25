@@ -183,6 +183,15 @@ fn test_get_subscription_expiry_none_for_unknown_address() {
 }
 
 #[test]
+fn test_get_subscription_none_for_unknown_address() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let organizer = Address::generate(&env);
+
+    assert_eq!(client.get_subscription(&organizer), None);
+    assert!(!client.is_pro_member(&organizer));
+}
+
+#[test]
 fn test_get_subscription_expiry_after_subscribing() {
     let (env, client, _admin, _platform_wallet, usdc) = setup();
     let organizer = Address::generate(&env);
@@ -448,6 +457,16 @@ fn test_update_payment_token_success() {
     client.update_payment_token(&new_token);
 
     assert_eq!(client.get_payment_token(), Some(new_token));
+}
+
+#[test]
+fn test_update_payment_token_self_address() {
+    let (_env, client, _admin, _platform_wallet, usdc) = setup();
+
+    let res = client.try_update_payment_token(&client.address);
+
+    assert_eq!(res, Err(Ok(ProSubscriptionError::InvalidAddress)));
+    assert_eq!(client.get_payment_token(), Some(usdc));
 }
 
 #[test]
