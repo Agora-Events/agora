@@ -3,9 +3,9 @@ use soroban_sdk::{contract, contractimpl, token, Address, Env, String};
 use crate::{
     error::ProSubscriptionError,
     events::{
-        InitializationEvent, PriceUpdatedEvent, ProMemberAddedEvent, ProMemberRemovedEvent,
-        ProSubscriptionEvent, SubscriptionCancelledEvent, SubscriptionCreatedEvent,
-        SubscriptionRenewedEvent,
+        AdminUpdatedEvent, InitializationEvent, PriceUpdatedEvent, ProMemberAddedEvent,
+        ProMemberRemovedEvent, ProSubscriptionEvent, SubscriptionCancelledEvent,
+        SubscriptionCreatedEvent, SubscriptionRenewedEvent,
     },
     storage::{
         add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin, get_payment_token,
@@ -364,10 +364,24 @@ impl ProSubscriptionContract {
     }
 
     /// Update the admin address (admin only)
+    ///
+    /// Emits an `AdminUpdated` event carrying the old admin, the new admin,
+    /// who performed the update, and the ledger timestamp.
     pub fn update_admin(env: Env, new_admin: Address) -> Result<(), ProSubscriptionError> {
-        require_admin(&env)?;
+        let old_admin = require_admin(&env)?;
         validate_address(&env, &new_admin)?;
         set_admin(&env, &new_admin);
+
+        env.events().publish(
+            (ProSubscriptionEvent::AdminUpdated,),
+            AdminUpdatedEvent {
+                old_admin: old_admin.clone(),
+                new_admin,
+                updated_by: old_admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
         Ok(())
     }
 
