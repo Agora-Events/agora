@@ -19,7 +19,7 @@ For deeper component-specific details, also see:
 
 Install these tools before starting:
 
-- `Node.js` and `pnpm`
+- `Node.js` and `pnpm` (use `nvm use` to switch to the version specified in `.nvmrc`)
 - `Rust` and `cargo`
 - `Docker Desktop` or Docker Engine with Compose support
 - `sqlx-cli` with PostgreSQL support
@@ -28,6 +28,7 @@ Install these tools before starting:
 Recommended checks:
 
 ```bash
+nvm use
 node --version
 pnpm --version
 rustc --version

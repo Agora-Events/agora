@@ -19,6 +19,7 @@ package-lock.json
 
 # PR description drafts
 pr-*.md
+PULL_REQUEST_*.md
 
 # Kiro IDE directory
 .kiro/
