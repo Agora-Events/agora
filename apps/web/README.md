@@ -2,6 +2,28 @@
 
 Welcome to the **Agora** frontend codebase! We are excited to have you contribute. This guide will help you understand our components, style guidelines, and best practices to keep the codebase clean and consistent.
 
+## 📂 Folder Structure
+
+| Folder | Description |
+|--------|-------------|
+| `app/` | Next.js routes (pages, API routes) and layout files |
+| `components/` | Reusable UI components (subfolders by feature: events, layout, ui, etc.) |
+| `hooks/` | Custom React hooks for component logic (e.g., `useAuth`, `useEventDetails`) |
+| `lib/` | Server-side utilities and data layer (API handlers, auth, Prisma, constants, server-side validation) |
+| `utils/` | Client-side helpers (date/time formatting, analytics, URL utilities,纯 client-side logic) |
+| `__tests__/` | Unit and integration tests |
+| `public/` | Static assets (images, icons, fonts) |
+
+### lib/ vs utils/ Rule
+
+- **`lib/`** = Server/data code (Next.js API routes, Prisma, auth, constants, server-side validation, API client wrappers)
+- **`utils/`** = Pure client helpers (browser APIs, date/time formatting, analytics tracking, URL utilities, client-side formatting)
+
+### Where to Add Tests
+
+- New tests go in `__tests__/` (unit tests) or `cypress/` (E2E tests)
+- Component tests in the same folder as the component (e.g., `components/events/__tests__/`)
+
 ## 🎨 Design & Style Guidelines
 
 ### Fidelity to Figma

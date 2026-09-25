@@ -30,3 +30,6 @@ storybook-static
 *.log
 **/*.log
 
+
+# Local PR description files (for reference only, not part of the repo)
+pr-*.md
