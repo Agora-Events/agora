@@ -1,5 +1,6 @@
 use axum::{
     extract::{FromRef, State},
+    http::{header, HeaderValue},
     response::IntoResponse,
     response::Response,
 };
@@ -260,7 +261,10 @@ pub async fn version() -> Response {
         built_at: env!("BUILT_AT"),
         rust_version: env!("RUSTC_VERSION"),
     };
-    success(payload, "Build version").into_response()
+    let mut resp = success(payload, "Build version").into_response();
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    resp
 }
 
 /// GET /health/redis – Redis connectivity check.
@@ -364,6 +368,10 @@ mod tests {
         let resp = router.oneshot(req).await.unwrap();
 
         assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
 
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
