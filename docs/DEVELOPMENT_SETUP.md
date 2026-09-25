@@ -2,9 +2,10 @@
 
 This is the fastest way to go from a fresh clone to a full local Agora development environment.
 
-It covers all three main areas of the repo:
+It covers all four main areas of the repo:
 
 - `apps/web` for the Next.js frontend
+- `apps/mobile` for the Expo mobile app
 - `server` for the Axum + PostgreSQL backend
 - `contract` for the Soroban smart contracts
 
@@ -12,6 +13,7 @@ For deeper component-specific details, also see:
 
 - [Root README](./README.md)
 - [Frontend README](./apps/web/README.md)
+- [Mobile README](./apps/mobile/README.md)
 - [Server README](./server/README.md)
 - [Contract README](./contract/README.md)
 
@@ -381,6 +383,93 @@ git commit --no-verify -m "message"
 ```
 
 Only skip when you have a specific reason; CI will still run all checks.
+
+
+## Mobile App (Expo)
+
+The mobile app lives in `apps/mobile` and is built with Expo (React Native).
+
+### Prerequisites
+
+- Node.js 18+ and `pnpm`
+- For a **physical device**: install [Expo Go](https://expo.dev/go) from the App Store or Google Play
+- For a **simulator**: Xcode (iOS) or Android Studio (Android emulator)
+
+### Install
+
+From the repo root:
+
+```bash
+pnpm install
+```
+
+### Environment setup
+
+The mobile app reads `EXPO_PUBLIC_API_URL` to reach the backend. Create a `.env` file inside `apps/mobile`:
+
+```bash
+# apps/mobile/.env
+EXPO_PUBLIC_API_URL=http://localhost:8080
+```
+
+Adjust the value depending on how you run the app:
+
+| Target | URL |
+|--------|-----|
+| iOS Simulator | `http://localhost:3001` |
+| Android Emulator | `http://10.0.2.2:3001` (`10.0.2.2` is the host loopback alias inside the Android emulator) |
+| Physical device (Expo Go) | `http://<your-local-IP>:3001` — phone and computer must be on the same Wi-Fi network |
+
+### Start the app
+
+```bash
+cd apps/mobile
+pnpm start
+```
+
+Metro opens in your terminal. Press:
+
+- `i` — open on iOS Simulator (requires Xcode)
+- `a` — open on Android Emulator (requires Android Studio)
+- `s` — switch to Expo Go mode, then scan the QR code with the Expo Go app on your phone
+
+Or use the dedicated shortcuts:
+
+```bash
+pnpm ios       # iOS Simulator directly
+pnpm android   # Android Emulator directly
+```
+
+### Run tests and lint
+
+```bash
+cd apps/mobile
+pnpm test        # Jest unit tests
+pnpm lint        # ESLint
+pnpm typecheck   # TypeScript type check
+```
+
+### Common errors and fixes
+
+**Metro cache is stale** — modules not found, unexpected behaviour after pulling new code:
+
+```bash
+pnpm start -- --clear
+# or
+npx expo start --clear
+```
+
+**Port 8081 already in use** — another Metro bundler (or process) is holding the port:
+
+```bash
+pnpm start -- --port 8082
+```
+
+**"Unable to resolve module" after adding a new package** — Metro didn't pick up the new dependency:
+
+```bash
+pnpm start -- --reset-cache
+```
 
 ## 12. PR Reminder
 

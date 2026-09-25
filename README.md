@@ -26,6 +26,7 @@ Agora is an event and ticketing platform built for organizers, creators, and com
 This project is organized as a monorepo:
 
 - [`apps/web`](apps/web/README.md): The main frontend application (Next.js). **Please read the [Frontend Guidelines](apps/web/README.md) regarding styles and components before contributing.**
+- [`apps/mobile`](apps/mobile/README.md): The mobile application (Expo).
 - [`contract`](contract/README.md): Smart contracts and blockchain logic.
 - [`docs`](docs/): Detailed platform documentation and guides.
 
