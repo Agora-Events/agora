@@ -110,6 +110,21 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
     }
 }
 
+/// GET /health/live – Liveness probe.
+///
+/// Returns 200 immediately without touching the database or any external
+/// service.  Container platforms (Docker, Kubernetes, Fly, Render) use this
+/// to determine whether the process is alive and should receive traffic.  A
+/// liveness probe that hits the database would incorrectly restart healthy
+/// servers during short database blips – this endpoint avoids that.
+pub async fn health_check_live() -> Response {
+    #[derive(Serialize)]
+    struct LiveResponse {
+        status: &'static str,
+    }
+    success(LiveResponse { status: "ok" }, "Service is live").into_response()
+}
+
 /// GET /health/blockchain – Soroban RPC connectivity check.
 ///
 /// Returns 200 when the configured Soroban RPC endpoint is reachable.
@@ -250,5 +265,28 @@ mod tests {
         assert_eq!(json["message"], "API is healthy");
         assert_eq!(json["data"]["status"], "ok");
         assert!(json["data"]["timestamp"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_health_live_returns_200_without_state() {
+        // health_check_live must work with no DB or Redis state.
+        let router = Router::new().route("/health/live", get(health_check_live));
+
+        let req = Request::builder()
+            .uri("/health/live")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["success"], true);
+        assert_eq!(json["data"]["status"], "ok");
     }
 }

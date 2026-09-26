@@ -49,8 +49,8 @@ use crate::handlers::{
     },
     example_empty_success, example_not_found, example_validation_error,
     health::{
-        health_check, health_check_blockchain, health_check_db, health_check_ready,
-        health_check_redis,
+        health_check, health_check_blockchain, health_check_db, health_check_live,
+        health_check_ready, health_check_redis,
     },
     leaderboard::{get_leaderboard, LeaderboardState},
     monitoring::{monitoring_dashboard, MonitoringState},
@@ -242,6 +242,7 @@ pub async fn create_routes(pool: PgPool, config: Config, redis: RedisCache) -> R
         .route("/health", get(health_check))
         .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
+        .route("/health/live", get(health_check_live))
         .route("/health/ready", get(health_check_ready))
         .route("/leaderboard", get(get_leaderboard))
         .route("/monitoring", get(get_monitoring))
@@ -364,6 +365,7 @@ mod tests {
             .route("/api/v1/health", get(|| async { "ok" }))
             .route("/api/v1/health/blockchain", get(|| async { "ok" }))
             .route("/api/v1/health/db", get(|| async { "ok" }))
+            .route("/api/v1/health/live", get(|| async { "ok" }))
             .route("/api/v1/health/ready", get(|| async { "ok" }))
             .route("/api/v1/health/redis", get(|| async { "ok" }))
             .route("/api/v1/examples/validation-error", get(|| async { "ok" }))
@@ -409,6 +411,15 @@ mod tests {
         let router = test_router();
         assert_ne!(
             get_status(router, "/api/v1/health/ready").await,
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    async fn test_health_live_route_exists_under_api_v1() {
+        let router = test_router();
+        assert_ne!(
+            get_status(router, "/api/v1/health/live").await,
             StatusCode::NOT_FOUND
         );
     }
