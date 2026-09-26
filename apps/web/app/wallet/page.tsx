@@ -10,6 +10,7 @@ import { SellTicketModal } from "@/components/wallet/SellTicketModal";
 import { useWalletTickets } from "@/hooks/useWalletTickets";
 import { useAuth } from "@/hooks/useAuth";
 import type { WalletTicket } from "@/hooks/useWalletTickets";
+import { TestnetFaucetCard } from "@/components/wallet/testnet-faucet-card";
 
 // ---------------------------------------------------------------------------
 // Skeletons
@@ -185,6 +186,8 @@ function WalletContent() {
     );
   }
 
+  const isTestnet = process.env.NEXT_PUBLIC_STELLAR_NETWORK === "TESTNET";
+
   return (
     <div className="flex-1 w-full max-w-3xl mx-auto px-4 py-10 space-y-6">
       {/* Page heading */}
@@ -197,6 +200,12 @@ function WalletContent() {
           </p>
         )}
       </header>
+
+      {/* Testnet faucet card — Issue #1492.
+          Only rendered when NEXT_PUBLIC_STELLAR_NETWORK === "TESTNET". */}
+      {isTestnet && user?.walletAddress && (
+        <TestnetFaucetCard publicKey={user.walletAddress} />
+      )}
 
       {/* Upcoming tickets */}
       <TicketSection
