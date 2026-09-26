@@ -33,6 +33,13 @@ export default function ShareButton({ title, text }: { title: string; text: stri
         toast.success("Link copied to clipboard");
       }
     } catch (err) {
+      // User cancelled the native share sheet — not an error.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
       toast.error("Unable to share link");
     }
   };
