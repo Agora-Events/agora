@@ -837,3 +837,118 @@ fn test_issue_876_admin_update_payment_token() {
     client.update_payment_token(&new_token);
     assert_eq!(client.get_payment_token(), Some(new_token));
 }
+
+// ── Issue #1439: PlatformWalletUpdated event ──────────────────────────────────
+
+#[test]
+fn test_platform_wallet_updated_event_payload() {
+    use crate::events::PlatformWalletUpdatedEvent;
+
+    let (env, client, admin, old_wallet, _usdc) = setup_env();
+    let new_wallet = Address::generate(&env);
+
+    client.update_platform_wallet(&new_wallet);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+
+    let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, ProSubscriptionEvent::PlatformWalletUpdated);
+
+    let payload: PlatformWalletUpdatedEvent = data.into_val(&env);
+    assert_eq!(payload.old_wallet, old_wallet);
+    assert_eq!(payload.new_wallet, new_wallet);
+    assert_eq!(payload.updated_by, admin);
+}
+
+// ── Issue #1440: PaymentTokenUpdated event ────────────────────────────────────
+
+#[test]
+fn test_payment_token_updated_event_payload() {
+    use crate::events::PaymentTokenUpdatedEvent;
+
+    let (env, client, admin, _platform_wallet, old_token) = setup_env();
+    let new_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    client.update_payment_token(&new_token);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+
+    let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, ProSubscriptionEvent::PaymentTokenUpdated);
+
+    let payload: PaymentTokenUpdatedEvent = data.into_val(&env);
+    assert_eq!(payload.old_token, old_token);
+    assert_eq!(payload.new_token, new_token);
+    assert_eq!(payload.updated_by, admin);
+}
+
+// ── Issue #1441: Reject same-admin update ────────────────────────────────────
+
+#[test]
+fn test_update_admin_same_address_returns_error() {
+    let (_env, client, admin, _platform_wallet, _usdc) = setup_env();
+
+    let res = client.try_update_admin(&admin);
+    assert_eq!(res, Err(Ok(ProSubscriptionError::SameAdmin)));
+
+    // Admin must remain unchanged
+    assert_eq!(client.get_admin(), Some(admin));
+}
+
+// ── Issue #1447: Re-subscribe after cancel ───────────────────────────────────
+
+#[test]
+fn test_resubscribe_after_cancel() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    // First subscription
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    let first_expiry = client.get_subscription_expiry(&organizer).unwrap();
+
+    // Cancel
+    client.cancel_subscription(&organizer);
+    assert!(!client.is_pro_member(&organizer));
+
+    // Advance ledger so the re-subscription timestamp is clearly later
+    env.ledger().set(LedgerInfo {
+        timestamp: first_expiry + 1000,
+        protocol_version: 23,
+        sequence_number: 10,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    // Re-subscribe
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // User is pro again
+    assert!(client.is_pro_member(&organizer));
+
+    // Totals are exactly 1 (not double-counted)
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+    let members = client.get_pro_members();
+    assert_eq!(
+        members.iter().filter(|m| *m == organizer).count(),
+        1,
+        "organizer should appear exactly once in the members list"
+    );
+
+    // New expiry is based on the new subscription time, not the old one
+    let new_expiry = client.get_subscription_expiry(&organizer).unwrap();
+    assert_eq!(new_expiry, env.ledger().timestamp() + SECONDS_PER_MONTH);
+    assert!(new_expiry > first_expiry, "new expiry must be after the old one");
+}

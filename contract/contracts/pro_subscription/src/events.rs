@@ -22,6 +22,10 @@ pub enum ProSubscriptionEvent {
     ProMemberAdded,
     /// Organizer removed from the pro members list
     ProMemberRemoved,
+    /// Platform wallet address updated
+    PlatformWalletUpdated,
+    /// Payment token address updated
+    PaymentTokenUpdated,
 }
 
 /// Emitted when the contract is initialized
@@ -113,5 +117,33 @@ pub struct ProMemberRemovedEvent {
     /// The organizer's wallet address
     pub organizer: Address,
     /// Ledger timestamp of the event
+    pub timestamp: u64,
+}
+
+/// Emitted when the platform wallet address is updated
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformWalletUpdatedEvent {
+    /// Previous platform wallet address
+    pub old_wallet: Address,
+    /// New platform wallet address
+    pub new_wallet: Address,
+    /// Admin address that performed the update
+    pub updated_by: Address,
+    /// Ledger timestamp of the update
+    pub timestamp: u64,
+}
+
+/// Emitted when the payment token address is updated
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PaymentTokenUpdatedEvent {
+    /// Previous payment token address
+    pub old_token: Address,
+    /// New payment token address
+    pub new_token: Address,
+    /// Admin address that performed the update
+    pub updated_by: Address,
+    /// Ledger timestamp of the update
     pub timestamp: u64,
 }
