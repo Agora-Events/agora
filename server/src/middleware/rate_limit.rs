@@ -1,16 +1,24 @@
-//! # Rate Limiting Middleware Stub
+//! # Rate Limiting Middleware
 //!
-//! `tower_governor` 0.8 requires axum 0.8, which is incompatible with the
-//! current axum 0.7 dependency. Rate limiting for public API routes is handled
-//! by the `RateLimitLayer` in `utils::rate_limit` instead.
+//! Per-IP limits are enforced by [`crate::utils::rate_limit::RateLimitLayer`]:
+//! 30 req/min on sensitive routes and 120 req/min on general routes.
 //!
-//! This module provides a no-op `GovernorRateLimitLayer` that passes requests
-//! through unchanged, preserving the existing call sites in `routes/mod.rs`.
+//! Every response includes:
+//! * `X-RateLimit-Limit` — bucket capacity for this route class
+//! * `X-RateLimit-Remaining` — tokens left in the current window
+//! * `X-RateLimit-Reset` — Unix timestamp (seconds) when the window refreshes
+//!
+//! Rejected requests additionally receive `429 Too Many Requests` with a
+//! `Retry-After` header set to the seconds remaining in the current window
+//! (always ≥ 1).
 
 use std::time::Duration;
 use tower::Layer;
 
-/// No-op rate limit layer (placeholder until axum is upgraded to 0.8).
+pub use crate::utils::rate_limit::{apply_rate_limit_headers, RateLimitLayer};
+
+/// No-op rate limit layer kept for call-site compatibility.
+/// Real limiting is applied via [`RateLimitLayer`].
 #[derive(Clone)]
 pub struct GovernorRateLimitLayer;
 

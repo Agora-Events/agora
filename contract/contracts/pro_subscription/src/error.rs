@@ -32,6 +32,8 @@ pub enum ProSubscriptionError {
     SubscriptionAlreadyActive = 13,
     /// Organizer already has Pro subscription
     AlreadyPro = 14,
+    /// new_admin is the same as the current admin
+    SameAdmin = 15,
 }
 
 impl core::fmt::Display for ProSubscriptionError {
@@ -82,6 +84,9 @@ impl core::fmt::Display for ProSubscriptionError {
             ProSubscriptionError::AlreadyPro => {
                 write!(f, "Organizer already has Pro subscription")
             }
+            ProSubscriptionError::SameAdmin => {
+                write!(f, "New admin is the same as the current admin")
+            }
         }
     }
 }
@@ -117,6 +122,7 @@ mod tests {
             ProSubscriptionError::InvalidAddress,
             ProSubscriptionError::SubscriptionAlreadyActive,
             ProSubscriptionError::AlreadyPro,
+            ProSubscriptionError::SameAdmin,
         ];
 
         for error in variants {

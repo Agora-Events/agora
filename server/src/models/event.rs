@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Represents a ticketed event created by an organizer.
@@ -11,7 +12,7 @@ use uuid::Uuid;
 ///
 /// Maps to the `events` table in the database.
 #[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize, FromRow)]
+#[derive(Debug, Clone, Deserialize, FromRow, ToSchema)]
 pub struct Event {
     /// Unique identifier for the event (UUID v4).
     pub id: Uuid,
@@ -48,6 +49,19 @@ pub struct Event {
     /// `ticket_tiers`.
     #[sqlx(default)]
     pub minted_tickets: i64,
+    pub image_url: Option<String>,
+    #[sqlx(default)]
+    pub latitude: Option<f64>,
+    #[sqlx(default)]
+    pub longitude: Option<f64>,
+    #[sqlx(default)]
+    pub is_free: bool,
+    #[sqlx(default)]
+    pub is_free_populated: bool,
+    /// Minimum ticket-tier price for `price_asc` / `price_desc` sorting.
+    /// Defaults to `0` when the listing query does not select it.
+    #[sqlx(default)]
+    pub min_ticket_price: f64,
 }
 
 impl Event {
@@ -84,7 +98,7 @@ impl Serialize for Event {
             );
         }
 
-        let mut state = serializer.serialize_struct("Event", 15)?;
+        let mut state = serializer.serialize_struct("Event", 20)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("organizer_id", &self.organizer_id)?;
         state.serialize_field("title", &self.title)?;
@@ -99,7 +113,11 @@ impl Serialize for Event {
         state.serialize_field("created_at", &self.created_at)?;
         state.serialize_field("updated_at", &self.updated_at)?;
         state.serialize_field("image_url", &self.image_url)?;
+        state.serialize_field("latitude", &self.latitude)?;
+        state.serialize_field("longitude", &self.longitude)?;
         state.serialize_field("is_free", &self.is_free)?;
+        state.serialize_field("total_tickets", &self.total_tickets)?;
+        state.serialize_field("minted_tickets", &self.minted_tickets)?;
         state.serialize_field("average_rating", &self.average_rating())?;
         state.end()
     }
@@ -160,9 +178,13 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         assert!(!event.is_free);
     }
@@ -184,9 +206,13 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         event.is_free = true;
         let json = serde_json::to_value(&event).unwrap();
@@ -210,9 +236,13 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         assert!(event.average_rating().is_none());
     }
@@ -234,9 +264,13 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["average_rating"], 4.5);
@@ -262,9 +296,13 @@ mod tests {
             created_at: created,
             updated_at: updated,
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert!(!json["created_at"].is_null(), "created_at must be present");
@@ -288,9 +326,13 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert!(json["average_rating"].is_null());
@@ -314,9 +356,13 @@ mod tests {
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
             image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
             is_free: false,
             minted_tickets: 0,
             is_free_populated: false,
+            min_ticket_price: 0.0,
         }
     }
 
@@ -339,7 +385,10 @@ mod tests {
         apply_populate_is_free(&mut events, &[]);
 
         assert!(events[0].is_free, "event with no paid tiers should be free");
-        assert!(events[0].is_free_populated, "is_free_populated must be true after populate");
+        assert!(
+            events[0].is_free_populated,
+            "is_free_populated must be true after populate"
+        );
     }
 
     #[test]
@@ -350,8 +399,14 @@ mod tests {
         // Event ID in paid list → event is paid (is_free = false).
         apply_populate_is_free(&mut events, &[paid_id]);
 
-        assert!(!events[0].is_free, "event with paid tiers should not be free");
-        assert!(events[0].is_free_populated, "is_free_populated must be true after populate");
+        assert!(
+            !events[0].is_free,
+            "event with paid tiers should not be free"
+        );
+        assert!(
+            events[0].is_free_populated,
+            "is_free_populated must be true after populate"
+        );
     }
 
     #[test]
@@ -362,8 +417,14 @@ mod tests {
 
         apply_populate_is_free(&mut events, &[paid_id]);
 
-        assert!(events[0].is_free, "first event (no paid tiers) should be free");
-        assert!(!events[1].is_free, "second event (paid tier) should not be free");
+        assert!(
+            events[0].is_free,
+            "first event (no paid tiers) should be free"
+        );
+        assert!(
+            !events[1].is_free,
+            "second event (paid tier) should not be free"
+        );
         assert!(events[0].is_free_populated);
         assert!(events[1].is_free_populated);
     }
@@ -371,6 +432,36 @@ mod tests {
     #[test]
     fn test_is_free_populated_flag_starts_false() {
         let event = make_event(Uuid::new_v4());
-        assert!(!event.is_free_populated, "flag must default to false before populate_is_free");
+        assert!(
+            !event.is_free_populated,
+            "flag must default to false before populate_is_free"
+        );
+    }
+
+    // ── Issue #1136: event location coordinates ─────────────────────────────
+
+    #[test]
+    fn test_coordinates_default_none() {
+        let event = make_event(Uuid::new_v4());
+        assert!(event.latitude.is_none());
+        assert!(event.longitude.is_none());
+    }
+
+    #[test]
+    fn test_coordinates_serialize_when_set() {
+        let mut event = make_event(Uuid::new_v4());
+        event.latitude = Some(6.5244);
+        event.longitude = Some(3.3792);
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["latitude"], 6.5244);
+        assert_eq!(json["longitude"], 3.3792);
+    }
+
+    #[test]
+    fn test_coordinates_serialize_null_when_unset() {
+        let event = make_event(Uuid::new_v4());
+        let json = serde_json::to_value(&event).unwrap();
+        assert!(json["latitude"].is_null());
+        assert!(json["longitude"].is_null());
     }
 }

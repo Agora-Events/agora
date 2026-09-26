@@ -1,39 +1,160 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
-import { Button } from "@/components/ui/button";
 import { ChatSidebar } from "@/components/layout/chat-sidebar";
+import { useAuth } from "@/hooks/useAuth";
+import { UpcomingEventsEmptyState } from "@/components/empty-state/upcoming-events-empty-state";
 import CalendarIcon from "@/public/icons/calendar.svg";
 import HostingIcon from "@/public/icons/ticket-star.svg";
 import PastIcon from "@/public/icons/camera-smile-01.svg";
 import BubbleChatIcon from "@/public/icons/bubble-chat.svg";
-import ZeroIcon from "@/public/icons/zero.svg";
-import EmptyStateBg from "@/public/icons/empty-state-bg.svg";
-import useSWR from "swr";
-
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 type MyEventsTab = "upcoming" | "hosting" | "past";
 type ForYouTab = "discover" | "following";
 
-const myEventsTabs: { id: MyEventsTab; label: string; icon?: string }[] = [
+const myEventsTabs = (t: (key: string) => string): { id: MyEventsTab; label: string; icon?: string }[] => [
   {
     id: "upcoming",
-    label: "Upcoming",
+    label: t("tabUpcoming"),
     icon: CalendarIcon,
   },
-  { id: "hosting", label: "Hosting", icon: HostingIcon },
-  { id: "past", label: "Past", icon: PastIcon },
+  { id: "hosting", label: t("tabHosting"), icon: HostingIcon },
+  { id: "past", label: t("tabPast"), icon: PastIcon },
 ];
 
-const forYouTabs: { id: ForYouTab; label: string }[] = [
-  { id: "discover", label: "Discover" },
-  { id: "following", label: "Following" },
+const forYouTabs = (t: (key: string) => string): { id: ForYouTab; label: string }[] => [
+  { id: "discover", label: t("tabDiscover") },
+  { id: "following", label: t("tabFollowing") },
+];
+
+// Mock data types
+interface TimelineEvent {
+  id: number;
+  date: string;
+  day: string;
+  time: string;
+  title: string;
+  location: string;
+  imageUrl: string;
+  isFree: boolean;
+  price?: string;
+  attendees: number;
+  status?: string;
+}
+
+interface GridEvent {
+  id: number;
+  title: string;
+  date: string;
+  location: string;
+  price: string;
+  imageUrl: string;
+  color: string;
+}
+
+// Mock data for For You (Grid)
+const discoverEvents: GridEvent[] = [
+  {
+    id: 8,
+    title: "Stellar Consensus Protocol",
+    date: "Apr 15, 2026",
+    location: "Austin, TX",
+    price: "$0.00",
+    imageUrl: "/images/event2.png",
+    color: "bg-[#E8D5F7]",
+  },
+  {
+    id: 9,
+    title: "Real Estate Outlook 2026",
+    date: "Apr 20, 2026",
+    location: "New York, NY",
+    price: "$45.00",
+    imageUrl: "/images/event3.png",
+    color: "bg-[#F7D5D5]",
+  },
+  {
+    id: 10,
+    title: "Web3 Marketing Summit",
+    date: "May 5, 2026",
+    location: "London, UK",
+    price: "$0.00",
+    imageUrl: "/images/event4.png",
+    color: "bg-[#D5F7E8]",
+  },
+  {
+    id: 11,
+    title: "AI & Blockchain Convergence",
+    date: "May 12, 2026",
+    location: "San Francisco, CA",
+    price: "$75.00",
+    imageUrl: "/images/event5.png",
+    color: "bg-[#F7ECD5]",
+  },
+  {
+    id: 12,
+    title: "Developer Workshop Series",
+    date: "May 18, 2026",
+    location: "Virtual",
+    price: "$0.00",
+    imageUrl: "/images/event6.png",
+    color: "bg-[#D5E8F7]",
+  },
+  {
+    id: 13,
+    title: "Crypto Investment Forum",
+    date: "Jun 2, 2026",
+    location: "Singapore",
+    price: "$120.00",
+    imageUrl: "/images/event1.png",
+    color: "bg-[#F5D5F7]",
+  },
+];
+
+const followingEvents: GridEvent[] = [
+  {
+    id: 14,
+    title: "Stellar East Africa Meetup",
+    date: "Apr 10, 2026",
+    location: "Nairobi, Kenya",
+    price: "$0.00",
+    imageUrl: "/images/event3.png",
+    color: "bg-[#F7D5E8]",
+  },
+  {
+    id: 15,
+    title: "Women in Web3 Panel",
+    date: "Apr 25, 2026",
+    location: "Virtual",
+    price: "$0.00",
+    imageUrl: "/images/event2.png",
+    color: "bg-[#E8F7D5]",
+  },
+  {
+    id: 16,
+    title: "Smart Contract Security",
+    date: "May 8, 2026",
+    location: "Berlin, Germany",
+    price: "$35.00",
+    imageUrl: "/images/event5.png",
+    color: "bg-[#D5F5F7]",
+  },
+  {
+    id: 17,
+    title: "Community Builder Workshop",
+    date: "May 20, 2026",
+    location: "Toronto, Canada",
+    price: "$0.00",
+    imageUrl: "/images/event4.png",
+    color: "bg-[#F7E8D5]",
+  },
 ];
 
 function AnimatedToggle<T extends string>({
@@ -107,6 +228,7 @@ function SectionHeader<T extends string>({
   hasNotifications?: boolean;
   onChatClick?: () => void;
 }) {
+  const t = useTranslations("home");
   return (
     <div className="flex flex-col  gap-3 sm:gap-8 mb-6 sm:mb-8">
       <h2 className="text-[24px] sm:text-[28px] lg:text-[3.6rem] leading-16.5 tracking-[0px] font-semibold text-ink-deep italic">
@@ -120,7 +242,7 @@ function SectionHeader<T extends string>({
           layoutId={layoutId}
         />
         {hasNotifications && (
-          <button type="button" onClick={onChatClick} aria-label="Open messages">
+          <button type="button" onClick={onChatClick} aria-label={t("openMessages")}>
             <div className="w-13.75 h-13.75 rounded-full bg-surface flex items-center justify-center  relative">
               <div className="absolute -top-1 right-1 rounded-full size-4.75 bg-error text-white flex items-center justify-center">
                 <p>1</p>
@@ -142,6 +264,7 @@ function SectionHeader<T extends string>({
 
 // Timeline Event Card Component
 function TimelineEventCard({ event }: { event: any }) {
+  const t = useTranslations("home");
   const locationImageSrc =
     (event.location || "").toLowerCase().includes("discord") ||
     (event.location || "").toLowerCase().includes("virtual") ||
@@ -154,7 +277,7 @@ function TimelineEventCard({ event }: { event: any }) {
       {/* Timeline Column */}
       <div className="flex  w-39 max-w-39 shrink-0  mb-3">
         <span className="text-[1.625rem] text-left font-medium text-black  leading-10.25">
-          {event.date || "TBD"}
+          {event.date || t("tbd")}
         </span>
       </div>
 
@@ -205,7 +328,7 @@ function TimelineEventCard({ event }: { event: any }) {
                       className="object-contain"
                     />
                     <span className="text-[12px] text-black ">
-                      {event.location || "Virtual"}
+                      {event.location || t("virtual")}
                     </span>
                   </div>
 
@@ -235,13 +358,13 @@ function TimelineEventCard({ event }: { event: any }) {
                         ))}
                       </div>
                       <span className="text-[11px] sm:text-[12px] text-black/60">
-                        {event.attendees || 0} going
+                        {event.attendees || 0} {t("going")}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-1 text-black text-[12px] sm:text-[13px] font-medium">
-                      <span className="hidden sm:inline">View Event</span>
-                      <span className="sm:hidden">View</span>
+                      <span className="hidden sm:inline">{t("viewEvent")}</span>
+                      <span className="sm:hidden">{t("view")}</span>
                       <Image
                         src="/icons/arrow-right.svg"
                         width={16}
@@ -263,6 +386,7 @@ function TimelineEventCard({ event }: { event: any }) {
 
 // Grid Event Card Component
 function GridEventCard({ event }: { event: any }) {
+  const t = useTranslations("home");
   const color = event.color || "bg-[#E8D5F7]";
   return (
     <Link href={`/events/${event.id}`} className="block">
@@ -287,7 +411,7 @@ function GridEventCard({ event }: { event: any }) {
           </h3>
 
           <p className="text-[11px] sm:text-[12px] text-black/60 mb-1">
-            {event.date || "TBD"}
+            {event.date || t("tbd")}
           </p>
 
           <div className="flex items-center gap-1 text-black/70 mb-2 sm:mb-3">
@@ -299,16 +423,16 @@ function GridEventCard({ event }: { event: any }) {
               className="object-contain w-3 h-3 sm:w-[14px] sm:h-[14px]"
             />
             <span className="text-[11px] sm:text-[12px] line-clamp-1">
-              {event.location || "Virtual"}
+              {event.location || t("virtual")}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-[12px] sm:text-[13px] font-medium text-black">
-              {event.price === "$0.00" || !event.price ? "Free" : event.price}
+              {event.price === "$0.00" || !event.price ? t("free") : event.price}
             </span>
             <div className="flex items-center gap-1 text-black text-[11px] sm:text-[12px] font-medium">
-              <span className="hidden sm:inline">View</span>
+              <span className="hidden sm:inline">{t("view")}</span>
               <Image
                 src="/icons/arrow-right.svg"
                 width={14}
@@ -332,7 +456,18 @@ function EventCardSkeleton() {
 }
 
 // My Events Section Content
-function MyEventsContent({ activeTab, events, isLoading }: { activeTab: MyEventsTab, events: any[], isLoading: boolean }) {
+function MyEventsContent({
+  activeTab,
+  events,
+  isLoading,
+}: {
+  activeTab: MyEventsTab;
+  events: any[];
+  isLoading: boolean;
+}) {
+  const t = useTranslations("home");
+  const isUpcomingTab = activeTab === "upcoming";
+
   if (isLoading) {
     return (
       <div className="pt-4 space-y-13.25">
@@ -343,69 +478,15 @@ function MyEventsContent({ activeTab, events, isLoading }: { activeTab: MyEvents
   }
 
   if (events.length === 0) {
-    if (activeTab === "hosting") {
-      return (
-        <div className="w-full max-w-121.5 bg-surface h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10">
-          <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
-            <Image
-              src={EmptyStateBg}
-              alt="Empty State Background"
-              width={224}
-              height={224}
-              className="object-cover w-full h-full rounded-4xl"
-            />
-            <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-black/7 -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
-              <Image
-                src="/icons/megaphone.svg"
-                alt="Start Hosting"
-                width={64}
-                height={64}
-                className="object-contain w-full h-full"
-              />
-            </div>
-          </div>
-          <div className="flex flex-col items-center gap-4">
-            <p className="text-xl font-medium leading-5.5 text-center text-ink-deep/36">
-              You haven&apos;t created any events yet
-            </p>
-            <Link href="/create-event">
-              <Button variant="primary" className="rounded-full">
-                Start Hosting
-              </Button>
-            </Link>
-          </div>
-        </div>
-      );
+    if (isUpcomingTab) {
+      return <UpcomingEventsEmptyState />;
     }
 
     return (
-      <div className="w-full max-w-121.5 bg-surface h-107.5 rounded-4xl mx-auto flex flex-col items-center justify-center gap-10 text-ink-deep/36">
-        <div className="max-w-56 w-full bg-white rounded-4xl h-56 relative p-5.5">
-          <Image
-            src={EmptyStateBg}
-            alt="Empty State Background"
-            width={224}
-            height={224}
-            className="object-cover w-full h-full rounded-4xl"
-          />
-          <div className="bg-white absolute max-w-23.75 rounded-4xl max-h-23.75 w-full h-full shadow-black/7 -top-7 -right-7 shadow-[0px_1.65px_1.32px_0px] flex items-center justify-center p-3">
-            <Image
-              src={ZeroIcon}
-              alt="Nothing Here, Yet"
-              width={16}
-              height={16}
-              className="object-center w-full h-full"
-            />
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-4">
-          <p className="text-xl font-medium leading-5.5 text-center">Nothing Here, Yet</p>
-          <Link href="/discover">
-            <Button variant="primary" className="rounded-full">
-              Discover Events
-            </Button>
-          </Link>
-        </div>
+      <div className="flex min-h-[15rem] items-center justify-center rounded-[2rem] border border-dashed border-black/20 bg-white/60 px-6 text-center">
+        <p className="text-base font-medium text-black/55">
+          {t("noEventsFound")}
+        </p>
       </div>
     );
   }
@@ -421,6 +502,7 @@ function MyEventsContent({ activeTab, events, isLoading }: { activeTab: MyEvents
 
 // For You Section Content
 function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab, events: any[], isLoading: boolean }) {
+  const t = useTranslations("home");
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
@@ -434,7 +516,7 @@ function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab,
   if (events.length === 0) {
     return (
       <div className="min-h-[200px] rounded-xl border-2 border-dashed border-black/20 flex items-center justify-center">
-        <p className="text-black/50 text-lg">No events found</p>
+        <p className="text-black/50 text-lg">{t("noEventsFound")}</p>
       </div>
     );
   }
@@ -448,22 +530,41 @@ function ForYouContent({ activeTab, events, isLoading }: { activeTab: ForYouTab,
   );
 }
 
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
 export default function HomePage() {
+  const router = useRouter();
+  const t = useTranslations("home");
+  const {
+    walletAddress: userWallet,
+    isAuthenticated,
+    isLoading: isAuthLoading,
+  } = useAuth();
   const [myEventsTab, setMyEventsTab] = useState<MyEventsTab>("upcoming");
   const [forYouTab, setForYouTab] = useState<ForYouTab>("discover");
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  // Authenticated user's wallet address (placeholder logic for now)
-  const userWallet = "0xUSERWALLET"; 
+  // "My Events" is personal — signed-out visitors belong on the auth page.
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      router.replace("/auth");
+    }
+  }, [isAuthLoading, isAuthenticated, router]);
 
-  const { data, isLoading } = useSWR("/api/v1/events", fetcher);
+  const { data, isLoading: isEventsLoading } = useSWR(
+    isAuthenticated ? "/api/v1/events" : null,
+    fetcher,
+  );
+  const isLoading = isAuthLoading || isEventsLoading;
   const allEvents = data?.events || [];
-  
+
   const now = new Date().getTime();
 
   // Filter for 'My Events'
   const upcomingEvents = allEvents.filter((e: any) => new Date(e.start_time).getTime() > now); // assuming user has ticket logically mapped
-  const hostingEvents = allEvents.filter((e: any) => e.organizer_wallet === userWallet);
+  const hostingEvents = userWallet
+    ? allEvents.filter((e: any) => e.organizer_wallet === userWallet)
+    : [];
   const pastEvents = allEvents.filter((e: any) => new Date(e.end_time).getTime() < now);
 
   let displayedMyEvents = [];
@@ -487,8 +588,8 @@ export default function HomePage() {
         {/* My Events Section */}
         <section className="mb-10 sm:mb-16 space-y-15">
           <SectionHeader
-            title="My Events"
-            tabs={myEventsTabs}
+            title={t("myEvents")}
+            tabs={myEventsTabs(t)}
             activeTab={myEventsTab}
             onTabChange={setMyEventsTab}
             layoutId="my-events-toggle"
@@ -509,8 +610,8 @@ export default function HomePage() {
         {/* For You Section */}
         <section>
           <SectionHeader
-            title="For You"
-            tabs={forYouTabs}
+            title={t("forYou")}
+            tabs={forYouTabs(t)}
             activeTab={forYouTab}
             onTabChange={setForYouTab}
             layoutId="for-you-toggle"
@@ -523,3 +624,4 @@ export default function HomePage() {
     </div>
   );
 }
+

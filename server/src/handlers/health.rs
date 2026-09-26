@@ -1,17 +1,70 @@
-use axum::{extract::State, response::IntoResponse, response::Response};
+use axum::{
+    extract::{FromRef, State},
+    response::IntoResponse,
+    response::Response,
+};
 use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
 use sqlx::PgPool;
+use std::sync::LazyLock;
 use std::time::Duration;
 
+use crate::cache::RedisCache;
+use crate::notifications::health::check_notifications_health;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
+
+/// Combined state for the `/health` route, which — unlike its siblings
+/// (`/health/db`, `/health/redis`, ...) — needs both the DB pool and the
+/// Redis client to report a single combined status.
+#[derive(Clone)]
+pub struct HealthState {
+    pub pool: PgPool,
+    pub redis: RedisCache,
+}
+
+impl FromRef<HealthState> for PgPool {
+    fn from_ref(state: &HealthState) -> Self {
+        state.pool.clone()
+    }
+}
+
+impl FromRef<HealthState> for RedisCache {
+    fn from_ref(state: &HealthState) -> Self {
+        state.redis.clone()
+    }
+}
+
+static CATEGORY_SYNC_STATUS: LazyLock<std::sync::Mutex<bool>> =
+    LazyLock::new(|| std::sync::Mutex::new(true));
+
+/// Process start time used to report server uptime.
+pub static START_TIME: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
+
+/// Explicitly record the process start time at boot.
+pub fn init_start_time() {
+    let _ = *START_TIME;
+}
+
+/// Return elapsed process uptime in seconds.
+pub fn get_uptime_seconds() -> u64 {
+    START_TIME.elapsed().as_secs()
+}
+
+/// Update the category sync status. Called during startup after validation.
+pub fn set_category_sync_status(synced: bool) {
+    *CATEGORY_SYNC_STATUS.lock().unwrap() = synced;
+}
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct HealthResponse {
     status: &'static str,
     timestamp: String,
+    category_sync: bool,
+    database: &'static str,
+    redis: &'static str,
+    pub uptime_seconds: u64,
 }
 
 #[derive(Serialize)]
@@ -26,6 +79,8 @@ struct HealthReadyResponse {
     status: &'static str,
     api: &'static str,
     database: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notifications: Option<crate::notifications::health::NotificationsHealth>,
 }
 
 #[derive(Serialize)]
@@ -47,23 +102,42 @@ struct HealthBlockchainResponse {
         (status = 200, description = "API is healthy", body = HealthResponse)
     )
 )]
-pub async fn health_check(State(pool): State<PgPool>) -> Response {
-    match sqlx::query("SELECT 1").fetch_one(&pool).await {
-        Ok(_) => {
-            let payload = HealthResponse {
-                status: "ok",
-                timestamp: Utc::now().to_rfc3339(),
-            };
-            success(payload, "API is healthy").into_response()
-        }
-        Err(e) => {
-            tracing::error!("Health check failed: {:?}", e);
-            AppError::ExternalServiceError(format!(
-                "API is not ready: database is unreachable ({e})"
-            ))
-            .into_response()
-        }
+pub async fn health_check(
+    State(pool): State<PgPool>,
+    State(mut redis): State<crate::cache::RedisCache>,
+) -> Response {
+    let category_sync = *CATEGORY_SYNC_STATUS.lock().unwrap();
+
+    // Probe database
+    let db_ok = sqlx::query("SELECT 1").fetch_one(&pool).await.is_ok();
+    // Probe redis
+    let redis_ok = redis.ping().await.is_ok();
+
+    if db_ok && redis_ok {
+        let payload = HealthResponse {
+            status: "ok",
+            timestamp: Utc::now().to_rfc3339(),
+            category_sync,
+            database: "ok",
+            redis: "ok",
+            uptime_seconds: get_uptime_seconds(),
+        };
+        return success(payload, "API is healthy").into_response();
     }
+
+    let db_status = if db_ok { "ok" } else { "unreachable" };
+    let redis_status = if redis_ok { "ok" } else { "unreachable" };
+
+    tracing::error!(
+        "Health check failed: database={}, redis={}",
+        db_status,
+        redis_status
+    );
+    AppError::ExternalServiceError(format!(
+        "Service is not ready: database={}, redis={}",
+        db_status, redis_status
+    ))
+    .into_response()
 }
 
 /// GET /health/db – Database connectivity check.
@@ -93,15 +167,19 @@ pub async fn health_check_db(State(pool): State<PgPool>) -> Response {
 /// GET /health/ready – Readiness check.
 ///
 /// Returns 200 only when both the API process and the database are healthy.
+/// Includes per-provider notification health status without failing readiness.
 /// On failure the response uses [`AppError`] for a consistent error schema.
 pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
     let db_ok = sqlx::query("SELECT 1").fetch_one(&pool).await.is_ok();
 
     if db_ok {
+        let notifications_health = check_notifications_health().await;
+        
         let payload = HealthReadyResponse {
             status: "ready",
             api: "ok",
             database: "ok",
+            notifications: Some(notifications_health),
         };
         success(payload, "Service is ready").into_response()
     } else {
@@ -184,6 +262,37 @@ struct HealthRedisResponse {
     timestamp: String,
 }
 
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct VersionResponse {
+    version: &'static str,
+    git_sha: &'static str,
+    built_at: &'static str,
+    rust_version: &'static str,
+}
+
+/// GET /version – Build metadata for the running deployment.
+///
+/// Reports the crate version, git commit SHA, build timestamp, and the rustc
+/// version used to compile the binary, captured at compile time by
+/// `build.rs`. The git SHA falls back to `"unknown"` when built outside a
+/// git checkout (e.g. a Docker build context with no `.git` directory).
+#[utoipa::path(
+    get,
+    path = "/version",
+    responses(
+        (status = 200, description = "Build version metadata", body = VersionResponse)
+    )
+)]
+pub async fn version() -> Response {
+    let payload = VersionResponse {
+        version: env!("CARGO_PKG_VERSION"),
+        git_sha: env!("GIT_SHA"),
+        built_at: env!("BUILT_AT"),
+        rust_version: env!("RUSTC_VERSION"),
+    };
+    success(payload, "Build version").into_response()
+}
+
 /// GET /health/redis – Redis connectivity check.
 ///
 /// Returns 200 when Redis is reachable.
@@ -221,6 +330,10 @@ mod tests {
         let payload = HealthResponse {
             status: "ok",
             timestamp: Utc::now().to_rfc3339(),
+            category_sync: true,
+            database: "ok",
+            redis: "ok",
+            uptime_seconds: 0,
         };
         let resp = success(payload, "API is healthy").into_response();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -242,6 +355,10 @@ mod tests {
                 let payload = HealthResponse {
                     status: "ok",
                     timestamp: Utc::now().to_rfc3339(),
+                    category_sync: true,
+                    database: "ok",
+                    redis: "ok",
+                    uptime_seconds: get_uptime_seconds(),
                 };
                 success(payload, "API is healthy").into_response()
             }),
@@ -265,6 +382,38 @@ mod tests {
         assert_eq!(json["message"], "API is healthy");
         assert_eq!(json["data"]["status"], "ok");
         assert!(json["data"]["timestamp"].is_string());
+        assert!(json["data"]["uptime_seconds"].is_number());
+    }
+
+    #[tokio::test]
+    async fn test_uptime_seconds_increases_or_non_negative() {
+        let start = get_uptime_seconds();
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        let later = get_uptime_seconds();
+        assert!(later >= start);
+    }
+
+    #[tokio::test]
+    async fn test_version_endpoint_returns_200_with_non_empty_version() {
+        let router = Router::new().route("/version", get(version));
+
+        let req = Request::builder()
+            .uri("/version")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["success"], true);
+        assert!(!json["data"]["version"].as_str().unwrap().is_empty());
+        assert!(!json["data"]["git_sha"].as_str().unwrap().is_empty());
     }
 
     #[tokio::test]

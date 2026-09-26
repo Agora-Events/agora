@@ -7,6 +7,8 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 import { Button } from "@/components/ui/button";
+import { WalletAddress } from "@/components/ui/wallet-address";
+import { announce } from "@/components/ui/live-announcer";
 import Link from "next/link";
 
 const fallbackCardsData: DiscoverOrganizer[] = [
@@ -16,6 +18,7 @@ const fallbackCardsData: DiscoverOrganizer[] = [
     description:
       "Building and empowering the Stellar ecosystem in West Africa through education, developer support, and real-world blockchain adoption.",
     image: "/icons/stellar-west-africa.svg",
+    wallet: "GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   },
   {
     id: "stellar-east-african-community",
@@ -23,6 +26,7 @@ const fallbackCardsData: DiscoverOrganizer[] = [
     description:
       "Building and empowering the Stellar ecosystem in East Africa through education, developer support, and real-world blockchain adoption.",
     image: "/icons/stellar-east-africa.svg",
+    wallet: "GDBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
   },
   {
     id: "stellar-india",
@@ -30,6 +34,7 @@ const fallbackCardsData: DiscoverOrganizer[] = [
     description:
       "Building and empowering the Stellar ecosystem in West Africa through education, developer support, and real-world blockchain adoption.",
     image: "/icons/stellar-india.svg",
+    wallet: "GDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
   },
   {
     id: "stellar-portugal",
@@ -37,6 +42,7 @@ const fallbackCardsData: DiscoverOrganizer[] = [
     description:
       "Building and empowering the Stellar ecosystem in West Africa through education, developer support, and real-world blockchain adoption.",
     image: "/icons/stellar-portugal.svg",
+    wallet: "GDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
   },
 ];
 
@@ -52,14 +58,22 @@ function SubscribeButton() {
   );
 }
 
-type OrganizerComponentProps = {
-  onError: (message: string) => void;
-};
+interface OrganizerComponentProps {
+  selectedOrganizer?: string;
+  onOrganizerChange?: (organizer: string) => void;
+  onError?: (message: string) => void;
+}
 
-export function OrganizerComponent({ onError }: OrganizerComponentProps) {
+export function OrganizerComponent({
+  selectedOrganizer = "",
+  onOrganizerChange = () => undefined,
+  onError = () => undefined,
+}: OrganizerComponentProps) {
   const cardsRef = useRef<HTMLDivElement>(null);
   const [cardsData, setCardsData] = useState<DiscoverOrganizer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
+  const VISIBLE_ORGANIZER_COUNT = 5;
 
   useEffect(() => {
     // AbortController cancels the in-flight fetch when the component unmounts,
@@ -74,6 +88,7 @@ export function OrganizerComponent({ onError }: OrganizerComponentProps) {
         // Ignore abort errors — they are intentional and not user-facing.
         if (err instanceof Error && err.name === "AbortError") return;
         setCardsData([]);
+        announce("Could not load organizers");
         onError("Could not load organizers");
       } finally {
         // Only update loading state if the fetch was not aborted.
@@ -90,6 +105,9 @@ export function OrganizerComponent({ onError }: OrganizerComponentProps) {
   }, [onError]);
 
   const organizersToRender = cardsData.length > 0 ? cardsData : fallbackCardsData;
+  const visibleOrganizers = showAll
+    ? organizersToRender
+    : organizersToRender.slice(0, VISIBLE_ORGANIZER_COUNT);
 
   const scrollLeft = () => {
     cardsRef.current?.scrollBy({ left: -300, behavior: "smooth" });
@@ -102,7 +120,7 @@ export function OrganizerComponent({ onError }: OrganizerComponentProps) {
   return (
     <div className="p-10 pl-45 hidden lg:block bg-base">
       <div className="flex justify-start items-center gap-4 p-5 pb-10">
-        <h1 className="font-semibold md:text-4xl pl-3">Explore organizers</h1>
+        <h1 className="font-semibold md:text-4xl pl-3">{t("exploreOrganizers")}</h1>
         <Image
           src={group}
           alt="User Group Icon"
@@ -121,12 +139,26 @@ export function OrganizerComponent({ onError }: OrganizerComponentProps) {
             />
           ))}
         {!isLoading &&
-          organizersToRender.map((card) => (
+          visibleOrganizers.map((card) => (
           <Link key={card.id} href={`/organizers/${card.id}`} className="relative h-full block">
             <section className="absolute border-10 rounded-2xl bg-yellow-400 border-yellow-400 w-102 h-58 -left-2 top-2 z-0"></section>
             <div
-              className="relative z-10 bg-black text-white p-5x border rounded-2xl lg:min-w-100
-                     h-40 lg:h-58 cursor-pointer hover:-translate-y-1 transition-transform"
+              role="button"
+              tabIndex={0}
+              aria-pressed={selectedOrganizer === card.id}
+              onClick={() =>
+                onOrganizerChange(selectedOrganizer === card.id ? "" : card.id)
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOrganizerChange(
+                    selectedOrganizer === card.id ? "" : card.id,
+                  );
+                }
+              }}
+              className={`relative z-10 bg-black text-white p-5x border rounded-2xl lg:min-w-100
+                     h-40 lg:h-58 ${selectedOrganizer === card.id ? "ring-4 ring-black/30" : ""}`}
             >
               <div className="absolute top-5 left-5">
                 <Image
@@ -144,6 +176,14 @@ export function OrganizerComponent({ onError }: OrganizerComponentProps) {
               <p className="text-xs absolute left-25 top-20 w-65">
                 {card.description}
               </p>
+              {card.wallet && (
+                <div
+                  className="absolute bottom-4 left-5 right-28 overflow-hidden"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <WalletAddress address={card.wallet} className="text-white/90" />
+                </div>
+              )}
               <div onClick={(e) => e.preventDefault()}>
                 <SubscribeButton />
               </div>
@@ -151,9 +191,21 @@ export function OrganizerComponent({ onError }: OrganizerComponentProps) {
           </Link>
           ))}
         {!isLoading && cardsData.length === 0 && (
-          <p className="text-sm text-black/60">No data available</p>
+          <p className="text-sm text-black/60">{t("noDataAvailable")}</p>
         )}
       </section>
+      {!isLoading && organizersToRender.length > VISIBLE_ORGANIZER_COUNT && (
+        <button
+          type="button"
+          aria-expanded={showAll}
+          onClick={() => setShowAll((expanded) => !expanded)}
+          className="mt-5 rounded-lg bg-black px-4 py-2 font-semibold text-white hover:bg-black/80"
+        >
+          {showAll
+            ? "Show fewer"
+            : `Show all (${organizersToRender.length})`}
+        </button>
+      )}
       <span className="flex justify-end gap-5 pr-50 pt-5">
         <Image
           src={left}

@@ -37,10 +37,13 @@ The Ticket Payment contract manages all financial transactions for event ticketi
 - Winner determination and settlement
 
 ### Resale Marketplace
-- List tickets for resale
-- Price cap enforcement (organizer-set)
-- Escrow for resale transactions
-- Automatic ownership transfer
+- List tickets for resale (`resale.rs`)
+- Hard price cap enforcement — organizer-set `resale_cap_bps`, defaulting to
+  110% of face value when the organizer has not set one
+- Automatic organizer royalty (default 5%) deducted at settlement
+- Atomic swap: payment, royalty and ownership transfer in one invocation
+- The ticket's check-in secret is handed over off-chain, sealed to the buyer's
+  X25519 key — see `server/src/handlers/marketplace.rs`
 
 ### Rewards Distribution
 - Track staker contributions
@@ -61,9 +64,20 @@ The Ticket Payment contract manages all financial transactions for event ticketi
 - `batch_refund(refund_requests)` - Process multiple refunds
 
 ### Resale Operations
-- `list_for_resale(ticket_id, price)` - List ticket on resale market
-- `cancel_resale_listing(ticket_id)` - Cancel resale listing
-- `purchase_resale_ticket(resale_id, buyer)` - Buy from resale market
+Listings are keyed by the `payment_id` of the ticket being sold, so a ticket
+has at most one listing at a time.
+
+- `list_for_resale(payment_id, price_usdc)` - List ticket on resale market
+- `cancel_resale_listing(payment_id)` - Cancel a listing (seller only)
+- `purchase_resale_ticket(payment_id, buyer)` - Buy from resale market
+- `get_resale_listing(payment_id)` - Read a listing (including sold/cancelled)
+- `get_max_resale_price(payment_id)` - Highest legal listing price
+- `set_resale_royalty_bps(event_id, royalty_bps)` - Organizer royalty rate
+- `get_resale_royalty_bps(event_id)` - Read the royalty rate
+
+The buyer must `approve` the contract for the listing price before calling
+`purchase_resale_ticket`, the same two-transaction pattern `process_payment`
+uses.
 
 ### Auction Operations
 - `create_auction(event_id, tier_id, start_price, end_price, duration)` - Create auction
@@ -112,12 +126,17 @@ pub enum PaymentStatus {
 ### ResaleListing
 ```rust
 pub struct ResaleListing {
-    pub listing_id: u64,
-    pub ticket_id: u64,
+    pub payment_id: String,
+    pub event_id: String,
     pub seller: Address,
     pub price: i128,
-    pub status: ResaleStatus,
+    pub token_address: Address,
+    /// Ceiling this listing was validated against.
+    pub max_price: i128,
+    pub royalty_bps: u32,
+    pub status: ResaleStatus, // Active | Cancelled | Sold
     pub created_at: u64,
+    pub updated_at: u64,
 }
 ```
 
@@ -146,7 +165,8 @@ The contract emits events for tracking and integration:
 - `RefundProcessed` - Refund completed
 - `PaymentDistributed` - Payment split to parties
 - `ResaleListed` - Ticket listed for resale
-- `ResalePurchased` - Resale transaction completed
+- `ResaleCancelled` - Listing withdrawn by the seller
+- `ResalePurchased` - Resale settled (carries price, royalty, seller proceeds)
 - `AuctionCreated` - New auction started
 - `BidPlaced` - Auction bid submitted
 - `AuctionSettled` - Auction completed

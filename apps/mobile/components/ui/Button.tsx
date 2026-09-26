@@ -18,6 +18,7 @@ interface ButtonProps {
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
+  testID?: string;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -28,9 +29,11 @@ export const Button: React.FC<ButtonProps> = ({
   disabled = false,
   style,
   textStyle,
+  testID,
 }) => {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [

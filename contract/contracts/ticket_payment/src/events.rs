@@ -1,3 +1,5 @@
+// Contract event payload types – not part of the primary documentation surface.
+#![allow(missing_docs)]
 use crate::types::PaymentStatus;
 use soroban_sdk::{contracttype, Address, BytesN, String};
 
@@ -25,8 +27,16 @@ pub enum AgoraEvent {
     ProposalVoted,
     GovernanceActionExecuted,
     ContractVerificationFailed,
+    ResaleListed,
+    ResaleCancelled,
+    ResalePurchased,
+    PoapMinted,
     EventCancelled,
     CancellationRefundClaimed,
+    EscrowWithdrawalProposed,
+    EscrowWithdrawalApproved,
+    EscrowWithdrawalExecuted,
+    MilestoneReleased,
 }
 
 #[contracttype]
@@ -213,6 +223,34 @@ pub struct GovernanceActionExecutedEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResaleListedEvent {
+    pub payment_id: String,
+    pub seller: Address,
+    pub ask_price: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResaleCancelledEvent {
+    pub payment_id: String,
+    pub seller: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResalePurchasedEvent {
+    pub payment_id: String,
+    pub seller: Address,
+    pub buyer: Address,
+    pub price: i128,
+    pub royalty: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractVerificationFailedEvent {
     pub missing_key: String,
     pub timestamp: u64,
@@ -233,5 +271,68 @@ pub struct CancellationRefundClaimedEvent {
     pub event_id: String,
     pub buyer: Address,
     pub amount: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when a non-transferable POAP NFT is minted for a successful check-in.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoapMintedEvent {
+    /// The payment / ticket that triggered the mint.
+    pub payment_id: String,
+    pub event_id: String,
+    /// The attendee who earned the POAP.
+    pub attendee: Address,
+    /// Ledger timestamp at mint time.
+    pub timestamp: u64,
+}
+
+/// Emitted when an escrow milestone is released for an event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MilestoneReleasedEvent {
+    pub event_id: String,
+    pub milestone_index: u32,
+    pub amount_released: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when a multi-sig escrow withdrawal is proposed.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowWithdrawalProposedEvent {
+    pub proposal_id: u64,
+    pub event_id: String,
+    pub amount: i128,
+    pub proposer: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a multi-sig escrow withdrawal is approved.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowWithdrawalApprovedEvent {
+    pub proposal_id: u64,
+    pub approver: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a multi-sig escrow withdrawal is executed.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowWithdrawalExecutedEvent {
+    pub proposal_id: u64,
+    pub event_id: String,
+    pub amount: i128,
+    pub executor: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when a dispute is opened on an event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowDisputedEvent {
+    pub event_id: String,
+    pub opened_by: Address,
     pub timestamp: u64,
 }

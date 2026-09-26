@@ -1,12 +1,16 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import Button from '@/components/ui/Button';
+import { useAuth } from '@/hooks/useAuth';
+import { useLiveTicketInventory } from '@/hooks/useLiveTicketInventory';
+import { getTiersForEvent, totalRemaining } from '@/lib/ticketTiers';
 
 export default function EventDetailsScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const { token } = useAuth();
 
   // Find simulated event details
   const getEventTitle = (eventId: string) => {
@@ -19,6 +23,18 @@ export default function EventDetailsScreen() {
   };
 
   const title = getEventTitle(id as string);
+  const eventId = (id as string) ?? '1';
+
+  // Live inventory so availability shown here matches checkout (issue #1010).
+  const baseTiers = useMemo(() => getTiersForEvent(eventId), [eventId]);
+  const { tiers, isLive } = useLiveTicketInventory({
+    eventId,
+    tiers: baseTiers,
+    token: token ?? undefined,
+  });
+
+  const remaining = totalRemaining(tiers);
+  const isSoldOut = remaining === 0;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -29,6 +45,13 @@ export default function EventDetailsScreen() {
       <View style={styles.detailsContainer}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.price}>150 XLM</Text>
+
+        {remaining !== undefined ? (
+          <Text testID="event-remaining-tickets" style={styles.availability}>
+            {isSoldOut ? 'Sold out' : `${remaining} tickets remaining`}
+            {isLive ? ' • live' : ''}
+          </Text>
+        ) : null}
         
         <View style={styles.infoBlock}>
           <Text style={styles.label}>Date & Time</Text>
@@ -48,7 +71,9 @@ export default function EventDetailsScreen() {
         </View>
 
         <Button
-          title="Buy Tickets Now"
+          testID="event-buy-tickets-button"
+          title={isSoldOut ? 'Sold Out' : 'Buy Tickets Now'}
+          disabled={isSoldOut}
           onPress={() => {
             router.push({
               pathname: '/checkout',
@@ -118,6 +143,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.secondaryText,
     lineHeight: 20,
+  },
+  availability: {
+    fontSize: 13,
+    color: Colors.secondaryText,
+    marginTop: 6,
   },
   actionButton: {
     marginTop: 20,

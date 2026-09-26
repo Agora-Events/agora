@@ -1,4 +1,5 @@
 pub mod admin_auth;
+pub mod api_key_auth;
 pub mod audit;
 pub mod catch_panic;
 pub mod content_type;

@@ -3,10 +3,13 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import React, { useState } from "react";
+import { useTranslations } from "next-intl";
 import { TicketModal } from "./TicketModal";
 import { Button } from "@/components/ui/button";
 import { TicketAvailabilityDisplay } from "./ticket-availability-display";
 import { parsePriceValue } from "@/lib/validation";
+import { trackFunnelEvent } from "@/utils/funnel-analytics";
+import { EventCountdown } from "./event-countdown";
 
 interface RegistrationBoxProps {
   event: {
@@ -15,6 +18,7 @@ interface RegistrationBoxProps {
     price: string;
     location: string;
     date: string;
+    startsAt?: string;
   };
   host: {
     name: string;
@@ -25,6 +29,7 @@ interface RegistrationBoxProps {
 }
 
 export function RegistrationBox({ event, host }: RegistrationBoxProps) {
+  const t = useTranslations("eventDetail");
   const [quantity, setQuantity] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const router = useRouter();
@@ -36,6 +41,7 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
       typeof window !== "undefined" && localStorage.getItem("token");
 
     if (isAuthenticated) {
+      void trackFunnelEvent("checkout_started", event.id);
       setIsModalOpen(true);
     } else {
       router.push("/auth");
@@ -84,6 +90,13 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
           />
         </div>
 
+        {/* Event Countdown */}
+        {event.startsAt && (
+          <div className="z-10 flex items-center gap-2">
+            <EventCountdown startsAt={event.startsAt} />
+          </div>
+        )}
+
         <p className="text-[16px] sm:text-[19px] text-black font-medium z-10">
           Welcome! To join the event, please register below.
         </p>
@@ -102,7 +115,7 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
                 alt="dollar"
               />
             )}
-            {isFree ? "Register" : `$${(priceValue * quantity).toFixed(2)}`}
+            {isFree ? t("register") : `$${(priceValue * quantity).toFixed(2)}`}
             <Image
               src="/icons/arrow-up-right-01.svg"
               width={24}

@@ -34,6 +34,15 @@ pub struct Transaction {
     /// Optional Stellar blockchain transaction hash for on-chain payments.
     /// `None` for off-chain or fiat transactions.
     pub stellar_transaction_hash: Option<String>,
+    /// Referral code this purchase is attributed to, if it came through an
+    /// affiliate link (Issue #1151).
+    ///
+    /// `None` for direct purchases and for every transaction predating the
+    /// affiliate programme. References
+    /// [`super::event_affiliate::EventAffiliate::referral_code`]; the foreign
+    /// key is `ON DELETE SET NULL`, so removing a registration never deletes
+    /// the record of a completed purchase.
+    pub referred_by: Option<String>,
     /// Timestamp when this transaction record was created.
     pub created_at: DateTime<Utc>,
     /// Timestamp of the last update to this record. Managed by a DB trigger.

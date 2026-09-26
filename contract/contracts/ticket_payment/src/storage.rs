@@ -1,12 +1,69 @@
+// Internal storage accessors – not part of the public documentation surface.
+#![allow(missing_docs)]
 use crate::{
     error::TicketPaymentError,
     types::{
-        DataKey, DiscountData, EventBalance, HighestBid, ParameterProposal, Payment, PaymentStatus,
+        DataKey, DiscountData, EscrowMilestone, EscrowState, EventBalance, HighestBid,
+        ParameterProposal, Payment, PaymentStatus,
     },
 };
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
+
+// ── TTL / Ledger-Lifetime Constants ──────────────────────────────────────────
+//
+// Stellar produces roughly one ledger every 5 seconds.
+//   1 day  ≈ 17_280 ledgers
+//   1 week ≈ 120_960 ledgers
+//   30 days ≈ 518_400 ledgers
+//
+// Soroban persistent-storage entries expire after their TTL lapses. We keep
+// all persistent keys alive for ≈ 30 days and extend them whenever they drop
+// below the 7-day threshold.  Instance storage (contract state / config) gets
+// a longer lifetime of ≈ 90 days / 30-day threshold.
+
+/// Number of ledgers in approximately 30 days (persistent bump target).
+/// 30 × 24 × 3600 / 5 = 518_400 ledgers.
+pub const PERSISTENT_BUMP_AMOUNT: u32 = 518_400;
+
+/// Minimum remaining TTL (≈ 7 days) before a persistent entry is re-extended.
+/// 7 × 24 × 3600 / 5 = 120_960 ledgers.
+pub const PERSISTENT_LIFETIME_THRESHOLD: u32 = 120_960;
+
+/// Number of ledgers in approximately 90 days (instance bump target).
+/// 90 × 24 × 3600 / 5 = 1_555_200 ledgers.
+pub const INSTANCE_BUMP_AMOUNT: u32 = 1_555_200;
+
+/// Minimum remaining TTL (≈ 30 days) before instance storage is re-extended.
+/// 30 × 24 × 3600 / 5 = 518_400 ledgers.
+pub const INSTANCE_LIFETIME_THRESHOLD: u32 = 518_400;
+
+/// Extend the TTL of a specific persistent-storage key so it lives for at least
+/// another [`PERSISTENT_BUMP_AMOUNT`] ledgers (≈ 30 days).
+///
+/// The call is a no-op if the current TTL already exceeds
+/// [`PERSISTENT_LIFETIME_THRESHOLD`] (≈ 7 days), preventing unnecessary
+/// ledger writes.
+pub fn bump_persistent(env: &Env, key: &DataKey) {
+    env.storage().persistent().extend_ttl(
+        key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+/// Extend the TTL of the contract's *instance* storage so it lives for at
+/// least another [`INSTANCE_BUMP_AMOUNT`] ledgers (≈ 90 days).
+///
+/// Instance storage holds infrequently-changed configuration (e.g. admin
+/// address, initialized flag).  This helper should be called on any mutating
+/// entry point that touches instance keys.
+pub fn bump_instance(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+}
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&DataKey::Admin, admin);
@@ -583,19 +640,6 @@ pub fn mark_discount_hash_used(env: &Env, hash: soroban_sdk::BytesN<32>) {
         .set(&DataKey::DiscountCodeUsed(hash), &true);
 }
 
-pub fn is_event_disputed(env: &Env, event_id: String) -> bool {
-    env.storage()
-        .persistent()
-        .get(&DataKey::DisputeStatus(event_id))
-        .unwrap_or(false)
-}
-
-pub fn set_event_dispute_status(env: &Env, event_id: String, disputed: bool) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::DisputeStatus(event_id), &disputed);
-}
-
 pub fn is_event_cancelled_for_refund(env: &Env, event_id: &String) -> bool {
     env.storage()
         .persistent()
@@ -882,4 +926,99 @@ pub fn get_affiliate_rate(env: &Env, event_id: &String, affiliate: &Address) -> 
     env.storage()
         .persistent()
         .get(&DataKey::AffiliateRate(event_id.clone(), affiliate.clone()))
+}
+
+// ---------------------------------------------------------------------------
+// POAP (Proof of Attendance Protocol) storage helpers
+// ---------------------------------------------------------------------------
+
+/// Returns true if a POAP has already been minted for this payment_id.
+pub fn is_poap_minted(env: &Env, payment_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&DataKey::PoapMinted(payment_id.clone()))
+        .unwrap_or(false)
+}
+
+/// Marks the payment as having had its POAP minted, and adds the payment_id
+/// to the per-attendee sharded index.
+pub fn mark_poap_minted(env: &Env, payment_id: String, attendee: &Address) {
+    // Guard: idempotent
+    let key = DataKey::PoapMinted(payment_id.clone());
+    env.storage().persistent().set(&key, &true);
+
+    // Append to attendee index (sharded, same pattern as buyer payments)
+    let count_key = DataKey::PoapsByAttendeeCount(attendee.clone());
+    let count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0u32);
+    let shard = count / SHARD_SIZE;
+    let shard_key = DataKey::PoapsByAttendee(attendee.clone(), shard);
+    let mut ids: Vec<String> = env
+        .storage()
+        .persistent()
+        .get(&shard_key)
+        .unwrap_or_else(|| vec![env]);
+    ids.push_back(payment_id);
+    env.storage().persistent().set(&shard_key, &ids);
+    env.storage().persistent().set(&count_key, &(count + 1));
+}
+
+/// Returns all POAP payment_ids earned by `attendee` across all shards.
+pub fn get_poaps_by_attendee(env: &Env, attendee: &Address) -> Vec<String> {
+    let count_key = DataKey::PoapsByAttendeeCount(attendee.clone());
+    let count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0u32);
+    if count == 0 {
+        return vec![env];
+    }
+    let total_shards = count.div_ceil(SHARD_SIZE);
+    let mut all: Vec<String> = vec![env];
+    for shard in 0..total_shards {
+        let shard_key = DataKey::PoapsByAttendee(attendee.clone(), shard);
+        if let Some(ids) = env.storage().persistent().get::<_, Vec<String>>(&shard_key) {
+            for id in ids.iter() {
+                all.push_back(id);
+            }
+        }
+    }
+    all
+}
+
+// ── Escrow Storage ─────────────────────────────────────────────────────────────
+
+pub fn get_escrow_state(env: &Env, event_id: String) -> Option<EscrowState> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EscrowState(event_id))
+}
+
+pub fn set_escrow_state(env: &Env, event_id: String, state: &EscrowState) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EscrowState(event_id), state);
+}
+
+pub fn store_escrow_milestone(
+    env: &Env,
+    event_id: String,
+    index: u32,
+    milestone: &EscrowMilestone,
+) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EscrowMilestone(event_id, index), milestone);
+}
+
+pub fn get_escrow_milestone(env: &Env, event_id: String, index: u32) -> Option<EscrowMilestone> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EscrowMilestone(event_id, index))
+}
+
+pub fn init_escrow_state(env: &Env, event_id: String) -> EscrowState {
+    let state = EscrowState {
+        total_collected: 0,
+        total_released: 0,
+        milestones_reached: 0,
+    };
+    set_escrow_state(env, event_id, &state);
+    state
 }

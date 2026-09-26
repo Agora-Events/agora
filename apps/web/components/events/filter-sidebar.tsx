@@ -47,10 +47,16 @@ export type FilterState = {
   maxPrice: string;
 };
 
-/**
- * Props for FilterSidebar component
- * @interface FilterSidebarProps
- */
+export function getActiveFilterCount(filters: FilterState): number {
+  return (
+    filters.categories.length +
+    filters.locations.length +
+    (filters.date && filters.date !== "Any time" ? 1 : 0) +
+    (filters.minPrice ? 1 : 0) +
+    (filters.maxPrice ? 1 : 0)
+  );
+}
+
 interface FilterSidebarProps {
   /** Whether the sidebar is open or closed */
   isOpen: boolean;
@@ -114,17 +120,17 @@ export function FilterSidebar({
   filters,
   onFiltersChange,
 }: FilterSidebarProps) {
-  const sidebarRef = useFocusTrap<HTMLElement>(isOpen);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const activeFilterCount = getActiveFilterCount(filters);
 
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
-  // Sync local filters with parent filters when opened
+  // Sync only when the applied filters change (apply/reset). Deliberately not
+  // keyed on `isOpen`: the draft selections must survive closing and reopening
+  // the drawer, which is how mobile users dip in and out of the filter UI.
   useEffect(() => {
-    if (isOpen) {
-      setLocalFilters(filters);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+    setLocalFilters(filters);
+  }, [filters]);
 
   // Close on Escape key
   useEffect(() => {
@@ -203,9 +209,9 @@ export function FilterSidebar({
             aria-label="Filter events"
             className="
               fixed top-0 right-0 z-50 h-full
-              w-full max-w-[360px] sm:max-w-[420px]
+              w-full max-w-full sm:max-w-[420px]
               bg-base shadow-[-8px_0_32px_rgba(0,0,0,0.12)]
-              flex flex-col overflow-y-auto
+              flex flex-col overflow-x-hidden
             "
             variants={sidebarVariants}
             initial="hidden"
@@ -222,16 +228,24 @@ export function FilterSidebar({
                   alt=""
                   aria-hidden="true"
                 />
-                <h2 className="font-bold text-[20px]/6 text-black">Filters</h2>
+                <h2 className="font-bold text-[20px]/6 text-black">
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="ml-2 inline-flex min-w-6 h-6 items-center justify-center rounded-full bg-black px-1.5 text-xs text-white">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </h2>
               </div>
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="text-[13px] font-medium text-black/50 hover:text-black transition-colors underline underline-offset-2"
-                >
-                  Clear Filter
-                </button>
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={handleReset}
+                    className="text-[13px] font-medium text-black/50 hover:text-black transition-colors underline underline-offset-2"
+                  >
+                    Clear Filter
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onClose}
@@ -248,7 +262,9 @@ export function FilterSidebar({
             </div>
 
             {/* ── Scrollable body ── */}
-            <div className="flex flex-col gap-7 px-6 py-6 flex-1">
+            {/* Scrolls independently so the Apply CTA stays reachable on short
+                mobile viewports. */}
+            <div className="flex flex-col gap-7 px-6 py-6 flex-1 overflow-y-auto">
               {/* ─ Date section ─ */}
               <section>
                 <h3 className="font-semibold text-[15px] text-black mb-3">

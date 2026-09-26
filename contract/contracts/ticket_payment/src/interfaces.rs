@@ -1,3 +1,5 @@
+// External contract interface definitions – not part of the primary documentation surface.
+#![allow(missing_docs)]
 // Price Oracle interface
 pub mod price_oracle {
     use soroban_sdk::{contractclient, Address, Env};
@@ -35,6 +37,39 @@ pub mod event_registry {
         Active,
         Inactive,
         Cancelled,
+    }
+
+    #[soroban_sdk::contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub enum DisputeStatus {
+        Open,
+        Voting,
+        ResolvedBuyer,
+        ResolvedOrganizer,
+        Expired,
+    }
+
+    #[soroban_sdk::contracttype]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    #[repr(u32)]
+    pub enum DisputeVote {
+        BuyerFavor = 1,
+        OrganizerFavor = 2,
+    }
+
+    #[soroban_sdk::contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct Dispute {
+        pub event_id: String,
+        pub opened_by: Address,
+        pub opened_at: u64,
+        pub closes_at: u64,
+        pub status: DisputeStatus,
+        pub total_votes: u32,
+        pub buyer_votes: u32,
+        pub organizer_votes: u32,
+        pub quorum_threshold_bps: u32,
+        pub total_eligible_tickets: i128,
     }
 
     #[soroban_sdk::contracttype]
@@ -91,6 +126,8 @@ pub mod event_registry {
         );
         fn get_loyalty_discount_bps(env: Env, guest: Address) -> u32;
         fn get_guest_profile(env: Env, guest: Address) -> Option<GuestProfile>;
+        fn get_dispute(env: Env, event_id: String) -> Option<Dispute>;
+        fn has_confirmed_ticket(env: Env, event_id: String, address: Address) -> bool;
     }
 
     pub use crate::types::AuctionConfig;

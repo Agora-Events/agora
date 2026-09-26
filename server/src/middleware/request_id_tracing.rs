@@ -12,6 +12,13 @@ use tracing::Instrument;
 
 use crate::config::request_id::REQUEST_ID_HEADER;
 
+tokio::task_local! {
+    /// The current request's `x-request-id`, readable from anywhere in the
+    /// request-handling task — including error-to-response conversion, where
+    /// there is no direct access to the original request.
+    pub static REQUEST_ID: String;
+}
+
 /// Axum middleware that injects `request_id` into the tracing span.
 ///
 /// Must be applied **after** [`SetRequestIdLayer`] so the header is already
@@ -25,7 +32,9 @@ pub async fn trace_request_id(request: Request, next: Next) -> Response {
         .to_owned();
 
     let span = tracing::info_span!("request", request_id = %request_id);
-    next.run(request).instrument(span).await
+    REQUEST_ID
+        .scope(request_id, next.run(request).instrument(span))
+        .await
 }
 
 /// Axum middleware that copies `x-request-id` from the request headers to the
@@ -100,5 +109,18 @@ mod tests {
                 .and_then(|v| v.to_str().ok()),
             Some(custom_id)
         );
+    }
+
+    #[tokio::test]
+    async fn test_generate_request_id_when_missing() {
+        let router = Router::new()
+            .route("/", get(|| async { "ok" }))
+            .layer(middleware::from_fn(propagate_request_id))
+            .layer(set_request_id_layer());
+
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert!(resp.headers().get(REQUEST_ID_HEADER).is_some());
     }
 }

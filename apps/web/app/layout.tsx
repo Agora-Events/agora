@@ -7,7 +7,9 @@
 
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Toaster } from "sonner";
+import { CookieBanner } from "@/components/layout/cookie-banner";
+import { LiveAnnouncer } from "@/components/ui/live-announcer";
+import { LocaleProvider } from "@/lib/i18n/locale-context";
 import "./globals.css";
 
 const inter = Inter({
@@ -42,6 +44,7 @@ export const metadata: Metadata = {
 import { Suspense } from "react";
 import LoadingBar from "@/components/ui/loading-bar";
 import { ThemeProvider } from "@/components/providers/theme-context";
+import { AttributionCapture } from "@/components/analytics/attribution-capture";
 
 export default function RootLayout({
   children,
@@ -49,15 +52,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" dir="ltr">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased`}>
-        <Suspense fallback={null}>
-          <LoadingBar />
-        </Suspense>
-        <Toaster position="bottom-right" richColors />
-        <ThemeProvider>
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
+        <LocaleProvider>
+          <LiveAnnouncer />
           {children}
-        </ThemeProvider>
+          <CookieBanner />
+        </LocaleProvider>
       </body>
     </html>
   );

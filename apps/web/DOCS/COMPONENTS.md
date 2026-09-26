@@ -93,32 +93,44 @@ import { FormField } from "@/components/ui/form-field";
 ### `components/ui/empty-state.tsx`
 
 Purpose:
-- Displayed when no content (e.g., events) matches the active filters. Accepts a
-  title, description/message, optional icon or illustration, and an optional CTA
-  (button or link).
+<<<<<<< HEAD
+- Displayed when no content (e.g., events) matches the active filters. Accepts a title, description/message, optional icon or illustration, and an optional CTA (button or link).
 
 **Props**
 | Name | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `title` | `string` | Yes | - | Heading text |
-| `description` | `string` | No | - | Supporting message / body copy |
-| `message` | `string` | No | - | Alias for `description` |
-| `icon` | `React.ReactNode` | No | - | Custom icon node |
-| `illustrationSrc` | `string` | No | `"/icons/404-illustration.svg"` | Illustration when no `icon` is set |
-| `action` | `{ label: string; onClick: () => void }` | No | - | Click-handler CTA |
-| `ctaLabel` | `string` | No | - | Link CTA label |
-| `ctaLink` | `string` | No | - | Link CTA href |
+| `description` | `string` | Yes | - | Supporting message / body copy |
+| `icon` | `React.ReactNode` | No | - | Icon to display (e.g. `<img>`, `<Image />`, or any SVG element) |
+| `action` | `{ label: string; onClick?: () => void; href?: string }` | No | - | Optional call-to-action; renders as `<Link>` when `href` is provided, or as a `<Button>` when `onClick` is provided |
+| `illustrationSrc` | `string` | No | `"/icons/404-illustration.svg"` | Override the default illustration src |
 
 **Usage Example:**
 
 ```tsx
 import { EmptyState } from "@/components/ui/empty-state";
+import Image from "next/image";
 
+// With icon and click handler
+<EmptyState
+  icon={
+    <Image
+      src="/icons/search.svg"
+      alt="Search"
+      width={32}
+      height={32}
+    />
+  }
+  title="No events found"
+  description="Try adjusting your filters to find what you're looking for."
+  action={{ label: "Clear Search", onClick: () => setSearch("") }}
+/>
+
+// With navigation link
 <EmptyState
   title="No events found"
-  message="Try adjusting your filters or search criteria."
-  ctaLabel="Create Event"
-  ctaLink="/events/new"
+  description="There are no events matching your current filters."
+  action={{ label: "Create an Event", href: "/events/create" }}
 />
 ```
 

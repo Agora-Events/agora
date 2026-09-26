@@ -130,10 +130,30 @@ The contract emits events for all significant state changes:
 - `FeeUpdated` - Platform fee change
 - `CustomFeeSet` - Custom fee configuration
 - `InventoryIncremented` - Ticket sale
-- `InventoryDecremented` - Ticket refund
+- `InventoryDecremented` - Ticket refund (inventory counter only)
+- `TicketRefunded` - Individual ticket refund with full details (amount, recipient, event, ticket ID)
 - `GoalMet` - Sales target achieved
 - `SeriesPassIssued` - Season pass creation
 - And many more for staking, scanner auth, loyalty, etc.
+
+### TicketRefunded Event Details
+
+The `TicketRefunded` event is emitted whenever a single ticket is refunded. This event carries complete information required by the Soroban indexer to maintain an accurate off-chain ledger:
+
+**Topics:** `(AgoraEvent::TicketRefunded,)`
+
+**Event Structure:**
+```rust
+pub struct TicketRefundedEvent {
+    pub ticket_id: String,           // Unique identifier of the refunded ticket
+    pub event_id: String,            // Event the ticket was for
+    pub recipient_address: Address,  // Guest wallet receiving the refund
+    pub refund_amount: i128,         // Amount refunded in stroops (1 XLM = 10,000,000 stroops)
+    pub timestamp: u64,              // Ledger timestamp when refund was processed
+}
+```
+
+**Example:** When a guest requests a refund, the ticket payment contract calls the registry's `decrement_inventory`, which emits this event carrying all refund details. The indexer reads this event and updates the off-chain ledger immediately, ensuring it stays in sync with on-chain state.
 
 ## Development
 

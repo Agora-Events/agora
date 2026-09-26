@@ -20,6 +20,15 @@ Agora-stellr/
 └── server/      # User interface
 ```
 
+### Code Ownership
+
+PRs are automatically routed for review based on [.github/CODEOWNERS](.github/CODEOWNERS):
+- `/apps/web/` → frontend maintainers
+- `/server/` → backend maintainers
+- `/contract/` → smart contract maintainers
+- `/docs/` and `*.md` → docs maintainers
+- Everything else falls back to the repo-wide owner.
+
 ## 🎨 Frontend Contributions
 
 ### Design Reference

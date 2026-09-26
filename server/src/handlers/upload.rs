@@ -15,10 +15,25 @@ struct UploadResponse {
     url: String,
 }
 
+/// Inspect first few bytes to detect image MIME type (JPEG, PNG, GIF, WebP).
+pub fn detect_mime_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        Some("image/jpeg")
+    } else if bytes.len() >= 8 && bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
+        Some("image/png")
+    } else if bytes.len() >= 6 && (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")) {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
 /// POST /upload/image
 ///
 /// Accepts a `multipart/form-data` request with a single `file` field.
-/// Validates content-type (JPEG/PNG) and size (≤ 5 MB), then uploads to
+/// Validates file magic bytes (JPEG/PNG/WebP/GIF) and size (≤ 5 MB), then uploads to
 /// S3/R2 under a UUID-based key and returns the public URL.
 pub async fn upload_image(
     Extension(config): Extension<Config>,
@@ -35,18 +50,6 @@ pub async fn upload_image(
         }
     };
 
-    // Validate content-type
-    let content_type = field.content_type().unwrap_or("").to_string();
-
-    let ext = match content_type.as_str() {
-        "image/jpeg" => "jpg",
-        "image/png" => "png",
-        _ => {
-            return AppError::ValidationError("Only JPEG and PNG images are accepted".to_string())
-                .into_response()
-        }
-    };
-
     // Read bytes with size cap
     let data = match field.bytes().await {
         Ok(b) => b,
@@ -59,6 +62,38 @@ pub async fn upload_image(
         return AppError::ValidationError("File exceeds the 5 MB size limit".to_string())
             .into_response();
     }
+
+    // Inspect magic bytes to detect actual MIME type
+    let detected_mime = match detect_mime_type(&data) {
+        Some(mime) => mime,
+        None => {
+            return AppError::ValidationError(
+                "Invalid or unsupported file format. Magic bytes do not match safe image types."
+                    .to_string(),
+            )
+            .into_response();
+        }
+    };
+
+    // Validate against allowed MIME types configuration
+    if !config
+        .allowed_upload_mime_types
+        .iter()
+        .any(|m| m.eq_ignore_ascii_case(detected_mime))
+    {
+        return AppError::ValidationError(format!(
+            "MIME type '{detected_mime}' is not allowed"
+        ))
+        .into_response();
+    }
+
+    let ext = match detected_mime {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => "bin",
+    };
 
     // Build S3 client
     let creds = Credentials::new(
@@ -87,7 +122,7 @@ pub async fn upload_image(
         .put_object()
         .bucket(&config.s3_bucket)
         .key(&key)
-        .content_type(&content_type)
+        .content_type(detected_mime)
         .body(ByteStream::from(data))
         .send()
         .await;
@@ -99,4 +134,45 @@ pub async fn upload_image(
 
     let url = format!("{}/{}", config.s3_public_url.trim_end_matches('/'), key);
     success(UploadResponse { url }, "Image uploaded successfully").into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_jpeg_magic_bytes() {
+        let bytes = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        assert_eq!(detect_mime_type(&bytes), Some("image/jpeg"));
+    }
+
+    #[test]
+    fn test_detect_png_magic_bytes() {
+        let bytes = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00];
+        assert_eq!(detect_mime_type(&bytes), Some("image/png"));
+    }
+
+    #[test]
+    fn test_detect_gif_magic_bytes() {
+        let bytes = b"GIF89a\x01\x00\x01\x00";
+        assert_eq!(detect_mime_type(bytes), Some("image/gif"));
+    }
+
+    #[test]
+    fn test_detect_webp_magic_bytes() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        bytes.extend_from_slice(b"WEBP");
+        assert_eq!(detect_mime_type(&bytes), Some("image/webp"));
+    }
+
+    #[test]
+    fn test_reject_php_script_or_svg() {
+        let php_script = b"<?php echo 'malicious'; ?>";
+        assert_eq!(detect_mime_type(php_script), None);
+
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>";
+        assert_eq!(detect_mime_type(svg), None);
+    }
 }

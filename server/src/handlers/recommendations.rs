@@ -12,17 +12,24 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{
-    errors::AppError,
-    middleware::auth::AuthUser,
-};
+use crate::utils::error::AppError;
+
+/// Authenticated user extracted from session / token.
+#[derive(Debug, Clone)]
+pub struct AuthUser {
+    pub user_id: Uuid,
+}
 
 // ── Request & Response types ──────────────────────────────────────────────────
+
+pub const DEFAULT_LIMIT: i64 = 12;
+pub const MIN_LIMIT: i64 = 1;
+pub const MAX_LIMIT: i64 = 24;
 
 #[derive(Debug, Deserialize)]
 pub struct RecommendQuery {
@@ -32,17 +39,22 @@ pub struct RecommendQuery {
 }
 
 fn default_limit() -> i64 {
-    12
+    DEFAULT_LIMIT
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+/// Clamp the limit parameter between `MIN_LIMIT` and `MAX_LIMIT`.
+pub fn clamp_limit(limit: i64) -> i64 {
+    limit.clamp(MIN_LIMIT, MAX_LIMIT)
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct RecommendedEvent {
     pub id: Uuid,
     pub title: String,
     pub slug: String,
     pub description: Option<String>,
-    pub start_time: OffsetDateTime,
-    pub end_time: OffsetDateTime,
+    pub start_time: DateTime<Utc>,
+    pub end_time: DateTime<Utc>,
     pub location: Option<String>,
     pub banner_url: Option<String>,
     pub category_id: Uuid,
@@ -65,6 +77,20 @@ pub struct RecommendationsResponse {
     pub based_on_categories: Vec<String>,
 }
 
+/// Pure helper to assemble the recommendations response DTO.
+pub fn build_recommendations_response(
+    events: Vec<RecommendedEvent>,
+    user_categories: &[(Uuid, String)],
+) -> RecommendationsResponse {
+    let personalised = !user_categories.is_empty();
+    let based_on_categories: Vec<String> = user_categories.iter().map(|(_, n)| n.clone()).collect();
+    RecommendationsResponse {
+        events,
+        personalised,
+        based_on_categories,
+    }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 pub async fn get_recommended_events(
@@ -72,7 +98,7 @@ pub async fn get_recommended_events(
     Extension(auth_user): Extension<AuthUser>,
     Query(params): Query<RecommendQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let limit = params.limit.clamp(1, 24);
+    let limit = clamp_limit(params.limit);
     let user_id = auth_user.user_id;
 
     // 1. Discover the categories from the user's last 3 purchases
@@ -93,7 +119,6 @@ pub async fn get_recommended_events(
     .await?;
 
     let personalised = !user_categories.is_empty();
-    let based_on_categories: Vec<String> = user_categories.iter().map(|(_, n)| n.clone()).collect();
 
     let events: Vec<RecommendedEvent> = if personalised {
         // ── Personalised path ─────────────────────────────────────────────────
@@ -216,12 +241,80 @@ pub async fn get_recommended_events(
         .await?
     };
 
-    Ok((
-        StatusCode::OK,
-        Json(RecommendationsResponse {
-            events,
-            personalised,
-            based_on_categories,
-        }),
-    ))
+    let response = build_recommendations_response(events, &user_categories);
+    Ok((StatusCode::OK, Json(response)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::extract::Query;
+    use axum::http::Uri;
+
+    #[test]
+    fn test_query_parameter_defaults_when_missing() {
+        let uri = Uri::from_static("/api/v1/recommendations/events");
+        let Query(params) = Query::<RecommendQuery>::try_from_uri(&uri).unwrap();
+        assert_eq!(params.limit, DEFAULT_LIMIT);
+    }
+
+    #[test]
+    fn test_query_parameter_custom_limit_parsing() {
+        let uri = Uri::from_static("/api/v1/recommendations/events?limit=8");
+        let Query(params) = Query::<RecommendQuery>::try_from_uri(&uri).unwrap();
+        assert_eq!(params.limit, 8);
+    }
+
+    #[test]
+    fn test_limit_capped_by_global_max_page_size() {
+        assert_eq!(clamp_limit(100), MAX_LIMIT);
+        assert_eq!(clamp_limit(24), MAX_LIMIT);
+        assert_eq!(clamp_limit(25), MAX_LIMIT);
+        assert_eq!(clamp_limit(0), MIN_LIMIT);
+        assert_eq!(clamp_limit(-10), MIN_LIMIT);
+        assert_eq!(clamp_limit(15), 15);
+        assert_eq!(clamp_limit(DEFAULT_LIMIT), 12);
+    }
+
+    #[test]
+    fn test_new_or_unknown_user_with_no_history_returns_valid_response() {
+        // Unknown or new user with no ticket purchase history gets a valid (empty) list, not an error
+        let empty_events: Vec<RecommendedEvent> = vec![];
+        let no_categories: Vec<(Uuid, String)> = vec![];
+
+        let response = build_recommendations_response(empty_events, &no_categories);
+        assert!(!response.personalised);
+        assert!(response.based_on_categories.is_empty());
+        assert!(response.events.is_empty());
+    }
+
+    #[test]
+    fn test_user_with_categories_produces_personalised_response() {
+        let cat_id = Uuid::new_v4();
+        let user_categories = vec![(cat_id, "Tech".to_string())];
+        let event = RecommendedEvent {
+            id: Uuid::new_v4(),
+            title: "Tech Summit".to_string(),
+            slug: "tech-summit".to_string(),
+            description: Some("Tech conference".to_string()),
+            start_time: Utc::now(),
+            end_time: Utc::now(),
+            location: Some("Lagos".to_string()),
+            banner_url: None,
+            category_id: cat_id,
+            category_name: "Tech".to_string(),
+            organizer_id: Uuid::new_v4(),
+            organizer_name: "Agora".to_string(),
+            organizer_avatar: None,
+            min_price: Some(10.0),
+            tickets_remaining: 100,
+            relevance_score: 1,
+        };
+
+        let response = build_recommendations_response(vec![event], &user_categories);
+        assert!(response.personalised);
+        assert_eq!(response.based_on_categories, vec!["Tech"]);
+        assert_eq!(response.events.len(), 1);
+        assert_eq!(response.events[0].title, "Tech Summit");
+    }
 }

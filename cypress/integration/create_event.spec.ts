@@ -8,7 +8,7 @@
  *  4. Fill in all required fields
  *  5. Submit the form (stubbed POST /api/events)
  *  6. Assert redirect to the new event detail page
- *  7. Assert the event title is visible on that page
+ *  7. Assert the event title is visible on that page'
  */
 
 const TEST_EVENT = {

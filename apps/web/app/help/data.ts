@@ -6,6 +6,8 @@ export interface Article {
   title: string;
   categorySlug: string;
   content: string;
+  /** Short SEO/meta description; falls back to a truncated excerpt of content when absent. */
+  summary?: string;
 }
 
 export const mockArticles: Article[] = [

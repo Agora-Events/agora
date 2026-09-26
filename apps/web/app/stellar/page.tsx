@@ -74,7 +74,7 @@ export default function StellarPage() {
                 All ticket purchases and payouts on Agora are processed in USDC on the Stellar network. USDC is a fully reserved stablecoin pegged to the US Dollar.
               </p>
               <Link href="https://developers.stellar.org/docs" target="_blank">
-                <Button variant="outline" className="w-full justify-between items-center text-lg font-bold border-2">
+                <Button backgroundColor="bg-white" textColor="text-black" className="w-full justify-between items-center text-lg font-bold border-2">
                   Read the Payment Guide <span>→</span>
                 </Button>
               </Link>
@@ -84,7 +84,7 @@ export default function StellarPage() {
             <div className="bg-[#D5F7E8] p-10 rounded-3xl border-2 border-black shadow-[-6px_6px_0_rgba(0,0,0,1)]">
               <h2 className="text-3xl font-bold mb-6 italic">Wallet Setup</h2>
               <p className="text-lg text-ink/80 mb-6">
-                To interact with Agora, you'll need a Stellar-compatible wallet like Freighter or Lobstr. Connect your wallet to easily manage your tickets and events.
+                To interact with Agora, you&apos;ll need a Stellar-compatible wallet like Freighter or Lobstr. Connect your wallet to easily manage your tickets and events.
               </p>
               <a href="https://freighter.app" target="_blank" rel="noreferrer">
                 <Button variant="primary" className="w-full text-lg font-bold">

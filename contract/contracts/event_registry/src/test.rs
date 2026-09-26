@@ -176,6 +176,32 @@ fn test_initialization_invalid_fee() {
 }
 
 #[test]
+fn test_initialization_zero_fee_is_allowed() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &0, &usdc_token);
+    assert_eq!(client.get_platform_fee(), 0);
+}
+
+#[test]
+fn test_initialization_explicit_fee_is_stored() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    assert_eq!(client.get_platform_fee(), 500);
+}
+
+#[test]
 fn test_initialization_invalid_address() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
@@ -371,7 +397,7 @@ fn test_organizer_events_list() {
     client.store_event(&event_1);
     client.store_event(&event_2);
 
-    let organizer_events = client.get_organizer_events(&organizer);
+    let organizer_events = client.get_organizer_events(&organizer, &organizer);
     assert_eq!(organizer_events.len(), 2);
     assert_eq!(organizer_events.get(0).unwrap(), event_1.event_id);
     assert_eq!(organizer_events.get(1).unwrap(), event_2.event_id);
@@ -446,7 +472,7 @@ fn test_organizer_events_shard_boundary() {
         client.store_event(&event_info);
     }
 
-    let organizer_events = client.get_organizer_events(&organizer);
+    let organizer_events = client.get_organizer_events(&organizer, &organizer);
     assert_eq!(organizer_events.len(), 51);
     for i in 0..51 {
         assert_eq!(organizer_events.get(i).unwrap(), String::from_str(&env, format!("event_{}", i).as_str()));
@@ -935,7 +961,7 @@ fn test_complete_event_lifecycle() {
     assert_eq!(payment_info.payment_address, payment_addr);
     assert_eq!(payment_info.platform_fee_percent, 600);
 
-    let org_events = client.get_organizer_events(&organizer);
+    let org_events = client.get_organizer_events(&organizer, &organizer);
     assert_eq!(org_events.len(), 1);
     assert!(org_events.contains(&event_id));
 
@@ -4612,7 +4638,114 @@ fn test_add_tier_exceeds_max_supply() {
         max_per_user: 0,
     };
 
-    let res = client.try_add_tier(&event_id, &new_tier_id, &overflow_tier);
-    assert_eq!(res, Err(Ok(EventRegistryError::TierLimitExceeds)));
+    let result = client.try_add_tier(&event_id, &new_tier_id, &overflow_tier);
+    assert_eq!(result, Err(Ok(EventRegistryError::TierLimitExceeds)));
 }
 
+#[test]
+fn test_get_organizer_events_filters_private_for_third_party() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let organizer = Address::generate(&env);
+    let third_party = Address::generate(&env);
+    let payment_address = Address::generate(&env);
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Create a public event
+    let public_event_id = String::from_str(&env, "public_event");
+    let public_event = EventInfo {
+        event_id: public_event_id.clone(),
+        name: String::from_str(&env, "Public Event"),
+        organizer_address: organizer.clone(),
+        payment_address: payment_address.clone(),
+        platform_fee_percent: 500,
+        is_active: true,
+        status: EventStatus::Active,
+        created_at: env.ledger().timestamp(),
+        metadata_cid: String::from_str(&env, "ipfs://public"),
+        max_supply: 100,
+        current_supply: 0,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: None,
+        resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
+        custom_fee_bps: None,
+        banner_cid: None,
+        tags: None,
+        category_ids: soroban_sdk::vec![&env],
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::vec![&env],
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
+        referral_rate_bps: 0,
+    };
+    client.store_event(&public_event);
+
+    // Create a private event
+    let private_event_id = String::from_str(&env, "private_event");
+    let private_event = EventInfo {
+        event_id: private_event_id.clone(),
+        name: String::from_str(&env, "Private Event"),
+        organizer_address: organizer.clone(),
+        payment_address: payment_address.clone(),
+        platform_fee_percent: 500,
+        is_active: true,
+        status: EventStatus::Active,
+        created_at: env.ledger().timestamp(),
+        metadata_cid: String::from_str(&env, "ipfs://private"),
+        max_supply: 100,
+        current_supply: 0,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: None,
+        resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
+        custom_fee_bps: None,
+        banner_cid: None,
+        tags: None,
+        category_ids: soroban_sdk::vec![&env],
+        start_time: 0,
+        is_private: true,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::vec![&env],
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
+        referral_rate_bps: 0,
+    };
+    client.store_event(&private_event);
+
+    // Organizer sees both events
+    let organizer_events = client.get_organizer_events(&organizer, &organizer);
+    assert_eq!(organizer_events.len(), 2);
+    assert!(organizer_events.contains(&public_event_id));
+    assert!(organizer_events.contains(&private_event_id));
+
+    // Third party sees only public events
+    let third_party_events = client.get_organizer_events(&organizer, &third_party);
+    assert_eq!(third_party_events.len(), 1);
+    assert!(third_party_events.contains(&public_event_id));
+    assert!(!third_party_events.contains(&private_event_id));
+}

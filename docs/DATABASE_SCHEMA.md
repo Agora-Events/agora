@@ -157,6 +157,12 @@ Individual tickets purchased by users.
 | `created_at` | TIMESTAMPTZ | NOT NULL, default `NOW()` | Record creation time |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, default `NOW()` | Last update time (auto-managed by trigger) |
 
+**Constraints**
+
+| Name | Definition | Purpose |
+|---|---|---|
+| `tickets_event_id_stellar_id_key` | `UNIQUE (event_id, stellar_id) WHERE stellar_id IS NOT NULL` | Rejects a second row for an on-chain ticket already synced for the same event, so a retried mint or a duplicated indexer event cannot inflate `minted_tickets`. Rows with a null `stellar_id` are unaffected. |
+
 ---
 
 ### `transactions`

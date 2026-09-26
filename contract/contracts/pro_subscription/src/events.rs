@@ -22,16 +22,25 @@ pub enum ProSubscriptionEvent {
     ProMemberAdded,
     /// Organizer removed from the pro members list
     ProMemberRemoved,
+    /// Platform wallet address updated
+    PlatformWalletUpdated,
+    /// Payment token address updated
+    PaymentTokenUpdated,
 }
 
 /// Emitted when the contract is initialized
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InitializationEvent {
+    /// The contract admin address set at initialization
     pub admin: Address,
+    /// The platform wallet address that receives subscription payments
     pub platform_wallet: Address,
+    /// The payment token contract address (e.g., USDC)
     pub payment_token: Address,
+    /// The initial monthly Pro subscription price in stroops
     pub pro_monthly_price: i128,
+    /// Ledger timestamp of initialization
     pub timestamp: u64,
 }
 
@@ -39,10 +48,15 @@ pub struct InitializationEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubscriptionCreatedEvent {
+    /// The organizer's wallet address
     pub organizer: Address,
+    /// The subscription tier purchased
     pub tier: SubscriptionTier,
+    /// Total amount paid in stroops
     pub amount_paid: i128,
+    /// Ledger timestamp when the subscription expires
     pub expires_at: u64,
+    /// Ledger timestamp of the subscription creation
     pub timestamp: u64,
 }
 
@@ -50,9 +64,13 @@ pub struct SubscriptionCreatedEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubscriptionRenewedEvent {
+    /// The organizer's wallet address
     pub organizer: Address,
+    /// Amount paid for the renewal in stroops
     pub amount_paid: i128,
+    /// New expiry timestamp after renewal
     pub new_expiry: u64,
+    /// Ledger timestamp of the renewal
     pub timestamp: u64,
 }
 
@@ -60,8 +78,11 @@ pub struct SubscriptionRenewedEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubscriptionCancelledEvent {
+    /// The organizer whose subscription was cancelled
     pub organizer: Address,
+    /// The admin address that performed the cancellation
     pub cancelled_by: Address,
+    /// Ledger timestamp of the cancellation
     pub timestamp: u64,
 }
 
@@ -69,9 +90,13 @@ pub struct SubscriptionCancelledEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PriceUpdatedEvent {
+    /// Previous monthly price in stroops
     pub old_price: i128,
+    /// New monthly price in stroops
     pub new_price: i128,
+    /// Admin address that performed the update
     pub updated_by: Address,
+    /// Ledger timestamp of the update
     pub timestamp: u64,
 }
 
@@ -79,7 +104,9 @@ pub struct PriceUpdatedEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProMemberAddedEvent {
+    /// The organizer's wallet address
     pub organizer: Address,
+    /// Ledger timestamp of the event
     pub timestamp: u64,
 }
 
@@ -87,6 +114,36 @@ pub struct ProMemberAddedEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProMemberRemovedEvent {
+    /// The organizer's wallet address
     pub organizer: Address,
+    /// Ledger timestamp of the event
+    pub timestamp: u64,
+}
+
+/// Emitted when the platform wallet address is updated
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformWalletUpdatedEvent {
+    /// Previous platform wallet address
+    pub old_wallet: Address,
+    /// New platform wallet address
+    pub new_wallet: Address,
+    /// Admin address that performed the update
+    pub updated_by: Address,
+    /// Ledger timestamp of the update
+    pub timestamp: u64,
+}
+
+/// Emitted when the payment token address is updated
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PaymentTokenUpdatedEvent {
+    /// Previous payment token address
+    pub old_token: Address,
+    /// New payment token address
+    pub new_token: Address,
+    /// Admin address that performed the update
+    pub updated_by: Address,
+    /// Ledger timestamp of the update
     pub timestamp: u64,
 }

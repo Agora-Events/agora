@@ -56,11 +56,13 @@ pub struct Ticket {
     pub ticket_tier_id: Option<Uuid>,
     /// Current lifecycle status of the ticket.
     ///
-    /// Known values (enforced at the application layer):
-    /// - `"active"` — issued and valid for entry
-    /// - `"used"` — scanned/checked in at the event
-    /// - `"cancelled"` — refunded or voided; no longer valid
+    /// Known values:
+    /// - `"Unused"` — issued and valid for entry
+    /// - `"Scanned"` — checked in at the event
+    /// - `"Revoked"` — refunded, voided, or otherwise barred from entry
     pub status: String,
+    /// Timestamp when the ticket was scanned at event entry.
+    pub scanned_at: Option<DateTime<Utc>>,
     /// Optional QR code payload used for event check-in scanning.
     /// `None` until the ticket is fully confirmed and a code is generated.
     pub qr_code: Option<String>,

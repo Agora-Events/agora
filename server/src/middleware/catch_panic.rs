@@ -1,5 +1,5 @@
 //! Panic-catching middleware that converts uncaught panics into standardised
-//! [`ApiError`] JSON responses (`{ "code": 500, "message": "..." }`).
+//! [`ApiError`] JSON responses (`{ "code": "INTERNAL_ERROR", "message": "..." }`).
 
 use axum::response::{IntoResponse, Response};
 use tower_http::catch_panic::CatchPanicLayer;
@@ -55,7 +55,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(json["code"], 500);
+        assert_eq!(json["code"], "INTERNAL_ERROR");
         assert_eq!(json["message"], "Internal server error");
     }
 }

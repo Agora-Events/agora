@@ -1,3 +1,5 @@
+// Payment-related helper types – not part of the primary documentation surface.
+#![allow(missing_docs)]
 use soroban_sdk::{contracttype, Address};
 
 #[contracttype]
@@ -20,6 +22,8 @@ pub struct PurchaseOptions {
     pub referrer: Option<soroban_sdk::Address>,
     /// Per-event limited-time discount code string.
     pub discount_code: Option<soroban_sdk::String>,
+    /// Optional affiliate address for direct commission payouts.
+    pub affiliate_address: Option<soroban_sdk::Address>,
 }
 
 #[contracttype]

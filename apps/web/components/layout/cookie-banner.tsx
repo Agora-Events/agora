@@ -1,25 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { COOKIE_CONSENT_KEY } from "@/lib/constants";
 
-type CookieConsent = "accepted" | "declined";
-
-const CONSENT_KEY = "cookie_consent";
+export type CookieConsent = "accepted" | "declined";
 
 export function CookieBanner() {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setIsVisible(!localStorage.getItem(CONSENT_KEY));
-    }, 0);
-
-    return () => window.clearTimeout(timer);
+    try {
+      setIsVisible(window.localStorage.getItem(COOKIE_CONSENT_KEY) === null);
+    } catch {
+      setIsVisible(true);
+    }
   }, []);
 
-  const saveChoice = (choice: CookieConsent) => {
-    localStorage.setItem(CONSENT_KEY, choice);
+  const setConsent = (consent: CookieConsent) => {
+    try {
+      window.localStorage.setItem(COOKIE_CONSENT_KEY, consent);
+    } catch {
+      // Keep the banner dismissed for this visit if storage is unavailable.
+    }
     setIsVisible(false);
   };
 
@@ -28,36 +30,30 @@ export function CookieBanner() {
   }
 
   return (
-    <section
+    <aside
+      role="dialog"
       aria-label="Cookie consent"
-      className="fixed inset-x-3 bottom-3 z-50 mx-auto flex max-w-5xl flex-col gap-4 rounded-2xl border border-black bg-white p-4 text-black shadow-[-5px_5px_0_rgba(0,0,0,1)] sm:inset-x-6 sm:bottom-6 sm:flex-row sm:items-center sm:justify-between sm:p-5"
+      className="fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-3xl flex-col gap-4 rounded-xl border-2 border-black bg-white p-5 shadow-[-5px_5px_0px_0px_rgba(0,0,0,1)] sm:flex-row sm:items-center sm:justify-between"
     >
-      <div className="max-w-3xl">
-        <h2 className="text-base font-semibold text-ink-deep">Cookies on Agora</h2>
-        <p className="mt-1 text-sm leading-6 text-black/70">
-          We use cookies to keep the event experience reliable and understand what is working.
-          You can accept or decline non-essential cookies.
-        </p>
-      </div>
-
-      <div className="flex shrink-0 gap-3">
-        <Button
+      <p className="text-sm leading-relaxed">
+        We use cookies to improve your experience on Agora.
+      </p>
+      <div className="flex shrink-0 gap-2">
+        <button
           type="button"
-          variant="secondary"
-          className="h-11 px-5 text-sm"
-          onClick={() => saveChoice("declined")}
+          onClick={() => setConsent("declined")}
+          className="rounded-lg border border-black px-4 py-2 text-sm font-semibold hover:bg-gray-100"
         >
           Decline
-        </Button>
-        <Button
+        </button>
+        <button
           type="button"
-          variant="primary"
-          className="h-11 px-5 text-sm"
-          onClick={() => saveChoice("accepted")}
+          onClick={() => setConsent("accepted")}
+          className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
         >
           Accept
-        </Button>
+        </button>
       </div>
-    </section>
+    </aside>
   );
 }

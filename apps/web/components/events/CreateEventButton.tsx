@@ -7,7 +7,7 @@ export function CreateEventButton() {
 
   const handleClick = () => {
     trackEvent('event', 'create_clicked');
-    router.push('/events/new');
+    router.push('/events/create');
   };
 
   return (

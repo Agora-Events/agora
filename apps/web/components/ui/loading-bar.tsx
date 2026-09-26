@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useTransition } from "react";
 import NProgress from "nprogress";
 import "nprogress/nprogress.css";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -8,6 +8,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 export default function LoadingBar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     // Configure NProgress
@@ -25,11 +26,9 @@ export default function LoadingBar() {
     // but the effect running means the navigation has "happened" (client-side).
     // To properly capture the "loading" state during data fetching,
     // this component should be used in conjunction with Suspense.
-    NProgress.done();
-
-    return () => {
-      NProgress.start();
-    };
+    startTransition(() => {
+      NProgress.done();
+    });
   }, [pathname, searchParams]);
 
   return null;

@@ -5,10 +5,15 @@ import { motion, Transition } from "framer-motion";
 import Image from "next/image";
 import { EventCard } from "./event-card";
 import { EventCardSkeleton } from "./event-card-skeleton";
-import { Button } from "../ui/button";
 import { EmptyState } from "../ui/empty-state";
-import { FilterSidebar, FilterState } from "./filter-sidebar";
-import { fetchPopularEvents, type DiscoverEvent } from "@/utils/api";
+import { Button } from "../ui/button";
+import { dataEvents } from "./mockups";
+import { useTranslations } from "next-intl";
+import {
+  FilterSidebar,
+  FilterState,
+  getActiveFilterCount,
+} from "./filter-sidebar";
 
 const container = {
   hidden: { opacity: 0 },
@@ -46,84 +51,136 @@ const DEFAULT_FILTERS: FilterState = {
   maxPrice: "",
 };
 
-type PopularEventsSectionProps = {
-  activeCategory?: string;
-  onError: (message: string) => void;
-  /** Called whenever the filtered event count changes, so parent can show EmptyState */
-  onEventsChange?: (count: number) => void;
+interface PopularEventsSectionProps {
+  category: string;
+  onCategoryChange: (category: string) => void;
+  selectedOrganizer?: string;
+  onOrganizerChange?: (organizer: string) => void;
+}
+
+type ActiveFilter = {
+  key: keyof FilterState;
+  value?: string;
+  label: string;
 };
 
-export function PopularEventsSection({ activeCategory, onError, onEventsChange }: PopularEventsSectionProps) {
+export function PopularEventsSection({
+  category,
+  onCategoryChange,
+  selectedOrganizer,
+  onOrganizerChange,
+}: PopularEventsSectionProps) {
+  const t = useTranslations("discover");
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, SEARCH_DEBOUNCE_MS);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [events, setEvents] = useState<DiscoverEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [filters, setFilters] = useState<FilterState>({
+    ...DEFAULT_FILTERS,
+    categories: category ? [category] : [],
+  });
 
-  // Pagination state
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState<number | null>(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if modifier keys are held
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {
+        return;
+      }
 
-    const loadEvents = async () => {
-      try {
-        setIsLoading(true);
-        const data = await fetchPopularEvents(1, controller.signal);
-        setEvents(data.events);
-        setTotal(data.meta?.total ?? data.events.length);
-        setPage(data.meta?.page ?? 1);
-      } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") return;
-        setEvents([]);
-        onError("Could not load popular events");
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
+      // 1. Pressing '/' to focus search input
+      if (e.key === "/" || e.code === "Slash") {
+        const target = e.target as HTMLElement | null;
+        if (
+          target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable)
+        ) {
+          return;
+        }
+
+        e.preventDefault();
+
+        if (window.innerWidth < 640 && mobileSearchInputRef.current) {
+          mobileSearchInputRef.current.focus();
+        } else if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+      }
+
+      // 2. Pressing 'Escape' to blur and clear search field
+      if (e.key === "Escape") {
+        const isDesktopFocused = document.activeElement === searchInputRef.current;
+        const isMobileFocused = document.activeElement === mobileSearchInputRef.current;
+
+        if (isDesktopFocused || isMobileFocused || isFocused) {
+          searchInputRef.current?.blur();
+          mobileSearchInputRef.current?.blur();
+          setSearch("");
         }
       }
     };
 
-    loadEvents();
-    return () => controller.abort();
-  }, [onError]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFocused]);
 
-  const loadMore = async () => {
-    // If we already know total and have loaded all, skip
-    if (total !== null && events.length >= total) return;
+  useEffect(() => {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      categories: category ? [category] : [],
+    }));
+  }, [category]);
 
-    const nextPage = page + 1;
-    const controller = new AbortController();
-    try {
-      setIsLoadingMore(true);
-      const data = await fetchPopularEvents(nextPage, controller.signal);
-
-      // Append new events while avoiding duplicates
-      setEvents((prev) => {
-        const existingIds = new Set(prev.map((e) => e.id));
-        const newEvents = data.events.filter((e) => !existingIds.has(e.id));
-        return [...prev, ...newEvents];
-      });
-
-      setPage(data.meta?.page ?? nextPage);
-      setTotal(data.meta?.total ?? (total ?? events.length + data.events.length));
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") return;
-      onError("Could not load more events");
-    } finally {
-      controller.abort();
-      setIsLoadingMore(false);
-    }
+  const handleFiltersChange = (nextFilters: FilterState) => {
+    setFilters(nextFilters);
+    onCategoryChange(nextFilters.categories[0] ?? "");
   };
 
-  const filteredEvents = useMemo(() => {
+  const activeFilters: ActiveFilter[] = [
+    ...(filters.date && filters.date !== t("anyTime")
+      ? [{ key: "date" as const, label: filters.date }]
+      : []),
+    ...filters.categories.map((category) => ({
+      key: "categories" as const,
+      value: category,
+      label: category,
+    })),
+    ...filters.locations.map((location) => ({
+      key: "locations" as const,
+      value: location,
+      label: location,
+    })),
+    ...(filters.minPrice
+      ? [{ key: "minPrice" as const, label: `From $${filters.minPrice}` }]
+      : []),
+    ...(filters.maxPrice
+      ? [{ key: "maxPrice" as const, label: `Up to $${filters.maxPrice}` }]
+      : []),
+  ];
+
+  const removeFilter = (filter: ActiveFilter) => {
+    const nextFilters = { ...filters };
+
+    if (filter.key === "categories" || filter.key === "locations") {
+      nextFilters[filter.key] = nextFilters[filter.key].filter(
+        (value) => value !== filter.value,
+      );
+    } else {
+      nextFilters[filter.key] = "";
+    }
+
+    handleFiltersChange(nextFilters);
+  };
+
+  const filteredAndSortedEvents = useMemo(() => {
     let result = events;
 
     // 1. Search Query
-    const query = search.toLowerCase().trim();
+    const query = debouncedSearch.toLowerCase().trim();
     if (query) {
       result = result.filter((event) =>
         event.title.toLowerCase().includes(query),
@@ -148,14 +205,7 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
       );
     }
 
-    // 4. Date
-    if (filters.date && filters.date !== "Any time") {
-      // Note: Since mockup dates are static strings like "Thu, 22 Jan, 1:00",
-      // strict parsing for "Today", "Tomorrow" is omitted for now.
-      // In a real app with timestamps, you would check the date ranges here.
-    }
-
-    // 5. Price Range
+    // 4. Price Range
     if (filters.minPrice !== "" || filters.maxPrice !== "") {
       result = result.filter((event) => {
         const isFree = event.price.toLowerCase() === "free";
@@ -169,38 +219,94 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
       });
     }
 
-    return result;
-  }, [search, filters, events, activeCategory]);
+    return sortEvents(result, sortBy);
+  }, [debouncedSearch, filters, events, activeCategory, sortBy]);
+
+  // Calculate pagination slices (at most 12 cards in the DOM)
+  const totalPages = Math.ceil(filteredAndSortedEvents.length / ITEMS_PER_PAGE);
+  const validCurrentPage = Math.min(Math.max(currentPage, 1), totalPages || 1);
+  const startIndex = (validCurrentPage - 1) * ITEMS_PER_PAGE;
+  const paginatedEvents = useMemo(() => {
+    return filteredAndSortedEvents.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredAndSortedEvents, startIndex]);
+
+  // Handle page changes with smooth scroll respecting reduced motion
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages || newPage === validCurrentPage) return;
+
+    setCurrentPage(newPage);
+
+    if (gridSectionRef.current) {
+      const prefersReducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+
+      gridSectionRef.current.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    }
+  };
 
   // Notify parent whenever the visible count changes
   const prevCountRef = useRef<number | null>(null);
   useEffect(() => {
     if (!isLoading && onEventsChange) {
-      const count = filteredEvents.length;
+      const count = filteredAndSortedEvents.length;
       if (prevCountRef.current !== count) {
         prevCountRef.current = count;
         onEventsChange(count);
       }
     }
-  }, [filteredEvents.length, isLoading, onEventsChange]);
+  }, [filteredAndSortedEvents.length, isLoading, onEventsChange]);
 
   const widthVariants = {
     focused: { width: "12rem" },
     unfocused: { width: "8.5rem" },
   };
 
-  const widthVariantsMobile = {
-    focused: { width: "8rem", paddingLeft: "2.5rem" },
-    unfocused: { width: "2.438rem" },
-  };
-
-  const allLoaded = total !== null && events.length >= total;
+  const activeFilterCount =
+    (filters.date ? 1 : 0) +
+    filters.categories.length +
+    filters.locations.length +
+    (filters.minPrice !== "" || filters.maxPrice !== "" ? 1 : 0);
 
   return (
-    <section className="px-4 bg-base py-12">
+    <section ref={gridSectionRef} className="px-4 bg-base py-12">
       <div className="max-w-305.25 mx-auto">
+        {getActiveFilterCount(filters) > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-2 mb-6"
+            aria-label={t("activeFilters")}
+          >
+            {activeFilters.map((filter) => (
+              <span
+                key={`${filter.key}-${filter.value ?? filter.label}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-black bg-white px-3 py-1.5 text-sm"
+              >
+                {filter.label}
+                <button
+                  type="button"
+                  onClick={() => removeFilter(filter)}
+                  aria-label={`Remove ${filter.label} filter`}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full font-bold hover:bg-black hover:text-white"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => handleFiltersChange(DEFAULT_FILTERS)}
+              className="text-sm font-semibold underline underline-offset-2"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+
         <motion.div
-          className="flex justify-between gap-3 mb-5.75"
+          className="flex flex-col sm:flex-row sm:justify-between gap-3 mb-5.75"
           variants={container}
           initial="hidden"
           animate="show"
@@ -218,7 +324,11 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
             />
           </motion.h3>
 
-          <motion.div variants={item} className="flex items-center gap-3.75">
+          {/* ── Desktop controls ── */}
+          <motion.div
+            variants={item}
+            className="max-sm:hidden flex items-center gap-3.75"
+          >
             <div className="relative">
               <Image
                 src="/icons/search.svg"
@@ -229,9 +339,11 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
               />
 
               <motion.input
-                className="max-sm:hidden pl-13 h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+                ref={searchInputRef}
+                className="pl-13 h-9.75 rounded-4xl bg-black pr-9 py-2 text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
                 type="text"
                 placeholder="Search"
+                aria-label={t("searchEvents")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setIsFocused(true)}
@@ -241,25 +353,42 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
                 animate={isFocused ? "focused" : "unfocused"}
                 transition={{ duration: 0.3, ease: "easeInOut" }}
               />
+              {!isFocused && !search && (
+                <kbd
+                  aria-hidden="true"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none hidden sm:inline-flex h-5 min-w-5 items-center justify-center rounded border border-white/30 bg-white/10 px-1.5 text-[11px] font-mono text-white/70 shadow-xs select-none"
+                >
+                  /
+                </kbd>
+              )}
+            </div>
 
-              <motion.input
-                className="sm:hidden h-9.75 rounded-4xl bg-black pr-4 py-2 text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                variants={widthVariantsMobile}
-                initial="unfocused"
-                animate={isFocused ? "focused" : "unfocused"}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
-              />
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="discover-sort"
+                className="text-sm font-medium text-ink-soft max-sm:sr-only"
+              >
+                Sort by
+              </label>
+              <select
+                id="discover-sort"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as EventSort)}
+                aria-label={t("sortEvents")}
+                className="h-9.75 max-w-[10.5rem] sm:max-w-none rounded-4xl bg-black px-3 text-sm text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
               <Button
                 variant="primary"
-                className="border-none sm:rounded-4xl! max-sm:p-0 h-9.75 sm:w-34 w-9.75"
+                className="border-none rounded-4xl! h-9.75 w-34"
                 onClick={() => setIsFilterOpen(true)}
                 aria-haspopup="dialog"
                 aria-expanded={isFilterOpen}
@@ -268,16 +397,79 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
                   src="/icons/filter.svg"
                   width={24}
                   height={24}
-                  alt="filter icon"
+                  alt=""
+                  aria-hidden="true"
                 />
-                <span className="max-sm:hidden">Filter</span>
+                Filter
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-black px-1.5 text-[11px] font-bold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
               </Button>
             </motion.div>
           </motion.div>
+
+          {/* ── Mobile controls ── */}
+          <motion.div
+            variants={item}
+            className="sm:hidden flex items-center gap-2 w-full min-w-0"
+          >
+            <div className="relative flex-1 min-w-0">
+              <Image
+                src="/icons/search.svg"
+                width={20}
+                height={20}
+                alt=""
+                aria-hidden="true"
+                className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              />
+              <input
+                ref={mobileSearchInputRef}
+                className="w-full pl-10 pr-9 h-9.75 rounded-4xl bg-black py-2 text-sm text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-white/70 focus:outline-2 focus:-outline-offset-2 focus:outline-[#FDDA23]"
+                type="text"
+                placeholder="Search events"
+                aria-label={t("searchEvents")}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {!search && (
+                <kbd
+                  aria-hidden="true"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none inline-flex h-5 min-w-5 items-center justify-center rounded border border-white/30 bg-white/10 px-1.5 text-[11px] font-mono text-white/70 shadow-xs select-none"
+                >
+                  /
+                </kbd>
+              )}
+            </div>
+
+            <Button
+              variant="primary"
+              className="border-none rounded-4xl! h-9.75 px-4 shrink-0"
+              onClick={() => setIsFilterOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={isFilterOpen}
+            >
+              <Image
+                src="/icons/filter.svg"
+                width={20}
+                height={20}
+                alt=""
+                aria-hidden="true"
+              />
+              Filter
+              {activeFilterCount > 0 && (
+                <span className="inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-black px-1.5 text-[11px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
+          </motion.div>
         </motion.div>
 
+        {/* ── Events Grid (Renders up to 12 cards per page) ── */}
         <motion.div
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 place-content-center "
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 place-content-center"
           variants={container}
           initial="hidden"
           animate="show"
@@ -292,27 +484,28 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
                 <EventCardSkeleton />
               </motion.div>
             ))}
+
           {!isLoading &&
-            filteredEvents.map((event) => (
-            <motion.div
-              key={event.id}
-              variants={item}
-              whileHover={{ scale: 1.02 }}
-              transition={{ type: "spring", stiffness: 280, damping: 20 }}
-              className="flex"
-            >
-              <EventCard
-                id={event.id}
-                title={event.title}
-                date={event.date}
-                location={event.location}
-                price={event.price}
-                imageUrl={event.imageUrl}
-              />
-            </motion.div>
+            paginatedEvents.map((event) => (
+              <motion.div
+                key={event.id}
+                variants={item}
+                whileHover={{ scale: 1.02 }}
+                transition={{ type: "spring", stiffness: 280, damping: 20 }}
+                className="flex"
+              >
+                <EventCard
+                  id={event.id}
+                  title={event.title}
+                  date={event.date}
+                  location={event.location}
+                  price={event.price}
+                  imageUrl={event.imageUrl}
+                />
+              </motion.div>
             ))}
 
-          {!isLoading && filteredEvents.length === 0 && (
+          {!isLoading && filteredAndSortedEvents.length === 0 && (
             <div className="col-span-full">
               <EmptyState
                 icon={
@@ -326,48 +519,62 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
                 }
                 title="No events found"
                 description="Try adjusting your search or filters to find what you're looking for."
-                action={{ label: "Clear Search", onClick: () => setSearch("") }}
+                action={{ label: t("clearSearch"), onClick: () => setSearch("") }}
               />
             </div>
           )}
         </motion.div>
 
-        <motion.div
-          className="ml-auto w-fit mt-11"
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.4 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.97 }}
-        >
-          {!allLoaded && (
-            <Button
-              variant="primary"
-              className="border-none rounded-[13px]! h-11 flex items-center gap-3"
-              onClick={loadMore}
+        {/* ── Pagination Controls (Hidden when totalPages <= 1) ── */}
+        {!isLoading && totalPages > 1 && (
+          <nav
+            aria-label="Events pagination"
+            className="flex items-center justify-center gap-2 mt-11"
+          >
+            <button
+              type="button"
+              disabled={validCurrentPage === 1}
+              aria-disabled={validCurrentPage === 1}
+              onClick={() => handlePageChange(validCurrentPage - 1)}
+              className="px-3.5 h-9.5 text-sm font-medium rounded-xl border border-white/15 bg-black/40 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/10 transition-colors"
             >
-              {isLoadingMore ? (
-                // Simple spinner using CSS
-                <span className="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  View all Events
-                  <Image
-                    src="/icons/arrow-right.svg"
-                    width={24}
-                    height={24}
-                    alt="arrow-right icon"
-                  />
-                </>
-              )}
-            </Button>
-          )}
+              Previous
+            </button>
 
-          {allLoaded && (
-            <div className="text-sm text-gray-500">All events loaded</div>
-          )}
-        </motion.div>
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: totalPages }, (_, index) => {
+                const pageNum = index + 1;
+                const isCurrent = pageNum === validCurrentPage;
+
+                return (
+                  <button
+                    key={`page-${pageNum}`}
+                    type="button"
+                    onClick={() => handlePageChange(pageNum)}
+                    aria-current={isCurrent ? "page" : undefined}
+                    className={`min-w-9.5 h-9.5 px-3 text-sm font-medium rounded-xl transition-colors ${
+                      isCurrent
+                        ? "bg-[#FDDA23] text-black font-semibold"
+                        : "bg-black/40 text-white border border-white/15 hover:bg-white/10"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              disabled={validCurrentPage === totalPages}
+              aria-disabled={validCurrentPage === totalPages}
+              onClick={() => handlePageChange(validCurrentPage + 1)}
+              className="px-3.5 h-9.5 text-sm font-medium rounded-xl border border-white/15 bg-black/40 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/10 transition-colors"
+            >
+              Next
+            </button>
+          </nav>
+        )}
       </div>
 
       {/* ── Filter Sidebar ── */}
@@ -375,7 +582,7 @@ export function PopularEventsSection({ activeCategory, onError, onEventsChange }
         isOpen={isFilterOpen}
         onClose={() => setIsFilterOpen(false)}
         filters={filters}
-        onFiltersChange={setFilters}
+        onFiltersChange={handleFiltersChange}
       />
     </section>
   );
