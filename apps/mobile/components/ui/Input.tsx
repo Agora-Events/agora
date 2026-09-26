@@ -72,6 +72,7 @@ export const Input: React.FC<InputProps> = ({
           onBlur={handleBlur}
           value={value}
           maxLength={maxLength}
+          accessibilityLabel={props.accessibilityLabel || label}
           {...props}
         />
       </View>
@@ -79,7 +80,13 @@ export const Input: React.FC<InputProps> = ({
       {/* Counter and/or error row */}
       <View style={styles.footer}>
         {error ? (
-          <Text style={[styles.errorText, { color: Colors.accentRed }]}>{error}</Text>
+          <Text
+            style={[styles.errorText, { color: Colors.accentRed }]}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            {error}
+          </Text>
         ) : (
           // Reserve space so layout doesn't jump when error appears/disappears
           <View />
