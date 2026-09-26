@@ -4213,6 +4213,26 @@ fn test_is_paused() {
 }
 
 #[test]
+fn test_get_is_paused_matches_is_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    // get_is_paused is deprecated in favor of is_paused, but both must always
+    // agree on the current paused state.
+    assert_eq!(client.get_is_paused(), client.is_paused());
+    assert!(!client.get_is_paused());
+
+    client.set_pause(&true);
+    assert_eq!(client.get_is_paused(), client.is_paused());
+    assert!(client.get_is_paused());
+
+    client.set_pause(&false);
+    assert_eq!(client.get_is_paused(), client.is_paused());
+    assert!(!client.get_is_paused());
+}
+
+#[test]
 fn test_process_payment_paused() {
     let env = Env::default();
     env.mock_all_auths();
