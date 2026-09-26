@@ -4,6 +4,7 @@
 
 use axum::{
     extract::{Query, State},
+    http::{header, HeaderValue},
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
@@ -13,6 +14,31 @@ use uuid::Uuid;
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
+
+/// `Cache-Control` applied to successful leaderboard responses.
+///
+/// `max-age=60` lets clients/CDNs serve for 1 minute; `stale-while-revalidate=120`
+/// lets them serve a stale body for a further 2 minutes while revalidating.
+pub const LEADERBOARD_CACHE_CONTROL: &str = "public, max-age=60, stale-while-revalidate=120";
+
+/// Build a cacheable success response for the leaderboard endpoint.
+pub(crate) fn cached_success_response<T: Serialize>(data: T, message: impl Into<String>) -> Response {
+    let mut resp = success(data, message).into_response();
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(LEADERBOARD_CACHE_CONTROL),
+    );
+    resp
+}
+
+/// Return an error response that is explicitly marked `no-store` so caches never
+/// retain error bodies.
+pub(crate) fn no_store_error(err: AppError) -> Response {
+    let mut resp = err.into_response();
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    resp
+}
 
 /// A single row in the organizer leaderboard.
 #[derive(Debug, Serialize, FromRow)]
@@ -43,7 +69,7 @@ pub async fn get_leaderboard(
         Ok(count) => count,
         Err(e) => {
             tracing::error!("Failed to count organizers: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
+            return no_store_error(AppError::DatabaseError(e));
         }
     };
 
@@ -69,17 +95,18 @@ pub async fn get_leaderboard(
         Ok(rows) => rows,
         Err(e) => {
             tracing::error!("Failed to fetch leaderboard: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
+            return no_store_error(AppError::DatabaseError(e));
         }
     };
 
     let response = PaginatedResponse::new(items, validated_pagination, total);
-    success(response, "Leaderboard retrieved successfully").into_response()
+    cached_success_response(response, "Leaderboard retrieved successfully")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::StatusCode;
 
     /// Ensures the ORDER BY clause always carries a deterministic tiebreaker
     /// (`o.id ASC`) alongside the primary `tickets_sold DESC` sort, so that
@@ -113,5 +140,29 @@ mod tests {
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(json["tickets_sold"], 42);
         assert_eq!(json["organizer_name"], "Test Organizer");
+    }
+
+    #[test]
+    fn test_leaderboard_cached_success_response_sets_cache_control_header() {
+        let entry = LeaderboardEntry {
+            organizer_id: Uuid::nil(),
+            organizer_name: "Test Organizer".to_string(),
+            tickets_sold: 10,
+        };
+        let resp = cached_success_response(vec![entry], "Leaderboard retrieved successfully");
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).unwrap(),
+            LEADERBOARD_CACHE_CONTROL
+        );
+    }
+
+    #[test]
+    fn test_leaderboard_no_store_error_sets_no_store_cache_control_header() {
+        let resp = no_store_error(AppError::NotFound("organizer not found".into()));
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
     }
 }
