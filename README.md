@@ -33,6 +33,7 @@ This project is organized as a monorepo:
 ## 📚 Documentation
 
 - [**Ticket Purchase & Stellar Integration Guide**](docs/payments/ticket-purchase-guide.md): Deep dive into the ticketing technical flow.
+- [**Stellar Testnet Setup Guide**](docs/stellar/testnet-setup-guide.md): Install Freighter, fund via Friendbot, add a USDC trustline, and run your first Testnet purchase.
 - [**Stellar Smart Contracts**](docs/contracts/stellar-contract.md): Overview of our on-chain logic.
 - [**Database Schema**](docs/DATABASE_SCHEMA.md): Detailed view of the system's data model.
 
