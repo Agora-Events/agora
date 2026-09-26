@@ -7,41 +7,21 @@ import {
   TransactionBuilder,
   rpc as StellarRpc,
 } from "@stellar/stellar-sdk";
+import { getStellarConfig, getUsdcIssuer, isTestnet } from "./config";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Backward compatibility exports (deprecated — use config.ts instead) ─────
 
 /**
+ * @deprecated Use getStellarConfig().testnetUsdcIssuer or getUsdcIssuer() instead.
  * The canonical Testnet USDC issuer used by Circle / Stellar testnet faucets.
- * Swap for the real Circle issuer on Mainnet.
  */
-export const TESTNET_USDC_ISSUER =
-  "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
-
-export const MAINNET_USDC_ISSUER =
-  "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
-
-const STELLAR_RPC_URL =
-  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ||
-  "https://soroban-testnet.stellar.org";
-
-const STELLAR_NETWORK =
-  process.env.NEXT_PUBLIC_STELLAR_NETWORK || "TESTNET";
+export const TESTNET_USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
 
 /**
- * Returns whether we are operating on Testnet or Mainnet, based on the
- * NEXT_PUBLIC_STELLAR_NETWORK env variable.
+ * @deprecated Use getStellarConfig().mainnetUsdcIssuer instead.
+ * Real Circle issuer on Mainnet.
  */
-export function isTestnet(): boolean {
-  return STELLAR_NETWORK.toUpperCase() !== "MAINNET";
-}
-
-/**
- * Returns the correct USDC asset for the current network.
- */
-export function getUsdcAsset(): Asset {
-  const issuer = isTestnet() ? TESTNET_USDC_ISSUER : MAINNET_USDC_ISSUER;
-  return new Asset("USDC", issuer);
-}
+export const MAINNET_USDC_ISSUER = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,8 +60,10 @@ export async function checkUsdcTrustline(
     throw new Error(`Invalid Stellar public key: "${publicKey}"`);
   }
 
-  const server = new StellarRpc.Server(STELLAR_RPC_URL);
-  const usdcAsset = getUsdcAsset();
+  const config = getStellarConfig();
+  const server = new StellarRpc.Server(config.rpcUrl);
+  const issuer = getUsdcIssuer();
+  const usdcAsset = new Asset("USDC", issuer);
 
   try {
     const account = await server.getAccount(publicKey);
@@ -128,10 +110,9 @@ export async function checkUsdcTrustline(
  * @returns The unsigned XDR string ready for Freighter signing.
  */
 export async function buildAddTrustlineXdr(publicKey: string): Promise<string> {
-  const server = new StellarRpc.Server(STELLAR_RPC_URL);
-  const networkPassphrase = isTestnet()
-    ? Networks.TESTNET
-    : Networks.PUBLIC;
+  const config = getStellarConfig();
+  const server = new StellarRpc.Server(config.rpcUrl);
+  const networkPassphrase = config.networkPassphrase;
 
   let accountData;
   try {
@@ -142,7 +123,8 @@ export async function buildAddTrustlineXdr(publicKey: string): Promise<string> {
     );
   }
 
-  const usdcAsset = getUsdcAsset();
+  const issuer = getUsdcIssuer();
+  const usdcAsset = new Asset("USDC", issuer);
 
   const tx = new TransactionBuilder(accountData as unknown as Parameters<typeof TransactionBuilder>[0], {
     fee: "100",
@@ -176,6 +158,7 @@ export async function addUsdcTrustlineViaFreighter(
   publicKey: string,
 ): Promise<string> {
   const freighter = await import("@stellar/freighter-api");
+  const config = getStellarConfig();
 
   const isConnected = await freighter.isConnected();
   if (!isConnected) {
@@ -185,9 +168,7 @@ export async function addUsdcTrustlineViaFreighter(
   }
 
   const xdr = await buildAddTrustlineXdr(publicKey);
-  const networkPassphrase = isTestnet()
-    ? Networks.TESTNET
-    : Networks.PUBLIC;
+  const networkPassphrase = config.networkPassphrase;
 
   // Request user signature
   let signedXdr: string;
@@ -205,11 +186,11 @@ export async function addUsdcTrustlineViaFreighter(
   }
 
   // Submit the signed transaction
-  const server = new StellarRpc.Server(STELLAR_RPC_URL);
+  const server = new StellarRpc.Server(config.rpcUrl);
   const { Transaction } = await import("@stellar/stellar-sdk");
   const signedTx = new Transaction(
     signedXdr,
-    isTestnet() ? Networks.TESTNET : Networks.PUBLIC,
+    config.networkPassphrase,
   );
 
   const submitResult = await server.sendTransaction(signedTx);
