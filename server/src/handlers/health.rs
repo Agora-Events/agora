@@ -39,6 +39,19 @@ impl FromRef<HealthState> for RedisCache {
 static CATEGORY_SYNC_STATUS: LazyLock<std::sync::Mutex<bool>> =
     LazyLock::new(|| std::sync::Mutex::new(true));
 
+/// Process start time used to report server uptime.
+pub static START_TIME: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
+
+/// Explicitly record the process start time at boot.
+pub fn init_start_time() {
+    let _ = *START_TIME;
+}
+
+/// Return elapsed process uptime in seconds.
+pub fn get_uptime_seconds() -> u64 {
+    START_TIME.elapsed().as_secs()
+}
+
 /// Update the category sync status. Called during startup after validation.
 pub fn set_category_sync_status(synced: bool) {
     *CATEGORY_SYNC_STATUS.lock().unwrap() = synced;
@@ -51,6 +64,7 @@ pub struct HealthResponse {
     category_sync: bool,
     database: &'static str,
     redis: &'static str,
+    pub uptime_seconds: u64,
 }
 
 #[derive(Serialize)]
@@ -106,6 +120,7 @@ pub async fn health_check(
             category_sync,
             database: "ok",
             redis: "ok",
+            uptime_seconds: get_uptime_seconds(),
         };
         return success(payload, "API is healthy").into_response();
     }
@@ -303,6 +318,7 @@ mod tests {
             category_sync: true,
             database: "ok",
             redis: "ok",
+            uptime_seconds: 0,
         };
         let resp = success(payload, "API is healthy").into_response();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -327,6 +343,7 @@ mod tests {
                     category_sync: true,
                     database: "ok",
                     redis: "ok",
+                    uptime_seconds: get_uptime_seconds(),
                 };
                 success(payload, "API is healthy").into_response()
             }),
@@ -350,6 +367,15 @@ mod tests {
         assert_eq!(json["message"], "API is healthy");
         assert_eq!(json["data"]["status"], "ok");
         assert!(json["data"]["timestamp"].is_string());
+        assert!(json["data"]["uptime_seconds"].is_number());
+    }
+
+    #[tokio::test]
+    async fn test_uptime_seconds_increases_or_non_negative() {
+        let start = get_uptime_seconds();
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        let later = get_uptime_seconds();
+        assert!(later >= start);
     }
 
     #[tokio::test]

@@ -370,6 +370,9 @@ impl ProSubscriptionContract {
     pub fn update_admin(env: Env, new_admin: Address) -> Result<(), ProSubscriptionError> {
         let old_admin = require_admin(&env)?;
         validate_address(&env, &new_admin)?;
+        if new_admin == current_admin {
+            return Err(ProSubscriptionError::SameAdmin);
+        }
         set_admin(&env, &new_admin);
 
         env.events().publish(
@@ -390,14 +393,30 @@ impl ProSubscriptionContract {
         get_platform_wallet(&env)
     }
 
-    /// Update the platform wallet address (admin only)
+    /// Update the platform wallet address (admin only).
+    ///
+    /// Emits a [`ProSubscriptionEvent::PlatformWalletUpdated`] event containing the old and new
+    /// wallet addresses so indexers and the backend can track payout destination changes.
     pub fn update_platform_wallet(
         env: Env,
         new_wallet: Address,
     ) -> Result<(), ProSubscriptionError> {
-        require_admin(&env)?;
+        let admin = require_admin(&env)?;
         validate_address(&env, &new_wallet)?;
+        let old_wallet =
+            get_platform_wallet(&env).ok_or(ProSubscriptionError::NotInitialized)?;
         set_platform_wallet(&env, &new_wallet);
+
+        env.events().publish(
+            (ProSubscriptionEvent::PlatformWalletUpdated,),
+            PlatformWalletUpdatedEvent {
+                old_wallet,
+                new_wallet,
+                updated_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
         Ok(())
     }
 
@@ -406,11 +425,27 @@ impl ProSubscriptionContract {
         get_payment_token(&env)
     }
 
-    /// Update the accepted payment token (admin only)
+    /// Update the accepted payment token (admin only).
+    ///
+    /// Emits a [`ProSubscriptionEvent::PaymentTokenUpdated`] event containing the old and new
+    /// token addresses so the frontend and indexer can build transactions with the correct asset.
     pub fn update_payment_token(env: Env, new_token: Address) -> Result<(), ProSubscriptionError> {
-        require_admin(&env)?;
+        let admin = require_admin(&env)?;
         validate_address(&env, &new_token)?;
+        let old_token =
+            get_payment_token(&env).ok_or(ProSubscriptionError::NotInitialized)?;
         set_payment_token(&env, &new_token);
+
+        env.events().publish(
+            (ProSubscriptionEvent::PaymentTokenUpdated,),
+            PaymentTokenUpdatedEvent {
+                old_token,
+                new_token,
+                updated_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
         Ok(())
     }
 }
