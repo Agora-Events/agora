@@ -15,6 +15,7 @@ pub mod pricing;
 pub mod profile;
 pub mod qr_payload;
 pub mod rates;
+pub mod recommendations;
 pub mod soroban_listener;
 pub mod sync;
 pub mod tickets;

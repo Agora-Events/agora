@@ -408,6 +408,21 @@ async fn process_geofence_batch(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Validate geographic coordinates (latitude, longitude) and an optional radius (metres).
+///
+/// Returns `Ok(())` when all values are finite and within valid geographic bounds:
+/// - latitude: `[-90.0, 90.0]`
+/// - longitude: `[-180.0, 180.0]`
+/// - radius_m: `[1.0, 500_000.0]` (when provided)
+pub fn validate_coordinates(lat: f64, lng: f64, radius_m: Option<f64>) -> Result<(), AppError> {
+    crate::models::geo::validate_latitude(lat)?;
+    crate::models::geo::validate_longitude(lng)?;
+    if let Some(radius) = radius_m {
+        crate::models::geo::validate_radius(radius)?;
+    }
+    Ok(())
+}
+
 /// Great-circle distance between two WGS-84 points in metres (Haversine).
 fn haversine_m(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
     const R: f64 = 6_371_000.0;
@@ -416,4 +431,146 @@ fn haversine_m(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
     let a = (dlat / 2.0).sin().powi(2)
         + lat1.to_radians().cos() * lat2.to_radians().cos() * (dlng / 2.0).sin().powi(2);
     R * 2.0 * a.sqrt().asin()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    // -----------------------------------------------------------------------
+    // Coordinate & radius validation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_valid_coordinates_lagos_pass_validation() {
+        // Lagos coordinates: 6.5244 N, 3.3792 E
+        assert!(validate_coordinates(6.5244, 3.3792, None).is_ok());
+        assert!(validate_coordinates(6.5244, 3.3792, Some(5_000.0)).is_ok());
+        assert!(validate_coordinates(6.52, 3.37, Some(10_000.0)).is_ok());
+    }
+
+    #[test]
+    fn test_latitude_outside_range_is_rejected_with_400() {
+        let err_high = validate_coordinates(90.1, 3.37, None).unwrap_err();
+        assert_eq!(err_high.status_code(), StatusCode::BAD_REQUEST);
+        assert!(err_high.public_message().contains("lat"));
+
+        let err_low = validate_coordinates(-90.001, 3.37, None).unwrap_err();
+        assert_eq!(err_low.status_code(), StatusCode::BAD_REQUEST);
+        assert!(err_low.public_message().contains("lat"));
+
+        let err_nan = validate_coordinates(f64::NAN, 3.37, None).unwrap_err();
+        assert_eq!(err_nan.status_code(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_longitude_outside_range_is_rejected_with_400() {
+        let err_high = validate_coordinates(6.52, 180.1, None).unwrap_err();
+        assert_eq!(err_high.status_code(), StatusCode::BAD_REQUEST);
+        assert!(err_high.public_message().contains("lng"));
+
+        let err_low = validate_coordinates(6.52, -180.001, None).unwrap_err();
+        assert_eq!(err_low.status_code(), StatusCode::BAD_REQUEST);
+        assert!(err_low.public_message().contains("lng"));
+
+        let err_nan = validate_coordinates(6.52, f64::NAN, None).unwrap_err();
+        assert_eq!(err_nan.status_code(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_radius_zero_negative_and_too_large_rejected_with_400() {
+        // Zero radius
+        let err_zero = validate_coordinates(6.52, 3.37, Some(0.0)).unwrap_err();
+        assert_eq!(err_zero.status_code(), StatusCode::BAD_REQUEST);
+        assert!(err_zero.public_message().contains("radius_m"));
+
+        // Negative radius
+        let err_neg = validate_coordinates(6.52, 3.37, Some(-100.0)).unwrap_err();
+        assert_eq!(err_neg.status_code(), StatusCode::BAD_REQUEST);
+        assert!(err_neg.public_message().contains("radius_m"));
+
+        // Too large radius (> 500 km = 500,000 m)
+        let err_large = validate_coordinates(6.52, 3.37, Some(500_001.0)).unwrap_err();
+        assert_eq!(err_large.status_code(), StatusCode::BAD_REQUEST);
+        assert!(err_large.public_message().contains("radius_m"));
+
+        // Valid boundary radius (500 km)
+        assert!(validate_coordinates(6.52, 3.37, Some(500_000.0)).is_ok());
+        // Minimum valid radius (1 m)
+        assert!(validate_coordinates(6.52, 3.37, Some(1.0)).is_ok());
+    }
+
+    #[test]
+    fn test_nearby_query_validation_with_lagos() {
+        let valid_query = NearbyQuery {
+            lat: 6.5244,
+            lng: 3.3792,
+            radius_m: Some(25_000.0),
+            bbox_sw_lat: None,
+            bbox_sw_lng: None,
+            bbox_ne_lat: None,
+            bbox_ne_lng: None,
+            limit: Some(20),
+        };
+        assert!(valid_query.validate().is_ok());
+
+        let invalid_query = NearbyQuery {
+            lat: 91.0,
+            lng: 3.3792,
+            radius_m: Some(5_000.0),
+            bbox_sw_lat: None,
+            bbox_sw_lng: None,
+            bbox_ne_lat: None,
+            bbox_ne_lng: None,
+            limit: None,
+        };
+        let err = invalid_query.validate().unwrap_err();
+        assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_geofence_registration_validation() {
+        let valid_reg = GeofenceRegistration {
+            event_id: uuid::Uuid::new_v4(),
+            push_token: "ExponentPushToken[test]".into(),
+            venue_lat: 6.5244,
+            venue_lng: 3.3792,
+        };
+        assert!(valid_reg.validate().is_ok());
+
+        let bad_lat_reg = GeofenceRegistration {
+            event_id: uuid::Uuid::new_v4(),
+            push_token: "ExponentPushToken[test]".into(),
+            venue_lat: -95.0,
+            venue_lng: 3.3792,
+        };
+        assert_eq!(
+            bad_lat_reg.validate().unwrap_err().status_code(),
+            StatusCode::BAD_REQUEST
+        );
+
+        let bad_lng_reg = GeofenceRegistration {
+            event_id: uuid::Uuid::new_v4(),
+            push_token: "ExponentPushToken[test]".into(),
+            venue_lat: 6.5244,
+            venue_lng: 190.0,
+        };
+        assert_eq!(
+            bad_lng_reg.validate().unwrap_err().status_code(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn test_haversine_distance_computation() {
+        // Distance from a point to itself is zero
+        let d_self = haversine_m(6.5244, 3.3792, 6.5244, 3.3792);
+        assert!(d_self.abs() < 1e-6);
+
+        // Distance between Lagos (6.5244, 3.3792) and London (51.5074, -0.1278)
+        // is approximately 5,020 km (5,020,000 m).
+        let d_london = haversine_m(6.5244, 3.3792, 51.5074, -0.1278);
+        assert!((d_london - 5_020_000.0).abs() < 50_000.0);
+    }
 }
