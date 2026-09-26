@@ -1,7 +1,7 @@
 use super::contract::ProSubscriptionContract;
 use super::types::Subscription;
 use crate::error::ProSubscriptionError;
-use crate::events::{PriceUpdatedEvent, ProSubscriptionEvent};
+use crate::events::{AdminUpdatedEvent, PriceUpdatedEvent, ProSubscriptionEvent};
 use crate::types::{SubscriptionTier, SECONDS_PER_MONTH};
 use crate::ProSubscriptionContractClient;
 use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo, MockAuth, MockAuthInvoke};
@@ -390,6 +390,56 @@ fn test_update_pro_price_unauthorized() {
     env.mock_all_auths();
 
     client.update_pro_price(&2000i128);
+}
+
+#[test]
+fn test_update_admin_unauthorized() {
+    let (env, client, contract_id, admin, _platform_wallet, _usdc) = setup_without_auth_mock();
+    let non_admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    // Mock auth for a random non-admin address only, so the real require_auth
+    // check inside update_admin (which requires the *current* admin) fails.
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "update_admin",
+            args: (&new_admin,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.update_admin(&new_admin);
+    }));
+
+    assert!(
+        result.is_err(),
+        "update_admin should fail when called without the admin's authorization"
+    );
+    assert_eq!(client.get_admin(), Some(admin));
+}
+
+#[test]
+fn test_admin_updated_event_payload() {
+    let (env, client, admin, _platform_wallet, _usdc) = setup();
+    let new_admin = Address::generate(&env);
+
+    client.update_admin(&new_admin);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+
+    let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, ProSubscriptionEvent::AdminUpdated);
+
+    let payload: AdminUpdatedEvent = data.into_val(&env);
+    assert_eq!(payload.old_admin, admin);
+    assert_eq!(payload.new_admin, new_admin);
+    assert_eq!(payload.updated_by, admin);
+
+    assert_eq!(client.get_admin(), Some(new_admin));
 }
 
 #[test]
