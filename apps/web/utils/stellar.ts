@@ -1,42 +1,65 @@
+/**
+ * Stellar / Soroban utility functions — Issues #1493
+ *
+ * All rpc.Server instantiation is now delegated to lib/stellar/client.ts so
+ * every call targets https://soroban-testnet.stellar.org with consistent
+ * timeout/retry configuration.
+ *
+ * No deprecated SorobanRpc.Server or simulateTransaction calls remain here;
+ * server.prepareTransaction() is used throughout (SDK v13+ recommended path).
+ */
+
 import {
   Contract,
   Keypair,
-  Networks,
   TransactionBuilder,
   nativeToScVal,
-  rpc,
 } from "@stellar/stellar-sdk";
+
+import {
+  getSorobanRpcServer,
+  STELLAR_NETWORK_PASSPHRASE,
+} from "@/lib/stellar/client";
+
+// ---------------------------------------------------------------------------
+// Environment helpers
+// ---------------------------------------------------------------------------
 
 const STELLAR_CONTRACT_ADDRESS = process.env.STELLAR_CONTRACT_ADDRESS;
 const STELLAR_SOURCE_SECRET = process.env.STELLAR_SOURCE_SECRET;
-const STELLAR_RPC_URL = process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
-const STELLAR_NETWORK_PASSPHRASE =
-  process.env.STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET;
 
-function requireEnv(value: string | undefined, key: string): string {
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-  return value;
-}
+// ---------------------------------------------------------------------------
+// buildUnsignedMintTicketTx
+// ---------------------------------------------------------------------------
 
 /**
- * Builds an unsigned XDR transaction envelope for client-side signing via Freighter / Albedo.
- * Aligns with Web3 non-custodial architecture (Issue #1086).
+ * Builds an unsigned XDR transaction envelope for client-side signing via
+ * Freighter / Albedo.  Aligns with Web3 non-custodial architecture (#1086).
+ *
+ * When STELLAR_SOURCE_SECRET is present the transaction is built, simulated
+ * (via server.prepareTransaction), signed, and submitted server-side —
+ * returning `unsigned: false`.
+ *
+ * Without a server secret the raw unsigned XDR is returned for the client to
+ * sign — returning `unsigned: true`.
  */
-export async function buildUnsignedMintTicketTx(eventId: string, buyer: string, qty: number) {
+export async function buildUnsignedMintTicketTx(
+  eventId: string,
+  buyer: string,
+  qty: number,
+) {
   if (!eventId || !buyer || !Number.isInteger(qty) || qty <= 0) {
     throw new Error("Invalid mint ticket parameters");
   }
 
-  const contractAddress = process.env.STELLAR_CONTRACT_ADDRESS || "CCMOCKCONTRACTADDRESS1234567890";
-  const sourceSecret = process.env.STELLAR_SOURCE_SECRET;
+  const contractAddress =
+    STELLAR_CONTRACT_ADDRESS ?? "CCMOCKCONTRACTADDRESS1234567890";
 
-  const server = new rpc.Server(STELLAR_RPC_URL);
+  const server = getSorobanRpcServer();
 
   let sourceAccount;
-  if (sourceSecret) {
-    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+  if (STELLAR_SOURCE_SECRET) {
+    const sourceKeypair = Keypair.fromSecret(STELLAR_SOURCE_SECRET);
     sourceAccount = await server.getAccount(sourceKeypair.publicKey());
   } else {
     sourceAccount = await server.getAccount(buyer).catch(() => ({
@@ -62,15 +85,16 @@ export async function buildUnsignedMintTicketTx(eventId: string, buyer: string, 
     .setTimeout(30)
     .build();
 
-  if (sourceSecret) {
-    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+  if (STELLAR_SOURCE_SECRET) {
+    const sourceKeypair = Keypair.fromSecret(STELLAR_SOURCE_SECRET);
     tx.sign(sourceKeypair);
+    // prepareTransaction handles simulation + resource-fee attachment (v13+).
     const preparedTx = await server.prepareTransaction(tx);
     preparedTx.sign(sourceKeypair);
     const submitted = await server.sendTransaction(preparedTx);
     return {
       transactionXdr: preparedTx.toXDR(),
-      ticketId: `ticket_${submitted.hash || Date.now().toString()}`,
+      ticketId: `ticket_${submitted.hash ?? Date.now().toString()}`,
       unsigned: false,
     };
   }
@@ -82,30 +106,47 @@ export async function buildUnsignedMintTicketTx(eventId: string, buyer: string, 
   };
 }
 
+// ---------------------------------------------------------------------------
+// mintTicket
+// ---------------------------------------------------------------------------
+
 /**
- * Mint ticket handler (returns unsigned XDR envelope for client-side Freighter signing).
+ * Mint ticket handler — returns unsigned XDR envelope for client-side
+ * Freighter signing.
  */
-export async function mintTicket(eventId: string, buyer: string, qty: number) {
+export async function mintTicket(
+  eventId: string,
+  buyer: string,
+  qty: number,
+) {
   return buildUnsignedMintTicketTx(eventId, buyer, qty);
 }
 
+// ---------------------------------------------------------------------------
+// buildUnsignedResaleTicketTx
+// ---------------------------------------------------------------------------
+
 /**
- * Builds an unsigned XDR transaction envelope for listing a ticket for resale on the smart contract.
- * Users sign via Freighter to authorize resale listing on-chain.
+ * Builds an unsigned XDR transaction envelope for listing a ticket for resale
+ * on the smart contract.  Users sign via Freighter to authorise the listing.
  */
-export async function buildUnsignedResaleTicketTx(ticketId: string, seller: string, resalePrice: number) {
+export async function buildUnsignedResaleTicketTx(
+  ticketId: string,
+  seller: string,
+  resalePrice: number,
+) {
   if (!ticketId || !seller || !resalePrice || resalePrice <= 0) {
     throw new Error("Invalid resale listing parameters");
   }
 
-  const contractAddress = process.env.STELLAR_CONTRACT_ADDRESS || "CCMOCKCONTRACTADDRESS1234567890";
-  const sourceSecret = process.env.STELLAR_SOURCE_SECRET;
+  const contractAddress =
+    STELLAR_CONTRACT_ADDRESS ?? "CCMOCKCONTRACTADDRESS1234567890";
 
-  const server = new rpc.Server(STELLAR_RPC_URL);
+  const server = getSorobanRpcServer();
 
   let sourceAccount;
-  if (sourceSecret) {
-    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+  if (STELLAR_SOURCE_SECRET) {
+    const sourceKeypair = Keypair.fromSecret(STELLAR_SOURCE_SECRET);
     sourceAccount = await server.getAccount(sourceKeypair.publicKey());
   } else {
     sourceAccount = await server.getAccount(seller).catch(() => ({
@@ -133,15 +174,16 @@ export async function buildUnsignedResaleTicketTx(ticketId: string, seller: stri
     .setTimeout(30)
     .build();
 
-  if (sourceSecret) {
-    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+  if (STELLAR_SOURCE_SECRET) {
+    const sourceKeypair = Keypair.fromSecret(STELLAR_SOURCE_SECRET);
     tx.sign(sourceKeypair);
+    // prepareTransaction handles simulation + sorobanData attachment (v13+).
     const preparedTx = await server.prepareTransaction(tx);
     preparedTx.sign(sourceKeypair);
     const submitted = await server.sendTransaction(preparedTx);
     return {
       transactionXdr: preparedTx.toXDR(),
-      listingId: `resale_${submitted.hash || Date.now().toString()}`,
+      listingId: `resale_${submitted.hash ?? Date.now().toString()}`,
       unsigned: false,
     };
   }
@@ -153,10 +195,18 @@ export async function buildUnsignedResaleTicketTx(ticketId: string, seller: stri
   };
 }
 
+// ---------------------------------------------------------------------------
+// listTicketForResale
+// ---------------------------------------------------------------------------
+
 /**
- * Resale listing handler returning unsigned XDR envelope for client-side Freighter signing.
+ * Resale listing handler — returns unsigned XDR envelope for client-side
+ * Freighter signing.
  */
-export async function listTicketForResale(ticketId: string, seller: string, resalePrice: number) {
+export async function listTicketForResale(
+  ticketId: string,
+  seller: string,
+  resalePrice: number,
+) {
   return buildUnsignedResaleTicketTx(ticketId, seller, resalePrice);
 }
-
