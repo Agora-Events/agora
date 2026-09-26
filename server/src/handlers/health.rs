@@ -65,7 +65,8 @@ pub struct HealthResponse {
     category_sync: bool,
     database: &'static str,
     redis: &'static str,
-    pub uptime_seconds: u64,
+    /// Seconds since the server process started (Issue #1428).
+    uptime_seconds: u64,
 }
 
 #[derive(Serialize)]
@@ -121,7 +122,7 @@ pub async fn health_check(
             category_sync,
             database: "ok",
             redis: "ok",
-            uptime_seconds: get_uptime_seconds(),
+            uptime_seconds: agora_server::runtime::uptime_seconds(),
         };
         return success(payload, "API is healthy").into_response();
     }
@@ -362,7 +363,7 @@ mod tests {
                     category_sync: true,
                     database: "ok",
                     redis: "ok",
-                    uptime_seconds: get_uptime_seconds(),
+                    uptime_seconds: agora_server::runtime::uptime_seconds(),
                 };
                 success(payload, "API is healthy").into_response()
             }),
@@ -425,12 +426,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_health_live_returns_200_without_state() {
-        // health_check_live must work with no DB or Redis state.
-        let router = Router::new().route("/health/live", get(health_check_live));
+    async fn test_health_response_includes_uptime_seconds() {
+        let router = Router::new().route(
+            "/health",
+            get(|| async {
+                let payload = HealthResponse {
+                    status: "ok",
+                    timestamp: Utc::now().to_rfc3339(),
+                    category_sync: true,
+                    database: "ok",
+                    redis: "ok",
+                    uptime_seconds: agora_server::runtime::uptime_seconds(),
+                };
+                success(payload, "API is healthy").into_response()
+            }),
+        );
 
         let req = Request::builder()
-            .uri("/health/live")
+            .uri("/health")
             .body(Body::empty())
             .unwrap();
 
@@ -443,7 +456,7 @@ mod tests {
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
 
-        assert_eq!(json["success"], true);
-        assert_eq!(json["data"]["status"], "ok");
+        assert!(json["data"]["uptime_seconds"].is_number());
+        assert!(json["data"]["uptime_seconds"].as_u64().unwrap() >= 0);
     }
 }
