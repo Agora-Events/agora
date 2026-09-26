@@ -1,5 +1,6 @@
 use axum::{
     extract::{FromRef, State},
+    http::{header, HeaderValue},
     response::IntoResponse,
     response::Response,
 };
@@ -38,6 +39,19 @@ impl FromRef<HealthState> for RedisCache {
 
 static CATEGORY_SYNC_STATUS: LazyLock<std::sync::Mutex<bool>> =
     LazyLock::new(|| std::sync::Mutex::new(true));
+
+/// Process start time used to report server uptime.
+pub static START_TIME: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
+
+/// Explicitly record the process start time at boot.
+pub fn init_start_time() {
+    let _ = *START_TIME;
+}
+
+/// Return elapsed process uptime in seconds.
+pub fn get_uptime_seconds() -> u64 {
+    START_TIME.elapsed().as_secs()
+}
 
 /// Update the category sync status. Called during startup after validation.
 pub fn set_category_sync_status(synced: bool) {
@@ -176,6 +190,21 @@ pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
     }
 }
 
+/// GET /health/live – Liveness probe.
+///
+/// Returns 200 immediately without touching the database or any external
+/// service.  Container platforms (Docker, Kubernetes, Fly, Render) use this
+/// to determine whether the process is alive and should receive traffic.  A
+/// liveness probe that hits the database would incorrectly restart healthy
+/// servers during short database blips – this endpoint avoids that.
+pub async fn health_check_live() -> Response {
+    #[derive(Serialize)]
+    struct LiveResponse {
+        status: &'static str,
+    }
+    success(LiveResponse { status: "ok" }, "Service is live").into_response()
+}
+
 /// GET /health/blockchain – Soroban RPC connectivity check.
 ///
 /// Returns 200 when the configured Soroban RPC endpoint is reachable.
@@ -263,7 +292,10 @@ pub async fn version() -> Response {
         built_at: env!("BUILT_AT"),
         rust_version: env!("RUSTC_VERSION"),
     };
-    success(payload, "Build version").into_response()
+    let mut resp = success(payload, "Build version").into_response();
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    resp
 }
 
 /// GET /health/redis – Redis connectivity check.
@@ -306,6 +338,7 @@ mod tests {
             category_sync: true,
             database: "ok",
             redis: "ok",
+            uptime_seconds: 0,
         };
         let resp = success(payload, "API is healthy").into_response();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -354,6 +387,15 @@ mod tests {
         assert_eq!(json["message"], "API is healthy");
         assert_eq!(json["data"]["status"], "ok");
         assert!(json["data"]["timestamp"].is_string());
+        assert!(json["data"]["uptime_seconds"].is_number());
+    }
+
+    #[tokio::test]
+    async fn test_uptime_seconds_increases_or_non_negative() {
+        let start = get_uptime_seconds();
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        let later = get_uptime_seconds();
+        assert!(later >= start);
     }
 
     #[tokio::test]
@@ -368,6 +410,10 @@ mod tests {
         let resp = router.oneshot(req).await.unwrap();
 
         assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
 
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await

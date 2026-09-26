@@ -1,7 +1,7 @@
 use super::contract::ProSubscriptionContract;
 use super::types::Subscription;
 use crate::error::ProSubscriptionError;
-use crate::events::{PriceUpdatedEvent, ProSubscriptionEvent};
+use crate::events::{AdminUpdatedEvent, PriceUpdatedEvent, ProSubscriptionEvent};
 use crate::types::{SubscriptionTier, SECONDS_PER_MONTH};
 use crate::ProSubscriptionContractClient;
 use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo, MockAuth, MockAuthInvoke};
@@ -180,6 +180,15 @@ fn test_get_subscription_expiry_none_for_unknown_address() {
     let organizer = Address::generate(&env);
 
     assert_eq!(client.get_subscription_expiry(&organizer), None);
+}
+
+#[test]
+fn test_get_subscription_none_for_unknown_address() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let organizer = Address::generate(&env);
+
+    assert_eq!(client.get_subscription(&organizer), None);
+    assert!(!client.is_pro_member(&organizer));
 }
 
 #[test]
@@ -384,6 +393,56 @@ fn test_update_pro_price_unauthorized() {
 }
 
 #[test]
+fn test_update_admin_unauthorized() {
+    let (env, client, contract_id, admin, _platform_wallet, _usdc) = setup_without_auth_mock();
+    let non_admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    // Mock auth for a random non-admin address only, so the real require_auth
+    // check inside update_admin (which requires the *current* admin) fails.
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "update_admin",
+            args: (&new_admin,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.update_admin(&new_admin);
+    }));
+
+    assert!(
+        result.is_err(),
+        "update_admin should fail when called without the admin's authorization"
+    );
+    assert_eq!(client.get_admin(), Some(admin));
+}
+
+#[test]
+fn test_admin_updated_event_payload() {
+    let (env, client, admin, _platform_wallet, _usdc) = setup();
+    let new_admin = Address::generate(&env);
+
+    client.update_admin(&new_admin);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+
+    let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, ProSubscriptionEvent::AdminUpdated);
+
+    let payload: AdminUpdatedEvent = data.into_val(&env);
+    assert_eq!(payload.old_admin, admin);
+    assert_eq!(payload.new_admin, new_admin);
+    assert_eq!(payload.updated_by, admin);
+
+    assert_eq!(client.get_admin(), Some(new_admin));
+}
+
+#[test]
 fn test_get_platform_wallet() {
     let (_env, client, _admin, platform_wallet, _usdc) = setup();
 
@@ -448,6 +507,16 @@ fn test_update_payment_token_success() {
     client.update_payment_token(&new_token);
 
     assert_eq!(client.get_payment_token(), Some(new_token));
+}
+
+#[test]
+fn test_update_payment_token_self_address() {
+    let (_env, client, _admin, _platform_wallet, usdc) = setup();
+
+    let res = client.try_update_payment_token(&client.address);
+
+    assert_eq!(res, Err(Ok(ProSubscriptionError::InvalidAddress)));
+    assert_eq!(client.get_payment_token(), Some(usdc));
 }
 
 #[test]
@@ -836,4 +905,119 @@ fn test_issue_876_admin_update_payment_token() {
 
     client.update_payment_token(&new_token);
     assert_eq!(client.get_payment_token(), Some(new_token));
+}
+
+// ── Issue #1439: PlatformWalletUpdated event ──────────────────────────────────
+
+#[test]
+fn test_platform_wallet_updated_event_payload() {
+    use crate::events::PlatformWalletUpdatedEvent;
+
+    let (env, client, admin, old_wallet, _usdc) = setup_env();
+    let new_wallet = Address::generate(&env);
+
+    client.update_platform_wallet(&new_wallet);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+
+    let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, ProSubscriptionEvent::PlatformWalletUpdated);
+
+    let payload: PlatformWalletUpdatedEvent = data.into_val(&env);
+    assert_eq!(payload.old_wallet, old_wallet);
+    assert_eq!(payload.new_wallet, new_wallet);
+    assert_eq!(payload.updated_by, admin);
+}
+
+// ── Issue #1440: PaymentTokenUpdated event ────────────────────────────────────
+
+#[test]
+fn test_payment_token_updated_event_payload() {
+    use crate::events::PaymentTokenUpdatedEvent;
+
+    let (env, client, admin, _platform_wallet, old_token) = setup_env();
+    let new_token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+
+    client.update_payment_token(&new_token);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+
+    let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, ProSubscriptionEvent::PaymentTokenUpdated);
+
+    let payload: PaymentTokenUpdatedEvent = data.into_val(&env);
+    assert_eq!(payload.old_token, old_token);
+    assert_eq!(payload.new_token, new_token);
+    assert_eq!(payload.updated_by, admin);
+}
+
+// ── Issue #1441: Reject same-admin update ────────────────────────────────────
+
+#[test]
+fn test_update_admin_same_address_returns_error() {
+    let (_env, client, admin, _platform_wallet, _usdc) = setup_env();
+
+    let res = client.try_update_admin(&admin);
+    assert_eq!(res, Err(Ok(ProSubscriptionError::SameAdmin)));
+
+    // Admin must remain unchanged
+    assert_eq!(client.get_admin(), Some(admin));
+}
+
+// ── Issue #1447: Re-subscribe after cancel ───────────────────────────────────
+
+#[test]
+fn test_resubscribe_after_cancel() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    // First subscription
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    let first_expiry = client.get_subscription_expiry(&organizer).unwrap();
+
+    // Cancel
+    client.cancel_subscription(&organizer);
+    assert!(!client.is_pro_member(&organizer));
+
+    // Advance ledger so the re-subscription timestamp is clearly later
+    env.ledger().set(LedgerInfo {
+        timestamp: first_expiry + 1000,
+        protocol_version: 23,
+        sequence_number: 10,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    // Re-subscribe
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    // User is pro again
+    assert!(client.is_pro_member(&organizer));
+
+    // Totals are exactly 1 (not double-counted)
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+    let members = client.get_pro_members();
+    assert_eq!(
+        members.iter().filter(|m| *m == organizer).count(),
+        1,
+        "organizer should appear exactly once in the members list"
+    );
+
+    // New expiry is based on the new subscription time, not the old one
+    let new_expiry = client.get_subscription_expiry(&organizer).unwrap();
+    assert_eq!(new_expiry, env.ledger().timestamp() + SECONDS_PER_MONTH);
+    assert!(new_expiry > first_expiry, "new expiry must be after the old one");
 }

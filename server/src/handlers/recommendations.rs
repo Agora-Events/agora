@@ -12,9 +12,9 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
@@ -24,6 +24,10 @@ use crate::{
 
 // ── Request & Response types ──────────────────────────────────────────────────
 
+pub const DEFAULT_LIMIT: i64 = 12;
+pub const MIN_LIMIT: i64 = 1;
+pub const MAX_LIMIT: i64 = 24;
+
 #[derive(Debug, Deserialize)]
 pub struct RecommendQuery {
     /// Maximum results to return (default: 12, max: 24)
@@ -32,17 +36,22 @@ pub struct RecommendQuery {
 }
 
 fn default_limit() -> i64 {
-    12
+    DEFAULT_LIMIT
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+/// Clamp the limit parameter between `MIN_LIMIT` and `MAX_LIMIT`.
+pub fn clamp_limit(limit: i64) -> i64 {
+    limit.clamp(MIN_LIMIT, MAX_LIMIT)
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct RecommendedEvent {
     pub id: Uuid,
     pub title: String,
     pub slug: String,
     pub description: Option<String>,
-    pub start_time: OffsetDateTime,
-    pub end_time: OffsetDateTime,
+    pub start_time: DateTime<Utc>,
+    pub end_time: DateTime<Utc>,
     pub location: Option<String>,
     pub banner_url: Option<String>,
     pub category_id: Uuid,
@@ -65,6 +74,20 @@ pub struct RecommendationsResponse {
     pub based_on_categories: Vec<String>,
 }
 
+/// Pure helper to assemble the recommendations response DTO.
+pub fn build_recommendations_response(
+    events: Vec<RecommendedEvent>,
+    user_categories: &[(Uuid, String)],
+) -> RecommendationsResponse {
+    let personalised = !user_categories.is_empty();
+    let based_on_categories: Vec<String> = user_categories.iter().map(|(_, n)| n.clone()).collect();
+    RecommendationsResponse {
+        events,
+        personalised,
+        based_on_categories,
+    }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 pub async fn get_recommended_events(
@@ -72,7 +95,7 @@ pub async fn get_recommended_events(
     Extension(auth_user): Extension<AuthUser>,
     Query(params): Query<RecommendQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let limit = params.limit.clamp(1, 24);
+    let limit = clamp_limit(params.limit);
     let user_id = auth_user.user_id;
 
     // 1. Discover the categories from the user's last 3 purchases
@@ -93,7 +116,6 @@ pub async fn get_recommended_events(
     .await?;
 
     let personalised = !user_categories.is_empty();
-    let based_on_categories: Vec<String> = user_categories.iter().map(|(_, n)| n.clone()).collect();
 
     let events: Vec<RecommendedEvent> = if personalised {
         // ── Personalised path ─────────────────────────────────────────────────

@@ -408,6 +408,21 @@ async fn process_geofence_batch(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Validate geographic coordinates (latitude, longitude) and an optional radius (metres).
+///
+/// Returns `Ok(())` when all values are finite and within valid geographic bounds:
+/// - latitude: `[-90.0, 90.0]`
+/// - longitude: `[-180.0, 180.0]`
+/// - radius_m: `[1.0, 500_000.0]` (when provided)
+pub fn validate_coordinates(lat: f64, lng: f64, radius_m: Option<f64>) -> Result<(), AppError> {
+    crate::models::geo::validate_latitude(lat)?;
+    crate::models::geo::validate_longitude(lng)?;
+    if let Some(radius) = radius_m {
+        crate::models::geo::validate_radius(radius)?;
+    }
+    Ok(())
+}
+
 /// Great-circle distance between two WGS-84 points in metres (Haversine).
 fn haversine_m(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
     const R: f64 = 6_371_000.0;
