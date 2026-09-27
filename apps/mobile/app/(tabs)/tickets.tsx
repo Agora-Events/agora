@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { useTheme } from '@/hooks/useTheme';
 import Colors from '@/constants/Colors';
 
@@ -23,11 +23,30 @@ const MOCK_TICKETS: TicketItem[] = [
 
 export default function TicketsScreen() {
   const { theme, palette } = useTheme();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // TODO: replace with real ticket refetch when the data layer is wired up
+      await new Promise<void>((resolve) => setTimeout(resolve, 800));
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={Colors.palette.primaryYellow}
+          colors={[Colors.palette.primaryYellow]}
+        />
+      }
     >
       <Text style={[styles.header, { color: theme.text }]}>My Tickets</Text>
 
