@@ -12,6 +12,8 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { CheckoutAttribution, getCheckoutAttribution } from "@/utils/attribution";
 import { checkUsdcTrustline, addUsdcTrustlineViaFreighter } from "@/lib/stellar/trustline";
 import { StellarExplorerLink } from "@/components/stellar/stellar-explorer-link";
+import { parseAndLogError } from "@/lib/stellar/error-parser";
+import { syncTicketPurchase } from "@/lib/api-handler";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,6 +66,7 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
   const [view, setView] = useState<ModalView>(isSoldOut ? "purchase" : "purchase");
   const [quantity, setQuantity] = useState(initialQuantity);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
   const [purchasedTicket, setPurchasedTicket] = useState<{ id: string; txHash?: string } | null>(null);
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
@@ -181,9 +184,17 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to purchase ticket");
+      if (!response.ok) {
+        // Parse contract error code if present (Issue #1501)
+        const { userMessage, technicalDetails, isContractError } = parseAndLogError(
+          data.error || data,
+          "ticket purchase request"
+        );
+        throw new Error(userMessage);
+      }
 
       // Client-side XDR signature prompt via Freighter (Issue #1086)
+      let txHash: string | undefined;
       if (data.transactionXdr && data.requiresSignature) {
         try {
           const freighter = await import("@stellar/freighter-api");
@@ -194,21 +205,43 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
             await freighter.signTransaction(data.transactionXdr, {
               networkPassphrase: process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015",
             });
-            // Phase 2: simulating / submitting
-            setLiveAnnouncement("Transaction submitted to Stellar Testnet, awaiting confirmation.");
+            txHash = data.transactionXdr?.slice(0, 64);
           }
         } catch (signErr) {
-          console.warn("Freighter wallet interaction:", signErr);
+          const { userMessage } = parseAndLogError(signErr, "Freighter wallet signing");
+          toast.error(userMessage);
+          throw signErr;
+        }
+      } else {
+        txHash = data.txHash;
+      }
+
+      // Sync confirmed transaction with backend (Issue #1500)
+      if (txHash && data.ticketId) {
+        setIsSyncing(true);
+        try {
+          await syncTicketPurchase({
+            txHash,
+            eventId: event.id.toString(),
+            buyerAddress: requestBody.buyerWallet,
+          });
+          toast.success("Transaction confirmed and ticket synced!");
+        } catch (syncErr) {
+          const { userMessage } = parseAndLogError(syncErr, "ticket backend sync");
+          console.warn("Sync failed but showing user on-chain transaction:", userMessage);
+          // Don't throw — the on-chain transaction succeeded, backend sync just failed
+          // User can still see their txHash in the success view
+          toast.warning("Ticket confirmed on-chain but sync pending. Check your wallet.");
+        } finally {
+          setIsSyncing(false);
         }
       }
 
-      setPurchasedTicket({ id: data.ticketId, txHash: data.txHash ?? data.transactionXdr?.slice(0, 64) });
-      // Phase 3: confirmed
-      setLiveAnnouncement("Purchase successful. Your ticket is confirmed.");
+      setPurchasedTicket({ id: data.ticketId, txHash });
       setView("purchased");
     } catch (error: unknown) {
-      setLiveAnnouncement("");
-      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      const errorMsg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      toast.error(errorMsg);
     } finally {
       setIsPurchasing(false);
     }
@@ -243,13 +276,40 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to purchase ticket");
+      if (!response.ok) {
+        // Parse contract error code if present (Issue #1501)
+        const { userMessage } = parseAndLogError(
+          data.error || data,
+          "onramp ticket purchase"
+        );
+        throw new Error(userMessage);
+      }
+
+      // Sync confirmed transaction with backend (Issue #1500)
+      if (data.txHash && data.ticketId) {
+        setIsSyncing(true);
+        try {
+          await syncTicketPurchase({
+            txHash: data.txHash,
+            eventId: event.id.toString(),
+            buyerAddress: fundedWallet,
+          });
+          toast.success("Payment complete! Ticket synced to your account.");
+        } catch (syncErr) {
+          const { userMessage } = parseAndLogError(syncErr, "onramp ticket backend sync");
+          console.warn("Sync failed but showing user on-chain transaction:", userMessage);
+          toast.warning("Payment confirmed on-chain but sync pending.");
+        } finally {
+          setIsSyncing(false);
+        }
+      }
 
       setPurchasedTicket({ id: data.ticketId, txHash: data.txHash });
       setView("purchased");
-      toast.success("Ticket purchased successfully!");
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      const errorMsg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      toast.error(errorMsg);
+      setActiveTab("wallet");
     } finally {
       setIsPurchasing(false);
     }
@@ -465,13 +525,19 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                 <Button
                   variant="primary"
                   onClick={handleProceedToConfirm}
-                  disabled={isPurchasing || isCheckingTrustline}
+                  disabled={isPurchasing || isCheckingTrustline || isSyncing}
                   className="w-full h-16 rounded-full text-xl disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  {isPurchasing || isCheckingTrustline ? (
+                  {isPurchasing || isCheckingTrustline || isSyncing ? (
                     <div
                       className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin"
-                      aria-label={isCheckingTrustline ? "Checking wallet…" : "Processing purchase"}
+                      aria-label={
+                        isCheckingTrustline
+                          ? "Checking wallet…"
+                          : isSyncing
+                            ? "Finalising ticket issuance…"
+                            : "Processing purchase"
+                      }
                     />
                   ) : (
                     <>
