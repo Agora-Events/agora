@@ -6,6 +6,10 @@
  */
 
 export function getRelativeTime(date: Date): string {
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
   const now = new Date();
   const diffMs = date.getTime() - now.getTime();
   const diffSeconds = diffMs / 1000;

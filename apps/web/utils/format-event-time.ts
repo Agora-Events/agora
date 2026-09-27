@@ -6,6 +6,10 @@
 export function formatEventTime(isoString: string): string {
   const date = new Date(isoString);
 
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
   const formatter = new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     year: "numeric",
