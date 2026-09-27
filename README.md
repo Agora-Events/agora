@@ -99,3 +99,8 @@ Distributed under the MIT License. See [`LICENSE.md`](LICENSE.md) for more infor
 ---
 
 © 2026 Agora. All rights reserved.
+
+## Handsoff notes
+
+<!-- handsoff-issue-1397 -->
+- #1397: [FRONTEND] Remove debug console.log from create-event form submit
