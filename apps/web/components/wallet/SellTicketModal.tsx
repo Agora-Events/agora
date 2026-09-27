@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { buildUnsignedResaleTicketTx } from "@/utils/stellar";
-import { isConnected, requestAccess, signTransaction } from "@stellar/freighter-api";
+// @stellar/freighter-api is dynamically imported on demand to keep initial
+// bundle size small (Issue #1505). Do not add a static top-level import.
 import type { WalletTicket } from "@/hooks/useWalletTickets";
 
 interface SellTicketModalProps {
@@ -48,18 +49,19 @@ export function SellTicketModal({
     setIsSubmitting(true);
     try {
       // 1. Check & Connect Wallet Signing Flow (Freighter)
+      // Dynamically imported to avoid loading Stellar/Freighter in the initial bundle (Issue #1505).
       let walletConnected = false;
+      let userAddress = "";
       try {
-        const connectedObj = await isConnected();
+        const freighter = await import("@stellar/freighter-api");
+        const connectedObj = await freighter.isConnected();
         walletConnected = typeof connectedObj === "boolean" ? connectedObj : Boolean(connectedObj?.isConnected);
+        if (walletConnected) {
+          const access = await freighter.requestAccess();
+          userAddress = typeof access === "string" ? access : access?.address || "";
+        }
       } catch {
         walletConnected = false;
-      }
-
-      let userAddress = "";
-      if (walletConnected) {
-        const access = await requestAccess();
-        userAddress = typeof access === "string" ? access : access?.address || "";
       }
 
       if (!userAddress) {
@@ -76,7 +78,8 @@ export function SellTicketModal({
       // 3. Sign transaction via Wallet if connected
       if (unsigned && walletConnected) {
         try {
-          await signTransaction(transactionXdr, {
+          const freighter = await import("@stellar/freighter-api");
+          await freighter.signTransaction(transactionXdr, {
             networkPassphrase: process.env.NEXT_PUBLIC_STELLAR_NETWORK || "Test SDF Network ; July 2015",
           });
         } catch {
