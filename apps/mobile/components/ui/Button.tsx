@@ -7,6 +7,8 @@ import {
   StyleProp,
   ViewStyle,
   TextStyle,
+  AccessibilityRole,
+  AccessibilityState,
 } from 'react-native';
 import Colors from '../../constants/Colors';
 
@@ -19,6 +21,10 @@ interface ButtonProps {
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
   testID?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  accessibilityState?: AccessibilityState;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -30,10 +36,18 @@ export const Button: React.FC<ButtonProps> = ({
   style,
   textStyle,
   testID,
+  accessibilityRole = 'button',
+  accessibilityLabel,
+  accessibilityHint,
+  accessibilityState,
 }) => {
   return (
     <Pressable
       testID={testID}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel ?? title}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: disabled || loading, ...accessibilityState }}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
@@ -45,7 +59,10 @@ export const Button: React.FC<ButtonProps> = ({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? Colors.darkBackground : Colors.primaryText} />
+        <ActivityIndicator
+          color={variant === 'primary' ? Colors.darkBackground : Colors.primaryText}
+          accessible={false}
+        />
       ) : (
         <Text
           style={[
