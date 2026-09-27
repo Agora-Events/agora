@@ -12,6 +12,7 @@ import { LanguageSwitcher } from "./language-switcher";
  * 3. Integrated `mailto:hello@agora.com` for the contact link.
  * 4. Ensured mobile responsiveness via existing `flex-col md:flex-row` logic.
  * 5. Translated all strings (and added the language switcher) in Issue #1343.
+ * 6. Added a copyright line with the current year in Issue #1399.
  */
 
 export function Footer() {
@@ -133,6 +134,13 @@ export function Footer() {
             </Link>
           </div>
         </div>
+      </div>
+
+      {/* Copyright Line: Added in Issue #1399 */}
+      <div className="w-full max-w-[1240px] mx-auto px-4 relative z-10 mt-12">
+        <p className="text-gray-400 text-sm text-center md:text-left">
+          © {new Date().getFullYear()} Agora. All rights reserved.
+        </p>
       </div>
     </footer>
   );
