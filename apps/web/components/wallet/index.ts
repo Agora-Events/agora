@@ -20,3 +20,6 @@ export type { PastEventsSectionProps } from "./PastEventsSection";
 
 export { SellTicketModal } from "./SellTicketModal";
 
+export { TestnetBalanceCard } from "./testnet-balance-card";
+export type { TestnetBalanceCardProps } from "./testnet-balance-card";
+

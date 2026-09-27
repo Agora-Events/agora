@@ -12,6 +12,7 @@
     "test:ci": "vitest run --coverage --thresholds.coverageMap=80",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
+    "test:e2e": "playwright test tests/e2e",
     "postinstall": "node ../../scripts/fix-storybook-next.js",
     "storybook": "storybook dev -p 6006",
     "prebuild-storybook": "node ../../scripts/fix-storybook-next.js",

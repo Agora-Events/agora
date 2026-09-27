@@ -78,6 +78,11 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
   const [isCheckingTrustline, setIsCheckingTrustline] = useState(false);
   const [isAddingTrustline, setIsAddingTrustline] = useState(false);
 
+  // ── Accessibility: screen reader live announcements (WCAG 2.1 SC 4.1.3) ──
+  // Each transaction lifecycle phase sets this message; the aria-live region
+  // announces it to assistive technologies without requiring focus (Issue #1502).
+  const [liveAnnouncement, setLiveAnnouncement] = useState<string>("");
+
   const modalRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   const isFree = event.price.toLowerCase() === "free";
@@ -93,6 +98,7 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       setIsGiftMode(false);
       setRecipientWallet("");
       setQuantity(initialQuantity);
+      setLiveAnnouncement("");
     }
   }, [isOpen, initialQuantity]);
 
@@ -193,6 +199,8 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
         try {
           const freighter = await import("@stellar/freighter-api");
           if (await freighter.isConnected()) {
+            // Phase 1: awaiting wallet signature
+            setLiveAnnouncement("Please approve the transaction in your Freighter wallet.");
             toast.info("Please sign the transaction in your Freighter wallet...");
             await freighter.signTransaction(data.transactionXdr, {
               networkPassphrase: process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015",
@@ -364,6 +372,19 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
             >
               <X size={20} className="text-black" />
             </button>
+
+            {/* ── Screen reader live region (WCAG 2.1 SC 4.1.3) ──────────────
+                aria-live="polite" avoids interrupting ongoing speech.
+                aria-atomic="true" ensures the full message is read each time.
+                Issue #1502 ─────────────────────────────────────────────── */}
+            <div
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="sr-only"
+            >
+              {liveAnnouncement}
+            </div>
 
             {/* ── Purchase view ─────────────────────────────────────────── */}
             {view === "purchase" && !isSoldOut && (
