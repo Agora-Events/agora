@@ -2,6 +2,7 @@
 
 import { ErrorBanner } from "@/components/ui/error-banner";
 import { AddToCalendar } from "@/components/events/add-to-calendar";
+import { ReportEventLink } from "@/components/events/ReportEventLink";
 import { CalendarEventInput } from "@/utils/calendar";
 
 /**
@@ -42,6 +43,11 @@ export function EventDetailClient({
         </div>
       )}
       {children}
+      {event && (
+        <div className="mt-8 flex justify-start">
+          <ReportEventLink eventId={event.id} />
+        </div>
+      )}
     </>
   );
 }

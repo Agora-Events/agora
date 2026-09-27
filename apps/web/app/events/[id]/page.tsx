@@ -4,6 +4,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { dataEvents } from "@/components/events/mockups";
 import { RegistrationBox } from "@/components/events/registration-box";
+import { ReportEventLink } from "@/components/events/ReportEventLink";
 import { notFound } from "next/navigation";
 import MapClient from "@/components/events/map-client";
 import { buildMetadata } from "@/components/layout/seo";
@@ -353,6 +354,11 @@ export default async function EventDetailPage({
             </h2>
           </div>
           <SecondaryMarketplaceTab eventId={eventId} />
+        </div>
+
+        {/* Report Event Link */}
+        <div className="w-full mt-8 flex justify-start">
+          <ReportEventLink eventId={event.id} />
         </div>
       </div>
 
