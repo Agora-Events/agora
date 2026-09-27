@@ -45,6 +45,8 @@ export type FilterState = {
   minPrice: string;
   /** Maximum price filter value */
   maxPrice: string;
+  /** Whether to show only free events */
+  freeOnly: boolean;
 };
 
 export function getActiveFilterCount(filters: FilterState): number {
@@ -53,7 +55,8 @@ export function getActiveFilterCount(filters: FilterState): number {
     filters.locations.length +
     (filters.date && filters.date !== "Any time" ? 1 : 0) +
     (filters.minPrice ? 1 : 0) +
-    (filters.maxPrice ? 1 : 0)
+    (filters.maxPrice ? 1 : 0) +
+    (filters.freeOnly ? 1 : 0)
   );
 }
 
@@ -173,6 +176,7 @@ export function FilterSidebar({
       locations: [],
       minPrice: "",
       maxPrice: "",
+      freeOnly: false,
     };
     setLocalFilters(defaultFilters);
     onFiltersChange(defaultFilters);
@@ -383,6 +387,16 @@ export function FilterSidebar({
                   </div>
                 </div>
               </section>
+
+              <Divider />
+
+              {/* ─ Free events only ─ */}
+              <section>
+                <FreeOnlyToggle
+                  active={localFilters.freeOnly}
+                  onClick={() => setLocalFilters({ ...localFilters, freeOnly: !localFilters.freeOnly })}
+                />
+              </section>
             </div>
 
             {/* ── Footer CTA ── */}
@@ -399,6 +413,37 @@ export function FilterSidebar({
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+interface FreeOnlyToggleProps {
+  active: boolean;
+  onClick: () => void;
+}
+
+function FreeOnlyToggle({ active, onClick }: FreeOnlyToggleProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`
+        flex items-center gap-2.5 px-3 py-2 rounded-xl border transition-all
+        ${
+          active
+            ? "bg-accent text-black border-black shadow-[-3px_3px_0_rgba(0,0,0,1)]"
+            : "bg-white text-black border-black/20 hover:border-black/50"
+        }
+      `}
+    >
+      <input
+        type="checkbox"
+        checked={active}
+        onChange={onClick}
+        className="w-5 h-5 accent-black cursor-pointer"
+        aria-label="Free events only"
+      />
+      <span className="font-medium text-[15px]">Free events only</span>
+    </button>
   );
 }
 
