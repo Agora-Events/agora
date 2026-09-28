@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import AppStatusBar from '@/components/ui/AppStatusBar';
 import { Colors } from '@/constants/Colors';
+import OfflineBanner from '@/components/OfflineBanner';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -67,6 +68,7 @@ function AppNavigation() {
   return (
     <NavThemeProvider value={navTheme}>
       <AppStatusBar />
+      <OfflineBanner />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
@@ -173,6 +175,15 @@ function AppNavigation() {
           name="organizer/qrScanner"
           options={{
             title: 'Gate Scanner',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="help/document"
+          options={{
+            title: 'Policy & Help',
             headerStyle,
             headerTintColor,
             headerShadowVisible: false,
