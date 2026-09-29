@@ -58,6 +58,7 @@
     "joinUs": "Join us for {title} on {date} in {location}. {priceNote} Secure your spot on Agora.",
     "ticketsFrom": "Tickets from ${price}.",
     "hostedBy": "Hosted By",
-    "aboutEvent": "About Event"
+    "aboutEvent": "About Event",
+    "reportEvent": "Report this event"
   }
 }

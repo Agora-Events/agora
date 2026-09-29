@@ -68,6 +68,7 @@ export default function QrScannerScreen() {
   const [mode, setMode] = useState<CheckInMode>('checkin');
   const [state, setState] = useState<ScanState>('scanning');
   const [message, setMessage] = useState<string>('Point the camera at a ticket QR code.');
+  const [torch, setTorch] = useState(false);
   const lockedRef = useRef(false);
 
   const resolveScan = useCallback(async (next: ScanState, nextMessage: string) => {
@@ -144,7 +145,7 @@ export default function QrScannerScreen() {
   if (!permission) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator color={Colors.primaryText} size="large" />
+        <ActivityIndicator color={Colors.primaryText} size="large" accessible={false} />
       </SafeAreaView>
     );
   }
@@ -152,11 +153,17 @@ export default function QrScannerScreen() {
   if (!permission.granted) {
     return (
       <SafeAreaView style={styles.container}>
-        <Text style={styles.title}>Camera access needed</Text>
+        <Text style={styles.title} accessibilityRole="header">Camera access needed</Text>
         <Text style={styles.subtitle}>
           Agora needs camera access to scan attendee ticket QR codes at the gate.
         </Text>
-        <Button title="Grant Camera Access" onPress={requestPermission} />
+        <Button
+          title="Grant Camera Access"
+          onPress={requestPermission}
+          accessibilityRole="button"
+          accessibilityLabel="Grant Camera Access"
+          accessibilityHint="Prompts for permission to access your camera for scanning ticket QR codes"
+        />
       </SafeAreaView>
     );
   }
@@ -165,6 +172,10 @@ export default function QrScannerScreen() {
     <View style={styles.container}>
       <View style={styles.modeRow}>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Check-in mode"
+          accessibilityHint="Switches scanner to check-in mode to admit attendees"
+          accessibilityState={{ selected: mode === 'checkin' }}
           style={[styles.modeButton, mode === 'checkin' && styles.modeButtonActive]}
           onPress={() => setMode('checkin')}
         >
@@ -173,11 +184,27 @@ export default function QrScannerScreen() {
           </Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Check-out mode"
+          accessibilityHint="Switches scanner to check-out mode for attendees leaving the venue"
+          accessibilityState={{ selected: mode === 'checkout' }}
           style={[styles.modeButton, mode === 'checkout' && styles.modeButtonActive]}
           onPress={() => setMode('checkout')}
         >
           <Text style={[styles.modeButtonText, mode === 'checkout' && styles.modeButtonTextActive]}>
             Check-out
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={torch ? 'Turn off camera torch' : 'Turn on camera torch'}
+          accessibilityHint="Toggles camera flashlight on or off"
+          accessibilityState={{ checked: torch }}
+          style={[styles.torchButton, torch && styles.torchButtonActive]}
+          onPress={() => setTorch((prev) => !prev)}
+        >
+          <Text style={[styles.torchButtonText, torch && styles.torchButtonTextActive]}>
+            {torch ? '🔦 On' : '🔦 Off'}
           </Text>
         </Pressable>
       </View>
@@ -186,15 +213,33 @@ export default function QrScannerScreen() {
         <CameraView
           style={StyleSheet.absoluteFillObject}
           facing="back"
+          enableTorch={torch}
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
           onBarcodeScanned={state === 'scanning' ? handleBarcodeScanned : undefined}
         />
-        <View style={[styles.target, targetStyles[state]]} />
+        <View
+          style={[styles.target, targetStyles[state]]}
+          accessible={false}
+          importantForAccessibility="no"
+        />
       </View>
 
-      <View style={styles.footer}>
-        <Text style={[styles.resultLabel, resultTextStyles[state]]}>{describeState(state)}</Text>
-        <Text style={styles.message}>{message}</Text>
+      <View style={styles.footer} accessibilityLiveRegion="polite">
+        <Text
+          style={[styles.resultLabel, resultTextStyles[state]]}
+          accessibilityRole="header"
+          accessibilityLiveRegion="assertive"
+          accessibilityLabel={`Scan result: ${describeState(state)}`}
+        >
+          {describeState(state)}
+        </Text>
+        <Text
+          style={styles.message}
+          accessibilityRole="text"
+          accessibilityLiveRegion="polite"
+        >
+          {message}
+        </Text>
       </View>
     </View>
   );
@@ -253,6 +298,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   modeButtonTextActive: {
+    color: Colors.darkBackground,
+  },
+  torchButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E1E20',
+  },
+  torchButtonActive: {
+    backgroundColor: Colors.primaryYellow,
+  },
+  torchButtonText: {
+    color: Colors.primaryText,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  torchButtonTextActive: {
     color: Colors.darkBackground,
   },
   cameraWrapper: {

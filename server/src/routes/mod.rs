@@ -481,6 +481,7 @@ pub async fn create_routes(
     let sensitive_routes = Router::new()
         .route("/health/blockchain", get(health_check_blockchain))
         .route("/health/db", get(health_check_db))
+        .route("/health/live", get(health_check_live))
         .route("/health/ready", get(health_check_ready))
         .with_state(pool.clone())
         .merge(
@@ -657,6 +658,7 @@ mod tests {
             .route("/api/v1/health", get(|| async { "ok" }))
             .route("/api/v1/health/blockchain", get(|| async { "ok" }))
             .route("/api/v1/health/db", get(|| async { "ok" }))
+            .route("/api/v1/health/live", get(|| async { "ok" }))
             .route("/api/v1/health/ready", get(|| async { "ok" }))
             .route("/api/v1/health/redis", get(|| async { "ok" }))
             .route("/api/v1/examples/validation-error", get(|| async { "ok" }))
@@ -702,6 +704,15 @@ mod tests {
         let router = test_router();
         assert_ne!(
             get_status(router, "/api/v1/health/ready").await,
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    async fn test_health_live_route_exists_under_api_v1() {
+        let router = test_router();
+        assert_ne!(
+            get_status(router, "/api/v1/health/live").await,
             StatusCode::NOT_FOUND
         );
     }

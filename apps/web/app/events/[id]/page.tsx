@@ -4,6 +4,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { dataEvents } from "@/components/events/mockups";
 import { RegistrationBox } from "@/components/events/registration-box";
+import { ReportEventLink } from "@/components/events/ReportEventLink";
 import { notFound } from "next/navigation";
 import MapClient from "@/components/events/map-client";
 import { buildMetadata } from "@/components/layout/seo";
@@ -185,6 +186,16 @@ export default async function EventDetailPage({
               <p className="text-[18px] font-medium text-black -mt-2">
                 {event.location}
               </p>
+              {event.location && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.location)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-accent hover:underline underline-offset-2"
+                >
+                  Get directions
+                </a>
+              )}
               <div className="relative aspect-16/10 w-full rounded-[24px] overflow-hidden border border-black/10">
                 <MapClient location={event.location} />
               </div>
@@ -317,6 +328,16 @@ export default async function EventDetailPage({
               <p className="text-[17px] font-medium text-black -mt-2">
                 {event.location}
               </p>
+              {event.location && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(event.location)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-accent hover:underline underline-offset-2"
+                >
+                  Get directions
+                </a>
+              )}
               <div className="relative aspect-16/10 w-full rounded-[24px] overflow-hidden border border-black/10">
                 <MapClient location={event.location} />
               </div>
@@ -333,6 +354,11 @@ export default async function EventDetailPage({
             </h2>
           </div>
           <SecondaryMarketplaceTab eventId={eventId} />
+        </div>
+
+        {/* Report Event Link */}
+        <div className="w-full mt-8 flex justify-start">
+          <ReportEventLink eventId={event.id} />
         </div>
       </div>
 

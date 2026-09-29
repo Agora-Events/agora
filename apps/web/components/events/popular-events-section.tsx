@@ -49,6 +49,7 @@ const DEFAULT_FILTERS: FilterState = {
   locations: [],
   minPrice: "",
   maxPrice: "",
+  freeOnly: false,
 };
 
 interface PopularEventsSectionProps {
@@ -56,6 +57,8 @@ interface PopularEventsSectionProps {
   onCategoryChange: (category: string) => void;
   selectedOrganizer?: string;
   onOrganizerChange?: (organizer: string) => void;
+  free?: boolean;
+  onFreeChange?: (free: boolean) => void;
 }
 
 type ActiveFilter = {
@@ -69,6 +72,8 @@ export function PopularEventsSection({
   onCategoryChange,
   selectedOrganizer,
   onOrganizerChange,
+  free,
+  onFreeChange,
 }: PopularEventsSectionProps) {
   const t = useTranslations("discover");
   const [isFocused, setIsFocused] = useState(false);
@@ -78,6 +83,7 @@ export function PopularEventsSection({
   const [filters, setFilters] = useState<FilterState>({
     ...DEFAULT_FILTERS,
     categories: category ? [category] : [],
+    freeOnly: free ?? false,
   });
 
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -132,12 +138,16 @@ export function PopularEventsSection({
     setFilters((currentFilters) => ({
       ...currentFilters,
       categories: category ? [category] : [],
+      freeOnly: free ?? false,
     }));
-  }, [category]);
+  }, [category, free]);
 
   const handleFiltersChange = (nextFilters: FilterState) => {
     setFilters(nextFilters);
     onCategoryChange(nextFilters.categories[0] ?? "");
+    if (onFreeChange) {
+      onFreeChange(nextFilters.freeOnly);
+    }
   };
 
   const activeFilters: ActiveFilter[] = [
@@ -160,12 +170,17 @@ export function PopularEventsSection({
     ...(filters.maxPrice
       ? [{ key: "maxPrice" as const, label: `Up to $${filters.maxPrice}` }]
       : []),
+    ...(filters.freeOnly
+      ? [{ key: "freeOnly" as const, label: "Free events only" }]
+      : []),
   ];
 
   const removeFilter = (filter: ActiveFilter) => {
     const nextFilters = { ...filters };
 
-    if (filter.key === "categories" || filter.key === "locations") {
+    if (filter.key === "freeOnly") {
+      nextFilters.freeOnly = false;
+    } else if (filter.key === "categories" || filter.key === "locations") {
       nextFilters[filter.key] = nextFilters[filter.key].filter(
         (value) => value !== filter.value,
       );
@@ -219,6 +234,14 @@ export function PopularEventsSection({
       });
     }
 
+    // 5. Free events only
+    if (filters.freeOnly) {
+      result = result.filter((event) => {
+        const isFree = event.price.toLowerCase() === "free" || parseFloat(event.price) === 0;
+        return isFree;
+      });
+    }
+
     return sortEvents(result, sortBy);
   }, [debouncedSearch, filters, events, activeCategory, sortBy]);
 
@@ -269,7 +292,8 @@ export function PopularEventsSection({
     (filters.date ? 1 : 0) +
     filters.categories.length +
     filters.locations.length +
-    (filters.minPrice !== "" || filters.maxPrice !== "" ? 1 : 0);
+    (filters.minPrice !== "" || filters.maxPrice !== "" ? 1 : 0) +
+    (filters.freeOnly ? 1 : 0);
 
   return (
     <section ref={gridSectionRef} className="px-4 bg-base py-12">

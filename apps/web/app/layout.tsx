@@ -5,7 +5,7 @@
 //   toast.info("Loading...")
 // Toaster is globally mounted below — no per-page setup needed.
 
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { CookieBanner } from "@/components/layout/cookie-banner";
 import { LiveAnnouncer } from "@/components/ui/live-announcer";
@@ -41,6 +41,13 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FFFBE9" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f1115" },
+  ],
+};
+
 import { Suspense } from "react";
 import LoadingBar from "@/components/ui/loading-bar";
 import { ThemeProvider } from "@/components/providers/theme-context";
@@ -55,6 +62,19 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased`}>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                var theme = localStorage.getItem("theme");
+                if (!theme) {
+                  theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+                }
+                document.documentElement.setAttribute("data-theme", theme);
+              })();
+            `,
+          }}
+        />
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>

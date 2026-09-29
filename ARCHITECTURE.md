@@ -15,6 +15,13 @@
 
 ---
 
+## Developer Resources
+
+- [**Stellar Testnet Setup Guide**](docs/stellar/testnet-setup-guide.md) — Install Freighter, fund via Friendbot, add a USDC trustline, and run your first Testnet purchase. Start here if you are new to the project.
+- [**Ticket Purchase & Stellar Integration Guide**](docs/payments/ticket-purchase-guide.md) — End-to-end technical walkthrough of the purchase flow.
+
+---
+
 ## Overview
 
 Agora is an event and ticketing platform built on the **Stellar blockchain**. It enables organizers to create events, sell tickets, and manage attendees with **0% platform fees** on Pro plan, powered by fast, low-cost borderless payments using USDC.

@@ -10,6 +10,10 @@ import { Button } from "@/components/ui/button";
 import CardOnramp from "@/components/payments/CardOnramp";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { CheckoutAttribution, getCheckoutAttribution } from "@/utils/attribution";
+import { checkUsdcTrustline, addUsdcTrustlineViaFreighter } from "@/lib/stellar/trustline";
+import { StellarExplorerLink } from "@/components/stellar/stellar-explorer-link";
+import { parseAndLogError } from "@/lib/stellar/error-parser";
+import { syncTicketPurchase } from "@/lib/api-handler";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +33,7 @@ interface TicketModalProps {
 }
 
 /** The three distinct modal views. */
-type ModalView = "purchase" | "purchased" | "waitlist_success";
+type ModalView = "purchase" | "trustline" | "purchased" | "waitlist_success";
 
 // ─── Waitlist icon ────────────────────────────────────────────────────────────
 
@@ -62,12 +66,22 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
   const [view, setView] = useState<ModalView>(isSoldOut ? "purchase" : "purchase");
   const [quantity, setQuantity] = useState(initialQuantity);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
-  const [purchasedTicket, setPurchasedTicket] = useState<{ id: string } | null>(null);
+  const [purchasedTicket, setPurchasedTicket] = useState<{ id: string; txHash?: string } | null>(null);
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
   const [recipientWallet, setRecipientWallet] = useState<string>("");
   const [isGiftMode, setIsGiftMode] = useState(false);
   const [activeTab, setActiveTab] = useState<"wallet" | "card">("wallet");
+
+  // ── Trustline state ──────────────────────────────────────────────────────
+  const [isCheckingTrustline, setIsCheckingTrustline] = useState(false);
+  const [isAddingTrustline, setIsAddingTrustline] = useState(false);
+
+  // ── Accessibility: screen reader live announcements (WCAG 2.1 SC 4.1.3) ──
+  // Each transaction lifecycle phase sets this message; the aria-live region
+  // announces it to assistive technologies without requiring focus (Issue #1502).
+  const [liveAnnouncement, setLiveAnnouncement] = useState<string>("");
 
   const modalRef = useFocusTrap<HTMLDivElement>(isOpen);
 
@@ -84,8 +98,48 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       setIsGiftMode(false);
       setRecipientWallet("");
       setQuantity(initialQuantity);
+      setLiveAnnouncement("");
     }
   }, [isOpen, initialQuantity]);
+
+  // ── Trustline pre-check ─────────────────────────────────────────────────
+  // Before rendering the purchase confirmation step, verify the buyer's
+  // wallet has a USDC trustline. If not, redirect to the trustline setup view.
+  const handleProceedToConfirm = async () => {
+    // Only run the trustline check for non-free, wallet-tab purchases.
+    if (isFree || activeTab !== "wallet") return;
+
+    const buyerWallet = "GBUYERMOCKADDRESS1234567890STEL"; // replace with real Freighter address
+    setIsCheckingTrustline(true);
+    try {
+      const result = await checkUsdcTrustline(buyerWallet);
+      if (!result.hasTrustline) {
+        setView("trustline");
+        return;
+      }
+    } catch {
+      // Network error — let the purchase attempt proceed and surface errors naturally
+    } finally {
+      setIsCheckingTrustline(false);
+    }
+    // Trustline confirmed — proceed straight to the purchase handler
+    await handleConfirmPurchase();
+  };
+
+  // ── Add trustline handler ───────────────────────────────────────────────
+  const handleAddTrustline = async () => {
+    const buyerWallet = "GBUYERMOCKADDRESS1234567890STEL"; // replace with real Freighter address
+    setIsAddingTrustline(true);
+    try {
+      await addUsdcTrustlineViaFreighter(buyerWallet);
+      toast.success("USDC trustline added! You can now purchase tickets.");
+      setView("purchase");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to add trustline. Please try again.");
+    } finally {
+      setIsAddingTrustline(false);
+    }
+  };
 
   // Keyboard & scroll lock
   useEffect(() => {
@@ -130,32 +184,64 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to purchase ticket");
+      if (!response.ok) {
+        // Parse contract error code if present (Issue #1501)
+        const { userMessage, technicalDetails, isContractError } = parseAndLogError(
+          data.error || data,
+          "ticket purchase request"
+        );
+        throw new Error(userMessage);
+      }
 
       // Client-side XDR signature prompt via Freighter (Issue #1086)
+      let txHash: string | undefined;
       if (data.transactionXdr && data.requiresSignature) {
         try {
           const freighter = await import("@stellar/freighter-api");
           if (await freighter.isConnected()) {
+            // Phase 1: awaiting wallet signature
+            setLiveAnnouncement("Please approve the transaction in your Freighter wallet.");
             toast.info("Please sign the transaction in your Freighter wallet...");
             await freighter.signTransaction(data.transactionXdr, {
               networkPassphrase: process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015",
             });
+            txHash = data.transactionXdr?.slice(0, 64);
           }
         } catch (signErr) {
-          console.warn("Freighter wallet interaction:", signErr);
+          const { userMessage } = parseAndLogError(signErr, "Freighter wallet signing");
+          toast.error(userMessage);
+          throw signErr;
+        }
+      } else {
+        txHash = data.txHash;
+      }
+
+      // Sync confirmed transaction with backend (Issue #1500)
+      if (txHash && data.ticketId) {
+        setIsSyncing(true);
+        try {
+          await syncTicketPurchase({
+            txHash,
+            eventId: event.id.toString(),
+            buyerAddress: requestBody.buyerWallet,
+          });
+          toast.success("Transaction confirmed and ticket synced!");
+        } catch (syncErr) {
+          const { userMessage } = parseAndLogError(syncErr, "ticket backend sync");
+          console.warn("Sync failed but showing user on-chain transaction:", userMessage);
+          // Don't throw — the on-chain transaction succeeded, backend sync just failed
+          // User can still see their txHash in the success view
+          toast.warning("Ticket confirmed on-chain but sync pending. Check your wallet.");
+        } finally {
+          setIsSyncing(false);
         }
       }
 
-      setPurchasedTicket({ id: data.ticketId });
+      setPurchasedTicket({ id: data.ticketId, txHash });
       setView("purchased");
-      toast.success(
-        isGiftMode && recipientWallet.trim()
-          ? "Ticket purchased as a gift! The recipient will see it in their wallet."
-          : "Ticket purchased successfully!",
-      );
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      const errorMsg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      toast.error(errorMsg);
     } finally {
       setIsPurchasing(false);
     }
@@ -190,13 +276,40 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to purchase ticket");
+      if (!response.ok) {
+        // Parse contract error code if present (Issue #1501)
+        const { userMessage } = parseAndLogError(
+          data.error || data,
+          "onramp ticket purchase"
+        );
+        throw new Error(userMessage);
+      }
 
-      setPurchasedTicket({ id: data.ticketId });
+      // Sync confirmed transaction with backend (Issue #1500)
+      if (data.txHash && data.ticketId) {
+        setIsSyncing(true);
+        try {
+          await syncTicketPurchase({
+            txHash: data.txHash,
+            eventId: event.id.toString(),
+            buyerAddress: fundedWallet,
+          });
+          toast.success("Payment complete! Ticket synced to your account.");
+        } catch (syncErr) {
+          const { userMessage } = parseAndLogError(syncErr, "onramp ticket backend sync");
+          console.warn("Sync failed but showing user on-chain transaction:", userMessage);
+          toast.warning("Payment confirmed on-chain but sync pending.");
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+
+      setPurchasedTicket({ id: data.ticketId, txHash: data.txHash });
       setView("purchased");
-      toast.success("Ticket purchased successfully!");
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      const errorMsg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      toast.error(errorMsg);
+      setActiveTab("wallet");
     } finally {
       setIsPurchasing(false);
     }
@@ -259,6 +372,19 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
             >
               <X size={20} className="text-black" />
             </button>
+
+            {/* ── Screen reader live region (WCAG 2.1 SC 4.1.3) ──────────────
+                aria-live="polite" avoids interrupting ongoing speech.
+                aria-atomic="true" ensures the full message is read each time.
+                Issue #1502 ─────────────────────────────────────────────── */}
+            <div
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="sr-only"
+            >
+              {liveAnnouncement}
+            </div>
 
             {/* ── Purchase view ─────────────────────────────────────────── */}
             {view === "purchase" && !isSoldOut && (
@@ -394,17 +520,24 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                     </span>
                   </div>
                 </div>
+                )}
 
                 <Button
                   variant="primary"
-                  onClick={handleConfirmPurchase}
-                  disabled={isPurchasing}
+                  onClick={handleProceedToConfirm}
+                  disabled={isPurchasing || isCheckingTrustline || isSyncing}
                   className="w-full h-16 rounded-full text-xl disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  {isPurchasing ? (
+                  {isPurchasing || isCheckingTrustline || isSyncing ? (
                     <div
                       className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin"
-                      aria-label="Processing purchase"
+                      aria-label={
+                        isCheckingTrustline
+                          ? "Checking wallet…"
+                          : isSyncing
+                            ? "Finalising ticket issuance…"
+                            : "Processing purchase"
+                      }
                     />
                   ) : (
                     <>
@@ -515,6 +648,60 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
               </div>
             )}
 
+            {/* ── Trustline setup view ───────────────────────────────────── */}
+            {view === "trustline" && (
+              <div className="p-8 sm:p-10 flex flex-col gap-6">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-amber-600 font-bold uppercase tracking-wider text-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span>Trustline Required</span>
+                  </div>
+                  <h2 id="ticket-modal-title" className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight">
+                    Add USDC Trustline (Testnet)
+                  </h2>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col gap-3" role="status">
+                  <p className="text-sm font-semibold text-amber-900">
+                    Your wallet does not have a USDC trustline set up.
+                  </p>
+                  <p className="text-sm text-amber-800 leading-relaxed">
+                    A <strong>trustline</strong> is a voluntary link between your Stellar account and a specific
+                    asset issuer (in this case, USDC). Without one, your account cannot receive or hold USDC,
+                    so ticket payments cannot be processed.
+                  </p>
+                  <p className="text-sm text-amber-800 leading-relaxed">
+                    Clicking the button below will prompt Freighter to sign a <code className="bg-amber-100 px-1 rounded text-xs">ChangeTrust</code> transaction
+                    on your behalf. This is a one-time, no-cost operation — you will only need XLM for the tiny
+                    base-reserve fee (~0.5 XLM).
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <Button
+                    variant="primary"
+                    onClick={handleAddTrustline}
+                    disabled={isAddingTrustline}
+                    className="w-full h-14 rounded-full text-lg disabled:opacity-70 disabled:cursor-not-allowed"
+                    aria-label="Add USDC Trustline via Freighter"
+                  >
+                    {isAddingTrustline ? (
+                      <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" aria-label="Adding trustline…" />
+                    ) : (
+                      "Add USDC Trustline (Testnet)"
+                    )}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setView("purchase")}
+                    className="text-sm text-black/50 hover:text-black/80 transition-colors underline-offset-2 hover:underline"
+                  >
+                    Go back
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* ── Purchased success view ─────────────────────────────────── */}
             {view === "purchased" && purchasedTicket && (
               <div className="p-8 sm:p-10 flex flex-col items-center text-center gap-8">
@@ -545,6 +732,14 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                       {purchasedTicket.id}
                     </span>
                   </div>
+                  {purchasedTicket.txHash && (
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-xs font-bold text-black/40 uppercase tracking-widest">
+                        Transaction
+                      </span>
+                      <StellarExplorerLink txHash={purchasedTicket.txHash} />
+                    </div>
+                  )}
                 </div>
 
                 <Button

@@ -162,6 +162,8 @@ impl TicketPaymentContract {
     }
 
     /// Returns the current paused state of the contract.
+    ///
+    /// Deprecated: use is_paused instead. Kept for backward compatibility.
     pub fn get_is_paused(env: Env) -> bool {
         is_paused(&env)
     }

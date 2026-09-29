@@ -9,6 +9,7 @@ This project uses a Rust `cargo` workspace, not Scarb. Build, test, and package 
 - `Cargo.toml`: workspace definition for the Soroban contracts
 - `contracts/event_registry`: event lifecycle, organizer controls, inventory, loyalty, staking, and governance
 - `contracts/ticket_payment`: ticket purchases, escrow, refunds, settlement, transfers, auctions, and payment-side governance
+- [`contracts/pro_subscription`](./contracts/pro_subscription/README.md): monthly Pro subscription management for organizers (subscribe, renew, cancel, admin controls)
 - `scripts/deploy_devnet.sh`: deploys or upgrades both contracts on Stellar testnet/devnet-style environments
 - `scripts/generate_coverage.sh`: generates coverage artifacts for the `ticket-payment` crate
 

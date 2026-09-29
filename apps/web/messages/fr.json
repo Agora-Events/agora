@@ -58,6 +58,7 @@
     "joinUs": "Rejoignez {title} le {date} à {location}. {priceNote} Réservez votre place sur Agora.",
     "ticketsFrom": "Billets à partir de ${price}.",
     "hostedBy": "Organisé par",
-    "aboutEvent": "À propos de l'événement"
+    "aboutEvent": "À propos de l'événement",
+    "reportEvent": "Signaler cet événement"
   }
 }
