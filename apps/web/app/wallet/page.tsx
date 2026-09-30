@@ -11,6 +11,7 @@ import { SellTicketModal } from "@/components/wallet/SellTicketModal";
 import { useWalletTickets } from "@/hooks/useWalletTickets";
 import { useAuth } from "@/hooks/useAuth";
 import type { WalletTicket } from "@/hooks/useWalletTickets";
+import { TestnetFaucetCard } from "@/components/wallet/testnet-faucet-card";
 
 type SortOption = "soonest" | "latest";
 
@@ -225,6 +226,8 @@ function WalletContent() {
     );
   }
 
+  const isTestnet = process.env.NEXT_PUBLIC_STELLAR_NETWORK === "TESTNET";
+
   return (
     <div className="flex-1 w-full max-w-3xl mx-auto px-4 py-10 space-y-6">
       {/* Page heading */}
@@ -238,6 +241,11 @@ function WalletContent() {
         )}
       </header>
 
+      {/* Testnet faucet card — Issue #1492.
+          Only rendered when NEXT_PUBLIC_STELLAR_NETWORK === "TESTNET". */}
+      {isTestnet && user?.walletAddress && (
+        <TestnetFaucetCard publicKey={user.walletAddress} />
+      )}
       {/* Sort control */}
       <div className="flex items-center justify-end gap-2">
         <label htmlFor="ticket-sort" className="text-xs font-medium text-muted-text whitespace-nowrap">
