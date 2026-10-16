@@ -3,7 +3,10 @@
 //! This module provides HTTP handlers for event-related operations including
 //! listing, creating, updating, and deleting events.
 
-use axum::{extract::Path, extract::Query, extract::State, response::IntoResponse, response::Response};
+use axum::{
+    extract::OriginalUri, extract::Path, extract::Query, extract::State,
+    response::IntoResponse, response::Response,
+};
 use axum::http::HeaderMap;
 use crate::models::event_translation::{
     validate_translations, EventTranslation, EventTranslationInput,
@@ -1870,13 +1873,19 @@ pub struct SubmitEventRatingResponse {
         ("count" = Option<bool>, Query, description = "Include total count"),
     ),
     responses(
-        (status = 200, description = "List of events", body = Vec<Event>),
+        (status = 200, description = "List of events", body = Vec<Event>,
+            headers(
+                ("X-Total-Count" = i64, description = "Total number of matching events (omitted when `count=false`)"),
+                ("Link" = String, description = "RFC 5988 `rel=\"next\"` link to the next page, present when more results are available"),
+            ),
+        ),
         (status = 400, description = "Invalid parameters"),
     ),
     tag = "Events"
 )]
 pub async fn list_events(
     State(mut state): State<EventState>,
+    OriginalUri(original_uri): OriginalUri,
     Query(pagination): Query<CursorParams>,
     Query(mut filters): Query<EventFilters>,
 ) -> Response {
@@ -1900,7 +1909,12 @@ pub async fn list_events(
         {
             Ok(Some(cached)) => {
                 tracing::debug!("Cache hit for {}", EVENTS_LIST_CACHE_KEY);
-                return success(cached, "Events retrieved successfully (cached)").into_response();
+                let total = cached.meta.total;
+                let next_cursor = cached.pagination.next_cursor.clone();
+                let mut resp =
+                    success(cached, "Events retrieved successfully (cached)").into_response();
+                apply_pagination_headers(&mut resp, total, next_cursor.as_deref(), &original_uri);
+                return resp;
             }
             Ok(None) => {
                 tracing::debug!("Cache miss for {}", EVENTS_LIST_CACHE_KEY);
@@ -2153,6 +2167,7 @@ pub async fn list_events(
 
     populate_is_free(&mut items, &state.pool).await;
 
+    let next_cursor_for_header = next_cursor.clone();
     let response = CursorResponse::new(items, &validated, next_cursor)
         .with_total(total_count.unwrap_or(0), validated.include_count);
 
@@ -2167,12 +2182,49 @@ pub async fn list_events(
     }
 
     let mut resp = success(response, "Events retrieved successfully").into_response();
+    apply_pagination_headers(
+        &mut resp,
+        total_count,
+        next_cursor_for_header.as_deref(),
+        &original_uri,
+    );
+    resp
+}
+
+/// Attach standard pagination response headers to a cursor-paginated list response:
+///
+/// - `X-Total-Count`: total number of matching rows (when the count was requested).
+/// - `Link`: an RFC 5988-style `rel="next"` link carrying the cursor for the next
+///   page, built from the original request URI so existing filters/sort params
+///   are preserved.
+fn apply_pagination_headers(
+    resp: &mut Response,
+    total_count: Option<i64>,
+    next_cursor: Option<&str>,
+    original_uri: &axum::http::Uri,
+) {
     if let Some(total) = total_count {
         if let Ok(v) = HeaderValue::from_str(&total.to_string()) {
             resp.headers_mut().insert("X-Total-Count", v);
         }
     }
-    resp
+
+    if let Some(next) = next_cursor {
+        let path = original_uri.path();
+        let mut params: Vec<String> = original_uri
+            .query()
+            .unwrap_or("")
+            .split('&')
+            .filter(|p| !p.is_empty() && !p.starts_with("cursor="))
+            .map(|p| p.to_string())
+            .collect();
+        // `next` is a URL_SAFE_NO_PAD base64 cursor, so it needs no percent-encoding.
+        params.push(format!("cursor={}", next));
+        let link_url = format!("{}?{}", path, params.join("&"));
+        if let Ok(v) = HeaderValue::from_str(&format!("<{}>; rel=\"next\"", link_url)) {
+            resp.headers_mut().insert(axum::http::header::LINK, v);
+        }
+    }
 }
 
 /// GET `/api/v1/events/featured`
