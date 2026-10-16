@@ -2,6 +2,15 @@
 
 import useSWR from "swr";
 import { AnalyticsKpiCard } from "./analytics-kpi-card";
+import {
+  DASHBOARD_METRIC_LABELS,
+  DASHBOARD_LOADING_ARIA_LABEL,
+  DASHBOARD_ERROR_TITLE,
+  DASHBOARD_ERROR_SUBTITLE,
+  DASHBOARD_EMPTY_TITLE,
+  DASHBOARD_EMPTY_SUBTITLE,
+  DASHBOARD_FETCH_ERROR_MESSAGE,
+} from "@/lib/constants/dashboard";
 
 interface AffiliateMetrics {
   referralClicks: number;
@@ -12,7 +21,7 @@ interface AffiliateMetrics {
 
 const fetcher = async (url: string): Promise<AffiliateMetrics> => {
   const response = await fetch(url);
-  if (!response.ok) throw new Error("Unable to load affiliate metrics");
+  if (!response.ok) throw new Error(DASHBOARD_FETCH_ERROR_MESSAGE);
   return response.json();
 };
 
@@ -26,7 +35,7 @@ export function AffiliateMetricsDashboard({ affiliateId = "default" }: { affilia
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-32 animate-pulse rounded-2xl border-2 border-black bg-surface shadow-[-6px_6px_0_rgba(0,0,0,1)]" role="status" aria-label="Loading metric" />
+          <div key={i} className="h-32 animate-pulse rounded-2xl border-2 border-black bg-surface shadow-[-6px_6px_0_rgba(0,0,0,1)]" role="status" aria-label={DASHBOARD_LOADING_ARIA_LABEL} />
         ))}
       </div>
     );
@@ -35,8 +44,8 @@ export function AffiliateMetricsDashboard({ affiliateId = "default" }: { affilia
   if (error || !data) {
     return (
       <div className="rounded-3xl border-2 border-black bg-white p-10 text-center shadow-[-5px_5px_0_rgba(0,0,0,1)]" role="alert">
-        <p className="font-bold text-ink-deep">Affiliate metrics could not be loaded.</p>
-        <p className="mt-1 text-sm text-gray-500">Refresh the page to try again.</p>
+        <p className="font-bold text-ink-deep">{DASHBOARD_ERROR_TITLE}</p>
+        <p className="mt-1 text-sm text-gray-500">{DASHBOARD_ERROR_SUBTITLE}</p>
       </div>
     );
   }
@@ -51,9 +60,9 @@ export function AffiliateMetricsDashboard({ affiliateId = "default" }: { affilia
             <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
-        <h3 className="text-xl font-bold text-ink-deep mb-2">No Affiliate Activity Yet</h3>
+        <h3 className="text-xl font-bold text-ink-deep mb-2">{DASHBOARD_EMPTY_TITLE}</h3>
         <p className="text-gray-500 max-w-md mx-auto">
-          Share your referral links to start tracking clicks, sales, and earning commissions.
+          {DASHBOARD_EMPTY_SUBTITLE}
         </p>
       </div>
     );
@@ -62,7 +71,7 @@ export function AffiliateMetricsDashboard({ affiliateId = "default" }: { affilia
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <AnalyticsKpiCard
-        title="Referral Clicks"
+        title={DASHBOARD_METRIC_LABELS.referralClicks}
         value={data.referralClicks.toLocaleString()}
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -72,7 +81,7 @@ export function AffiliateMetricsDashboard({ affiliateId = "default" }: { affilia
       />
       
       <AnalyticsKpiCard
-        title="Ticket Sales"
+        title={DASHBOARD_METRIC_LABELS.ticketSales}
         value={data.ticketSales.toLocaleString()}
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -83,7 +92,7 @@ export function AffiliateMetricsDashboard({ affiliateId = "default" }: { affilia
       />
       
       <AnalyticsKpiCard
-        title="Conversion Rate"
+        title={DASHBOARD_METRIC_LABELS.conversionRate}
         value={`${data.conversionRate.toFixed(1)}%`}
         icon={
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -93,7 +102,7 @@ export function AffiliateMetricsDashboard({ affiliateId = "default" }: { affilia
       />
       
       <AnalyticsKpiCard
-        title="Commission Earned"
+        title={DASHBOARD_METRIC_LABELS.commissionEarned}
         value={`$${data.totalCommissionEarned.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
         accent={true}
         icon={
