@@ -32,6 +32,57 @@ use crate::utils::response::success;
 use axum::http::HeaderValue;
 use utoipa::ToSchema;
 
+/// Sort field for search results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchSortBy {
+    /// Sort by event start time (default).
+    StartTime,
+    /// Sort by the date the event was created.
+    CreatedAt,
+    /// Sort by the number of minted tickets (popularity proxy).
+    Popularity,
+}
+
+impl Default for SearchSortBy {
+    fn default() -> Self {
+        Self::StartTime
+    }
+}
+
+impl SearchSortBy {
+    fn column(self) -> &'static str {
+        match self {
+            Self::StartTime => "e.start_time",
+            Self::CreatedAt => "e.created_at",
+            Self::Popularity => "e.minted_tickets",
+        }
+    }
+}
+
+/// Sort direction for search results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchSortOrder {
+    Asc,
+    Desc,
+}
+
+impl Default for SearchSortOrder {
+    fn default() -> Self {
+        Self::Desc
+    }
+}
+
+impl SearchSortOrder {
+    fn sql(self) -> &'static str {
+        match self {
+            Self::Asc => "ASC",
+            Self::Desc => "DESC",
+        }
+    }
+}
+
 /// Query parameters for searching events with filters
 #[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
 pub struct SearchParams {
@@ -53,6 +104,12 @@ pub struct SearchParams {
     pub location: Option<String>,
     /// Filter by ticket tier name (partial match, case-insensitive)
     pub ticket_type: Option<String>,
+    /// Sort field: `start_time` (default), `created_at`, or `popularity`
+    #[serde(default)]
+    pub sort_by: SearchSortBy,
+    /// Sort direction: `asc` or `desc` (default)
+    #[serde(default)]
+    pub order: SearchSortOrder,
     /// Page number (default: 1)
     #[serde(default = "default_page")]
     pub page: u32,
@@ -3339,7 +3396,7 @@ pub async fn search_events(
 
     // Deterministic cache key from all search parameters (issue #592).
     let cache_key = format!(
-        "search:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        "search:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
         params.q.as_deref().unwrap_or(""),
         params
             .category_id
@@ -3352,6 +3409,8 @@ pub async fn search_events(
         params.date_to.map(|d| d.timestamp()).unwrap_or(0),
         validated_pagination.page,
         validated_pagination.page_size,
+        params.sort_by.column(),
+        params.order.sql(),
     );
 
     // Try cache first; fall through to DB on miss or Redis error.
@@ -3508,12 +3567,16 @@ pub async fn search_events(
         }
     };
 
-    // Fetch paginated items with DISTINCT to handle joins
+    // Fetch paginated items with DISTINCT to handle joins.
+    // Apply the caller-supplied sort column and direction instead of the
+    // previous hard-coded `ORDER BY e.start_time DESC`.
     let items_query = format!(
-        "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
+        "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY {} {} LIMIT ${} OFFSET ${}",
         category_join,
         ticket_tiers_join,
         where_clause,
+        params.sort_by.column(),
+        params.order.sql(),
         param_count + 1,
         param_count + 2
     );
