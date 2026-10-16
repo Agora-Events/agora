@@ -19,8 +19,8 @@ use crate::events::{
     WaitlistLeftEvent,
 };
 use crate::types::{
-    BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
-    MultiSigConfig, OrganizerStake, PaymentInfo, TicketTier,
+    BlacklistAuditEntry, EventCapacity, EventInfo, EventReceipt, EventRegistrationArgs,
+    EventStatus, GuestProfile, MultiSigConfig, OrganizerStake, PaymentInfo, TicketTier,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
@@ -635,6 +635,38 @@ impl EventRegistry {
     /// Retrieves an event by its ID.
     pub fn get_event(env: Env, event_id: String) -> Option<EventInfo> {
         storage::get_event(&env, event_id)
+    }
+
+    /// Retrieves an event's capacity (max supply, current supply, and
+    /// remaining availability) without fetching the entire `EventInfo`
+    /// struct (Issue #1560).
+    ///
+    /// Cheaper for indexers and the frontend than `get_event` when only the
+    /// supply/availability numbers are needed (e.g. for a "X tickets left"
+    /// badge or sold-out check).
+    ///
+    /// # Errors
+    /// Returns `EventRegistryError::EventNotFound` if no event exists with
+    /// the given `event_id`.
+    pub fn get_event_capacity(
+        env: Env,
+        event_id: String,
+    ) -> Result<EventCapacity, EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id).ok_or(EventRegistryError::EventNotFound)?;
+
+        let available = if event_info.max_supply > 0 {
+            Some(event_info.max_supply.saturating_sub(event_info.current_supply))
+        } else {
+            // max_supply == 0 means unlimited capacity.
+            None
+        };
+
+        Ok(EventCapacity {
+            max_supply: event_info.max_supply,
+            current_supply: event_info.current_supply,
+            available,
+        })
     }
 
     /// Retrieves a batch of events by their IDs (max 50).

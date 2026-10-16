@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2, Gift } from "@/components/ui/icons";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import CardOnramp from "@/components/payments/CardOnramp";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { CheckoutAttribution, getCheckoutAttribution } from "@/utils/attribution";
@@ -514,7 +515,15 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
 
                   {/* Total */}
                   <div className="flex justify-between items-center">
-                    <span className="text-lg font-bold text-black">Total Price</span>
+                    <span className="flex items-center gap-1.5 text-lg font-bold text-black">
+                      Total Price
+                      {!isFree && (
+                        <InfoTooltip
+                          label="What is a Stroop?"
+                          text="Payments settle on the Stellar network, where the smallest unit is a Stroop — 1 XLM equals 10,000,000 Stroops. Network fees are a fraction of a Stroop."
+                        />
+                      )}
+                    </span>
                     <span className="text-2xl font-bold text-black font-heading">
                       {isFree ? "FREE" : `$${totalPrice.toFixed(2)}`}
                     </span>
