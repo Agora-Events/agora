@@ -24,6 +24,7 @@
   "dependencies": {
     "@expo/metro-runtime": "^3.2.3",
     "@expo/vector-icons": "^14.0.2",
+    "@react-native-async-storage/async-storage": "1.23.1",
     "@react-native-community/netinfo": "11.3.1",
     "@react-native/assets-registry": "^0.86.0",
     "@react-navigation/native": "^6.0.2",

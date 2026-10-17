@@ -134,6 +134,7 @@ cargo test
 ```bash
 cargo test -p event-registry
 cargo test -p ticket-payment
+cargo test -p pro-subscription
 ```
 
 ### Generate coverage for `ticket-payment`
