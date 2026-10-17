@@ -18,6 +18,8 @@ export type ToastStatus = "pending" | "success" | "error" | "info";
 export interface ToastProps {
   /** Main message shown inside the toast. */
   message: string;
+  /** Optional custom title to display, overriding default status label. */
+  title?: string;
   /** Lifecycle status of the transaction this toast represents. */
   status?: ToastStatus;
   /**
@@ -27,6 +29,8 @@ export interface ToastProps {
   duration?: number | null;
   /** Called after the exit animation completes. */
   onDismiss?: () => void;
+  /** Optional additional CSS class names. */
+  className?: string;
 }
 
 const EXIT_MS = 300;
@@ -78,7 +82,14 @@ const TOAST_STYLES = `
 }
 `;
 
-export function Toast({ message, status = "info", duration = null, onDismiss }: ToastProps) {
+export function Toast({
+  message,
+  title,
+  status = "info",
+  duration = null,
+  onDismiss,
+  className = "",
+}: ToastProps) {
   const [exiting, setExiting] = useState(false);
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
@@ -109,13 +120,13 @@ export function Toast({ message, status = "info", duration = null, onDismiss }: 
         aria-live="polite"
         data-status={status}
         data-exiting={exiting}
-        className={`agora-toast pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-lg border-l-4 ${border} bg-zinc-900 p-4 text-zinc-100 shadow-lg`}
+        className={`agora-toast pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-lg border-l-4 ${border} bg-zinc-900 p-4 text-zinc-100 shadow-lg ${className}`}
       >
         <span aria-hidden="true" className="mt-0.5 text-sm">
           {status === "pending" ? <span className="agora-toast-spinner" /> : icon}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">{label}</p>
+          <p className="text-sm font-semibold">{title || label}</p>
           <p className="mt-0.5 text-sm break-words text-zinc-300">{message}</p>
         </div>
         <button
@@ -128,6 +139,45 @@ export function Toast({ message, status = "info", duration = null, onDismiss }: 
         </button>
       </div>
     </>
+  );
+}
+
+export interface ErrorToastProps extends Omit<ToastProps, "status" | "message"> {
+  /** Main error message. Optional if error object or string is provided. */
+  message?: string;
+  /** Optional Error instance or error message string. */
+  error?: Error | string;
+}
+
+/**
+ * Standardized ErrorToast wrapper component for displaying error notifications.
+ *
+ * Refactored as part of Issue #1581.
+ */
+export function ErrorToast({
+  message,
+  error,
+  title = "Error",
+  duration = 4000,
+  onDismiss,
+  className = "",
+  ...rest
+}: ErrorToastProps) {
+  const displayMessage =
+    message ||
+    (typeof error === "string" ? error : error?.message) ||
+    "An unexpected error occurred.";
+
+  return (
+    <Toast
+      message={displayMessage}
+      title={title}
+      status="error"
+      duration={duration}
+      onDismiss={onDismiss}
+      className={className}
+      {...rest}
+    />
   );
 }
 
