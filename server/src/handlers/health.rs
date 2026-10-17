@@ -110,8 +110,8 @@ pub async fn health_check(
 ) -> Response {
     let category_sync = *CATEGORY_SYNC_STATUS.lock().unwrap();
 
-    // Probe database
-    let db_ok = sqlx::query("SELECT 1").fetch_one(&pool).await.is_ok();
+    // Probe database (bounded so a hung DB cannot stall the health endpoint)
+    let db_ok = ping_database(&pool).await;
     // Probe redis
     let redis_ok = redis.ping().await.is_ok();
 
@@ -142,11 +142,29 @@ pub async fn health_check(
     .into_response()
 }
 
+/// Maximum time to wait for the database `SELECT 1` probe before treating
+/// the connection as unreachable.
+const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Ping the Postgres connection with a bounded `SELECT 1`.
+///
+/// Returns `false` when the query errors or exceeds [`DB_PROBE_TIMEOUT`],
+/// so callers can translate that into a `503 Service Unavailable`.
+async fn ping_database(pool: &PgPool) -> bool {
+    matches!(
+        tokio::time::timeout(
+            DB_PROBE_TIMEOUT,
+            sqlx::query("SELECT 1").fetch_one(pool)
+        )
+        .await,
+        Ok(Ok(_))
+    )
+}
+
 /// GET /health/db – Database connectivity check.
 ///
 /// Returns 200 when the database is reachable.
-/// Returns a structured JSON error (via [`AppError`]) when it is not,
-/// ensuring the error payload matches the API-wide error schema.
+/// Returns a structured JSON 503 (via [`AppError`]) when it is not.
 pub async fn health_check_db(State(pool): State<PgPool>) -> Response {
     match sqlx::query("SELECT 1").fetch_one(&pool).await {
         Ok(_) => {
@@ -349,6 +367,37 @@ mod tests {
         // DB Failure case for health check response (via AppError).
         let err = AppError::ExternalServiceError("database is unreachable".to_string());
         let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn test_ping_database_false_when_unreachable() {
+        // A lazy pool pointed at a closed port never connects, so the bounded
+        // `SELECT 1` probe must report the database as unreachable.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(250))
+            .connect_lazy("postgres://agora:agora@127.0.0.1:1/agora")
+            .expect("lazy pool should be constructible");
+        assert!(!ping_database(&pool).await);
+    }
+
+    #[tokio::test]
+    async fn test_health_db_endpoint_returns_503_when_unreachable() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(250))
+            .connect_lazy("postgres://agora:agora@127.0.0.1:1/agora")
+            .expect("lazy pool should be constructible");
+
+        let router = Router::new()
+            .route("/health/db", get(health_check_db))
+            .with_state(pool);
+
+        let req = Request::builder()
+            .uri("/health/db")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
