@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/DatePicker";
+import { useIpfsUpload } from "@/hooks/useIpfsUpload";
 import Image from "next/image";
 
 const CREATE_EVENT_DRAFT_KEY = "agora:draft:create-event";
@@ -71,8 +73,13 @@ export default function CreateEventForm() {
   );
   const [isDraftAvailable, setIsDraftAvailable] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [imageError, setImageError] = useState<string | null>(null);
+  const {
+    imagePreview,
+    imageError,
+    handleImageChange: handleIpfsImageChange,
+    handleRemoveImage: handleIpfsRemoveImage,
+    clearImagePreview,
+  } = useIpfsUpload();
   const [descriptionLength, setDescriptionLength] = useState(0);
   // Issue #1575: drives the animated spinner on the submit button while the
   // event is being created, instead of just disabling it with no feedback.
@@ -96,14 +103,7 @@ export default function CreateEventForm() {
     }
   }, []);
 
-  // Cleanup object URLs on unmount
-  useEffect(() => {
-    return () => {
-      if (imagePreview) {
-        URL.revokeObjectURL(imagePreview);
-      }
-    };
-  }, [imagePreview]);
+
 
   // Register beforeunload handler when form is dirty
   useEffect(() => {
@@ -175,12 +175,18 @@ export default function CreateEventForm() {
     setIsDirty(false);
   };
 
-  const clearImagePreview = () => {
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview);
-      setImagePreview(null);
-    }
-    setImageError(null);
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const success = await handleIpfsImageChange(e);
+    const selectedFile = e.target.files?.[0] || null;
+    setFormData((prev) => ({
+      ...prev,
+      coverImage: success ? selectedFile : null,
+    }));
+  };
+
+  const handleRemoveImage = () => {
+    handleIpfsRemoveImage();
+    setFormData((prev) => ({ ...prev, coverImage: null }));
   };
 
   const clearStoredDraft = () => {
@@ -193,76 +199,6 @@ export default function CreateEventForm() {
 
   const resetDirtyState = () => {
     setIsDirty(false);
-  };
-
-  const validateImage = (file: File): Promise<string | null> => {
-    return new Promise((resolve) => {
-      // Check file type
-      const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-      if (!allowedTypes.includes(file.type)) {
-        resolve("Please select a JPEG, PNG, or WebP image.");
-        return;
-      }
-
-      // Check file size (5 MB)
-      const maxSize = 5 * 1024 * 1024; // 5 MB
-      if (file.size > maxSize) {
-        const sizeInMB = (file.size / (1024 * 1024)).toFixed(1);
-        resolve(`File size is ${sizeInMB} MB. Maximum allowed is 5 MB.`);
-        return;
-      }
-
-      // Check image dimensions
-      const img = new Image();
-      img.onload = () => {
-        // Minimum dimensions: 600x400
-        if (img.width < 600 || img.height < 400) {
-          resolve(
-            `Image dimensions are ${img.width}×${img.height}. Minimum required is 600×400 pixels.`,
-          );
-        } else {
-          resolve(null); // Valid
-        }
-      };
-      img.onerror = () => {
-        resolve("Failed to load image. Please try a different file.");
-      };
-      img.src = URL.createObjectURL(file);
-    });
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Revoke previous preview URL to prevent leaks
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview);
-      setImagePreview(null);
-    }
-
-    // Clear any previous error
-    setImageError(null);
-
-    validateImage(file).then((error) => {
-      if (error) {
-        setImageError(error);
-        setFormData((prev) => ({ ...prev, coverImage: null }));
-      } else {
-        const previewUrl = URL.createObjectURL(file);
-        setImagePreview(previewUrl);
-        setFormData((prev) => ({ ...prev, coverImage: file }));
-      }
-    });
-  };
-
-  const handleRemoveImage = () => {
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview);
-    }
-    setImagePreview(null);
-    setImageError(null);
-    setFormData((prev) => ({ ...prev, coverImage: null }));
   };
 
   const handleRestore = () => {
@@ -481,55 +417,14 @@ export default function CreateEventForm() {
 
       {/* Date & Time Section */}
       <div className="flex flex-col sm:flex-row gap-4">
-        <div
-          className={`p-4 flex-1 flex flex-col gap-3 shadow-sm ${neubrutalistInputClass}`}
-        >
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-semibold w-12 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-black block"></span>
-              Start
-            </span>
-            <input
-              type="text"
-              name="startDate"
-              value={formData.startDate}
-              onChange={handleChange}
-              placeholder="Thu, 19 Feb"
-              className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-full outline-none focus:ring-1 focus:ring-black"
-            />
-            <input
-              type="text"
-              name="startTime"
-              value={formData.startTime}
-              onChange={handleChange}
-              placeholder="08:00AM"
-              className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-32 outline-none focus:ring-1 focus:ring-black"
-            />
-          </div>
-          <div className="flex items-center gap-4 relative">
-            <div className="absolute left-1 top-[-10px] w-px h-6 bg-dashed border-l border-dashed border-gray-300"></div>
-            <span className="text-sm font-semibold w-12 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full border-2 border-gray-300 block"></span>
-              End
-            </span>
-            <input
-              type="text"
-              name="endDate"
-              value={formData.endDate}
-              onChange={handleChange}
-              placeholder="Thu, 20 Feb"
-              className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-full outline-none focus:ring-1 focus:ring-black"
-            />
-            <input
-              type="text"
-              name="endTime"
-              value={formData.endTime}
-              onChange={handleChange}
-              placeholder="09:00AM"
-              className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-32 outline-none focus:ring-1 focus:ring-black"
-            />
-          </div>
-        </div>
+        <DatePicker
+          isRange
+          startDate={formData.startDate}
+          startTime={formData.startTime}
+          endDate={formData.endDate}
+          endTime={formData.endTime}
+          onFieldChange={handleChange}
+        />
 
         <div className="bg-base-alt rounded-xl p-4 shadow-sm w-full sm:w-auto min-w-[140px] flex items-center justify-between gap-4 border border-black shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]">
           <div className="flex flex-col">
