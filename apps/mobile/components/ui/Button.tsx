@@ -15,7 +15,7 @@ import Colors from '../../constants/Colors';
 interface ButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'destructive';
   loading?: boolean;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -41,6 +41,12 @@ export const Button: React.FC<ButtonProps> = ({
   accessibilityHint,
   accessibilityState,
 }) => {
+  const getTextColorStyle = () => {
+    if (variant === 'primary') return styles.textPrimary;
+    if (variant === 'destructive') return styles.textDestructive;
+    return styles.textSecondary;
+  };
+
   return (
     <Pressable
       testID={testID}
@@ -60,14 +66,14 @@ export const Button: React.FC<ButtonProps> = ({
     >
       {loading ? (
         <ActivityIndicator
-          color={variant === 'primary' ? Colors.darkBackground : Colors.primaryText}
+          color={variant === 'primary' ? Colors.darkBackground : '#FFFFFF'}
           accessible={false}
         />
       ) : (
         <Text
           style={[
             styles.text,
-            variant === 'primary' ? styles.textPrimary : styles.textSecondary,
+            getTextColorStyle(),
             disabled && styles.textDisabled,
             textStyle,
           ]}
@@ -100,6 +106,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.secondaryText,
   },
+  destructive: {
+    backgroundColor: Colors.accentRed,
+  },
   disabled: {
     opacity: 0.5,
   },
@@ -116,6 +125,9 @@ const styles = StyleSheet.create({
   },
   textSecondary: {
     color: Colors.primaryText,
+  },
+  textDestructive: {
+    color: '#FFFFFF',
   },
   textDisabled: {
     color: Colors.secondaryText,
