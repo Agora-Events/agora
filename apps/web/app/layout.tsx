@@ -53,6 +53,7 @@ import LoadingBar from "@/components/ui/loading-bar";
 import { ThemeProvider } from "@/components/providers/theme-context";
 import { AttributionCapture } from "@/components/analytics/attribution-capture";
 import { TestnetBanner } from "@/components/layout/testnet-banner";
+import { NetworkProvider } from "@/lib/stellar/network-context";
 
 export default function RootLayout({
   children,
@@ -79,13 +80,25 @@ export default function RootLayout({
           Skip to main content
         </a>
         <LocaleProvider>
-          <LiveAnnouncer />
-          {/* Testnet warning banner — Issue #1491.
-              TestnetBanner is a client component that self-gates on
-              NEXT_PUBLIC_STELLAR_NETWORK so it renders nothing in production. */}
-          <TestnetBanner />
-          {children}
-          <CookieBanner />
+          {/* ThemeProvider — pre-existing bug fix (Issue #1541 batch):
+              this was imported but never actually mounted, so any component
+              calling useTheme() (e.g. GuestNav's theme toggle) would throw.
+              Wiring it here is unrelated to the network switcher below but
+              was needed since GuestNav also renders the new NetworkSwitcher. */}
+          <ThemeProvider>
+            {/* NetworkProvider — Issue #1541. Makes the active
+                Testnet/Mainnet selection available to the header's
+                NetworkSwitcher (and anything else) app-wide. */}
+            <NetworkProvider>
+              <LiveAnnouncer />
+              {/* Testnet warning banner — Issue #1491.
+                  TestnetBanner is a client component that self-gates on
+                  NEXT_PUBLIC_STELLAR_NETWORK so it renders nothing in production. */}
+              <TestnetBanner />
+              {children}
+              <CookieBanner />
+            </NetworkProvider>
+          </ThemeProvider>
         </LocaleProvider>
       </body>
     </html>

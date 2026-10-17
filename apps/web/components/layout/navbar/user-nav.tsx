@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { BaseNav, type NavItem } from "./base-nav";
 import { useStellarNetwork } from "@/hooks/useStellarNetwork";
-import { NotificationDropdown } from "@/components/notifications/NotificationDropdown";
+import { NetworkSwitcher } from "@/components/layout/network-switcher";
 
 const USER_NAV_ITEMS: NavItem[] = [
   {
@@ -108,6 +108,9 @@ function NetworkPill() {
 function UserEndSlot() {
   return (
     <>
+      {/* Testnet/Mainnet switcher — Issue #1541 */}
+      <NetworkSwitcher />
+
       {/* Network status pill — only visible on testnet builds */}
       <NetworkPill />
 

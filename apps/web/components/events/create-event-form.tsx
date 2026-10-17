@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
-import { useState } from "react";
 
 const CREATE_EVENT_DRAFT_KEY = "agora:draft:create-event";
 
@@ -75,6 +74,9 @@ export default function CreateEventForm() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [descriptionLength, setDescriptionLength] = useState(0);
+  // Issue #1575: drives the animated spinner on the submit button while the
+  // event is being created, instead of just disabling it with no feedback.
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const lastPersistedAt = useRef(0);
   const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDraft = useRef<EventFormData | null>(null);
@@ -333,16 +335,31 @@ export default function CreateEventForm() {
     setDescriptionLength(0);
   };
 
-  const handleSubmit = () => {
-    console.log("Submitting Event Data:", formData);
-    cancelPendingDraft();
-    clearStoredDraft();
-    resetDirtyState();
-    clearImagePreview();
-    setDescriptionLength(0);
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+    try {
+      console.log("Submitting Event Data:", formData);
+      // NOTE: there is no real "create event" API call wired up yet in this
+      // form — submission is simulated so the loading state has something
+      // to represent. Replace this with the actual event-creation request
+      // when that endpoint lands; isSubmitting/finally handling below
+      // should keep working unchanged.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      cancelPendingDraft();
+      clearStoredDraft();
+      resetDirtyState();
+      clearImagePreview();
+      setDescriptionLength(0);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const isSubmitDisabled = !formData.title.trim() || !formData.startDate.trim();
+  const isSubmitDisabled =
+    isSubmitting || !formData.title.trim() || !formData.startDate.trim();
 
   // Common Neubrutalist class for form controls
   const neubrutalistInputClass =
@@ -761,14 +778,17 @@ export default function CreateEventForm() {
         <Button
           variant="primary"
           disabled={isSubmitDisabled}
+          isLoading={isSubmitting}
           onClick={handleSubmit}
+          aria-label={isSubmitting ? "Creating event…" : "Create Event"}
           className={`w-full sm:w-auto ${
             isSubmitDisabled
               ? "opacity-50 cursor-not-allowed hover:translate-x-0 hover:translate-y-0 active:translate-x-0 active:translate-y-0"
               : ""
           }`}
         >
-          Create Event <span className="ml-1 text-lg">↗</span>
+          {isSubmitting ? "Creating Event" : "Create Event"}{" "}
+          <span className="ml-1 text-lg">↗</span>
         </Button>
       </div>
     </div>
