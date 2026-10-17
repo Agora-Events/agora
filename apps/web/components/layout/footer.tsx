@@ -90,6 +90,7 @@ export function Footer() {
               href="https://instagram.com/agora"
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="Visit our Instagram"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Image src="/icons/instagram.svg" width={20} height={20} alt="Instagram" className="text-gray-300 group-hover:text-white" />
@@ -101,6 +102,7 @@ export function Footer() {
               href="https://x.com/agora"
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="Visit our Twitter"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Image src="/icons/x.svg" width={20} height={20} alt="X" className="text-gray-300 group-hover:text-white" />
@@ -110,6 +112,7 @@ export function Footer() {
             {/* Mail: Integrated hello@agora.com */}
             <a
               href="mailto:hello@agora.com"
+              aria-label="Contact us via email"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Image src="/icons/mail.svg" width={20} height={20} alt="Mail" className="text-gray-300 group-hover:text-white" />
@@ -119,6 +122,7 @@ export function Footer() {
             {/* Stellar Link (Internal/Help) */}
             <Link
               href="/stellar"
+              aria-label="Visit our Stellar page"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center p-1">
