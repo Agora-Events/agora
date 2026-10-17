@@ -54,4 +54,5 @@ pub enum EventRegistryError {
     NotTicketHolder = 86,
     ReplayAttackDetected = 87,
     InsufficientSignatures = 88,
+    InvalidPrice = 89,
 }
