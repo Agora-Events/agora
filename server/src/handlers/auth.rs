@@ -18,11 +18,11 @@ use axum::{extract::State, response::IntoResponse, response::Response, Json};
 use chrono::{Duration, Utc};
 use ed25519_dalek::{Signature, VerifyingKey};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::env;
 
+use crate::auth::service::AuthService;
 use crate::utils::error::AppError;
 use crate::utils::response::{empty_success, success};
 use stellar_strkey::Strkey;
@@ -165,9 +165,7 @@ pub async fn request_nonce(
     }
 
     // Generate a 32-byte random nonce encoded as hex
-    let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    let nonce = hex::encode(bytes);
+    let nonce = AuthService::generate_nonce();
 
     match sqlx::query("INSERT INTO jwt_nonces (nonce, address) VALUES ($1, $2)")
         .bind(&nonce)
@@ -354,9 +352,7 @@ pub async fn verify_signature(
     .into_response();
 
     // Generate CSRF token
-    let mut csrf_bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut csrf_bytes);
-    let csrf_token = hex::encode(csrf_bytes);
+    let csrf_token = AuthService::generate_csrf_token();
 
     let cookie = format!("XSRF-TOKEN={}; Path=/; HttpOnly; SameSite=Lax", csrf_token);
     response
