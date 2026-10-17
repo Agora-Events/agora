@@ -4,6 +4,8 @@
 //! issue that was supposed to introduce it) had not yet landed on `main` at
 //! the time this PR was opened — see the comment on the function itself in
 //! `lib.rs`. These tests exercise the real contract entry point, not a stub.
+//!
+//! Also covers organizer-only authorization on `update_metadata` (#1562).
 
 #[cfg(test)]
 mod tests {
@@ -139,5 +141,53 @@ mod tests {
             result,
             Err(Ok(EventRegistryError::EventNotFound))
         );
+    }
+
+    /// #1562: a non-organizer must not be able to rewrite an event's metadata.
+    ///
+    /// `update_metadata` looks the organizer up from storage and calls
+    /// `require_auth` on that address, so a transaction signed only by a
+    /// non-organizer is rejected by the host auth check (a host error rather
+    /// than a contract error code) and the stored CID is left untouched.
+    #[test]
+    fn test_update_event_metadata_unauthorized() {
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+        use soroban_sdk::IntoVal;
+
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _admin) = setup(&env);
+        let organizer = Address::generate(&env);
+        let non_organizer = Address::generate(&env);
+
+        client.register_event(&event_args(&env, "concert_1", &organizer, 100));
+
+        let event_id = String::from_str(&env, "concert_1");
+        let new_metadata_cid = String::from_str(
+            &env,
+            "bafkreifh22222222222222222222222222222222222222222222222222",
+        );
+
+        // Replace the blanket mock with one that authorizes only the
+        // non-organizer for this exact call.
+        env.mock_auths(&[MockAuth {
+            address: &non_organizer,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                function_name: "update_metadata",
+                args: (event_id.clone(), new_metadata_cid.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+
+        let result = client.try_update_metadata(&event_id, &new_metadata_cid);
+        assert!(
+            matches!(result, Err(Err(_))),
+            "non-organizer metadata update must fail organizer auth, got {:?}",
+            result
+        );
+
+        let event = client.get_event(&event_id).unwrap();
+        assert_eq!(event.metadata_cid, metadata_cid(&env));
     }
 }
