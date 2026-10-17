@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { BaseNav, type NavItem } from "./base-nav";
 import { useStellarNetwork } from "@/hooks/useStellarNetwork";
+import { NotificationDropdown } from "@/components/notifications/NotificationDropdown";
 
 const USER_NAV_ITEMS: NavItem[] = [
   {
@@ -106,35 +106,12 @@ function NetworkPill() {
 }
 
 function UserEndSlot() {
-  const [notifications] = useState<any[]>([]);
-
   return (
     <>
       {/* Network status pill — only visible on testnet builds */}
       <NetworkPill />
 
-      <div className="relative">
-        <Link href="/notifications">
-          <Button
-            backgroundColor="bg-white"
-            className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
-            textColor="text-black"
-            shadowColor="rgba(0,0,0,1)"
-            aria-label="View notifications"
-          >
-            {notifications.length > 0 && (
-              <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
-            )}
-            <Image
-              src="/icons/notification.svg"
-              alt="Notifications"
-              width={24}
-              height={24}
-              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-            />
-          </Button>
-        </Link>
-      </div>
+      <NotificationDropdown />
 
       <Link href="/profile">
         <Button
