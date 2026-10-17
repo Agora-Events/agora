@@ -3,6 +3,14 @@ import { Footer } from "@/components/layout/footer";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
+import { buildMetadata } from "@/components/layout/seo";
+
+export const metadata = buildMetadata({
+  title: "Why Stellar",
+  description:
+    "Learn how Agora uses Stellar and USDC for fast, low-cost event payments and ticket purchases.",
+  path: "/stellar",
+});
 
 export default function StellarPage() {
   return (
