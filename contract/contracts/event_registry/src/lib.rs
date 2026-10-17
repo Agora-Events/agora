@@ -2588,3 +2588,6 @@ mod test_admin_transfer;
 
 #[cfg(test)]
 mod test_bridge;
+
+#[cfg(test)]
+mod test_event;
