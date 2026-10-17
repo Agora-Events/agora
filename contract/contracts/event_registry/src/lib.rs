@@ -637,6 +637,15 @@ impl EventRegistry {
         storage::get_event(&env, event_id)
     }
 
+    /// Returns an event's ticket capacity (`max_supply`; 0 = unlimited),
+    /// for easier querying without fetching the full [`EventInfo`] (#1560).
+    pub fn get_event_capacity(env: Env, event_id: String) -> Result<i128, EventRegistryError> {
+        match storage::get_event(&env, event_id) {
+            Some(event_info) => Ok(event_info.max_supply),
+            None => Err(EventRegistryError::EventNotFound),
+        }
+    }
+
     /// Retrieves a batch of events by their IDs (max 50).
     pub fn get_events_batch(
         env: Env,
@@ -2556,3 +2565,6 @@ mod test_admin_transfer;
 
 #[cfg(test)]
 mod test_bridge;
+
+#[cfg(test)]
+mod test_event;
