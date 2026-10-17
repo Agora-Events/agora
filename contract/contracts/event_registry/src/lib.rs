@@ -31,6 +31,7 @@ pub mod error;
 pub mod events;
 pub mod storage;
 pub mod teleport;
+pub mod ticket;
 mod topics;
 pub mod types;
 

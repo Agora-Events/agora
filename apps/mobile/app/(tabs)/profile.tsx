@@ -194,7 +194,7 @@ export default function ProfileScreen() {
         <Button
           title="Log Out"
           onPress={logout}
-          variant="outline"
+          variant="destructive"
           style={styles.logoutButton}
         />
       </ScrollView>
