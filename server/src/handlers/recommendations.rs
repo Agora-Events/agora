@@ -240,11 +240,7 @@ pub async fn get_recommended_events(
 
     Ok((
         StatusCode::OK,
-        Json(RecommendationsResponse {
-            events,
-            personalised,
-            based_on_categories,
-        }),
+        Json(build_recommendations_response(events, &user_categories)),
     ))
 }
 

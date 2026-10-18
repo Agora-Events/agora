@@ -1225,6 +1225,8 @@ fn build_past_event_where_clause(
                 date_to: None,
                 location: None,
                 ticket_type: None,
+                sort_by: SearchSortBy::default(),
+                order: SearchSortOrder::default(),
                 page: 1,
                 page_size: size,
             };
@@ -1248,6 +1250,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 0,
         };
@@ -1267,6 +1271,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 101,
         };
@@ -1286,6 +1292,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: Some("VIP".to_string()),
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
         };
@@ -1305,6 +1313,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
         };
@@ -1413,6 +1423,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: Some("Lagos".to_string()),
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
         };
@@ -4377,6 +4389,8 @@ fn test_search_params_ticket_type() {
         date_to: None,
         location: None,
         ticket_type: Some("VIP".to_string()),
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
     };
@@ -4396,6 +4410,8 @@ fn test_search_params_ticket_type_none() {
         date_to: None,
         location: None,
         ticket_type: None,
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
     };
@@ -4425,6 +4441,8 @@ fn test_search_params_location() {
         date_to: None,
         location: Some("Lagos".to_string()),
         ticket_type: None,
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
     };
