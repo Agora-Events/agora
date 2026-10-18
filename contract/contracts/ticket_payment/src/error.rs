@@ -42,8 +42,8 @@ pub enum TicketPaymentError {
     InvalidDiscountCode = 18,
     /// The discount code has already been used.
     DiscountCodeUsed = 19,
-    /// Caller is not authorized to perform this action.
-    Unauthorized = 20,
+    // 20 (Unauthorized) retired in #1583 — never returned; auth is enforced by
+    // `require_auth`. Do not reuse the code.
     /// The event has not yet completed.
     EventNotCompleted = 21,
     /// There are no funds available to withdraw.
@@ -153,7 +153,6 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             17 => TicketPaymentError::InvalidPrice,
             18 => TicketPaymentError::InvalidDiscountCode,
             19 => TicketPaymentError::DiscountCodeUsed,
-            20 => TicketPaymentError::Unauthorized,
             21 => TicketPaymentError::EventNotCompleted,
             22 => TicketPaymentError::NoFundsAvailable,
             23 => TicketPaymentError::RefundDeadlinePassed,

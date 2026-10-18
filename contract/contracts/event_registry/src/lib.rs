@@ -275,6 +275,10 @@ impl EventRegistry {
             return Err(EventRegistryError::TooManyTiers);
         }
 
+        for tier in args.tiers.values() {
+            validate_tier_price(&tier)?;
+        }
+
         // Validate tier limits don't exceed max_supply
         if args.max_supply > 0 {
             let mut total_tier_limit: i128 = 0;
@@ -532,14 +536,16 @@ impl EventRegistry {
                 }
 
                 // Update metadata
+                let old_metadata_cid = event_info.metadata_cid.clone();
                 event_info.metadata_cid = new_metadata_cid.clone();
                 storage::update_event(&env, event_info.clone());
 
-                // Emit metadata update event
+                // Emit metadata update event so indexers can follow CID changes (#1561)
                 env.events().publish(
                     (AgoraEvent::MetadataUpdated,),
                     MetadataUpdatedEvent {
                         event_id,
+                        old_metadata_cid,
                         new_metadata_cid,
                         updated_by: event_info.organizer_address,
                         timestamp: env.ledger().timestamp(),
@@ -1066,6 +1072,8 @@ impl EventRegistry {
         let mut event_info =
             storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
         event_info.organizer_address.require_auth();
+
+        validate_tier_price(&tier)?;
 
         if event_info.max_supply > 0 {
             let mut total_tier_limit: i128 = 0;
@@ -2460,6 +2468,15 @@ impl EventRegistry {
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
     if address == &env.current_contract_address() {
         return Err(EventRegistryError::InvalidAddress);
+    }
+    Ok(())
+}
+
+/// Tier prices are denominated in stroops. Zero is allowed (free tickets);
+/// negative prices are rejected (Issue #1559).
+fn validate_tier_price(tier: &TicketTier) -> Result<(), EventRegistryError> {
+    if tier.price < 0 {
+        return Err(EventRegistryError::InvalidPrice);
     }
     Ok(())
 }

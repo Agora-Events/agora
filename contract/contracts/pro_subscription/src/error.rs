@@ -4,34 +4,24 @@ use soroban_sdk::contracterror;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum ProSubscriptionError {
+    // Codes 3, 6, 7, 9, 11 and 14 were retired in #1583 (never returned).
+    // Do not reuse them: clients may still map the old numbers.
     /// Contract has already been initialized
     AlreadyInitialized = 1,
     /// Contract has not been initialized
     NotInitialized = 2,
-    /// Caller is not the admin
-    Unauthorized = 3,
     /// Subscription not found for this organizer
     SubscriptionNotFound = 4,
     /// Subscription has expired
     SubscriptionExpired = 5,
-    /// Subscription is not active
-    SubscriptionInactive = 6,
-    /// Invalid subscription tier
-    InvalidTier = 7,
     /// Invalid price (must be positive)
     InvalidPrice = 8,
-    /// Insufficient payment amount
-    InsufficientPayment = 9,
     /// Arithmetic overflow or underflow
     ArithmeticError = 10,
-    /// Token transfer failed
-    TransferFailed = 11,
     /// Invalid address provided
     InvalidAddress = 12,
     /// Subscription already exists and is active
     SubscriptionAlreadyActive = 13,
-    /// Organizer already has Pro subscription
-    AlreadyPro = 14,
     /// new_admin is the same as the current admin
     SameAdmin = 15,
 }
@@ -45,32 +35,17 @@ impl core::fmt::Display for ProSubscriptionError {
             ProSubscriptionError::NotInitialized => {
                 write!(f, "Contract not initialized")
             }
-            ProSubscriptionError::Unauthorized => {
-                write!(f, "Caller is not authorized to perform this action")
-            }
             ProSubscriptionError::SubscriptionNotFound => {
                 write!(f, "Subscription not found for this organizer")
             }
             ProSubscriptionError::SubscriptionExpired => {
                 write!(f, "Subscription has expired")
             }
-            ProSubscriptionError::SubscriptionInactive => {
-                write!(f, "Subscription is not active")
-            }
-            ProSubscriptionError::InvalidTier => {
-                write!(f, "Invalid subscription tier")
-            }
             ProSubscriptionError::InvalidPrice => {
                 write!(f, "Price must be a positive value")
             }
-            ProSubscriptionError::InsufficientPayment => {
-                write!(f, "Insufficient payment amount provided")
-            }
             ProSubscriptionError::ArithmeticError => {
                 write!(f, "Arithmetic overflow or underflow occurred")
-            }
-            ProSubscriptionError::TransferFailed => {
-                write!(f, "Token transfer failed")
             }
             ProSubscriptionError::InvalidAddress => {
                 write!(f, "Invalid address provided")
@@ -80,9 +55,6 @@ impl core::fmt::Display for ProSubscriptionError {
                     f,
                     "An active subscription already exists for this organizer"
                 )
-            }
-            ProSubscriptionError::AlreadyPro => {
-                write!(f, "Organizer already has Pro subscription")
             }
             ProSubscriptionError::SameAdmin => {
                 write!(f, "New admin is the same as the current admin")
@@ -110,18 +82,12 @@ mod tests {
         let variants = [
             ProSubscriptionError::AlreadyInitialized,
             ProSubscriptionError::NotInitialized,
-            ProSubscriptionError::Unauthorized,
             ProSubscriptionError::SubscriptionNotFound,
             ProSubscriptionError::SubscriptionExpired,
-            ProSubscriptionError::SubscriptionInactive,
-            ProSubscriptionError::InvalidTier,
             ProSubscriptionError::InvalidPrice,
-            ProSubscriptionError::InsufficientPayment,
             ProSubscriptionError::ArithmeticError,
-            ProSubscriptionError::TransferFailed,
             ProSubscriptionError::InvalidAddress,
             ProSubscriptionError::SubscriptionAlreadyActive,
-            ProSubscriptionError::AlreadyPro,
             ProSubscriptionError::SameAdmin,
         ];
 
@@ -130,5 +96,13 @@ mod tests {
             write!(&mut writer, "{error}").unwrap();
             assert!(writer.0 > 0);
         }
+    }
+
+    #[test]
+    fn retained_variants_keep_their_original_codes() {
+        // Pruning (#1583) must not renumber surviving variants.
+        assert_eq!(ProSubscriptionError::SubscriptionNotFound as u32, 4);
+        assert_eq!(ProSubscriptionError::InvalidPrice as u32, 8);
+        assert_eq!(ProSubscriptionError::SameAdmin as u32, 15);
     }
 }

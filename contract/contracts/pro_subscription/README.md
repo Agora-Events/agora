@@ -65,24 +65,19 @@ passed in, so an organizer can only ever act on their own subscription.
 
 ## Errors
 
-`ProSubscriptionError` (see `error.rs`):
+`ProSubscriptionError` (see `error.rs`). Codes 3, 6, 7, 9, 11 and 14 were retired
+in #1583 because nothing returned them; they are not reused.
 
 | Variant | Code | Meaning |
 | --- | --- | --- |
 | `AlreadyInitialized` | 1 | `initialize` was called on a contract that is already initialized. |
 | `NotInitialized` | 2 | A call was made before `initialize`, or a required piece of contract state (admin/payment token/platform wallet) is missing. |
-| `Unauthorized` | 3 | Reserved for caller-is-not-admin failures (auth is primarily enforced via `require_auth`, which panics rather than returning this variant). |
 | `SubscriptionNotFound` | 4 | `renew_subscription` or `cancel_subscription` was called for an organizer with no subscription record. |
 | `SubscriptionExpired` | 5 | Reserved for future use — expiry is currently checked by comparing `expires_at` to the ledger timestamp on read, not by transitioning state, so this variant is not emitted today. |
-| `SubscriptionInactive` | 6 | Reserved for flows that need to distinguish an inactive-but-present subscription. |
-| `InvalidTier` | 7 | Reserved for tier-validation failures. |
 | `InvalidPrice` | 8 | `pro_monthly_price`/`new_price` was `<= 0`, or `months == 0` was passed to `subscribe_pro`/`renew_subscription`. |
-| `InsufficientPayment` | 9 | Reserved for payment-amount validation. |
 | `ArithmeticError` | 10 | An overflow occurred multiplying price by months or adding to an expiry/total. |
-| `TransferFailed` | 11 | Reserved for token-transfer failure handling. |
 | `InvalidAddress` | 12 | `initialize`, `update_admin`, `update_platform_wallet`, or `update_payment_token` was called with the contract's own address. |
 | `SubscriptionAlreadyActive` | 13 | `subscribe_pro` was called while an active, unexpired subscription already exists, or `register_basic` was called while an active Pro subscription exists. |
-| `AlreadyPro` | 14 | Reserved for flows that need to reject a redundant Pro upgrade. |
 
 ## Events
 
