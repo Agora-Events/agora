@@ -84,6 +84,18 @@ pub struct SubscriptionCancelledEvent {
     pub timestamp: u64,
 }
 
+/// Emitted when a Pro subscription is found to have expired.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionExpiredEvent {
+    /// The organizer whose subscription expired.
+    pub organizer: Address,
+    /// The ledger timestamp at which the subscription expired.
+    pub expires_at: u64,
+    /// Ledger timestamp when the expiration was observed.
+    pub timestamp: u64,
+}
+
 /// Emitted when the pro monthly price is updated
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
