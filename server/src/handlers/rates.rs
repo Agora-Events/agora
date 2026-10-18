@@ -158,23 +158,6 @@ pub struct RatesState {
     pub breaker: Arc<CircuitBreaker>,
 }
 
-
-    pub fn failure_count(&self) -> usize {
-        self.failures.load(Ordering::Relaxed)
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Handler State
-// ──────────────────────────────────────────────────────────────────────────────
-
-#[derive(Clone)]
-pub struct RatesState {
-    pub redis: RedisCache,
-    pub http: reqwest::Client,
-    pub breaker: Arc<CircuitBreaker>,
-}
-
 impl RatesState {
     pub fn new(redis: RedisCache, http: reqwest::Client) -> Self {
         Self {
