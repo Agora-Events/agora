@@ -197,7 +197,7 @@ export default async function EventDetailPage({
                 </a>
               )}
               <div className="relative aspect-16/10 w-full rounded-[24px] overflow-hidden border border-black/10">
-                <MapClient location={event.location} />
+                <MapClient location={event.location} category={event.category} title={event.title} price={event.price} imageUrl={event.imageUrl} />
               </div>
             </div>
           </div>
@@ -339,7 +339,7 @@ export default async function EventDetailPage({
                 </a>
               )}
               <div className="relative aspect-16/10 w-full rounded-[24px] overflow-hidden border border-black/10">
-                <MapClient location={event.location} />
+                <MapClient location={event.location} category={event.category} title={event.title} price={event.price} imageUrl={event.imageUrl} />
               </div>
             </div>
           </div>

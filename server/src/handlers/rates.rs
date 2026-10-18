@@ -158,23 +158,6 @@ pub struct RatesState {
     pub breaker: Arc<CircuitBreaker>,
 }
 
-
-    pub fn failure_count(&self) -> usize {
-        self.failures.load(Ordering::Relaxed)
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Handler State
-// ──────────────────────────────────────────────────────────────────────────────
-
-#[derive(Clone)]
-pub struct RatesState {
-    pub redis: RedisCache,
-    pub http: reqwest::Client,
-    pub breaker: Arc<CircuitBreaker>,
-}
-
 impl RatesState {
     pub fn new(redis: RedisCache, http: reqwest::Client) -> Self {
         Self {
@@ -286,7 +269,7 @@ pub async fn get_rates(
 
         if let Ok(Some(stale_rate)) = state.redis.get::<ExchangeRate>(&stale_key).await {
             let mut resp =
-                success(stale_rate, "Stale exchange rate served (circuit breaker open)")
+                success(stale_rate.clone(), "Stale exchange rate served (circuit breaker open)")
                     .into_response();
             resp.headers_mut().insert(
                 "X-Rate-Source",

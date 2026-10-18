@@ -65,7 +65,7 @@ use crate::handlers::{
         GovernanceState,
     },
     health::{
-        health_check, health_check_blockchain, health_check_db, health_check_ready,
+        health_check, health_check_blockchain, health_check_db, health_check_live, health_check_ready,
         health_check_redis, version,
     },
     marketplace::{
