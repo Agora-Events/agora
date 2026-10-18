@@ -19,7 +19,7 @@
 //! 3. Security headers
 //! 4. Database connection state
 
-use crate::handlers::indexer::{replay_indexer, IndexerAdminState};
+use crate::handlers::indexer::{indexer_health, replay_indexer, IndexerAdminState};
 use crate::handlers::{delta_sync, sync_status, SyncState};
 use axum::{
     middleware,
@@ -50,7 +50,7 @@ use crate::utils::rate_limit::RateLimitLayer;
 
 use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
-    categories::{get_category, list_categories, CategoryState},
+    categories::{create_category, get_category, list_categories, CategoryState},
     events::{
         export_attendees_csv, flag_event, get_attendee_count, get_checkin_stats, get_event,
         get_event_counts, get_event_organizer, get_event_share_link, get_event_social_proof,
@@ -89,7 +89,7 @@ use crate::handlers::{
         join_queue, queue_status, queue_stream, request_challenge, WaitingRoomConfig,
         WaitingRoomState,
     },
-    ws::{ws_purchases_handler, PurchaseBroadcaster},
+    ws::{ws_purchases_handler, PurchaseBroadcaster, PurchaseWsState},
     zk_checkin::{get_ring, register_commitment, seal_bucket, zk_checkin, ZkCheckinState},
 };
 use crate::metrics::{metrics_handler, track_metrics};
@@ -272,6 +272,15 @@ pub async fn create_routes(
         token: config.admin_token.clone(),
     };
 
+    let admin_category_routes = Router::new()
+        .route("/categories", post(create_category))
+        .route_layer(middleware::from_fn_with_state(
+            admin_auth_state.clone(),
+            require_admin_token,
+        ))
+        .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(pool.clone());
+
     let governance_state = GovernanceState { pool: pool.clone() };
 
     let governance_routes = Router::new()
@@ -295,7 +304,7 @@ pub async fn create_routes(
         .route("/events/:id/flag", patch(flag_event))
         .merge(governance_routes)
         .route_layer(middleware::from_fn_with_state(
-            admin_auth_state,
+            admin_auth_state.clone(),
             require_admin_token,
         ))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
@@ -307,12 +316,16 @@ pub async fn create_routes(
                     pool: pool.clone(),
                     broker: Some(broadcaster.clone()),
                 }),
-        );
+            )
+            .merge(admin_category_routes);
 
     // WebSocket sub-router for real-time purchase updates.
     let ws_routes = Router::new()
         .route("/purchases", get(ws_purchases_handler))
-        .with_state(broadcaster);
+        .with_state(PurchaseWsState {
+            pool: pool.clone(),
+            broadcaster,
+        });
 
     // Virtual waiting room routes (Issue #1187)
     let waiting_room_state = WaitingRoomState {
@@ -504,6 +517,7 @@ pub async fn create_routes(
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
+        .route("/indexer/health", get(indexer_health))
         .route("/version", get(version))
         .with_state(pool.clone())
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
