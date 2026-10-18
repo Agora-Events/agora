@@ -52,7 +52,8 @@ use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{create_category, get_category, list_categories, CategoryState},
     events::{
-        export_attendees_csv, flag_event, get_attendee_count, get_checkin_stats, get_event,
+        create_event, export_attendees_csv, flag_event, get_attendee_count,
+        get_checkin_stats, get_event,
         get_event_counts, get_event_organizer, get_event_share_link, get_event_social_proof,
         get_events_map, get_ratings_summary, list_event_attendees, list_event_ratings,
         list_event_tickets, list_events, list_events_by_category, list_past_events,
@@ -389,7 +390,7 @@ pub async fn create_routes(
 
     // Event routes with Redis caching
     let event_routes = Router::new()
-        .route("/", get(list_events))
+        .route("/", get(list_events).post(create_event))
         .route("/map", get(get_events_map))
         .route("/count", get(get_event_counts))
         .route("/past", get(list_past_events))
