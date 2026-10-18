@@ -152,4 +152,68 @@ mod tests {
     fn test_escape_pdf_text() {
         assert_eq!(escape_pdf_text("a(b)c"), "a\\(b\\)c");
     }
+
+    #[test]
+    fn test_escape_pdf_covers_parens_backslash_and_close() {
+        // A raw backslash doubles before it can escape a following delimiter.
+        assert_eq!(escape_pdf_text(r"a\b"), r"a\\b");
+        assert_eq!(escape_pdf_text("c)"), r"c\)");
+        // Escapes compose: `a\)b(c` must come out fully inert.
+        assert_eq!(escape_pdf_text(r"a\)b(c"), r"a\\\)b\(c");
+    }
+
+    #[test]
+    fn test_pdf_references_helvetica_font_tables() {
+        let pdf = generate_ticket_pdf(
+            "Concert",
+            "2026-06-01",
+            "Lagos",
+            "VIP",
+            "GABC...WXYZ",
+            "qr123",
+        );
+        let s = String::from_utf8_lossy(&pdf);
+        assert!(s.contains("/F1"), "the /F1 font id is referenced by the content stream");
+        assert!(s.contains("/BaseFont /Helvetica"), "the Helvetica font table is referenced");
+        assert!(s.contains("BT /F1"), "the content stream selects the referenced font");
+    }
+
+    #[test]
+    fn test_pdf_content_stream_length_matches_payload() {
+        let pdf = generate_ticket_pdf(
+            "Concert",
+            "2026-06-01",
+            "Lagos",
+            "VIP",
+            "GABC...WXYZ",
+            "qr123",
+        );
+        let s = String::from_utf8_lossy(&pdf);
+        let length: usize = s
+            .split("/Length ")
+            .nth(1)
+            .and_then(|rest| rest.split(' ').next())
+            .and_then(|field| field.parse().ok())
+            .expect("declared /Length");
+        // The payload sits between `stream\n` and `\nendstream`.
+        let begin = s.find("stream\n").expect("stream begin") + "stream\n".len();
+        let end = s[begin..].find("\nendstream").expect("stream end") + begin;
+        assert_eq!(end - begin, length, "/Length must equal the payload length");
+    }
+
+    #[test]
+    fn test_pdf_escapes_special_chars_in_event_title() {
+        // A title carrying `\` and `(` must stay escaped inside the stream,
+        // never prematurely closing the `(...)` Tj operator.
+        let pdf = generate_ticket_pdf(
+            r"A back\slash ( and ( here,",
+            "2026-06-01",
+            "Lagos",
+            "VIP",
+            "GABC...WXYZ",
+            "qr123",
+        );
+        let s = String::from_utf8_lossy(&pdf);
+        assert!(s.contains(r"Event: A back\\slash \( and \( here,"));
+    }
 }
