@@ -1,8 +1,7 @@
 use soroban_sdk::contracterror;
 
-#[contracterror]
+#[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-/// Error codes returned by the Event Registry contract.
 pub enum EventRegistryError {
     EventAlreadyExists = 1,
     EventNotFound = 2,

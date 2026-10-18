@@ -122,7 +122,7 @@ pub async fn health_check(
             category_sync,
             database: "ok",
             redis: "ok",
-            uptime_seconds: agora_server::runtime::uptime_seconds(),
+            uptime_seconds: crate::runtime::uptime_seconds(),
         };
         return success(payload, "API is healthy").into_response();
     }
@@ -412,7 +412,7 @@ mod tests {
                     category_sync: true,
                     database: "ok",
                     redis: "ok",
-                    uptime_seconds: agora_server::runtime::uptime_seconds(),
+                    uptime_seconds: crate::runtime::uptime_seconds(),
                 };
                 success(payload, "API is healthy").into_response()
             }),
@@ -485,7 +485,7 @@ mod tests {
                     category_sync: true,
                     database: "ok",
                     redis: "ok",
-                    uptime_seconds: agora_server::runtime::uptime_seconds(),
+                    uptime_seconds: crate::runtime::uptime_seconds(),
                 };
                 success(payload, "API is healthy").into_response()
             }),

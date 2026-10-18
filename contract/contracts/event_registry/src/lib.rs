@@ -840,6 +840,20 @@ impl EventRegistry {
             .ok_or(EventRegistryError::NotInitialized)?;
 
         storage::set_admin(&env, &proposed_admin);
+
+        if let Some(mut config) = storage::get_multisig_config(&env) {
+            let mut updated_admins = soroban_sdk::Vec::new(&env);
+            for admin in config.admins.iter() {
+                if admin == previous_admin {
+                    updated_admins.push_back(proposed_admin.clone());
+                } else {
+                    updated_admins.push_back(admin);
+                }
+            }
+            config.admins = updated_admins;
+            storage::set_multisig_config(&env, &config);
+        }
+
         storage::clear_pending_admin(&env);
 
         #[allow(deprecated)]
@@ -2211,7 +2225,7 @@ impl EventRegistry {
                 let mut new_config = config.clone();
                 new_config.admins.push_back(new_admin.clone());
                 storage::set_multisig_config(&env, &new_config);
-                storage::set_admin(&env, new_admin); // Update legacy admin storage
+                storage::set_admin(&env, &new_admin); // Update legacy admin storage
             }
             types::ParameterChange::RemoveAdmin(admin_to_remove) => {
                 let mut new_config = config.clone();
@@ -2236,7 +2250,7 @@ impl EventRegistry {
                 storage::set_multisig_config(&env, &new_config);
             }
             types::ParameterChange::UpdatePlatformWallet(new_wallet) => {
-                storage::set_platform_wallet(&env, new_wallet);
+                storage::set_platform_wallet(&env, &new_wallet);
             }
             types::ParameterChange::SetPlatformFee(fee) => {
                 storage::set_platform_fee(&env, *fee);

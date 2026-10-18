@@ -48,7 +48,7 @@ mod tests {
             TicketTier {
                 name: String::from_str(env, "General"),
                 price: 1000,
-                tier_limit: max_supply as u32,
+                tier_limit: max_supply as i128,
                 current_sold: 0,
                 is_refundable: true,
                 auction_config: Vec::new(env),
@@ -94,7 +94,7 @@ mod tests {
         client.register_event(&event_args(&env, "concert_1", &organizer, 500));
 
         let capacity = client.get_event_capacity(&String::from_str(&env, "concert_1"));
-        assert_eq!(capacity, 500);
+        assert_eq!(capacity.max_supply, 500);
     }
 
     #[test]
@@ -108,11 +108,11 @@ mod tests {
         client.register_event(&event_args(&env, "large_event", &organizer, 10_000));
 
         assert_eq!(
-            client.get_event_capacity(&String::from_str(&env, "small_event")),
+            client.get_event_capacity(&String::from_str(&env, "small_event")).max_supply,
             10
         );
         assert_eq!(
-            client.get_event_capacity(&String::from_str(&env, "large_event")),
+            client.get_event_capacity(&String::from_str(&env, "large_event")).max_supply,
             10_000
         );
     }
@@ -128,7 +128,7 @@ mod tests {
         client.register_event(&event_args(&env, "unlimited_event", &organizer, 0));
 
         let capacity = client.get_event_capacity(&String::from_str(&env, "unlimited_event"));
-        assert_eq!(capacity, 0);
+        assert_eq!(capacity.max_supply, 0);
     }
 
     #[test]
