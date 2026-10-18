@@ -12,6 +12,7 @@
 
 use axum::{
     extract::{Path, Query, State},
+    http::HeaderMap,
     Json,
 };
 use chrono::Utc;
@@ -21,6 +22,7 @@ use uuid::Uuid;
 
 use crate::utils::error::AppError;
 use crate::models::dispute::{Dispute, MediationVote};
+use crate::handlers::auth::extract_auth;
 
 /// Shared state for governance handlers.
 #[derive(Clone)]
@@ -41,9 +43,9 @@ pub struct DisputeFilters {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenDisputeRequest {
     pub event_id: Uuid,
-    pub opened_by: Uuid,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,8 +125,11 @@ pub async fn get_dispute(
 /// POST /api/v1/admin/governance/disputes
 pub async fn open_dispute(
     State(state): State<GovernanceState>,
+    headers: HeaderMap,
     Json(payload): Json<OpenDisputeRequest>,
 ) -> Result<Json<Dispute>, AppError> {
+    let wallet = extract_auth(&headers)?;
+
     let event_ended: bool = sqlx::query_scalar::<_, bool>(
         "SELECT end_time < NOW() FROM events WHERE id = $1",
     )
@@ -138,6 +143,34 @@ pub async fn open_dispute(
             "Cannot open a dispute for an event that has not ended".to_string(),
         ));
     }
+
+    let owns_active_ticket = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (
+            SELECT 1
+            FROM tickets t
+            LEFT JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
+            WHERE COALESCE(t.event_id, tt.event_id) = $1
+              AND COALESCE(t.owner_wallet, t.buyer_wallet) = $2
+              AND t.status = 'active'
+        )",
+    )
+    .bind(payload.event_id)
+    .bind(&wallet)
+    .fetch_one(&state.pool)
+    .await?;
+    if !owns_active_ticket {
+        return Err(AppError::Forbidden(
+            "An active ticket for this event is required to open a dispute".to_string(),
+        ));
+    }
+
+    let opened_by = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE wallet_address = $1",
+    )
+    .bind(&wallet)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::AuthError("Authenticated wallet is not linked to a user".to_string()))?;
 
     let total_eligible: i32 = sqlx::query_scalar::<_, Option<i32>>(
         "SELECT COALESCE(SUM(total_quantity), 0) FROM ticket_tiers WHERE event_id = $1",
@@ -155,7 +188,7 @@ pub async fn open_dispute(
         "#,
     )
     .bind(payload.event_id)
-    .bind(payload.opened_by)
+    .bind(opened_by)
     .bind(total_eligible)
     .fetch_one(&state.pool)
     .await?;

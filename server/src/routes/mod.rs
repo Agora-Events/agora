@@ -120,6 +120,11 @@ use utoipa::OpenApi;
         crate::handlers::events::get_event,
         crate::handlers::events::search_events,
         crate::handlers::events::list_upcoming_events,
+        crate::handlers::tickets::get_ticket_pdf,
+        crate::handlers::webhooks::create_webhook,
+        crate::handlers::webhooks::list_webhooks,
+        crate::handlers::webhooks::delete_webhook,
+        crate::handlers::affiliates::register_affiliate,
     ),
     components(
         schemas(
@@ -129,12 +134,20 @@ use utoipa::OpenApi;
             crate::handlers::events::SearchParams,
             crate::handlers::events::GetEventParams,
             crate::handlers::events::UpcomingParams,
+            crate::handlers::webhooks::CreateWebhookRequest,
+            crate::handlers::webhooks::CreateWebhookResponse,
+            crate::handlers::webhooks::ListWebhooksParams,
+            crate::models::webhook::WebhookEndpoint,
+            crate::handlers::affiliates::AffiliateResponse,
             crate::utils::error::ApiError
         )
     ),
     tags(
         (name = "Agora API", description = "Agora Events Platform API"),
-        (name = "Events", description = "Event management endpoints")
+        (name = "Events", description = "Event management endpoints"),
+        (name = "Tickets", description = "Ticket management endpoints"),
+        (name = "Webhooks", description = "Organizer webhook endpoints"),
+        (name = "Affiliates", description = "Event affiliate registration")
     )
 )]
 pub struct ApiDoc;
