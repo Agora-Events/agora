@@ -168,6 +168,113 @@ pub async fn delete_webhook(
     }
 }
 
+/// Response payload for `POST /api/v1/webhooks/:id/test` (Issue #1604).
+#[derive(Debug, Serialize, Deserialize, ToSchema, PartialEq)]
+pub struct TestWebhookResponse {
+    pub endpoint_id: Uuid,
+    pub url: String,
+    pub event: String,
+    pub status_code: Option<u16>,
+    pub latency_ms: u64,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+/// Test a registered webhook endpoint by sending a signed Ping event payload.
+///
+/// # Endpoint
+/// POST `/api/v1/webhooks/:id/test`
+pub async fn test_webhook(
+    State(state): State<WebhookState>,
+    Path(endpoint_id): Path<Uuid>,
+) -> Response {
+    // 1. Fetch endpoint by id
+    let endpoint = match sqlx::query_as::<_, WebhookEndpoint>(
+        "SELECT * FROM webhook_endpoints WHERE id = $1",
+    )
+    .bind(endpoint_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(ep)) => ep,
+        Ok(None) => {
+            return AppError::NotFound(format!("Webhook endpoint '{}' not found", endpoint_id))
+                .into_response();
+        }
+        Err(e) => return AppError::DatabaseError(e).into_response(),
+    };
+
+    if !endpoint.is_active {
+        return AppError::ValidationError("Cannot test an inactive webhook endpoint".to_string())
+            .into_response();
+    }
+
+    // 2. Build test Ping payload
+    let ping_payload = serde_json::json!({
+        "id": Uuid::new_v4(),
+        "event": "Ping",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "data": {
+            "endpoint_id": endpoint.id,
+            "message": "Agora webhook connectivity test ping",
+        }
+    });
+
+    let body = serde_json::to_vec(&ping_payload).unwrap_or_else(|_| b"{}".to_vec());
+    let signature = crate::services::webhook_dispatcher::sign_payload(&endpoint.secret, &body);
+
+    // 3. Dispatch HTTP POST to the target URL with timing and timeout
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let start = std::time::Instant::now();
+    let dispatch_result = client
+        .post(&endpoint.url)
+        .header("Content-Type", "application/json")
+        .header("X-Agora-Signature", &signature)
+        .header("X-Agora-Event", "Ping")
+        .body(body)
+        .send()
+        .await;
+    let latency_ms = start.elapsed().as_millis() as u64;
+
+    let response = match dispatch_result {
+        Ok(res) => {
+            let status = res.status();
+            let status_u16 = status.as_u16();
+            let is_success = status.is_success();
+            let error_msg = if !is_success {
+                Some(format!("Target server returned HTTP {}", status_u16))
+            } else {
+                None
+            };
+
+            TestWebhookResponse {
+                endpoint_id: endpoint.id,
+                url: endpoint.url,
+                event: "Ping".to_string(),
+                status_code: Some(status_u16),
+                latency_ms,
+                success: is_success,
+                error: error_msg,
+            }
+        }
+        Err(err) => TestWebhookResponse {
+            endpoint_id: endpoint.id,
+            url: endpoint.url,
+            event: "Ping".to_string(),
+            status_code: None,
+            latency_ms,
+            success: false,
+            error: Some(err.to_string()),
+        },
+    };
+
+    success(response, "Webhook test executed").into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +326,23 @@ mod tests {
             events: vec![],
         };
         assert!(validate_create_webhook(&req).is_err());
+    }
+
+    #[test]
+    fn test_webhook_response_serialization() {
+        let resp = TestWebhookResponse {
+            endpoint_id: Uuid::nil(),
+            url: "https://example.com/webhook".to_string(),
+            event: "Ping".to_string(),
+            status_code: Some(200),
+            latency_ms: 45,
+            success: true,
+            error: None,
+        };
+        let json = serde_json::to_value(&resp).expect("serializes");
+        assert_eq!(json["event"], "Ping");
+        assert_eq!(json["status_code"], 200);
+        assert_eq!(json["latency_ms"], 45);
+        assert_eq!(json["success"], true);
     }
 }
