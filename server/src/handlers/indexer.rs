@@ -21,7 +21,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::handlers::ws::PurchaseBroadcaster;
-use crate::services::indexer::{run_replay, IndexerConfig, MAX_REPLAY_LEDGERS};
+use crate::models::blockchain_checkpoint::CheckpointStore;
+use crate::services::indexer::{run_replay, IndexerConfig, CHAIN_KEY, MAX_REPLAY_LEDGERS};
 use crate::utils::error::ApiError;
 
 /// Application state for the admin indexer routes.
@@ -48,6 +49,92 @@ pub struct ReplayAccepted {
     pub task_id: String,
     pub start_ledger: u32,
     pub end_ledger: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IndexerHealthResponse {
+    pub checkpoint_ledger_sequence: i64,
+    pub latest_ledger_sequence: i64,
+    pub block_lag: i64,
+}
+
+/// Return the persisted checkpoint and latest reachable upstream ledger.
+pub async fn indexer_health(State(pool): State<PgPool>) -> Result<Response, ApiError> {
+    let config = IndexerConfig::from_env();
+    if config.rpc_urls.is_empty() {
+        return Err(ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            "Indexer is not configured with a Soroban RPC URL",
+        ));
+    }
+
+    let checkpoint_ledger_sequence = CheckpointStore::load(&pool, CHAIN_KEY)
+        .await
+        .map_err(|error| {
+            tracing::error!(?error, "Failed to load indexer checkpoint");
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load indexer checkpoint",
+            )
+        })?
+        .map(|checkpoint| checkpoint.ledger_sequence)
+        .unwrap_or_default();
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|error| {
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to initialize RPC client: {error}"),
+            )
+        })?;
+
+    let mut latest_ledger_sequence = None;
+    for rpc_url in &config.rpc_urls {
+        let response = client
+            .post(rpc_url)
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": "indexer-health",
+                "method": "getLatestLedger",
+            }))
+            .send()
+            .await;
+        let Ok(response) = response else {
+            continue;
+        };
+        if !response.status().is_success() {
+            continue;
+        }
+        let Ok(payload) = response.json::<serde_json::Value>().await else {
+            continue;
+        };
+        if let Some(sequence) = payload
+            .get("result")
+            .and_then(|result| result.get("sequence"))
+            .and_then(serde_json::Value::as_i64)
+        {
+            latest_ledger_sequence = Some(sequence);
+            break;
+        }
+    }
+
+    let latest_ledger_sequence = latest_ledger_sequence.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            "Unable to retrieve latest ledger from configured Soroban RPC endpoints",
+        )
+    })?;
+
+    Ok(Json(IndexerHealthResponse {
+        checkpoint_ledger_sequence,
+        latest_ledger_sequence,
+        block_lag: latest_ledger_sequence
+            .saturating_sub(checkpoint_ledger_sequence)
+            .max(0),
+    })
+    .into_response())
 }
 
 /// Kick off a background backfill of `[start_ledger, end_ledger]`.
