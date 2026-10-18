@@ -17,6 +17,12 @@ import { rpc, Networks } from "@stellar/stellar-sdk";
 const SOROBAN_RPC_URL =
   process.env.STELLAR_RPC_URL ?? "https://soroban-testnet.stellar.org";
 
+/**
+ * Stellar network passphrase configured from the environment or defaulting to Testnet.
+ * Used for signing transactions and identifying the target network.
+ *
+ * @type {string}
+ */
 export const STELLAR_NETWORK_PASSPHRASE: string =
   process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET;
 
@@ -43,8 +49,15 @@ const SERVER_OPTS: rpc.RpcServer.Options = {
 // ---------------------------------------------------------------------------
 
 /**
- * Creates a new `rpc.Server` instance targeting the configured Soroban RPC
- * endpoint.  Pass a custom `url` to override the default (useful in tests).
+ * Creates and returns a new `rpc.Server` instance targeting the configured Soroban RPC endpoint.
+ *
+ * @param {string} [url=SOROBAN_RPC_URL] - The Soroban RPC endpoint URL. Defaults to the environment-configured URL or Testnet.
+ * @returns {rpc.Server} A configured Soroban RPC Server instance with predefined timeout and security settings.
+ *
+ * @example
+ * ```ts
+ * const customServer = createSorobanRpcServer("https://soroban-testnet.stellar.org");
+ * ```
  */
 export function createSorobanRpcServer(url: string = SOROBAN_RPC_URL): rpc.Server {
   return new rpc.Server(url, SERVER_OPTS);
@@ -56,6 +69,17 @@ export function createSorobanRpcServer(url: string = SOROBAN_RPC_URL): rpc.Serve
  */
 let _server: rpc.Server | null = null;
 
+/**
+ * Retrieves the shared singleton `rpc.Server` instance, lazily instantiating it if necessary.
+ *
+ * @returns {rpc.Server} The shared Soroban RPC Server singleton instance.
+ *
+ * @example
+ * ```ts
+ * const server = getSorobanRpcServer();
+ * const health = await server.getHealth();
+ * ```
+ */
 export function getSorobanRpcServer(): rpc.Server {
   if (!_server) {
     _server = createSorobanRpcServer();
@@ -64,8 +88,19 @@ export function getSorobanRpcServer(): rpc.Server {
 }
 
 /**
- * Reset the singleton — used in tests to force fresh instantiation.
+ * Resets the cached singleton `rpc.Server` instance to `null`.
+ * Primarily used in test suites to force fresh instantiation between tests.
+ *
+ * @returns {void}
+ *
+ * @example
+ * ```ts
+ * beforeEach(() => {
+ *   resetSorobanRpcServer();
+ * });
+ * ```
  */
 export function resetSorobanRpcServer(): void {
   _server = null;
 }
+
