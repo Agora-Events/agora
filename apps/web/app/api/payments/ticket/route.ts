@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { Keypair } from "@stellar/stellar-sdk";
 import { withErrorHandler } from "@/lib/api-handler";
 import { throwApiError, ApiError } from "@/lib/api-errors";
+import { getClientIp, rateLimitHeaders, ticketPurchaseRateLimiter } from "@/lib/rate-limit";
 
 type TicketRequestBody = {
   eventId?: string;
@@ -15,6 +16,15 @@ type TicketRequestBody = {
 };
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
+  // Per-IP rate limit before any parsing or minting work (Issue #1586).
+  const rateLimit = ticketPurchaseRateLimiter.check(getClientIp(request));
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many purchase attempts. Please wait and try again.", code: 429 },
+      { status: 429, headers: rateLimitHeaders(rateLimit) },
+    );
+  }
+
   let payload: TicketRequestBody;
   try {
     payload = await request.json();
