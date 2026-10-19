@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "contracts/ticket_payment/",
   "contracts/event_registry/",
+  "contracts/pro_subscription/",
 ]
 
 [workspace.dependencies]

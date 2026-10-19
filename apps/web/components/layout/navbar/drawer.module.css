@@ -1,0 +1,17 @@
+/* Mobile drawer slide-in/out animation */
+.drawer {
+  transform: translateX(-100%);
+  transition: transform 250ms ease-in-out;
+}
+
+.drawerOpen {
+  transform: translateX(0);
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .drawer,
+  .drawerOpen {
+    transition: none;
+  }
+}

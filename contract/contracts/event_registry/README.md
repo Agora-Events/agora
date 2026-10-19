@@ -52,7 +52,7 @@ The Event Registry contract provides a comprehensive decentralized event managem
 - `get_event_payment_info(event_id)` - Get payment details and fee structure
 - `update_event_status(event_id, is_active)` - Activate or deactivate an event
 - `cancel_event(event_id)` - Cancel an event (irreversible)
-- `archive_event(event_id)` - Archive a completed/cancelled event
+- `archive_event(event_id)` - Archive a completed event and reclaim storage fees (see [Garbage Collection](#garbage-collection))
 - `update_metadata(event_id, new_metadata_cid)` - Update event metadata
 
 ### Series Operations
@@ -130,10 +130,30 @@ The contract emits events for all significant state changes:
 - `FeeUpdated` - Platform fee change
 - `CustomFeeSet` - Custom fee configuration
 - `InventoryIncremented` - Ticket sale
-- `InventoryDecremented` - Ticket refund
+- `InventoryDecremented` - Ticket refund (inventory counter only)
+- `TicketRefunded` - Individual ticket refund with full details (amount, recipient, event, ticket ID)
 - `GoalMet` - Sales target achieved
 - `SeriesPassIssued` - Season pass creation
 - And many more for staking, scanner auth, loyalty, etc.
+
+### TicketRefunded Event Details
+
+The `TicketRefunded` event is emitted whenever a single ticket is refunded. This event carries complete information required by the Soroban indexer to maintain an accurate off-chain ledger:
+
+**Topics:** `(AgoraEvent::TicketRefunded,)`
+
+**Event Structure:**
+```rust
+pub struct TicketRefundedEvent {
+    pub ticket_id: String,           // Unique identifier of the refunded ticket
+    pub event_id: String,            // Event the ticket was for
+    pub recipient_address: Address,  // Guest wallet receiving the refund
+    pub refund_amount: i128,         // Amount refunded in stroops (1 XLM = 10,000,000 stroops)
+    pub timestamp: u64,              // Ledger timestamp when refund was processed
+}
+```
+
+**Example:** When a guest requests a refund, the ticket payment contract calls the registry's `decrement_inventory`, which emits this event carrying all refund details. The indexer reads this event and updates the off-chain ledger immediately, ensuring it stays in sync with on-chain state.
 
 ## Development
 
@@ -215,9 +235,75 @@ The contract returns `EventRegistryError` enum variants for various failure cond
 - `OrganizerBlacklisted` - Organizer is blacklisted
 - `InvalidFeePercent` - Fee exceeds 100%
 - `MaxSupplyExceeded` - Ticket limit reached
-- `TierSupplyExceeded` - Tier limit reached
+- `TierSoldOut` - Tier limit reached
 - `EventInactive` - Event is not active
+- `EventNotEnded` - Event end_time not set (required for archival)
+- `InvalidDeadline` - Archival attempted before 30-day grace period
 - And many more...
+
+## Garbage Collection
+
+### Overview
+
+The Event Registry includes a garbage collection feature that allows organizers to archive old events and reclaim storage fees. This feature is designed to reduce long-term storage costs while preserving essential historical data.
+
+### How It Works
+
+When an event is archived:
+1. **Full EventInfo is deleted** - All event data including tiers, milestones, tags, and configuration (~3-10 KB)
+2. **Minimal EventReceipt is created** - Only essential data preserved (~200-300 bytes)
+3. **Storage fees are reclaimed** - Soroban automatically returns storage deposits
+4. **90-95% storage reduction** - Significant cost savings for organizers
+
+### Requirements
+
+To archive an event, ALL of the following must be true:
+
+| Requirement | Description |
+|-------------|-------------|
+| **Organizer Authorization** | Only the event organizer can archive |
+| **Event Inactive** | `is_active` must be `false` |
+| **End Time Set** | `end_time` must be greater than 0 |
+| **30-Day Grace Period** | At least 30 days (2,592,000 seconds) must have passed since `end_time` |
+
+### Usage
+
+```rust
+// 1. Deactivate event after it concludes
+client.update_event_status(&event_id, &false);
+
+// 2. Wait 30 days after end_time
+
+// 3. Archive the event
+client.archive_event(&event_id)?;
+
+// 4. Access receipt
+let receipts = client.get_organizer_receipts(&organizer);
+```
+
+### Storage Savings
+
+For an organizer with 100 archived events:
+- **Before:** 300-1000 KB
+- **After:** 20-30 KB  
+- **Savings:** ~97%
+
+### Documentation
+
+For complete documentation, see:
+- **[GARBAGE_COLLECTION.md](./GARBAGE_COLLECTION.md)** - Complete feature guide
+- **[ARCHIVE_QUICK_REFERENCE.md](./ARCHIVE_QUICK_REFERENCE.md)** - Quick reference
+- **[ARCHIVE_FLOW_DIAGRAM.md](./ARCHIVE_FLOW_DIAGRAM.md)** - Visual flow diagrams
+
+### Important Notes
+
+⚠️ **Archival is permanent and cannot be undone**
+
+⚠️ **30-day grace period is mandatory**
+
+✅ **Storage fees are automatically reclaimed**
+
+✅ **Receipts can be queried via `get_organizer_receipts()`**
 
 ## License
 

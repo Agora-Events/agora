@@ -1,0 +1,89 @@
+openapi: 3.0.3
+info:
+  title: Agora Events API
+  description: API documentation for Agora Events platform including Auth, Events management, and Payments.
+  version: 1.0.0
+servers:
+  - url: /api
+    description: Base API path
+paths:
+  /auth/email:
+    post:
+      summary: Authenticate via Email
+      tags: [Auth]
+      responses:
+        '200':
+          description: Successful authentication
+  /auth/google:
+    get:
+      summary: Google OAuth Login
+      tags: [Auth]
+      responses:
+        '302':
+          description: Redirect to Google
+  /auth/apple:
+    get:
+      summary: Apple OAuth Login
+      tags: [Auth]
+      responses:
+        '302':
+          description: Redirect to Apple
+  /events:
+    get:
+      summary: List all events
+      tags: [Events]
+      responses:
+        '200':
+          description: A list of events
+    post:
+      summary: Create a new event
+      tags: [Events]
+      security:
+        - BearerAuth: []
+      responses:
+        '201':
+          description: Event created
+  /events/discover:
+    get:
+      summary: Discover trending events
+      tags: [Events]
+      responses:
+        '200':
+          description: Trending events list
+  /events/following:
+    get:
+      summary: Events from followed organizers
+      tags: [Events]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of events
+  /events/{id}:
+    get:
+      summary: Get event details by ID
+      tags: [Events]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event details
+  /payments/ticket:
+    post:
+      summary: Process ticket payment
+      tags: [Payments]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Payment successful
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

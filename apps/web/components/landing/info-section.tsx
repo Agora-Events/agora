@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 
 export function InfoSection() {
   return (
-    <section className="w-full bg-[#060606] pt-[60px] md:pt-[102px] pb-24 text-white select-none overflow-hidden">
+    <section className="w-full bg-ink pt-[60px] md:pt-[102px] pb-24 text-white select-none overflow-hidden">
       <div className="w-full max-w-[1240px] mx-auto px-4 flex flex-col items-center">
         {/* --- HOW AGORA WORKS --- */}
 
@@ -44,7 +44,7 @@ export function InfoSection() {
         <div className="mb-24 md:mb-48 -mt-10 md:-mt-10 relative z-10">
           <Button
             style={{ width: "215px", height: "56px" }}
-            backgroundColor="bg-[#FDDA23]"
+            backgroundColor="bg-accent"
             textColor="text-black"
             shadowColor="white"
           >

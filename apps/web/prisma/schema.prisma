@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator dbml {
+  provider = "prisma-dbml-generator"
+  output   = "../../../docs/architecture"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+model Event {
+  id              String           @id @default(uuid())
+  title           String
+  slug            String           @unique
+  description     String           @default("")
+  startsAt        DateTime
+  timezone        String   @default("UTC")
+  location        String
+  /// Optional WGS84 latitude for map discovery (-90 to 90).
+  latitude        Float?
+  /// Optional WGS84 longitude for map discovery (-180 to 180).
+  longitude       Float?
+  category        String
+  organizerName   String
+  organizerWallet String
+  imageUrl        String           @default("/images/event1.png")
+  ticketPrice     Float            @default(0)
+  totalTickets    Int              @default(100)
+  mintedTickets   Int              @default(0)
+  followersOnly   Boolean          @default(false)
+  hostEmail       String
+  status          EventStatus      @default(PUBLISHED)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  tickets         Ticket[]
+  analyticsEvents AnalyticsEvent[]
+
+  /// Composite index for category-browsing queries ordered by start date.
+  /// Supports: SELECT * FROM "Event" WHERE category = $1 ORDER BY "startsAt" ASC/DESC
+  @@index([category, startsAt])
+}
+
+model Ticket {
+  id          String   @id @default(uuid())
+  stellarId   String?  @unique
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id])
+  buyerWallet String   // The person who paid for the ticket
+  ownerWallet String   // The person who owns/receives the ticket (can be different from buyer)
+  quantity    Int      @default(1)
+  utmSource   String?  @db.VarChar(255)
+  utmMedium   String?  @db.VarChar(255)
+  utmCampaign String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  /// Single-column index to efficiently look up all tickets belonging to a wallet address.
+  @@index([ownerWallet])
+  /// Composite index to support "newest first" wallet queries efficiently.
+  /// Supports: SELECT * FROM "Ticket" WHERE "ownerWallet" = $1 ORDER BY "createdAt" DESC
+  @@index([ownerWallet, createdAt])
+}
+
+/// Organizer brand profile keyed by Stellar wallet address.
+/// Issue #486: Organizer Profile Management
+model OrganizerProfile {
+  address     String   @id
+  displayName String   @db.VarChar(50)
+  bio         String?  @db.VarChar(500)
+  avatarUrl   String?
+  socials     Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type      String   @db.VarChar(32)
+  createdAt DateTime @default(now())
+
+  @@index([eventId, type, createdAt])
+}
+
+/// Custodial wallets created for email-only (guest) purchases.
+/// Private keys are encrypted client-side using a key derived from the
+/// purchaser's email + a server-side secret and stored only in ciphertext.
+/// The plaintext private key is never persisted.
+model CustodialWallet {
+  id                    String   @id @default(uuid())
+  email                 String   @unique
+  publicKey             String
+  encryptedPrivateKey   String
+  createdAt             DateTime @default(now())
+
+  @@index([email])
+}

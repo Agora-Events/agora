@@ -1,26 +1,11 @@
 use super::*;
 use crate::error::EventRegistryError;
 use crate::types::EventStatus;
-use crate::types::{EventInfo, EventReceipt, EventRegistrationArgs, TicketTier};
+use crate::types::{EventInfo, EventRegistrationArgs, TicketTier};
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, Events, Ledger},
     Address, Env, Map, String,
 };
-
-fn test_payment_address(env: &Env) -> Address {
-    Address::from_string(&String::from_str(
-        env,
-        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
-    ))
-}
-
-#[test]
-fn test_get_version() {
-    let env = Env::default();
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-    assert_eq!(client.get_version(), 1);
-}
 
 #[test]
 fn test_register_and_get_series() {
@@ -44,9 +29,8 @@ fn test_register_and_get_series() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id1.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
+        payment_address: Address::generate(&env),
         metadata_cid: metadata_cid.clone(),
         max_supply: 100,
         milestone_plan: None,
@@ -57,13 +41,11 @@ fn test_register_and_get_series() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
     client.register_event(&EventRegistrationArgs {
         event_id: event_id2.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
+        payment_address: Address::generate(&env),
         metadata_cid: metadata_cid.clone(),
         max_supply: 100,
         milestone_plan: None,
@@ -74,7 +56,6 @@ fn test_register_and_get_series() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     // Register a series
@@ -113,9 +94,8 @@ fn test_issue_and_use_series_pass() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
+        payment_address: Address::generate(&env),
         metadata_cid: metadata_cid.clone(),
         max_supply: 100,
         milestone_plan: None,
@@ -126,7 +106,6 @@ fn test_issue_and_use_series_pass() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
     let series_id = String::from_str(&env, "series_1");
     let event_ids = soroban_sdk::vec![&env, event_id.clone()];
@@ -194,6 +173,32 @@ fn test_initialization_invalid_fee() {
 
     let result = client.try_initialize(&admin, &platform_wallet, &10001, &usdc_token);
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
+}
+
+#[test]
+fn test_initialization_zero_fee_is_allowed() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &0, &usdc_token);
+    assert_eq!(client.get_platform_fee(), 0);
+}
+
+#[test]
+fn test_initialization_explicit_fee_is_stored() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    assert_eq!(client.get_platform_fee(), 500);
 }
 
 #[test]
@@ -271,13 +276,12 @@ fn test_storage_operations() {
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
     let organizer = Address::generate(&env);
-    let payment_address = test_payment_address(&env);
+    let payment_address = Address::generate(&env);
     let event_id = String::from_str(&env, "event_123");
 
     let tiers = Map::new(&env);
     let event_info = EventInfo {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_address.clone(),
         platform_fee_percent: 5,
@@ -302,7 +306,6 @@ fn test_storage_operations() {
         goal_met: false,
         custom_fee_bps: None,
         banner_cid: None,
-        tags: None,
     };
 
     client.store_event(&event_info);
@@ -324,151 +327,16 @@ fn test_storage_operations() {
 }
 
 #[test]
-fn test_get_total_tickets_sold_uses_event_current_supply() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let organizer = Address::generate(&env);
-    let payment_address = test_payment_address(&env);
-    let event_id = String::from_str(&env, "sold_event");
-
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        String::from_str(&env, "general"),
-        TicketTier {
-            name: String::from_str(&env, "General"),
-            price: 1_000,
-            tier_limit: 100,
-            current_sold: 3,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-    tiers.set(
-        String::from_str(&env, "vip"),
-        TicketTier {
-            name: String::from_str(&env, "VIP"),
-            price: 2_000,
-            tier_limit: 50,
-            current_sold: 4,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-
-    client.store_event(&EventInfo {
-        event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer,
-        payment_address,
-        platform_fee_percent: 500,
-        is_active: true,
-        status: EventStatus::Active,
-        created_at: env.ledger().timestamp(),
-        metadata_cid: String::from_str(
-            &env,
-            "bafkreifh22222222222222222222222222222222222222222222222222",
-        ),
-        max_supply: 150,
-        current_supply: 9,
-        milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        is_postponed: false,
-        grace_period_end: 0,
-        min_sales_target: 0,
-        target_deadline: 0,
-        goal_met: false,
-        custom_fee_bps: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    assert_eq!(client.get_total_tickets_sold(&event_id), 9);
-}
-
-#[test]
-fn test_get_active_events_count_tracks_status_changes() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let metadata_cid = String::from_str(
-        &env,
-        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-    );
-    let tiers = Map::new(&env);
-
-    let event_1 = String::from_str(&env, "active_count_1");
-    let event_2 = String::from_str(&env, "active_count_2");
-    let event_3 = String::from_str(&env, "active_count_3");
-
-    for event_id in [event_1.clone(), event_2.clone(), event_3.clone()] {
-        client.register_event(&EventRegistrationArgs {
-            event_id: event_id.clone(),
-            name: String::from_str(&env, "Test Event"),
-            organizer_address: organizer.clone(),
-            payment_address: test_payment_address(&env),
-            metadata_cid: metadata_cid.clone(),
-            max_supply: 100,
-            milestone_plan: None,
-            tiers: tiers.clone(),
-            refund_deadline: 0,
-            restocking_fee: 0,
-            resale_cap_bps: None,
-            min_sales_target: None,
-            target_deadline: None,
-            banner_cid: None,
-            tags: None,
-        });
-    }
-
-    assert_eq!(client.get_active_events_count(), 3);
-
-    client.update_event_status(&event_1, &false);
-    assert_eq!(client.get_active_events_count(), 2);
-
-    client.cancel_event(&event_2);
-    assert_eq!(client.get_active_events_count(), 1);
-
-    client.update_event_status(&event_1, &true);
-    assert_eq!(client.get_active_events_count(), 2);
-
-    client.update_event_status(&event_3, &false);
-    assert_eq!(client.get_active_events_count(), 1);
-
-    client.archive_event(&event_3);
-    assert_eq!(client.get_active_events_count(), 1);
-}
-
-#[test]
 fn test_organizer_events_list() {
     let env = Env::default();
     env.mock_all_auths();
     let organizer = Address::generate(&env);
-    let payment_address = test_payment_address(&env);
+    let payment_address = Address::generate(&env);
 
     let tiers = Map::new(&env);
 
     let event_1 = EventInfo {
         event_id: String::from_str(&env, "e1"),
-        name: String::from_str(&env, "Test Event 1"),
         organizer_address: organizer.clone(),
         payment_address: payment_address.clone(),
         platform_fee_percent: 5,
@@ -493,12 +361,10 @@ fn test_organizer_events_list() {
         goal_met: false,
         custom_fee_bps: None,
         banner_cid: None,
-        tags: None,
     };
 
     let event_2 = EventInfo {
         event_id: String::from_str(&env, "e2"),
-        name: String::from_str(&env, "Test Event 2"),
         organizer_address: organizer.clone(),
         payment_address: payment_address.clone(),
         platform_fee_percent: 5,
@@ -523,7 +389,6 @@ fn test_organizer_events_list() {
         goal_met: false,
         custom_fee_bps: None,
         banner_cid: None,
-        tags: None,
     };
 
     let contract_id = env.register(EventRegistry, ());
@@ -532,44 +397,55 @@ fn test_organizer_events_list() {
     client.store_event(&event_1);
     client.store_event(&event_2);
 
-    let organizer_events = client.get_organizer_events(&organizer);
+    let organizer_events = client.get_organizer_events(&organizer, &organizer);
     assert_eq!(organizer_events.len(), 2);
     assert_eq!(organizer_events.get(0).unwrap(), event_1.event_id);
     assert_eq!(organizer_events.get(1).unwrap(), event_2.event_id);
 }
 
 #[test]
-fn test_get_organizer_receipts_returns_archived_receipts() {
+fn test_organizer_events_shard_boundary() {
     let env = Env::default();
     env.mock_all_auths();
+    let organizer = Address::generate(&env);
+    let payment_address = Address::generate(&env);
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
 
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let other_organizer = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    for i in 0..51 {
+        let event_id = String::from_str(&env, format!("event_{}", i).as_str());
+        let mut tiers = Map::new(&env);
+        tiers.set(
+            String::from_str(&env, "general"),
+            TicketTier {
+                name: String::from_str(&env, "General"),
+                price: 1000,
+                tier_limit: 100,
+                current_sold: 0,
+                is_refundable: true,
+                auction_config: soroban_sdk::vec![&env],
+                loyalty_multiplier: 1,
+                max_per_user: 0,
+            },
+        );
 
-    let make_event =
-        |event_id: &str, organizer_address: &Address, current_supply: i128| EventInfo {
-            event_id: String::from_str(&env, event_id),
+        let event_info = EventInfo {
+            event_id: event_id.clone(),
             name: String::from_str(&env, "Test Event"),
-            organizer_address: organizer_address.clone(),
-            payment_address: test_payment_address(&env),
-            platform_fee_percent: 500,
-            is_active: false,
-            status: EventStatus::Inactive,
-            created_at: env.ledger().timestamp(),
+            organizer_address: organizer.clone(),
+            payment_address: payment_address.clone(),
+            platform_fee_percent: 5,
+            is_active: true,
+            status: EventStatus::Active,
+            created_at: i as u64,
             metadata_cid: String::from_str(
                 &env,
                 "bafkreifh22222222222222222222222222222222222222222222222222",
             ),
-            max_supply: 100,
-            current_supply,
+            max_supply: 0,
+            current_supply: 0,
             milestone_plan: None,
-            tiers: Map::new(&env),
+            tiers,
             refund_deadline: 0,
             restocking_fee: 0,
             resale_cap_bps: None,
@@ -581,52 +457,121 @@ fn test_get_organizer_receipts_returns_archived_receipts() {
             custom_fee_bps: None,
             banner_cid: None,
             tags: None,
+            category_ids: None,
+            start_time: 0,
+            is_private: false,
+            end_time: 0,
+            transfer_lock_duration: 0,
+            accepted_tokens: soroban_sdk::vec![&env],
+            use_global_whitelist: true,
+            feedback_cid: None,
+            cancellation_reason: None,
+            referral_rate_bps: 0,
         };
 
-    let event_id_1 = String::from_str(&env, "archived_1");
-    let event_id_2 = String::from_str(&env, "archived_2");
-    let other_event_id = String::from_str(&env, "other_archived");
+        client.store_event(&event_info);
+    }
 
-    client.store_event(&make_event("archived_1", &organizer, 12));
-    client.store_event(&make_event("archived_2", &organizer, 4));
-    client.store_event(&make_event("other_archived", &other_organizer, 8));
+    let organizer_events = client.get_organizer_events(&organizer, &organizer);
+    assert_eq!(organizer_events.len(), 51);
+    for i in 0..51 {
+        assert_eq!(organizer_events.get(i).unwrap(), String::from_str(&env, format!("event_{}", i).as_str()));
+    }
+
+    let shard_0 = storage::get_organizer_event_shard(&env, &organizer, 0);
+    let shard_1 = storage::get_organizer_event_shard(&env, &organizer, 1);
+    assert_eq!(shard_0.len(), 50);
+    assert_eq!(shard_1.len(), 1);
+}
+
+#[test]
+fn test_postpone_event_grace_period_in_past() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "expired_grace_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
 
     env.ledger().with_mut(|li| li.timestamp = 1_000);
-    client.archive_event(&event_id_1);
+    let grace_period_end = 500u64;
 
-    env.ledger().with_mut(|li| li.timestamp = 2_000);
-    client.archive_event(&other_event_id);
+    let result = client.try_postpone_event(&event_id, &1500u64, &grace_period_end);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidGracePeriod)));
+}
 
-    env.ledger().with_mut(|li| li.timestamp = 3_000);
-    client.archive_event(&event_id_2);
+#[test]
+fn test_postpone_cancelled_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
 
-    assert!(client.get_event(&event_id_1).is_none());
-    assert!(client.get_event(&event_id_2).is_none());
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
-    let receipts = client.get_organizer_receipts(&organizer);
-    assert_eq!(receipts.len(), 2);
-    assert_eq!(
-        receipts.get(0).unwrap(),
-        EventReceipt {
-            event_id: event_id_1.clone(),
-            organizer_address: organizer.clone(),
-            total_sold: 12,
-            archived_at: 1_000,
-        }
+    let event_id = String::from_str(&env, "cancelled_postpone_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    assert_eq!(
-        receipts.get(1).unwrap(),
-        EventReceipt {
-            event_id: event_id_2.clone(),
-            organizer_address: organizer.clone(),
-            total_sold: 4,
-            archived_at: 3_000,
-        }
-    );
+    let tiers = Map::new(&env);
 
-    let other_receipts = client.get_organizer_receipts(&other_organizer);
-    assert_eq!(other_receipts.len(), 1);
-    assert_eq!(other_receipts.get(0).unwrap().event_id, other_event_id);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    client.cancel_event(&event_id);
+
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let grace_period_end = 2_000u64;
+
+    let result = client.try_postpone_event(&event_id, &1500u64, &grace_period_end);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 }
 
 #[test]
@@ -637,7 +582,7 @@ fn test_register_event_success() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     env.mock_all_auths();
@@ -665,7 +610,6 @@ fn test_register_event_success() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr.clone(),
         metadata_cid,
@@ -678,7 +622,6 @@ fn test_register_event_success() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
@@ -694,230 +637,6 @@ fn test_register_event_success() {
 }
 
 #[test]
-fn test_register_event_name_trimming() {
-    let env = Env::default();
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let payment_addr = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-
-    env.mock_all_auths();
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let event_id = String::from_str(&env, "event_trim_test");
-    let metadata_cid = String::from_str(
-        &env,
-        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-    );
-
-    // Register with intentionally messy name (leading/trailing whitespace)
-    let messy_name = String::from_str(&env, "  Summer Fest 2025  ");
-    client.register_event(&EventRegistrationArgs {
-        event_id: event_id.clone(),
-        name: messy_name,
-        organizer_address: organizer,
-        payment_address: payment_addr,
-        metadata_cid,
-        max_supply: 100,
-        milestone_plan: None,
-        tiers: Map::new(&env),
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    let stored = client.get_event(&event_id).unwrap();
-    // Name should be trimmed of leading and trailing whitespace
-    assert_eq!(stored.name, String::from_str(&env, "Summer Fest 2025"));
-}
-
-#[test]
-fn test_register_event_invalid_target_deadline() {
-    let env = Env::default();
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
-    let platform_wallet = Address::generate(&env);
-
-    env.mock_all_auths();
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let event_id = String::from_str(&env, "event_deadline");
-    let metadata_cid = String::from_str(
-        &env,
-        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-    );
-
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        String::from_str(&env, "general"),
-        TicketTier {
-            name: String::from_str(&env, "General"),
-            price: 5000000,
-            tier_limit: 100,
-            current_sold: 0,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-
-    // Advance ledger timestamp so `now - 1` does not underflow
-    env.ledger().with_mut(|li| {
-        li.timestamp = 1000;
-    });
-    let now = env.ledger().timestamp();
-
-    // Past deadline should fail
-    let result = client.try_register_event(&EventRegistrationArgs {
-        event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer.clone(),
-        payment_address: payment_addr.clone(),
-        metadata_cid: metadata_cid.clone(),
-        max_supply: 100,
-        milestone_plan: None,
-        tiers: tiers.clone(),
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: Some(now - 1),
-        banner_cid: None,
-        tags: None,
-    });
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
-
-    // Present deadline should fail
-    let result = client.try_register_event(&EventRegistrationArgs {
-        event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer.clone(),
-        payment_address: payment_addr.clone(),
-        metadata_cid: metadata_cid.clone(),
-        max_supply: 100,
-        milestone_plan: None,
-        tiers: tiers.clone(),
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: Some(now),
-        banner_cid: None,
-        tags: None,
-    });
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidTargetDeadline)));
-
-    // Future deadline should succeed
-    client.register_event(&EventRegistrationArgs {
-        event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer,
-        payment_address: payment_addr,
-        metadata_cid,
-        max_supply: 100,
-        milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: Some(now + 100),
-        banner_cid: None,
-        tags: None,
-    });
-
-    let stored = client.get_event(&event_id).unwrap();
-    assert_eq!(stored.target_deadline, now + 100);
-}
-
-#[test]
-fn test_register_event_rejects_contract_as_organizer() {
-    let env = Env::default();
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    env.mock_all_auths();
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let result = client.try_register_event(&EventRegistrationArgs {
-        event_id: String::from_str(&env, "event_bad_org_contract"),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: client.address.clone(),
-        payment_address: test_payment_address(&env),
-        metadata_cid: String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
-        max_supply: 100,
-        milestone_plan: None,
-        tiers: Map::new(&env),
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
-}
-
-#[test]
-fn test_register_event_rejects_zero_organizer_address() {
-    let env = Env::default();
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    env.mock_all_auths();
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let zero_organizer = Address::from_string(&String::from_str(
-        &env,
-        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
-    ));
-
-    let result = client.try_register_event(&EventRegistrationArgs {
-        event_id: String::from_str(&env, "event_bad_org_zero"),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: zero_organizer,
-        payment_address: test_payment_address(&env),
-        metadata_cid: String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
-        max_supply: 100,
-        milestone_plan: None,
-        tiers: Map::new(&env),
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidAddress)));
-}
-
-#[test]
 fn test_register_event_unlimited_supply() {
     let env = Env::default();
     let contract_id = env.register(EventRegistry, ());
@@ -925,7 +644,7 @@ fn test_register_event_unlimited_supply() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     env.mock_all_auths();
@@ -940,7 +659,6 @@ fn test_register_event_unlimited_supply() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -953,7 +671,6 @@ fn test_register_event_unlimited_supply() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -969,7 +686,7 @@ fn test_register_duplicate_event_fails() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     env.mock_all_auths();
 
@@ -984,7 +701,6 @@ fn test_register_duplicate_event_fails() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr.clone(),
         metadata_cid: metadata_cid.clone(),
@@ -997,12 +713,10 @@ fn test_register_duplicate_event_fails() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id,
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1015,7 +729,6 @@ fn test_register_duplicate_event_fails() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyExists)));
 }
@@ -1028,7 +741,7 @@ fn test_register_event_invalid_metadata_cid_formats() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     env.mock_all_auths();
 
@@ -1039,7 +752,6 @@ fn test_register_event_invalid_metadata_cid_formats() {
     let short_cid = String::from_str(&env, "bafy");
     let short_result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "event_short_cid"),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr.clone(),
         metadata_cid: short_cid,
@@ -1052,7 +764,6 @@ fn test_register_event_invalid_metadata_cid_formats() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
     assert_eq!(
         short_result,
@@ -1065,7 +776,6 @@ fn test_register_event_invalid_metadata_cid_formats() {
     );
     let wrong_prefix_result = client.try_register_event(&EventRegistrationArgs {
         event_id: String::from_str(&env, "event_wrong_prefix_cid"),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid: wrong_prefix_cid,
@@ -1078,36 +788,9 @@ fn test_register_event_invalid_metadata_cid_formats() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
     assert_eq!(
         wrong_prefix_result,
-        Err(Ok(EventRegistryError::InvalidMetadataCid))
-    );
-
-    let oversized_cid = String::from_str(
-        &env,
-        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    );
-    let oversized_result = client.try_register_event(&EventRegistrationArgs {
-        event_id: String::from_str(&env, "event_oversized_cid"),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: Address::generate(&env),
-        payment_address: test_payment_address(&env),
-        metadata_cid: oversized_cid,
-        max_supply: 100,
-        milestone_plan: None,
-        tiers: Map::new(&env),
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-    assert_eq!(
-        oversized_result,
         Err(Ok(EventRegistryError::InvalidMetadataCid))
     );
 }
@@ -1120,7 +803,7 @@ fn test_get_event_payment_info() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     env.mock_all_auths();
 
@@ -1135,7 +818,6 @@ fn test_get_event_payment_info() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr.clone(),
         metadata_cid,
@@ -1148,7 +830,6 @@ fn test_get_event_payment_info() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let info = client.get_event_payment_info(&event_id);
@@ -1164,7 +845,7 @@ fn test_update_event_status() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     env.mock_all_auths();
 
@@ -1179,7 +860,6 @@ fn test_update_event_status() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1192,7 +872,6 @@ fn test_update_event_status() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1208,7 +887,7 @@ fn test_event_inactive_error() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     env.mock_all_auths();
 
@@ -1222,7 +901,6 @@ fn test_event_inactive_error() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1235,7 +913,6 @@ fn test_event_inactive_error() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
     client.update_event_status(&event_id, &false);
 
@@ -1251,7 +928,7 @@ fn test_complete_event_lifecycle() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     env.mock_all_auths();
 
@@ -1266,7 +943,6 @@ fn test_complete_event_lifecycle() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr.clone(),
         metadata_cid,
@@ -1279,14 +955,13 @@ fn test_complete_event_lifecycle() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let payment_info = client.get_event_payment_info(&event_id);
     assert_eq!(payment_info.payment_address, payment_addr);
     assert_eq!(payment_info.platform_fee_percent, 600);
 
-    let org_events = client.get_organizer_events(&organizer);
+    let org_events = client.get_organizer_events(&organizer, &organizer);
     assert_eq!(org_events.len(), 1);
     assert!(org_events.contains(&event_id));
 
@@ -1307,7 +982,7 @@ fn test_update_metadata_success() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     env.mock_all_auths();
 
@@ -1322,7 +997,6 @@ fn test_update_metadata_success() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1335,7 +1009,6 @@ fn test_update_metadata_success() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let new_metadata_cid = String::from_str(
@@ -1356,7 +1029,7 @@ fn test_update_metadata_invalid_cid() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     env.mock_all_auths();
 
@@ -1371,7 +1044,6 @@ fn test_update_metadata_invalid_cid() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1384,7 +1056,6 @@ fn test_update_metadata_invalid_cid() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let wrong_char_cid = String::from_str(
@@ -1400,16 +1071,250 @@ fn test_update_metadata_invalid_cid() {
     let short_cid = String::from_str(&env, "bafy");
     let result = client.try_update_metadata(&event_id, &short_cid);
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidMetadataCid)));
+}
 
-    let oversized_cid = String::from_str(
+#[test]
+fn test_update_metadata_unauthorized() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
         &env,
-        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    let oversized_result = client.try_update_metadata(&event_id, &oversized_cid);
-    assert_eq!(
-        oversized_result,
-        Err(Ok(EventRegistryError::InvalidMetadataCid))
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
     );
+
+    // Call update_metadata
+    client.update_metadata(&event_id, &new_metadata_cid);
+
+    // Verify that the authorization check was performed on the organizer address
+    let auths = env.auths();
+    assert_eq!(auths.len(), 1);
+    assert_eq!(auths[0].0, organizer);
+}
+
+#[test]
+#[should_panic] // Authentication failure
+fn test_update_metadata_unauthorized_panic() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+
+    let register_args = EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr.clone(),
+        metadata_cid: metadata_cid.clone(),
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    };
+
+    // Mock the organizer authentication explicitly for registration
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+    use soroban_sdk::IntoVal;
+
+    env.mock_auths(&[MockAuth {
+        address: &organizer,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            function_name: "register_event",
+            args: (register_args.clone(),).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.register_event(&register_args);
+
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+
+    // Call update_metadata. Without mock auth, this should fail authentication and panic
+    client.update_metadata(&event_id, &new_metadata_cid);
+}
+
+#[test]
+fn test_update_metadata_event_not_found() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let fake_event_id = String::from_str(&env, "nonexistent");
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+
+    let result = client.try_update_metadata(&fake_event_id, &new_metadata_cid);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventNotFound)));
+}
+
+#[test]
+fn test_update_metadata_inactive_event() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    // Make the event inactive
+    client.update_event_status(&event_id, &false);
+
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+
+    // Call update_metadata on the inactive event - should still succeed
+    client.update_metadata(&event_id, &new_metadata_cid);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.metadata_cid, new_metadata_cid);
+    assert!(!event_info.is_active);
+}
+
+#[test]
+fn test_update_metadata_cancelled_event() {
+    let env = Env::default();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    env.mock_all_auths();
+
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_metadata");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer.clone(),
+        payment_address: payment_addr,
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    // Cancel the event
+    client.cancel_event(&event_id);
+
+    let new_metadata_cid = String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    );
+
+    // Call update_metadata on the cancelled event - should still succeed
+    client.update_metadata(&event_id, &new_metadata_cid);
+
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.metadata_cid, new_metadata_cid);
+    assert_eq!(event_info.is_active, false);
+    assert!(matches!(event_info.status, EventStatus::Cancelled));
 }
 
 // ==================== Inventory / Supply Tests ====================
@@ -1466,9 +1371,8 @@ fn test_set_custom_event_fee() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
-        payment_address: test_payment_address(&env),
+        payment_address: Address::generate(&env),
         metadata_cid,
         max_supply: 100,
         milestone_plan: None,
@@ -1479,7 +1383,6 @@ fn test_set_custom_event_fee() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     // Default fee
@@ -1501,58 +1404,6 @@ fn test_set_custom_event_fee() {
 }
 
 #[test]
-fn test_set_custom_event_fee_exceeds_max() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let event_id = String::from_str(&env, "event_001");
-    let metadata_cid = String::from_str(
-        &env,
-        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-    );
-    let tiers = Map::new(&env);
-
-    client.register_event(&EventRegistrationArgs {
-        event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer,
-        payment_address: test_payment_address(&env),
-        metadata_cid,
-        max_supply: 100,
-        milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    // Try to set custom fee exceeding 10000 bps (100%)
-    let result = client.try_set_custom_event_fee(&event_id, &Some(10001));
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
-
-    // Try to set custom fee at exactly 10000 bps (100%) - should succeed
-    client.set_custom_event_fee(&event_id, &Some(10000));
-    let info = client.get_event_payment_info(&event_id);
-    assert_eq!(info.custom_fee_bps, Some(10000));
-
-    // Try to set custom fee way above limit
-    let result = client.try_set_custom_event_fee(&event_id, &Some(50000));
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeePercent)));
-}
-
-#[test]
 fn test_increment_inventory_success() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1562,7 +1413,7 @@ fn test_increment_inventory_success() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
 
@@ -1592,7 +1443,6 @@ fn test_increment_inventory_success() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1605,7 +1455,6 @@ fn test_increment_inventory_success() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1634,7 +1483,7 @@ fn test_increment_inventory_max_supply_exceeded() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
 
@@ -1664,7 +1513,6 @@ fn test_increment_inventory_max_supply_exceeded() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1677,7 +1525,6 @@ fn test_increment_inventory_max_supply_exceeded() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -1692,73 +1539,6 @@ fn test_increment_inventory_max_supply_exceeded() {
 }
 
 #[test]
-fn test_increment_inventory_bulk_exceeds_max_supply() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
-    let platform_wallet = Address::generate(&env);
-    let ticket_payment = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-    client.set_ticket_payment_contract(&ticket_payment);
-
-    let event_id = String::from_str(&env, "bulk_limited_event");
-    let metadata_cid = String::from_str(
-        &env,
-        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-    );
-
-    let mut tiers = Map::new(&env);
-    let tier_id = String::from_str(&env, "general");
-    tiers.set(
-        tier_id.clone(),
-        TicketTier {
-            name: String::from_str(&env, "General"),
-            price: 5000000,
-            tier_limit: 3,
-            current_sold: 0,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-
-    client.register_event(&EventRegistrationArgs {
-        event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer,
-        payment_address: payment_addr,
-        metadata_cid,
-        max_supply: 3,
-        milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    // Fill one slot, then attempt a bulk call that overshoots max_supply in one shot
-    client.increment_inventory(&event_id, &tier_id, &1);
-
-    let result = client.try_increment_inventory(&event_id, &tier_id, &5);
-    assert_eq!(result, Err(Ok(EventRegistryError::MaxSupplyExceeded)));
-
-    // Supply must remain unchanged after the failed call
-    let event_info = client.get_event(&event_id).unwrap();
-    assert_eq!(event_info.current_supply, 1);
-}
-
-#[test]
 fn test_increment_inventory_unlimited_supply() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1768,7 +1548,7 @@ fn test_increment_inventory_unlimited_supply() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
 
@@ -1798,7 +1578,6 @@ fn test_increment_inventory_unlimited_supply() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1811,7 +1590,6 @@ fn test_increment_inventory_unlimited_supply() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     for _ in 0..10 {
@@ -1855,7 +1633,7 @@ fn test_increment_inventory_inactive_event() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
 
@@ -1883,7 +1661,6 @@ fn test_increment_inventory_inactive_event() {
     );
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1896,7 +1673,6 @@ fn test_increment_inventory_inactive_event() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     client.update_event_status(&event_id, &false);
@@ -1915,7 +1691,7 @@ fn test_increment_inventory_persists_across_reads() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
 
@@ -1943,7 +1719,6 @@ fn test_increment_inventory_persists_across_reads() {
     );
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -1956,7 +1731,6 @@ fn test_increment_inventory_persists_across_reads() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     for _ in 0..5 {
@@ -1982,7 +1756,7 @@ fn test_tier_limit_exceeds_max_supply() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2020,7 +1794,6 @@ fn test_tier_limit_exceeds_max_supply() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2033,11 +1806,10 @@ fn test_tier_limit_exceeds_max_supply() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
     assert_eq!(
         result,
-        Err(Ok(EventRegistryError::TierLimitExceedsMaxSupply))
+        Err(Ok(EventRegistryError::TierLimitExceeds))
     );
 }
 
@@ -2051,7 +1823,7 @@ fn test_tier_not_found() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
 
@@ -2080,7 +1852,6 @@ fn test_tier_not_found() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2093,7 +1864,6 @@ fn test_tier_not_found() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let wrong_tier_id = String::from_str(&env, "nonexistent");
@@ -2111,7 +1881,7 @@ fn test_tier_supply_exceeded() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
 
@@ -2141,7 +1911,6 @@ fn test_tier_supply_exceeded() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2154,7 +1923,6 @@ fn test_tier_supply_exceeded() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     client.increment_inventory(&event_id, &tier_id, &1);
@@ -2175,7 +1943,7 @@ fn test_multiple_tiers_inventory() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
 
@@ -2218,7 +1986,6 @@ fn test_multiple_tiers_inventory() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2231,7 +1998,6 @@ fn test_multiple_tiers_inventory() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     client.increment_inventory(&event_id, &general_id, &1);
@@ -2249,141 +2015,6 @@ fn test_multiple_tiers_inventory() {
 }
 
 #[test]
-fn test_increment_inventory_supply_overflow() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
-    let platform_wallet = Address::generate(&env);
-    let ticket_payment = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-    client.set_ticket_payment_contract(&ticket_payment);
-
-    let event_id = String::from_str(&env, "overflow_event");
-    let tier_id = String::from_str(&env, "general");
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        tier_id.clone(),
-        TicketTier {
-            name: String::from_str(&env, "General"),
-            price: 5000000,
-            tier_limit: i128::MAX,
-            current_sold: i128::MAX - 1,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-
-    // Store event with current_supply near i128::MAX to trigger overflow
-    client.store_event(&EventInfo {
-        event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer.clone(),
-        payment_address: payment_addr,
-        platform_fee_percent: 500,
-        is_active: true,
-        status: EventStatus::Active,
-        created_at: env.ledger().timestamp(),
-        metadata_cid: String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
-        max_supply: 0, // unlimited so max_supply check is skipped
-        current_supply: i128::MAX,
-        milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        is_postponed: false,
-        grace_period_end: 0,
-        min_sales_target: 0,
-        target_deadline: 0,
-        goal_met: false,
-        custom_fee_bps: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
-    assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
-}
-
-#[test]
-fn test_increment_inventory_tier_sold_overflow() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
-    let platform_wallet = Address::generate(&env);
-    let ticket_payment = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-    client.set_ticket_payment_contract(&ticket_payment);
-
-    let event_id = String::from_str(&env, "tier_overflow_event");
-    let tier_id = String::from_str(&env, "general");
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        tier_id.clone(),
-        TicketTier {
-            name: String::from_str(&env, "General"),
-            price: 5000000,
-            tier_limit: i128::MAX,
-            current_sold: i128::MAX, // tier current_sold at max
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-
-    client.store_event(&EventInfo {
-        event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer.clone(),
-        payment_address: payment_addr,
-        platform_fee_percent: 500,
-        is_active: true,
-        status: EventStatus::Active,
-        created_at: env.ledger().timestamp(),
-        metadata_cid: String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
-        max_supply: 0,
-        current_supply: 0,
-        milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        is_postponed: false,
-        grace_period_end: 0,
-        min_sales_target: 0,
-        target_deadline: 0,
-        goal_met: false,
-        custom_fee_bps: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    let result = client.try_increment_inventory(&event_id, &tier_id, &1);
-    assert_eq!(result, Err(Ok(EventRegistryError::SupplyOverflow)));
-}
-
-#[test]
 fn test_update_event_status_noop_skips_event() {
     let env = Env::new_with_config(EnvTestConfig {
         capture_snapshot_at_drop: false,
@@ -2394,7 +2025,7 @@ fn test_update_event_status_noop_skips_event() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2408,7 +2039,6 @@ fn test_update_event_status_noop_skips_event() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2421,7 +2051,6 @@ fn test_update_event_status_noop_skips_event() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let _ = env.events().all();
@@ -2467,7 +2096,7 @@ fn test_blacklist_prevents_event_registration() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2485,7 +2114,6 @@ fn test_blacklist_prevents_event_registration() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id,
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2498,7 +2126,6 @@ fn test_blacklist_prevents_event_registration() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     assert_eq!(result, Err(Ok(EventRegistryError::OrganizerBlacklisted)));
@@ -2516,7 +2143,7 @@ fn test_update_metadata_noop_skips_event() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2530,7 +2157,6 @@ fn test_update_metadata_noop_skips_event() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr,
         metadata_cid: metadata_cid.clone(),
@@ -2543,7 +2169,6 @@ fn test_update_metadata_noop_skips_event() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let _ = env.events().all();
@@ -2600,7 +2225,7 @@ fn test_blacklist_suspends_active_events() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2614,7 +2239,6 @@ fn test_blacklist_suspends_active_events() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr,
         metadata_cid: metadata_cid.clone(),
@@ -2627,7 +2251,6 @@ fn test_blacklist_suspends_active_events() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2700,7 +2323,7 @@ fn test_remove_non_blacklisted_fails() {
     // Try to remove non-blacklisted organizer - should fail
     let reason = String::from_str(&env, "Removal attempt");
     let result = client.try_remove_from_blacklist(&organizer, &reason);
-    assert_eq!(result, Err(Ok(EventRegistryError::OrganizerNotBlacklisted)));
+    assert_eq!(result, Err(Ok(EventRegistryError::OrgNotBlacklisted)));
 }
 
 // ==================== Resale Cap Tests ====================
@@ -2714,7 +2337,7 @@ fn test_register_event_with_resale_cap() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2740,7 +2363,6 @@ fn test_register_event_with_resale_cap() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2753,7 +2375,6 @@ fn test_register_event_with_resale_cap() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2769,7 +2390,7 @@ fn test_register_event_resale_cap_zero() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2784,7 +2405,6 @@ fn test_register_event_resale_cap_zero() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2797,7 +2417,6 @@ fn test_register_event_resale_cap_zero() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2813,7 +2432,7 @@ fn test_register_event_resale_cap_none() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2828,7 +2447,6 @@ fn test_register_event_resale_cap_none() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2841,7 +2459,6 @@ fn test_register_event_resale_cap_none() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let event_info = client.get_event(&event_id).unwrap();
@@ -2857,7 +2474,7 @@ fn test_postpone_event_sets_grace_period() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2872,7 +2489,6 @@ fn test_postpone_event_sets_grace_period() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2885,14 +2501,13 @@ fn test_postpone_event_sets_grace_period() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     // Set ledger time and grace period end in the future
     env.ledger().with_mut(|li| li.timestamp = 1_000);
     let grace_period_end = 2_000u64;
 
-    client.postpone_event(&event_id, &grace_period_end);
+    client.postpone_event(&event_id, &1500u64, &grace_period_end);
 
     let event_info = client.get_event(&event_id).unwrap();
     assert!(event_info.is_postponed);
@@ -2908,7 +2523,7 @@ fn test_register_event_resale_cap_invalid() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
 
     let usdc_token = Address::generate(&env);
@@ -2923,7 +2538,6 @@ fn test_register_event_resale_cap_invalid() {
 
     let result = client.try_register_event(&EventRegistrationArgs {
         event_id,
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -2936,7 +2550,6 @@ fn test_register_event_resale_cap_invalid() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
     assert_eq!(result, Err(Ok(EventRegistryError::InvalidResaleCapBps)));
 }
@@ -2950,7 +2563,7 @@ fn test_cancel_event_success() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let usdc_token = Address::generate(&env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
@@ -2963,7 +2576,6 @@ fn test_cancel_event_success() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: payment_addr,
         metadata_cid,
@@ -2976,7 +2588,6 @@ fn test_cancel_event_success() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     client.cancel_event(&event_id);
@@ -2995,7 +2606,7 @@ fn test_archive_event_rejects_active_event() {
 
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let usdc_token = Address::generate(&env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
@@ -3003,7 +2614,6 @@ fn test_archive_event_rejects_active_event() {
     let event_id = String::from_str(&env, "archive_active");
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid: String::from_str(
@@ -3019,7 +2629,6 @@ fn test_archive_event_rejects_active_event() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     let result = client.try_archive_event(&event_id);
@@ -3047,9 +2656,8 @@ fn test_cancel_already_cancelled_fails() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
+        payment_address: Address::generate(&env),
         metadata_cid,
         max_supply: 100,
         milestone_plan: None,
@@ -3060,12 +2668,11 @@ fn test_cancel_already_cancelled_fails() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     client.cancel_event(&event_id);
     let result = client.try_cancel_event(&event_id);
-    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCancelled)));
+    assert_eq!(result, Err(Ok(EventRegistryError::EventAlreadyCanceled)));
 }
 
 #[test]
@@ -3089,9 +2696,8 @@ fn test_update_status_on_cancelled_event_fails() {
     let tiers = Map::new(&env);
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
+        payment_address: Address::generate(&env),
         metadata_cid,
         max_supply: 100,
         milestone_plan: None,
@@ -3102,7 +2708,6 @@ fn test_update_status_on_cancelled_event_fails() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     client.cancel_event(&event_id);
@@ -3716,7 +3321,7 @@ fn test_register_event_with_banner_cid() {
     let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let usdc_token = Address::generate(&env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
@@ -3733,7 +3338,6 @@ fn test_register_event_with_banner_cid() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -3746,7 +3350,6 @@ fn test_register_event_with_banner_cid() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: banner_cid.clone(),
-        tags: None,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -3783,9 +3386,8 @@ fn test_goal_met_event_fires_only_once() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: Address::generate(&env),
-        payment_address: test_payment_address(&env),
+        payment_address: Address::generate(&env),
         metadata_cid,
         max_supply: 100,
         milestone_plan: None,
@@ -3796,7 +3398,6 @@ fn test_goal_met_event_fires_only_once() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: banner_cid.clone(),
-        tags: None,
     });
 
     let event = client.get_event(&event_id).unwrap();
@@ -3811,7 +3412,7 @@ fn test_register_event_without_banner_cid() {
     let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let organizer = Address::generate(&env);
-    let payment_addr = test_payment_address(&env);
+    let payment_addr = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let ticket_payment = Address::generate(&env);
     let usdc_token = Address::generate(&env);
@@ -3840,7 +3441,6 @@ fn test_register_event_without_banner_cid() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer,
         payment_address: payment_addr,
         metadata_cid,
@@ -3853,7 +3453,6 @@ fn test_register_event_without_banner_cid() {
         min_sales_target: Some(10),
         target_deadline: Some(1000),
         banner_cid: None,
-        tags: None,
     });
 
     // Drain setup events
@@ -3907,9 +3506,8 @@ fn test_series_pass_issued_at_timestamp() {
 
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
-        name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
+        payment_address: Address::generate(&env),
         metadata_cid,
         max_supply: 50,
         milestone_plan: None,
@@ -3920,7 +3518,6 @@ fn test_series_pass_issued_at_timestamp() {
         min_sales_target: None,
         target_deadline: None,
         banner_cid: None,
-        tags: None,
     });
 
     // Register a series
@@ -3959,120 +3556,53 @@ fn test_series_pass_issued_at_timestamp() {
     assert_eq!(pass.usage_count, 0);
 }
 
-// ── Milestone percentage validation ──────────────────────────────────────────
+#[test]
+fn test_event_description() {
+    let env = Env::default();
+    env.mock_all_auths();
 
-use crate::types::Milestone;
-
-fn setup_client(env: &Env) -> (EventRegistryClient<'_>, Address) {
     let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(env, &contract_id);
-    let admin = Address::generate(env);
-    let platform_wallet = Address::generate(env);
-    let usdc_token = Address::generate(env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-    let organizer = Address::generate(env);
-    (client, organizer)
-}
+    let client = EventRegistryClient::new(&env, &contract_id);
 
-fn base_args(
-    env: &Env,
-    organizer: &Address,
-    milestone_plan: Option<soroban_sdk::Vec<Milestone>>,
-) -> EventRegistrationArgs {
-    EventRegistrationArgs {
-        event_id: String::from_str(env, "evt_milestone"),
-        name: String::from_str(env, "Test Event"),
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let payment_addr = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let event_id = String::from_str(&env, "event_with_banner");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let banner_cid = Some(String::from_str(
+        &env,
+        "bafkreifh22222222222222222222222222222222222222222222222222",
+    ));
+    let tiers = Map::new(&env);
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
         organizer_address: organizer.clone(),
-        payment_address: test_payment_address(env),
-        metadata_cid: String::from_str(
-            env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
+        payment_address: payment_addr.clone(),
+        metadata_cid: metadata_cid.clone(),
         max_supply: 100,
-        milestone_plan,
-        tiers: Map::new(env),
-        refund_deadline: 0,
+        milestone_plan: None,
+        tiers: tiers.clone(),
+        refund_deadline: env.ledger().timestamp() + 86400,
         restocking_fee: 0,
         resale_cap_bps: None,
         min_sales_target: None,
         target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    }
-}
+        banner_cid: banner_cid.clone(),
+    });
 
-#[test]
-fn test_register_event_milestone_plan_valid_exact_100() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, organizer) = setup_client(&env);
-
-    let milestones = soroban_sdk::vec![
-        &env,
-        Milestone {
-            sales_threshold: 50,
-            release_percent: 5000
-        },
-        Milestone {
-            sales_threshold: 100,
-            release_percent: 5000
-        },
-    ];
-    // Should succeed: 5000 + 5000 = 10000 bps (exactly 100%)
-    client.register_event(&base_args(&env, &organizer, Some(milestones)));
-}
-
-#[test]
-fn test_register_event_milestone_plan_valid_under_100() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, organizer) = setup_client(&env);
-
-    let milestones = soroban_sdk::vec![
-        &env,
-        Milestone {
-            sales_threshold: 50,
-            release_percent: 3000
-        },
-        Milestone {
-            sales_threshold: 100,
-            release_percent: 4000
-        },
-    ];
-    // Should succeed: 3000 + 4000 = 7000 bps (70%)
-    client.register_event(&base_args(&env, &organizer, Some(milestones)));
-}
-
-#[test]
-fn test_register_event_milestone_plan_exceeds_100_returns_error() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, organizer) = setup_client(&env);
-
-    let milestones = soroban_sdk::vec![
-        &env,
-        Milestone {
-            sales_threshold: 50,
-            release_percent: 6000
-        },
-        Milestone {
-            sales_threshold: 100,
-            release_percent: 5000
-        },
-    ];
-    // Should fail: 6000 + 5000 = 11000 bps (110%)
-    let result = client.try_register_event(&base_args(&env, &organizer, Some(milestones)));
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidMilestonePlan)));
-}
-
-#[test]
-fn test_register_event_no_milestone_plan_succeeds() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, organizer) = setup_client(&env);
-
-    // None milestone_plan should always pass validation
-    client.register_event(&base_args(&env, &organizer, None));
+    let event_info = client.get_event(&event_id).unwrap();
+    assert_eq!(event_info.banner_cid, banner_cid);
+    assert_eq!(event_info.event_id, event_id);
+    assert_eq!(event_info.organizer_address, organizer);
 }
 
 // ==================== Governance / Multi-Sig Tests ====================
@@ -4299,8 +3829,11 @@ fn test_active_proposals_list() {
     assert!(active_proposals.contains(proposal_id2));
 }
 
+
+// Issue #680: Add event_registry unit test for update_loyalty_score and get_loyalty_discount_bps
+
 #[test]
-fn test_cancelled_status_guard() {
+fn test_update_loyalty_score_increments() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(EventRegistry, ());
@@ -4311,20 +3844,338 @@ fn test_cancelled_status_guard() {
     let usdc_token = Address::generate(&env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
-    let organizer = Address::generate(&env);
-    let event_id = String::from_str(&env, "cancelled_event");
+    let guest = Address::generate(&env);
+    let caller = Address::generate(&env);
 
-    // Register event
-    let tiers = Map::new(&env);
+    // Initial profile should not exist
+    assert!(client.get_guest_profile(&guest).is_none());
+
+    // Update loyalty score
+    client.update_loyalty_score(&caller, &guest, &5, &1000_0000000i128, &1);
+
+    // Verify profile was created and score updated
+    let profile = client.get_guest_profile(&guest).unwrap();
+    assert!(profile.loyalty_score > 0);
+    assert_eq!(profile.total_tickets_purchased, 5);
+    assert_eq!(profile.total_spent, 1000_0000000i128);
+
+    // Update again
+    let old_score = profile.loyalty_score;
+    client.update_loyalty_score(&caller, &guest, &3, &500_0000000i128, &1);
+
+    // Verify score incremented
+    let updated_profile = client.get_guest_profile(&guest).unwrap();
+    assert!(updated_profile.loyalty_score > old_score);
+    assert_eq!(updated_profile.total_tickets_purchased, 8);
+    assert_eq!(updated_profile.total_spent, 1500_0000000i128);
+}
+
+#[test]
+fn test_loyalty_discount_increases_with_score() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let guest = Address::generate(&env);
+    let caller = Address::generate(&env);
+
+    // Initial discount should be 0
+    assert_eq!(client.get_loyalty_discount_bps(&guest), 0);
+
+    // Update loyalty score to a high value (simulate many purchases)
+    // Score calculation: tickets * amount_spent / 1_000_000 * multiplier
+    // To get score > 1000, we need: tickets * amount * multiplier / 1_000_000 > 1000
+    // Example: 100 tickets * 20_000_000 * 1 / 1_000_000 = 2000 score
+    client.update_loyalty_score(&caller, &guest, &100, &20_000_0000000i128, &1);
+
+    // Verify discount is now non-zero (should be 1000 bps = 10% for score >= 1000)
+    let discount = client.get_loyalty_discount_bps(&guest);
+    assert!(discount > 0);
+    assert_eq!(discount, 1000); // 10% discount for high score
+}
+
+#[test]
+fn test_loyalty_discount_zero_for_new_guest() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let new_guest = Address::generate(&env);
+
+    // New guest with no history should have 0 discount
+    let discount = client.get_loyalty_discount_bps(&new_guest);
+    assert_eq!(discount, 0);
+
+    // Profile should not exist
+    assert!(client.get_guest_profile(&new_guest).is_none());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_update_loyalty_score_unauthorized() {
+    let env = Env::default();
+    // Do NOT mock all auths - we want to test authorization
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    let guest = Address::generate(&env);
+    let unauthorized_caller = Address::generate(&env);
+
+    // Stop mocking auths to test authorization
+    // Try to update loyalty score from unauthorized address - should fail
+    client.update_loyalty_score(&unauthorized_caller, &guest, &5, &1000_0000000i128, &1);
+}
+
+// #683: Add event_registry unit test for min_sales_target and target_deadline enforcement
+
+#[test]
+fn test_goal_met_flag_set_when_target_reached() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "goal_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let mut tiers = Map::new(&env);
+    let tier_id = String::from_str(&env, "general");
+    tiers.set(
+        tier_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: Some(10),
+        target_deadline: Some(10000),
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 20000,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
+    });
+
+    // Initially goal_met should be false
+    assert!(!client.get_event(&event_id).unwrap().goal_met);
+
+    // This event opted into use_global_whitelist, so the payment token must
+    // be globally whitelisted first (Issue #851).
+    let payment_token = Address::generate(&env);
+    client.add_to_token_whitelist(&payment_token);
+
+    // Increment inventory 10 times to reach the target
+    for _ in 0..10 {
+        client.increment_inventory(&event_id, &tier_id, &Address::generate(&env), &1, &payment_token);
+    }
+
+    // After reaching target, goal_met should be true
+    assert!(client.get_event(&event_id).unwrap().goal_met);
+}
+
+#[test]
+#[should_panic]
+fn test_target_deadline_after_end_time_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "deadline_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    // target_deadline (20000) > end_time (10000) should panic with DeadlinePastEnd
+    client.register_event(&EventRegistrationArgs {
+        event_id,
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: Some(10),
+        target_deadline: Some(20000),
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 10000,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
+    });
+}
+
+#[test]
+#[should_panic]
+fn test_target_deadline_in_past_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(50000);
+
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    let event_id = String::from_str(&env, "past_deadline_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    // target_deadline (10000) is in the past (current timestamp is 50000)
+    // Should panic with InvalidTargetDeadline
+    client.register_event(&EventRegistrationArgs {
+        event_id,
+        name: String::from_str(&env, "Test Event"),
+        organizer_address: organizer,
+        payment_address: test_payment_address(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: Some(10),
+        target_deadline: Some(10000),
+        banner_cid: None,
+        tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 60000,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
+    });
+}
+
+// #685: Add event_registry unit test for global_counters consistency
+
+#[test]
+fn test_global_counters_full_lifecycle() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let ticket_payment = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    client.set_ticket_payment_contract(&ticket_payment);
+
+    // Start: assert all counters are 0
+    assert_eq!(client.get_managed_events_count(), 0);
+    assert_eq!(client.get_active_events_count(), 0);
+    assert_eq!(client.get_global_tickets_sold(), 0);
+
+    let event_id = String::from_str(&env, "counter_event");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+
+    let mut tiers = Map::new(&env);
+    let tier_id = String::from_str(&env, "general");
+    tiers.set(
+        tier_id.clone(),
+        TicketTier {
+            name: String::from_str(&env, "General"),
+            price: 5000000,
+            tier_limit: 100,
+            current_sold: 0,
+            is_refundable: true,
+            auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
+        },
+    );
+
     client.register_event(&EventRegistrationArgs {
         event_id: event_id.clone(),
         name: String::from_str(&env, "Test Event"),
         organizer_address: organizer.clone(),
         payment_address: test_payment_address(&env),
-        metadata_cid: String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
+        metadata_cid,
         max_supply: 100,
         milestone_plan: None,
         tiers,
@@ -4335,238 +4186,66 @@ fn test_cancelled_status_guard() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
     });
 
-    // Cancel event
-    client.cancel_event(&event_id);
+    // Register an event: assert GlobalEventCount = 1, GlobalActiveEventCount = 1
+    assert_eq!(client.get_managed_events_count(), 1);
+    assert_eq!(client.get_active_events_count(), 1);
 
-    // Try to update status - should fail
-    let result = client.try_update_event_status(&event_id, &true);
-    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
+    // Deactivate the event: assert GlobalActiveEventCount = 0
+    client.update_event_status(&event_id, &false);
+    assert_eq!(client.get_active_events_count(), 0);
 
-    // Try to postpone - should fail
-    let result = client.try_postpone_event(&event_id, &10000000);
-    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
+    // Reactivate: assert GlobalActiveEventCount = 1
+    client.update_event_status(&event_id, &true);
+    assert_eq!(client.get_active_events_count(), 1);
 
-    // Try to update metadata - should fail
-    let result = client.try_update_metadata(
-        &event_id,
-        &String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
+    // Cancel: assert GlobalActiveEventCount = 0, GlobalEventCount unchanged
+    client.cancel_event(&event_id, &None);
+    assert_eq!(client.get_active_events_count(), 0);
+    assert_eq!(client.get_managed_events_count(), 1);
+
+    // Increment inventory 5 times: assert GlobalTicketsSold = 5
+    // Note: cancelled events cannot increment inventory, so we need to register a new event
+    let event_id2 = String::from_str(&env, "counter_event2");
+    let metadata_cid2 = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
-    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
 
-    // Try to set custom fee - should fail
-    let result = client.try_set_custom_event_fee(&event_id, &Some(100));
-    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
-}
-
-// ── Issue #194: Tier Error Message Tests ─────────────────────────────────────
-
-/// Helper to format a Display value into a fixed-size stack buffer.
-fn fmt_to_str<T: core::fmt::Display>(val: T) -> [u8; 256] {
-    struct Buf {
-        data: [u8; 256],
-        pos: usize,
-    }
-    impl core::fmt::Write for Buf {
-        fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            let bytes = s.as_bytes();
-            let end = self.pos + bytes.len();
-            if end <= self.data.len() {
-                self.data[self.pos..end].copy_from_slice(bytes);
-                self.pos = end;
-            }
-            Ok(())
-        }
-    }
-    let mut buf = Buf {
-        data: [0u8; 256],
-        pos: 0,
-    };
-    core::fmt::write(&mut buf, format_args!("{}", val)).ok();
-    buf.data
-}
-
-fn buf_starts_with(buf: &[u8; 256], expected: &str) -> bool {
-    let e = expected.as_bytes();
-    buf.len() >= e.len() && &buf[..e.len()] == e && (e.len() == 256 || buf[e.len()] == 0)
-}
-
-#[test]
-fn test_tier_not_found_error_message() {
-    let buf = fmt_to_str(EventRegistryError::TierNotFound);
-    assert!(
-        buf_starts_with(
-            &buf,
-            "The specified ticket tier ID does not exist for this event"
-        ),
-        "unexpected message"
-    );
-}
-
-#[test]
-fn test_tier_supply_exceeded_error_message() {
-    let buf = fmt_to_str(EventRegistryError::TierSupplyExceeded);
-    assert!(
-        buf_starts_with(
-            &buf,
-            "The requested ticket tier has sold out and cannot accept more registrations"
-        ),
-        "unexpected message"
-    );
-}
-
-// ── Issue #211: Restocking Fee Guard Tests ────────────────────────────────────
-
-#[test]
-fn test_register_event_restocking_fee_exceeds_tier_price_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let organizer = Address::generate(&env);
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        String::from_str(&env, "general"),
+    let mut tiers2 = Map::new(&env);
+    let tier_id2 = String::from_str(&env, "general");
+    tiers2.set(
+        tier_id2.clone(),
         TicketTier {
             name: String::from_str(&env, "General"),
-            price: 5_000_000,
+            price: 5000000,
             tier_limit: 100,
             current_sold: 0,
             is_refundable: true,
             auction_config: soroban_sdk::vec![&env],
+            loyalty_multiplier: 1,
+            max_per_user: 0,
         },
     );
 
-    // restocking_fee (6_000_000) > tier price (5_000_000) — must fail
-    let result = client.try_register_event(&EventRegistrationArgs {
-        event_id: String::from_str(&env, "evt_restocking_guard"),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer.clone(),
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id2.clone(),
+        name: String::from_str(&env, "Test Event 2"),
+        organizer_address: organizer,
         payment_address: test_payment_address(&env),
-        metadata_cid: String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
+        metadata_cid: metadata_cid2,
         max_supply: 100,
         milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 6_000_000,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    assert_eq!(
-        result,
-        Err(Ok(EventRegistryError::RestockingFeeExceedsTicketPrice))
-    );
-}
-
-#[test]
-fn test_register_event_restocking_fee_equal_to_tier_price_succeeds() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let organizer = Address::generate(&env);
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        String::from_str(&env, "general"),
-        TicketTier {
-            name: String::from_str(&env, "General"),
-            price: 5_000_000,
-            tier_limit: 100,
-            current_sold: 0,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-
-    // restocking_fee == tier price — should succeed
-    let result = client.try_register_event(&EventRegistrationArgs {
-        event_id: String::from_str(&env, "evt_restocking_equal"),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
-        metadata_cid: String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
-        max_supply: 100,
-        milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 5_000_000,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_register_event_restocking_fee_zero_always_valid() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let organizer = Address::generate(&env);
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        String::from_str(&env, "general"),
-        TicketTier {
-            name: String::from_str(&env, "General"),
-            price: 1_000,
-            tier_limit: 50,
-            current_sold: 0,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-
-    let result = client.try_register_event(&EventRegistrationArgs {
-        event_id: String::from_str(&env, "evt_restocking_zero"),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
-        metadata_cid: String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
-        max_supply: 50,
-        milestone_plan: None,
-        tiers,
+        tiers: tiers2,
         refund_deadline: 0,
         restocking_fee: 0,
         resale_cap_bps: None,
@@ -4574,361 +4253,402 @@ fn test_register_event_restocking_fee_zero_always_valid() {
         target_deadline: None,
         banner_cid: None,
         tags: None,
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::Vec::new(&env),
+        use_global_whitelist: true,
+        category_ids: None,
+        referral_rate_bps: None,
     });
 
-    assert!(result.is_ok());
-}
+    // This event opted into use_global_whitelist, so the payment token must
+    // be globally whitelisted first (Issue #851).
+    let payment_token = Address::generate(&env);
+    client.add_to_token_whitelist(&payment_token);
 
-#[test]
-fn test_register_event_restocking_fee_overflow_returns_invalid_fee_calculation() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let platform_wallet = Address::generate(&env);
-    let usdc_token = Address::generate(&env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-
-    let organizer = Address::generate(&env);
-    let mut tiers = Map::new(&env);
-    tiers.set(
-        String::from_str(&env, "general"),
-        TicketTier {
-            name: String::from_str(&env, "General"),
-            price: i128::MIN,
-            tier_limit: 50,
-            current_sold: 0,
-            is_refundable: true,
-            auction_config: soroban_sdk::vec![&env],
-        },
-    );
-
-    let result = client.try_register_event(&EventRegistrationArgs {
-        event_id: String::from_str(&env, "evt_restocking_overflow"),
-        name: String::from_str(&env, "Test Event"),
-        organizer_address: organizer.clone(),
-        payment_address: test_payment_address(&env),
-        metadata_cid: String::from_str(
-            &env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
-        max_supply: 50,
-        milestone_plan: None,
-        tiers,
-        refund_deadline: 0,
-        restocking_fee: 1,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
-    });
-
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidFeeCalculation)));
-}
-
-#[test]
-fn test_restocking_fee_exceeds_ticket_price_error_message() {
-    let buf = fmt_to_str(EventRegistryError::RestockingFeeExceedsTicketPrice);
-    assert!(
-        buf_starts_with(
-            &buf,
-            "Restocking fee must not exceed the original ticket price"
-        ),
-        "unexpected message"
-    );
-}
-
-// ── Tags Tests ────────────────────────────────────────────────────────────────
-
-/// Helper: initialise the registry and return (client, admin, organizer).
-fn setup_tags_test(env: &Env) -> (EventRegistryClient<'static>, Address, Address) {
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(env, &contract_id);
-    let admin = Address::generate(env);
-    let platform_wallet = Address::generate(env);
-    let usdc_token = Address::generate(env);
-    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
-    let organizer = Address::generate(env);
-    (client, admin, organizer)
-}
-
-fn tags_base_args(env: &Env, event_id: &str, organizer: &Address) -> EventRegistrationArgs {
-    EventRegistrationArgs {
-        event_id: String::from_str(env, event_id),
-        name: String::from_str(env, "Test Event"),
-        organizer_address: organizer.clone(),
-        payment_address: test_payment_address(env),
-        metadata_cid: String::from_str(
-            env,
-            "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
-        ),
-        max_supply: 0,
-        milestone_plan: None,
-        tiers: Map::new(env),
-        refund_deadline: 0,
-        restocking_fee: 0,
-        resale_cap_bps: None,
-        min_sales_target: None,
-        target_deadline: None,
-        banner_cid: None,
-        tags: None,
+    for _ in 0..5 {
+        client.increment_inventory(&event_id2, &tier_id2, &Address::generate(&env), &1, &payment_token);
     }
+    assert_eq!(client.get_global_tickets_sold(), 5);
 }
 
-/// Registering with no tags (None) succeeds and EventInfo.tags is None.
+// #681: Add event_registry unit test for add_event_to_category and get_events_by_category
+
 #[test]
-fn test_register_event_without_tags() {
+fn test_event_indexed_by_category_on_register() {
     let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, organizer) = setup_tags_test(&env);
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
 
-    let args = tags_base_args(&env, "evt_no_tags", &organizer);
-    client.register_event(&args);
+    let category_ids = soroban_sdk::vec![&env, 1u32, 3u32];
+    client.register_event(&make_args(&env, "cat_event", &organizer, Some(category_ids.clone())));
 
-    let info = client
-        .get_event(&String::from_str(&env, "evt_no_tags"))
-        .unwrap();
-    assert!(info.tags.is_none());
+    // Assert both category indexes contain the event ID
+    let cat1_events = client.get_events_by_category(&1u32);
+    assert_eq!(cat1_events.len(), 1);
+    assert!(cat1_events.contains(String::from_str(&env, "cat_event")));
+
+    let cat3_events = client.get_events_by_category(&3u32);
+    assert_eq!(cat3_events.len(), 1);
+    assert!(cat3_events.contains(String::from_str(&env, "cat_event")));
 }
 
-/// Registering with a valid set of tags stores them correctly.
 #[test]
-fn test_register_event_with_tags_stored_correctly() {
+fn test_get_events_by_category_returns_correct_events() {
     let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, organizer) = setup_tags_test(&env);
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
 
-    let tags = soroban_sdk::vec![
-        &env,
-        String::from_str(&env, "Music"),
-        String::from_str(&env, "Tech"),
-        String::from_str(&env, "Outdoor"),
-    ];
+    let cat1_ids = soroban_sdk::vec![&env, 1u32];
+    let cat2_ids = soroban_sdk::vec![&env, 2u32];
 
-    let mut args = tags_base_args(&env, "evt_tags", &organizer);
-    args.tags = Some(tags.clone());
-    client.register_event(&args);
+    // Register two events in category 1
+    client.register_event(&make_args(&env, "event1_cat1", &organizer, Some(cat1_ids.clone())));
+    client.register_event(&make_args(&env, "event2_cat1", &organizer, Some(cat1_ids.clone())));
 
-    let info = client
-        .get_event(&String::from_str(&env, "evt_tags"))
-        .unwrap();
-    let stored = info.tags.unwrap();
-    assert_eq!(stored.len(), 3);
-    assert_eq!(stored.get(0).unwrap(), String::from_str(&env, "Music"));
-    assert_eq!(stored.get(1).unwrap(), String::from_str(&env, "Tech"));
-    assert_eq!(stored.get(2).unwrap(), String::from_str(&env, "Outdoor"));
+    // Register one event in category 2
+    client.register_event(&make_args(&env, "event1_cat2", &organizer, Some(cat2_ids)));
+
+    // Assert get_events_by_category(1) returns exactly two events
+    let cat1_events = client.get_events_by_category(&1u32);
+    assert_eq!(cat1_events.len(), 2);
+    assert!(cat1_events.contains(String::from_str(&env, "event1_cat1")));
+    assert!(cat1_events.contains(String::from_str(&env, "event2_cat1")));
 }
 
-/// Exactly 10 tags is the maximum allowed — must succeed.
-#[test]
-fn test_register_event_with_exactly_10_tags_succeeds() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, organizer) = setup_tags_test(&env);
-
-    let tags = soroban_sdk::vec![
-        &env,
-        String::from_str(&env, "Tag1"),
-        String::from_str(&env, "Tag2"),
-        String::from_str(&env, "Tag3"),
-        String::from_str(&env, "Tag4"),
-        String::from_str(&env, "Tag5"),
-        String::from_str(&env, "Tag6"),
-        String::from_str(&env, "Tag7"),
-        String::from_str(&env, "Tag8"),
-        String::from_str(&env, "Tag9"),
-        String::from_str(&env, "Tag10"),
-    ];
-
-    let mut args = tags_base_args(&env, "evt_10_tags", &organizer);
-    args.tags = Some(tags);
-    let result = client.try_register_event(&args);
-    assert!(result.is_ok(), "10 tags should be accepted");
-}
-
-/// 11 tags exceeds the maximum — must return InvalidTags.
-#[test]
-fn test_register_event_with_11_tags_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, organizer) = setup_tags_test(&env);
-
-    let tags = soroban_sdk::vec![
-        &env,
-        String::from_str(&env, "T1"),
-        String::from_str(&env, "T2"),
-        String::from_str(&env, "T3"),
-        String::from_str(&env, "T4"),
-        String::from_str(&env, "T5"),
-        String::from_str(&env, "T6"),
-        String::from_str(&env, "T7"),
-        String::from_str(&env, "T8"),
-        String::from_str(&env, "T9"),
-        String::from_str(&env, "T10"),
-        String::from_str(&env, "T11"),
-    ];
-
-    let mut args = tags_base_args(&env, "evt_11_tags", &organizer);
-    args.tags = Some(tags);
-    let result = client.try_register_event(&args);
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidTags)));
-}
-
-/// A tag of exactly 32 characters is the maximum allowed length — must succeed.
-#[test]
-fn test_register_event_tag_exactly_32_chars_succeeds() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, organizer) = setup_tags_test(&env);
-
-    // 32 characters exactly
-    let tag_32 = String::from_str(&env, "12345678901234567890123456789012");
-    let tags = soroban_sdk::vec![&env, tag_32];
-
-    let mut args = tags_base_args(&env, "evt_tag_32", &organizer);
-    args.tags = Some(tags);
-    let result = client.try_register_event(&args);
-    assert!(result.is_ok(), "32-char tag should be accepted");
-}
-
-/// A tag of 33 characters exceeds the maximum length — must return InvalidTags.
-#[test]
-fn test_register_event_tag_33_chars_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, organizer) = setup_tags_test(&env);
-
-    // 33 characters
-    let tag_33 = String::from_str(&env, "123456789012345678901234567890123");
-    let tags = soroban_sdk::vec![&env, tag_33];
-
-    let mut args = tags_base_args(&env, "evt_tag_33", &organizer);
-    args.tags = Some(tags);
-    let result = client.try_register_event(&args);
-    assert_eq!(result, Err(Ok(EventRegistryError::InvalidTags)));
-}
-
-/// A single empty-string tag is valid (length 0 ≤ 32).
-#[test]
-fn test_register_event_empty_tag_is_valid() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, organizer) = setup_tags_test(&env);
-
-    let tags = soroban_sdk::vec![&env, String::from_str(&env, "")];
-    let mut args = tags_base_args(&env, "evt_empty_tag", &organizer);
-    args.tags = Some(tags);
-    let result = client.try_register_event(&args);
-    assert!(result.is_ok(), "empty tag string should be accepted");
-}
-
-/// Tags are independent of other fields — an event with tags and a banner_cid
-/// stores both correctly.
-#[test]
-fn test_register_event_tags_and_banner_cid_coexist() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, organizer) = setup_tags_test(&env);
-
-    let banner = String::from_str(&env, "bafybeibanner123");
-    let tags = soroban_sdk::vec![
-        &env,
-        String::from_str(&env, "Music"),
-        String::from_str(&env, "Festival"),
-    ];
-
-    let mut args = tags_base_args(&env, "evt_both", &organizer);
-    args.banner_cid = Some(banner.clone());
-    args.tags = Some(tags);
-    client.register_event(&args);
-
-    let info = client
-        .get_event(&String::from_str(&env, "evt_both"))
-        .unwrap();
-    assert_eq!(info.banner_cid.unwrap(), banner);
-    assert_eq!(info.tags.unwrap().len(), 2);
-}
-
-// ─── set_admin tests ──────────────────────────────────────────────────────────
+// ── Issue #899: postpone_event must validate new_start_time is in the future ──
 
 #[test]
-fn test_set_admin_emits_event() {
+fn test_postpone_event_past_start_time_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
+    let event_id = String::from_str(&env, "event_past_start");
+    let metadata_cid = String::from_str(
+        &env,
+        "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    );
+    let tiers = Map::new(&env);
+    client.register_event(&EventRegistrationArgs {
+        event_id: event_id.clone(),
+        organizer_address: organizer,
+        payment_address: Address::generate(&env),
+        metadata_cid,
+        max_supply: 100,
+        milestone_plan: None,
+        tiers,
+        refund_deadline: 0,
+        restocking_fee: 0,
+        resale_cap_bps: None,
+        min_sales_target: None,
+        target_deadline: None,
+        banner_cid: None,
+    });
+
+    env.ledger().with_mut(|li| li.timestamp = 2_000);
+    // new_start_time in the past → InvalidDeadline
+    let result = client.try_postpone_event(&event_id, &500u64, &3_000u64);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidDeadline)));
+}
+
+// ── Issue #901: set_staking_config emits StakingTokenUpdated and MinStakeAmountUpdated ──
+
+#[test]
+fn test_set_staking_config_emits_events() {
+    use soroban_sdk::testutils::Events;
+
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let usdc_token = Address::generate(&env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
+    let staking_token = Address::generate(&env);
+    client.set_staking_config(&staking_token, &1_000_000i128).unwrap();
+
+    let all_events = env.events().all();
+    // Find StakingTokenUpdated and MinStakeAmountUpdated in the emitted events
+    let staking_token_event = all_events.iter().any(|(topics, _)| {
+        topics.get(0) == Some(soroban_sdk::Val::from(crate::topics::AgoraEvent::StakingTokenUpdated))
+    });
+    let min_stake_event = all_events.iter().any(|(topics, _)| {
+        topics.get(0) == Some(soroban_sdk::Val::from(crate::topics::AgoraEvent::MinStakeAmountUpdated))
+    });
+    assert!(staking_token_event, "StakingTokenUpdated event not emitted");
+    assert!(min_stake_event, "MinStakeAmountUpdated event not emitted");
+}
+
+// ── Issue #895: set_platform_fee requires approved multisig proposal when threshold > 1 ──
+
+#[test]
+fn test_set_platform_fee_single_admin_no_proposal_needed() {
+    // threshold == 1: direct call still works
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+    // threshold is 1 after initialize → should succeed without proposal
+    client.set_platform_fee(&300);
+    assert_eq!(client.get_platform_fee(), 300);
+}
+
+#[test]
+fn test_set_platform_fee_multisig_no_proposal_fails() {
+    // threshold > 1: calling set_platform_fee without an approved proposal returns MultisigError
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // Add a second admin and raise threshold to 2
+    let pid = client.propose_add_admin(&admin1, &admin2, &0u64);
+    client.approve_proposal(&admin1, &pid);
+    client.execute_proposal(&admin1, &pid);
+
+    let pid2 = client.propose_set_threshold(&admin1, &2u32, &0u64);
+    client.approve_proposal(&admin1, &pid2);
+    client.approve_proposal(&admin2, &pid2);
+    client.execute_proposal(&admin1, &pid2);
+
+    // Now threshold == 2: set_platform_fee without a proposal should fail
+    let result = client.try_set_platform_fee(&300);
+    assert_eq!(result, Err(Ok(EventRegistryError::MultisigError)));
+}
+
+#[test]
+fn test_set_platform_fee_multisig_with_approved_proposal_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin1, &platform_wallet, &500, &usdc_token);
+
+    // Raise to 2-of-2 multisig
+    let pid = client.propose_add_admin(&admin1, &admin2, &0u64);
+    client.approve_proposal(&admin1, &pid);
+    client.execute_proposal(&admin1, &pid);
+    let pid2 = client.propose_set_threshold(&admin1, &2u32, &0u64);
+    client.approve_proposal(&admin1, &pid2);
+    client.approve_proposal(&admin2, &pid2);
+    client.execute_proposal(&admin1, &pid2);
+
+    // Create and fully approve a SetPlatformFee proposal
+    let fee_pid = client.propose_parameter_change(
+        &admin1,
+        &crate::types::ParameterChange::SetPlatformFee(300),
+        &0u64,
+    );
+    client.approve_proposal(&admin1, &fee_pid);
+    client.approve_proposal(&admin2, &fee_pid);
+
+    // Now set_platform_fee should succeed using the approved proposal
+    client.set_platform_fee(&300);
+    assert_eq!(client.get_platform_fee(), 300);
+}
+
+// ── Issue #897: propose_add_admin rejects duplicate admins at proposal creation ──
+
+#[test]
+fn test_propose_add_admin_duplicate_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+    let usdc_token = Address::generate(&env);
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
+
+    // Trying to propose admin (who is already an admin) should fail immediately
+    let result = client.try_propose_add_admin(&admin, &admin, &0u64);
+    assert_eq!(result, Err(Ok(EventRegistryError::AdminAlreadyExists)));
+}
+
+#[test]
+fn test_propose_add_admin_new_address_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(EventRegistry, ());
+    let client = EventRegistryClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
     let new_admin = Address::generate(&env);
-
-    // Drain setup events to initialize event tracking
-    let _ = env.events().all();
-
-    // Use set_platform_fee as a reference (known to emit 1 event)
-    client.set_platform_fee(&100);
-    let fee_events = env.events().all();
-    assert_eq!(
-        fee_events.len(),
-        1,
-        "set_platform_fee should emit 1 event, found {}",
-        fee_events.len()
-    );
-
-    // Now test set_admin — should emit exactly one AdminUpdated event
-    client.set_admin(&new_admin);
-
-    // Secondary: exactly one AdminUpdated event
-    let events = env.events().all();
-    assert_eq!(
-        events.len(),
-        1,
-        "expected exactly 1 AdminUpdated event from set_admin, found {}",
-        events.len()
-    );
-
-    // Primary: admin was updated in storage
-    assert_eq!(client.get_admin(), new_admin, "admin should be updated");
-}
-
-#[test]
-#[should_panic] // Authentication failure expected when no auth is mocked
-fn test_set_admin_unauthorized() {
-    let env = Env::default();
-    // No mock_all_auths — auth will fail
-
-    let contract_id = env.register(EventRegistry, ());
-    let client = EventRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
     let platform_wallet = Address::generate(&env);
     let usdc_token = Address::generate(&env);
-    // Use a separate mocked env just for initialization
-    {
-        let env_init = Env::default();
-        env_init.mock_all_auths();
-        let cid_init = env_init.register(EventRegistry, ());
-        let client_init = EventRegistryClient::new(&env_init, &cid_init);
-        client_init.initialize(&admin, &platform_wallet, &500, &usdc_token);
-    }
+    client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
-    // This contract has no initialization; calling set_admin without auth should panic
-    client.set_admin(&Address::generate(&env));
+    // Proposing a brand-new address should succeed
+    let pid = client.propose_add_admin(&admin, &new_admin, &0u64);
+    let proposal = client.get_proposal(&pid).unwrap();
+    assert!(!proposal.executed);
+    assert_eq!(proposal.change, crate::types::ParameterChange::AddAdmin(new_admin));
 }
 
 #[test]
-fn test_set_admin_invalid_address_rejected() {
+fn test_get_events_batch_limit() {
     let env = Env::default();
     env.mock_all_auths();
+    
+    let mut event_ids = soroban_sdk::Vec::new(&env);
+    for i in 0..51 {
+        event_ids.push_back(soroban_sdk::String::from_str(&env, "event_id"));
+    }
+    
+    let contract_id = env.register_contract(None, EventRegistryContract);
+    let client = EventRegistryContractClient::new(&env, &contract_id);
+    
+    let res = client.try_get_events_batch(&event_ids);
+    assert_eq!(res, Err(Ok(EventRegistryError::TooManyTiers)));
+}
 
+// ── Issues #862, #863, #864: CID validation, is_tier_sold_out, add_tier, deactivate_tier ──
+
+#[test]
+fn test_validate_metadata_cid_v0_and_v1() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+
+    // CIDv0 (Qm... len >= 46) should succeed
+    let cid_v0 = String::from_str(&env, "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco");
+    let mut args = make_args(&env, "event_cid_v0", &organizer, None);
+    args.metadata_cid = cid_v0;
+    client.register_event(&args);
+
+    // CIDv1 (bafy... len >= 59) should succeed
+    let cid_v1 = String::from_str(&env, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi");
+    let mut args2 = make_args(&env, "event_cid_v1", &organizer, None);
+    args2.metadata_cid = cid_v1;
+    client.register_event(&args2);
+
+    // Invalid prefix should fail
+    let invalid_cid = String::from_str(&env, "invalid_cid_prefix_1234567890123456789012345678901234567890");
+    let mut args3 = make_args(&env, "event_invalid_cid", &organizer, None);
+    args3.metadata_cid = invalid_cid;
+    let res = client.try_register_event(&args3);
+    assert_eq!(res, Err(Ok(EventRegistryError::InvalidMetadataCid)));
+}
+
+#[test]
+fn test_is_tier_sold_out() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "sold_out_event");
+    let tier_id = String::from_str(&env, "general");
+
+    client.register_event(&make_args(&env, "sold_out_event", &organizer, None));
+
+    // Initially not sold out
+    assert!(!client.is_tier_sold_out(&event_id, &tier_id));
+
+    // Non-existent event returns EventNotFound
+    let fake_event = String::from_str(&env, "non_existent");
+    assert_eq!(
+        client.try_is_tier_sold_out(&fake_event, &tier_id),
+        Err(Ok(EventRegistryError::EventNotFound))
+    );
+
+    // Non-existent tier returns TierNotFound
+    let fake_tier = String::from_str(&env, "fake_tier");
+    assert_eq!(
+        client.try_is_tier_sold_out(&event_id, &fake_tier),
+        Err(Ok(EventRegistryError::TierNotFound))
+    );
+}
+
+#[test]
+fn test_add_tier_and_deactivate_tier() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "tier_mgmt_event");
+    let new_tier_id = String::from_str(&env, "vip_new");
+
+    client.register_event(&make_args(&env, "tier_mgmt_event", &organizer, None));
+
+    let new_tier = TicketTier {
+        name: String::from_str(&env, "VIP New"),
+        price: 200,
+        tier_limit: 50,
+        current_sold: 0,
+        is_refundable: true,
+        auction_config: soroban_sdk::Vec::new(&env),
+        loyalty_multiplier: 2,
+        max_per_user: 5,
+    };
+
+    // Add new tier succeeds
+    client.add_tier(&event_id, &new_tier_id, &new_tier);
+    assert!(!client.is_tier_sold_out(&event_id, &new_tier_id));
+
+    // Deactivate tier sets tier_limit = current_sold (0), making it sold out
+    client.deactivate_tier(&event_id, &new_tier_id);
+    assert!(client.is_tier_sold_out(&event_id, &new_tier_id));
+}
+
+#[test]
+fn test_add_tier_exceeds_max_supply() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+    let event_id = String::from_str(&env, "max_supply_event");
+    let new_tier_id = String::from_str(&env, "overflow_tier");
+
+    let mut args = make_args(&env, "max_supply_event", &organizer, None);
+    args.max_supply = 100; // Total supply limit 100, initial tier limit is 100
+    client.register_event(&args);
+
+    let overflow_tier = TicketTier {
+        name: String::from_str(&env, "Extra Tier"),
+        price: 100,
+        tier_limit: 10, // 100 + 10 > 100 max_supply
+        current_sold: 0,
+        is_refundable: true,
+        auction_config: soroban_sdk::Vec::new(&env),
+        loyalty_multiplier: 1,
+        max_per_user: 0,
+    };
+
+    let result = client.try_add_tier(&event_id, &new_tier_id, &overflow_tier);
+    assert_eq!(result, Err(Ok(EventRegistryError::TierLimitExceeds)));
+}
+
+#[test]
+fn test_get_organizer_events_filters_private_for_third_party() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let organizer = Address::generate(&env);
+    let third_party = Address::generate(&env);
+    let payment_address = Address::generate(&env);
     let contract_id = env.register(EventRegistry, ());
     let client = EventRegistryClient::new(&env, &contract_id);
 
@@ -4937,10 +4657,95 @@ fn test_set_admin_invalid_address_rejected() {
     let usdc_token = Address::generate(&env);
     client.initialize(&admin, &platform_wallet, &500, &usdc_token);
 
-    // Try to set the contract's own address as admin — must fail with InvalidAddress
-    let result = client.try_set_admin(&client.address);
-    assert_eq!(
-        result,
-        Err(Ok(crate::error::EventRegistryError::InvalidAddress))
-    );
+    // Create a public event
+    let public_event_id = String::from_str(&env, "public_event");
+    let public_event = EventInfo {
+        event_id: public_event_id.clone(),
+        name: String::from_str(&env, "Public Event"),
+        organizer_address: organizer.clone(),
+        payment_address: payment_address.clone(),
+        platform_fee_percent: 500,
+        is_active: true,
+        status: EventStatus::Active,
+        created_at: env.ledger().timestamp(),
+        metadata_cid: String::from_str(&env, "ipfs://public"),
+        max_supply: 100,
+        current_supply: 0,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: None,
+        resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
+        custom_fee_bps: None,
+        banner_cid: None,
+        tags: None,
+        category_ids: soroban_sdk::vec![&env],
+        start_time: 0,
+        is_private: false,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::vec![&env],
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
+        referral_rate_bps: 0,
+    };
+    client.store_event(&public_event);
+
+    // Create a private event
+    let private_event_id = String::from_str(&env, "private_event");
+    let private_event = EventInfo {
+        event_id: private_event_id.clone(),
+        name: String::from_str(&env, "Private Event"),
+        organizer_address: organizer.clone(),
+        payment_address: payment_address.clone(),
+        platform_fee_percent: 500,
+        is_active: true,
+        status: EventStatus::Active,
+        created_at: env.ledger().timestamp(),
+        metadata_cid: String::from_str(&env, "ipfs://private"),
+        max_supply: 100,
+        current_supply: 0,
+        milestone_plan: None,
+        tiers: Map::new(&env),
+        refund_deadline: 0,
+        restocking_fee: None,
+        resale_cap_bps: None,
+        is_postponed: false,
+        grace_period_end: 0,
+        min_sales_target: 0,
+        target_deadline: 0,
+        goal_met: false,
+        custom_fee_bps: None,
+        banner_cid: None,
+        tags: None,
+        category_ids: soroban_sdk::vec![&env],
+        start_time: 0,
+        is_private: true,
+        end_time: 0,
+        transfer_lock_duration: 0,
+        accepted_tokens: soroban_sdk::vec![&env],
+        use_global_whitelist: true,
+        feedback_cid: None,
+        cancellation_reason: None,
+        referral_rate_bps: 0,
+    };
+    client.store_event(&private_event);
+
+    // Organizer sees both events
+    let organizer_events = client.get_organizer_events(&organizer, &organizer);
+    assert_eq!(organizer_events.len(), 2);
+    assert!(organizer_events.contains(&public_event_id));
+    assert!(organizer_events.contains(&private_event_id));
+
+    // Third party sees only public events
+    let third_party_events = client.get_organizer_events(&organizer, &third_party);
+    assert_eq!(third_party_events.len(), 1);
+    assert!(third_party_events.contains(&public_event_id));
+    assert!(!third_party_events.contains(&private_event_id));
 }

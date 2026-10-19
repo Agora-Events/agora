@@ -1,0 +1,817 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
+import { toast } from "sonner";
+import { X, Minus, Plus, Ticket, ArrowRight, Gift } from "@/components/ui/icons";
+import Image from "next/image";
+import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import CardOnramp from "@/components/payments/CardOnramp";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { CheckoutAttribution, getCheckoutAttribution } from "@/utils/attribution";
+import { checkUsdcTrustline, addUsdcTrustlineViaFreighter } from "@/lib/stellar/trustline";
+import { StellarExplorerLink } from "@/components/stellar/stellar-explorer-link";
+import { parseAndLogError } from "@/lib/stellar/error-parser";
+import { syncTicketPurchase } from "@/lib/api-handler";
+import { PurchaseSuccessAnimation } from "@/components/events/PurchaseSuccessAnimation";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface TicketModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  event: {
+    id: string | number;
+    title: string;
+    price: string;
+    location: string;
+    date: string;
+    /** When 0 the modal switches to Waitlist mode instead of Purchase mode. */
+    availableQuantity?: number;
+  };
+  initialQuantity: number;
+}
+
+/** The three distinct modal views. */
+type ModalView = "purchase" | "trustline" | "purchased" | "waitlist_success";
+
+// ─── Waitlist icon ────────────────────────────────────────────────────────────
+
+function ClockIcon({ size = 24, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketModalProps) {
+  const isSoldOut = event.availableQuantity === 0;
+
+  const [view, setView] = useState<ModalView>(isSoldOut ? "purchase" : "purchase");
+  const [quantity, setQuantity] = useState(initialQuantity);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
+  const [purchasedTicket, setPurchasedTicket] = useState<{ id: string; txHash?: string } | null>(null);
+  const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
+  const [recipientWallet, setRecipientWallet] = useState<string>("");
+  const [isGiftMode, setIsGiftMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<"wallet" | "card">("wallet");
+
+  // ── Trustline state ──────────────────────────────────────────────────────
+  const [isCheckingTrustline, setIsCheckingTrustline] = useState(false);
+  const [isAddingTrustline, setIsAddingTrustline] = useState(false);
+
+  // ── Accessibility: screen reader live announcements (WCAG 2.1 SC 4.1.3) ──
+  // Each transaction lifecycle phase sets this message; the aria-live region
+  // announces it to assistive technologies without requiring focus (Issue #1502).
+  const [liveAnnouncement, setLiveAnnouncement] = useState<string>("");
+
+  const modalRef = useFocusTrap<HTMLDivElement>(isOpen);
+
+  const isFree = event.price.toLowerCase() === "free";
+  const unitPrice = isFree ? 0 : parseFloat(event.price.replace("$", ""));
+  const totalPrice = unitPrice * quantity;
+
+  // Reset internal state whenever the modal opens/closes or soldOut flips.
+  useEffect(() => {
+    if (isOpen) {
+      setView("purchase");
+      setPurchasedTicket(null);
+      setWaitlistPosition(null);
+      setIsGiftMode(false);
+      setRecipientWallet("");
+      setQuantity(initialQuantity);
+      setLiveAnnouncement("");
+    }
+  }, [isOpen, initialQuantity]);
+
+  // ── Trustline pre-check ─────────────────────────────────────────────────
+  // Before rendering the purchase confirmation step, verify the buyer's
+  // wallet has a USDC trustline. If not, redirect to the trustline setup view.
+  const handleProceedToConfirm = async () => {
+    // Only run the trustline check for non-free, wallet-tab purchases.
+    if (isFree || activeTab !== "wallet") return;
+
+    const buyerWallet = "GBUYERMOCKADDRESS1234567890STEL"; // replace with real Freighter address
+    setIsCheckingTrustline(true);
+    try {
+      const result = await checkUsdcTrustline(buyerWallet);
+      if (!result.hasTrustline) {
+        setView("trustline");
+        return;
+      }
+    } catch {
+      // Network error — let the purchase attempt proceed and surface errors naturally
+    } finally {
+      setIsCheckingTrustline(false);
+    }
+    // Trustline confirmed — proceed straight to the purchase handler
+    await handleConfirmPurchase();
+  };
+
+  // ── Add trustline handler ───────────────────────────────────────────────
+  const handleAddTrustline = async () => {
+    const buyerWallet = "GBUYERMOCKADDRESS1234567890STEL"; // replace with real Freighter address
+    setIsAddingTrustline(true);
+    try {
+      await addUsdcTrustlineViaFreighter(buyerWallet);
+      toast.success("USDC trustline added! You can now purchase tickets.");
+      setView("purchase");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to add trustline. Please try again.");
+    } finally {
+      setIsAddingTrustline(false);
+    }
+  };
+
+  // Keyboard & scroll lock
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  // ── Purchase handler ────────────────────────────────────────────────────────
+  const handleConfirmPurchase = async () => {
+    setIsPurchasing(true);
+    try {
+      const requestBody: {
+        eventId: string;
+        quantity: number;
+        buyerWallet: string;
+        recipientWallet?: string;
+        attribution?: CheckoutAttribution;
+      } = {
+        eventId: event.id.toString(),
+        quantity: quantity,
+        buyerWallet: "GBUYERMOCKADDRESS1234567890STEL",
+      };
+
+      requestBody.attribution = getCheckoutAttribution();
+
+      if (isGiftMode && recipientWallet.trim()) {
+        requestBody.recipientWallet = recipientWallet.trim();
+      }
+
+      const response = await fetch("/api/payments/ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        // Parse contract error code if present (Issue #1501)
+        const { userMessage, technicalDetails, isContractError } = parseAndLogError(
+          data.error || data,
+          "ticket purchase request"
+        );
+        throw new Error(userMessage);
+      }
+
+      // Client-side XDR signature prompt via Freighter (Issue #1086)
+      let txHash: string | undefined;
+      if (data.transactionXdr && data.requiresSignature) {
+        try {
+          const freighter = await import("@stellar/freighter-api");
+          if (await freighter.isConnected()) {
+            // Phase 1: awaiting wallet signature
+            setLiveAnnouncement("Please approve the transaction in your Freighter wallet.");
+            toast.info("Please sign the transaction in your Freighter wallet...");
+            await freighter.signTransaction(data.transactionXdr, {
+              networkPassphrase: process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015",
+            });
+            txHash = data.transactionXdr?.slice(0, 64);
+          }
+        } catch (signErr) {
+          const { userMessage } = parseAndLogError(signErr, "Freighter wallet signing");
+          toast.error(userMessage);
+          throw signErr;
+        }
+      } else {
+        txHash = data.txHash;
+      }
+
+      // Sync confirmed transaction with backend (Issue #1500)
+      if (txHash && data.ticketId) {
+        setIsSyncing(true);
+        try {
+          await syncTicketPurchase({
+            txHash,
+            eventId: event.id.toString(),
+            buyerAddress: requestBody.buyerWallet,
+          });
+          toast.success("Transaction confirmed and ticket synced!");
+        } catch (syncErr) {
+          const { userMessage } = parseAndLogError(syncErr, "ticket backend sync");
+          console.warn("Sync failed but showing user on-chain transaction:", userMessage);
+          // Don't throw — the on-chain transaction succeeded, backend sync just failed
+          // User can still see their txHash in the success view
+          toast.warning("Ticket confirmed on-chain but sync pending. Check your wallet.");
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+
+      setPurchasedTicket({ id: data.ticketId, txHash });
+      setView("purchased");
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      toast.error(errorMsg);
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
+  // ── Onramp (card) success handler ──────────────────────────────────────────
+  const handleOnrampSuccess = async (fundedWallet: string) => {
+    setIsPurchasing(true);
+    try {
+      const requestBody: {
+        eventId: string;
+        quantity: number;
+        buyerWallet: string;
+        recipientWallet?: string;
+        attribution?: CheckoutAttribution;
+      } = {
+        eventId: event.id.toString(),
+        quantity: quantity,
+        buyerWallet: fundedWallet,
+      };
+
+      requestBody.attribution = getCheckoutAttribution();
+
+      if (isGiftMode && recipientWallet.trim()) {
+        requestBody.recipientWallet = recipientWallet.trim();
+      }
+
+      const response = await fetch("/api/payments/ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        // Parse contract error code if present (Issue #1501)
+        const { userMessage } = parseAndLogError(
+          data.error || data,
+          "onramp ticket purchase"
+        );
+        throw new Error(userMessage);
+      }
+
+      // Sync confirmed transaction with backend (Issue #1500)
+      if (data.txHash && data.ticketId) {
+        setIsSyncing(true);
+        try {
+          await syncTicketPurchase({
+            txHash: data.txHash,
+            eventId: event.id.toString(),
+            buyerAddress: fundedWallet,
+          });
+          toast.success("Payment complete! Ticket synced to your account.");
+        } catch (syncErr) {
+          const { userMessage } = parseAndLogError(syncErr, "onramp ticket backend sync");
+          console.warn("Sync failed but showing user on-chain transaction:", userMessage);
+          toast.warning("Payment confirmed on-chain but sync pending.");
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+
+      setPurchasedTicket({ id: data.ticketId, txHash: data.txHash });
+      setView("purchased");
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      toast.error(errorMsg);
+      setActiveTab("wallet");
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
+  // ── Waitlist handler ────────────────────────────────────────────────────────
+  const handleJoinWaitlist = async () => {
+    setIsJoiningWaitlist(true);
+    try {
+      const response = await fetch(`/api/v1/events/${event.id}/waitlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to join waitlist");
+
+      setWaitlistPosition(data.position);
+      setView("waitlist_success");
+      toast.success(`You're #${data.position} on the waitlist!`);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+    } finally {
+      setIsJoiningWaitlist(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-black/60 backdrop-blur-md"
+            aria-hidden="true"
+          />
+
+          {/* Modal */}
+          <motion.div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ticket-modal-title"
+            aria-describedby="ticket-modal-subtitle"
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            className="relative w-full max-w-[500px] bg-base rounded-[32px] overflow-hidden border border-black/10 shadow-2xl z-10"
+          >
+            {/* Close button */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/50 hover:bg-white transition-colors flex items-center justify-center border border-black/5 z-10"
+              aria-label="Close modal"
+            >
+              <X size={20} className="text-black" />
+            </button>
+
+            {/* ── Screen reader live region (WCAG 2.1 SC 4.1.3) ──────────────
+                aria-live="polite" avoids interrupting ongoing speech.
+                aria-atomic="true" ensures the full message is read each time.
+                Issue #1502 ─────────────────────────────────────────────── */}
+            <div
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="sr-only"
+            >
+              {liveAnnouncement}
+            </div>
+
+            {/* ── Purchase view ─────────────────────────────────────────── */}
+            {view === "purchase" && !isSoldOut && (
+              <div className="p-8 sm:p-10 flex flex-col gap-8">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-accent font-bold uppercase tracking-wider text-sm">
+                    <Ticket size={16} aria-hidden="true" />
+                    <span>Confirm Ticket</span>
+                  </div>
+                  <h2
+                    id="ticket-modal-title"
+                    className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight"
+                  >
+                    {event.title}
+                  </h2>
+                  <p id="ticket-modal-subtitle" className="text-black/60 font-medium">
+                    {event.date} • {event.location}
+                  </p>
+                </div>
+
+                {/* Tabs: Pay with Wallet / Pay with Card */}
+                {!isFree && (
+                  <div className="flex items-center gap-2 bg-white/40 rounded-xl p-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("wallet")}
+                      className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
+                        activeTab === "wallet" ? "bg-accent text-white" : "bg-transparent text-black/70"
+                      }`}
+                    >
+                      Pay with Wallet
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("card")}
+                      className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
+                        activeTab === "card" ? "bg-accent text-white" : "bg-transparent text-black/70"
+                      }`}
+                    >
+                      Pay with Card
+                    </button>
+                  </div>
+                )}
+
+                {/* Wallet flow */}
+                {activeTab === "wallet" && (
+                  <div className="bg-white/50 rounded-2xl p-6 border border-black/5 flex flex-col gap-6">
+                  {/* Quantity */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-lg font-bold text-black">Quantity</span>
+                    <div className="flex items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                        className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-accent transition-colors"
+                        aria-label="Decrease quantity"
+                      >
+                        <Minus size={18} />
+                      </button>
+                      <span
+                        className="text-xl font-bold w-6 text-center"
+                        aria-live="polite"
+                        aria-atomic="true"
+                      >
+                        {quantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(quantity + 1)}
+                        className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-accent transition-colors"
+                        aria-label="Increase quantity"
+                      >
+                        <Plus size={18} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="h-[1px] bg-black/5 w-full" aria-hidden="true" />
+
+                  {/* Gift toggle */}
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <Gift size={20} className="text-black/70" aria-hidden="true" />
+                      <span className="text-lg font-bold text-black">Gift to someone?</span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isGiftMode}
+                      onClick={() => {
+                        setIsGiftMode(!isGiftMode);
+                        if (isGiftMode) setRecipientWallet("");
+                      }}
+                      className={`w-14 h-8 rounded-full transition-colors relative ${
+                        isGiftMode ? "bg-accent" : "bg-gray-300"
+                      }`}
+                      aria-label="Gift mode"
+                    >
+                      <div
+                        className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${
+                          isGiftMode ? "translate-x-7" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {isGiftMode && (
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="recipientWallet" className="text-sm font-bold text-black/70">
+                        Recipient Wallet Address
+                      </label>
+                      <input
+                        id="recipientWallet"
+                        type="text"
+                        value={recipientWallet}
+                        onChange={(e) => setRecipientWallet(e.target.value)}
+                        placeholder="G... (Stellar address)"
+                        className="w-full px-4 py-3 rounded-xl border border-black/10 bg-white focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
+                      />
+                      <p className="text-xs text-black/50">
+                        The ticket will be sent to this wallet address
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="h-[1px] bg-black/5 w-full" aria-hidden="true" />
+
+                  {/* Total */}
+                  <div className="flex justify-between items-center">
+                    <span className="flex items-center gap-1.5 text-lg font-bold text-black">
+                      Total Price
+                      {!isFree && (
+                        <InfoTooltip
+                          label="What is a Stroop?"
+                          text="Payments settle on the Stellar network, where the smallest unit is a Stroop — 1 XLM equals 10,000,000 Stroops. Network fees are a fraction of a Stroop."
+                        />
+                      )}
+                    </span>
+                    <span className="text-2xl font-bold text-black font-heading">
+                      {isFree ? "FREE" : `$${totalPrice.toFixed(2)}`}
+                    </span>
+                  </div>
+                </div>
+                )}
+
+                <Button
+                  variant="primary"
+                  onClick={handleProceedToConfirm}
+                  disabled={isPurchasing || isCheckingTrustline || isSyncing}
+                  className="w-full h-16 rounded-full text-xl disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {isPurchasing || isCheckingTrustline || isSyncing ? (
+                    <div
+                      className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin"
+                      aria-label={
+                        isCheckingTrustline
+                          ? "Checking wallet…"
+                          : isSyncing
+                            ? "Finalising ticket issuance…"
+                            : "Processing purchase"
+                      }
+                    />
+                  ) : (
+                    <>
+                      <span>Confirm Purchase</span>
+                      <ArrowRight
+                        size={24}
+                        className="group-hover:translate-x-1 transition-transform"
+                        aria-hidden="true"
+                      />
+                    </>
+                  )}
+                </Button>
+
+                {/* Card onramp flow */}
+                {activeTab === "card" && (
+                  <div className="bg-white/50 rounded-2xl p-6 border border-black/5 flex flex-col gap-6">
+                    <CardOnramp
+                      amountUsd={totalPrice}
+                      receivingAddress={process.env.NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID || ""}
+                      onSuccess={(fundedWallet) => handleOnrampSuccess(fundedWallet)}
+                      onCancel={() => {
+                        toast.info("Payment cancelled");
+                        setActiveTab("wallet");
+                      }}
+                      onError={(err) => {
+                        toast.error(err.message || "Onramp error");
+                        setActiveTab("wallet");
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Sold-out / Join Waitlist view ──────────────────────────── */}
+            {view === "purchase" && isSoldOut && (
+              <div className="p-8 sm:p-10 flex flex-col gap-8">
+                <div className="flex flex-col gap-2">
+                  {/* Sold-out chip */}
+                  <div className="flex items-center gap-2 text-error font-bold uppercase tracking-wider text-sm">
+                    <ClockIcon size={16} />
+                    <span>Sold Out</span>
+                  </div>
+                  <h2
+                    id="ticket-modal-title"
+                    className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight"
+                  >
+                    {event.title}
+                  </h2>
+                  <p id="ticket-modal-subtitle" className="text-black/60 font-medium">
+                    {event.date} • {event.location}
+                  </p>
+                </div>
+
+                {/* Info box */}
+                <div
+                  className="bg-white/60 rounded-2xl p-6 border border-black/5 flex flex-col gap-4"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <p className="text-base font-semibold text-black">
+                    All tickets for this event have been claimed.
+                  </p>
+                  <p className="text-sm text-black/60 leading-relaxed">
+                    Join the waitlist and we&apos;ll notify you automatically if a
+                    spot becomes available. You won&apos;t be charged anything now.
+                  </p>
+
+                  {/* What happens section */}
+                  <ul className="flex flex-col gap-2 pt-2 border-t border-black/5">
+                    {[
+                      "You'll receive an email if a ticket is released",
+                      "Your queue position is reserved instantly",
+                      "No payment required to join",
+                    ].map((item) => (
+                      <li key={item} className="flex items-start gap-2 text-sm text-black/70">
+                        <span
+                          className="w-5 h-5 rounded-full bg-accent flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                          aria-hidden="true"
+                        >
+                          ✓
+                        </span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <Button
+                  variant="primary"
+                  onClick={handleJoinWaitlist}
+                  disabled={isJoiningWaitlist}
+                  className="w-full h-16 rounded-full text-xl disabled:opacity-70 disabled:cursor-not-allowed"
+                  aria-label="Join the waitlist for this event"
+                >
+                  {isJoiningWaitlist ? (
+                    <div
+                      className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin"
+                      aria-label="Joining waitlist"
+                    />
+                  ) : (
+                    <>
+                      <ClockIcon size={22} aria-hidden="true" />
+                      <span>Join Waitlist</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {/* ── Trustline setup view ───────────────────────────────────── */}
+            {view === "trustline" && (
+              <div className="p-8 sm:p-10 flex flex-col gap-6">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-amber-600 font-bold uppercase tracking-wider text-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span>Trustline Required</span>
+                  </div>
+                  <h2 id="ticket-modal-title" className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight">
+                    Add USDC Trustline (Testnet)
+                  </h2>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col gap-3" role="status">
+                  <p className="text-sm font-semibold text-amber-900">
+                    Your wallet does not have a USDC trustline set up.
+                  </p>
+                  <p className="text-sm text-amber-800 leading-relaxed">
+                    A <strong>trustline</strong> is a voluntary link between your Stellar account and a specific
+                    asset issuer (in this case, USDC). Without one, your account cannot receive or hold USDC,
+                    so ticket payments cannot be processed.
+                  </p>
+                  <p className="text-sm text-amber-800 leading-relaxed">
+                    Clicking the button below will prompt Freighter to sign a <code className="bg-amber-100 px-1 rounded text-xs">ChangeTrust</code> transaction
+                    on your behalf. This is a one-time, no-cost operation — you will only need XLM for the tiny
+                    base-reserve fee (~0.5 XLM).
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <Button
+                    variant="primary"
+                    onClick={handleAddTrustline}
+                    disabled={isAddingTrustline}
+                    className="w-full h-14 rounded-full text-lg disabled:opacity-70 disabled:cursor-not-allowed"
+                    aria-label="Add USDC Trustline via Freighter"
+                  >
+                    {isAddingTrustline ? (
+                      <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" aria-label="Adding trustline…" />
+                    ) : (
+                      "Add USDC Trustline (Testnet)"
+                    )}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setView("purchase")}
+                    className="text-sm text-black/50 hover:text-black/80 transition-colors underline-offset-2 hover:underline"
+                  >
+                    Go back
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Purchased success view ─────────────────────────────────── */}
+            {view === "purchased" && purchasedTicket && (
+              <div className="p-8 sm:p-10 flex flex-col items-center text-center gap-8">
+                <PurchaseSuccessAnimation active={view === "purchased"} />
+
+                <div className="flex flex-col gap-2">
+                  <h2 className="text-3xl font-bold text-black font-heading">Ticket Minted!</h2>
+                  <p className="text-black/60 font-medium">
+                    {isGiftMode && recipientWallet.trim()
+                      ? `Your gift ticket has been sent to ${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-4)} on the Stellar network.`
+                      : "Your ticket has been successfully registered on the Stellar network."}
+                  </p>
+                </div>
+
+                <div className="bg-white p-6 rounded-3xl shadow-xl border border-black/5 flex flex-col items-center gap-4">
+                  <QRCodeSVG value={purchasedTicket.id} size={200} level="H" includeMargin />
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-bold text-black/40 uppercase tracking-widest">
+                      Ticket ID
+                    </span>
+                    <span className="font-mono text-sm font-bold text-black">
+                      {purchasedTicket.id}
+                    </span>
+                  </div>
+                  {purchasedTicket.txHash && (
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-xs font-bold text-black/40 uppercase tracking-widest">
+                        Transaction
+                      </span>
+                      <StellarExplorerLink txHash={purchasedTicket.txHash} />
+                    </div>
+                  )}
+                </div>
+
+                <Button
+                  variant="primary"
+                  onClick={onClose}
+                  className="w-full h-14 rounded-full text-lg"
+                >
+                  Done
+                </Button>
+              </div>
+            )}
+
+            {/* ── Waitlist success view ──────────────────────────────────── */}
+            {view === "waitlist_success" && waitlistPosition !== null && (
+              <div className="p-8 sm:p-10 flex flex-col items-center text-center gap-8">
+                <motion.div
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="w-20 h-20 rounded-full bg-accent flex items-center justify-center"
+                >
+                  <ClockIcon size={40} className="text-black" />
+                </motion.div>
+
+                <div className="flex flex-col gap-2">
+                  <h2 className="text-3xl font-bold text-black font-heading">
+                    You&apos;re on the list!
+                  </h2>
+                  <p className="text-black/60 font-medium">
+                    We&apos;ll notify you if a spot opens up for{" "}
+                    <strong>{event.title}</strong>.
+                  </p>
+                </div>
+
+                {/* Queue position badge */}
+                <div
+                  className="bg-white border-2 border-black rounded-3xl shadow-[-4px_4px_0_rgba(0,0,0,1)] px-10 py-6 flex flex-col items-center gap-1"
+                  aria-label={`Your waitlist position is number ${waitlistPosition}`}
+                >
+                  <span className="text-xs font-bold text-black/40 uppercase tracking-widest">
+                    Your Position
+                  </span>
+                  <span className="text-6xl font-extrabold text-ink-deep leading-none">
+                    #{waitlistPosition}
+                  </span>
+                  <span className="text-sm text-black/50 font-medium">in the queue</span>
+                </div>
+
+                <p className="text-xs text-black/40 max-w-xs">
+                  You can leave the waitlist at any time from your profile page.
+                </p>
+
+                <Button
+                  variant="primary"
+                  onClick={onClose}
+                  className="w-full h-14 rounded-full text-lg"
+                >
+                  Done
+                </Button>
+              </div>
+            )}
+
+            {/* Background watermark */}
+            <div className="absolute -right-10 -bottom-10 opacity-[0.03] pointer-events-none -rotate-12 z-0">
+              <Image src="/icons/stellar-logo.svg" width={300} height={300} alt="" aria-hidden="true" />
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}

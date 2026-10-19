@@ -1,0 +1,51 @@
+name: Bug report
+description: Create a report to help us improve and fix bugs
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: What part of Agora does this issue relate to?
+      options:
+        - frontend
+        - backend
+        - contract
+        - docs
+        - infra
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: steps_to_reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected_vs_actual
+    attributes:
+      label: Expected vs Actual Behavior
+      description: What you expected to happen versus what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Details about your environment (OS, browser, Node version, contract version, etc.).
+    validations:
+      required: false

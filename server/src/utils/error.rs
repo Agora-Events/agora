@@ -1,8 +1,182 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde_json::json;
+use serde::Serialize;
 use thiserror::Error;
-use tracing::error;
+use tracing::{error, warn};
+
+/// Stable, machine-readable API error code.
+///
+/// Serializes as `SCREAMING_SNAKE_CASE` so clients can branch on a specific
+/// failure without string-matching the human-readable message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[schema(as = String)]
+pub enum ErrorCode {
+    /// Request body or query parameters failed validation.
+    ValidationFailed,
+    /// Missing or invalid authentication credentials.
+    Unauthorized,
+    /// Authenticated caller is not allowed to perform this action.
+    Forbidden,
+    /// The requested resource does not exist.
+    NotFound,
+    /// The request conflicts with the current resource state.
+    Conflict,
+    /// The caller has exceeded the allowed request rate.
+    RateLimited,
+    /// An unexpected internal failure.
+    InternalError,
+    /// A required downstream service is temporarily unavailable.
+    ServiceUnavailable,
+}
+
+impl ErrorCode {
+    /// Wire-format string (`VALIDATION_FAILED`, `NOT_FOUND`, …).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ValidationFailed => "VALIDATION_FAILED",
+            Self::Unauthorized => "UNAUTHORIZED",
+            Self::Forbidden => "FORBIDDEN",
+            Self::NotFound => "NOT_FOUND",
+            Self::Conflict => "CONFLICT",
+            Self::RateLimited => "RATE_LIMITED",
+            Self::InternalError => "INTERNAL_ERROR",
+            Self::ServiceUnavailable => "SERVICE_UNAVAILABLE",
+        }
+    }
+
+    /// Map an HTTP status to the closest machine-readable code.
+    ///
+    /// Status codes themselves are unchanged; this only chooses the `code`
+    /// field written into the JSON body.
+    pub fn from_status(status: StatusCode) -> Self {
+        match status {
+            StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => Self::ValidationFailed,
+            StatusCode::UNAUTHORIZED => Self::Unauthorized,
+            StatusCode::FORBIDDEN => Self::Forbidden,
+            StatusCode::NOT_FOUND => Self::NotFound,
+            StatusCode::CONFLICT => Self::Conflict,
+            StatusCode::TOO_MANY_REQUESTS => Self::RateLimited,
+            StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::BAD_GATEWAY
+            | StatusCode::GATEWAY_TIMEOUT => Self::ServiceUnavailable,
+            _ => Self::InternalError,
+        }
+    }
+}
+
+impl std::fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Reusable API error body returned by every error response.
+///
+/// Serializes as `{ "code": "NOT_FOUND", "message": "..." }` so clients can
+/// branch on [`ErrorCode`] without depending on message copy. The HTTP status
+/// is carried on the response, not in this JSON body.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ApiError {
+    /// Machine-readable error code.
+    pub code: ErrorCode,
+    /// Human-readable error message safe to show to end users.
+    pub message: String,
+    /// Correlates this error with the `x-request-id` response header and
+    /// server logs. Absent (not `null`) when no request id is available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    /// HTTP status used by [`IntoResponse`]. Omitted from the JSON body.
+    #[serde(skip)]
+    #[schema(ignore)]
+    status: u16,
+}
+
+impl ApiError {
+    /// Build an [`ApiError`] from an HTTP status and message.
+    ///
+    /// The status code is preserved; the JSON `code` is derived from it.
+    pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self::with_code(ErrorCode::from_status(status), status, message)
+    }
+
+    /// Build an [`ApiError`] with an explicit machine-readable code.
+    pub fn with_code(
+        code: ErrorCode,
+        status: StatusCode,
+        message: impl Into<String>,
+    ) -> Self {
+        let request_id = crate::middleware::request_id_tracing::REQUEST_ID
+            .try_with(|id| id.clone())
+            .ok();
+        Self {
+            code,
+            message: message.into(),
+            request_id,
+            status: status.as_u16(),
+        }
+    }
+
+    /// Convenience constructor for unexpected internal failures / panics.
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::with_code(
+            ErrorCode::InternalError,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            message,
+        )
+    }
+
+    /// HTTP status associated with this error.
+    pub fn status(&self) -> StatusCode {
+        StatusCode::from_u16(self.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let status = self.status();
+        (status, axum::Json(self)).into_response()
+    }
+}
+
+impl From<AppError> for ApiError {
+    fn from(err: AppError) -> Self {
+        Self::with_code(err.error_code(), err.status_code(), err.public_message())
+    }
+}
+
+/// Classification of sqlx database errors for HTTP mapping and logging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatabaseErrorCategory {
+    /// Connection or pool failures — alert-worthy infrastructure issues.
+    Connection,
+    /// Unique constraint violation.
+    UniqueViolation,
+    /// Foreign key constraint violation.
+    ForeignKeyViolation,
+    /// Other query-level failures.
+    Query,
+}
+
+impl DatabaseErrorCategory {
+    fn from_sqlx(err: &sqlx::Error) -> Self {
+        match err {
+            sqlx::Error::Io(_) | sqlx::Error::PoolClosed | sqlx::Error::PoolTimedOut => {
+                Self::Connection
+            }
+            sqlx::Error::Database(db_err) => {
+                if db_err.is_unique_violation() {
+                    Self::UniqueViolation
+                } else if db_err.is_foreign_key_violation() {
+                    Self::ForeignKeyViolation
+                } else {
+                    Self::Query
+                }
+            }
+            _ => Self::Query,
+        }
+    }
+}
 
 /// Standardised application error enum.
 ///
@@ -27,7 +201,11 @@ pub enum AppError {
     #[error("Resource not found: {0}")]
     NotFound(String),
 
-    /// 500 – an sqlx query or connection failed.
+    /// 409 – the request conflicts with the current state of the resource.
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
+    /// Database failure — status code depends on the underlying sqlx error kind.
     #[error("Database error")]
     DatabaseError(#[from] sqlx::Error),
 
@@ -48,22 +226,34 @@ impl AppError {
             AppError::AuthError(_) => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
-            AppError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {
+                DatabaseErrorCategory::Connection => StatusCode::SERVICE_UNAVAILABLE,
+                DatabaseErrorCategory::UniqueViolation
+                | DatabaseErrorCategory::ForeignKeyViolation => StatusCode::CONFLICT,
+                DatabaseErrorCategory::Query => StatusCode::INTERNAL_SERVER_ERROR,
+            },
             AppError::ExternalServiceError(_) => StatusCode::SERVICE_UNAVAILABLE,
             AppError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
     /// Return a stable, machine-readable error code for the variant.
-    pub fn error_code(&self) -> &'static str {
+    pub fn error_code(&self) -> ErrorCode {
         match self {
-            AppError::ValidationError(_) => "VALIDATION_ERROR",
-            AppError::AuthError(_) => "AUTH_ERROR",
-            AppError::Forbidden(_) => "FORBIDDEN",
-            AppError::NotFound(_) => "NOT_FOUND",
-            AppError::DatabaseError(_) => "DATABASE_ERROR",
-            AppError::ExternalServiceError(_) => "EXTERNAL_SERVICE_ERROR",
-            AppError::InternalServerError(_) => "INTERNAL_SERVER_ERROR",
+            AppError::ValidationError(_) => ErrorCode::ValidationFailed,
+            AppError::AuthError(_) => ErrorCode::Unauthorized,
+            AppError::Forbidden(_) => ErrorCode::Forbidden,
+            AppError::NotFound(_) => ErrorCode::NotFound,
+            AppError::Conflict(_) => ErrorCode::Conflict,
+            AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {
+                DatabaseErrorCategory::Connection => ErrorCode::ServiceUnavailable,
+                DatabaseErrorCategory::UniqueViolation
+                | DatabaseErrorCategory::ForeignKeyViolation => ErrorCode::Conflict,
+                DatabaseErrorCategory::Query => ErrorCode::InternalError,
+            },
+            AppError::ExternalServiceError(_) => ErrorCode::ServiceUnavailable,
+            AppError::InternalServerError(_) => ErrorCode::InternalError,
         }
     }
 
@@ -76,9 +266,21 @@ impl AppError {
             | AppError::AuthError(msg)
             | AppError::Forbidden(msg)
             | AppError::NotFound(msg)
+            | AppError::Conflict(msg)
             | AppError::ExternalServiceError(msg)
             | AppError::InternalServerError(msg) => msg.clone(),
-            AppError::DatabaseError(_) => "A database error occurred".to_string(),
+            AppError::DatabaseError(err) => match DatabaseErrorCategory::from_sqlx(err) {
+                DatabaseErrorCategory::Connection => {
+                    "Database service is temporarily unavailable".to_string()
+                }
+                DatabaseErrorCategory::UniqueViolation => {
+                    "A resource with this identifier already exists".to_string()
+                }
+                DatabaseErrorCategory::ForeignKeyViolation => {
+                    "The referenced resource does not exist".to_string()
+                }
+                DatabaseErrorCategory::Query => "A database error occurred".to_string(),
+            },
         }
     }
 }
@@ -89,39 +291,62 @@ impl AppError {
 ///
 /// ```json
 /// {
-///   "success": false,
-///   "error": {
-///     "code": "NOT_FOUND",
-///     "message": "Resource with id '42' was not found"
-///   }
+///   "code": "NOT_FOUND",
+///   "message": "Resource with id '42' was not found",
+///   "request_id": "b3b3f9b0-1c1e-4c9a-9c1b-2f6a7e9d0c1a"
 /// }
 /// ```
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = self.status_code();
-        let code = self.error_code();
+        let machine_code = self.error_code();
         let message = self.public_message();
 
         // Log *before* the message is moved into the JSON body.
+        // 404s are downgraded to trace so routine invalid-URL probes don't
+        // flood warning/error logs.
         match &self {
-            AppError::DatabaseError(e) => {
-                error!(error = ?e, "Database error");
+            AppError::NotFound(_) => {
+                tracing::trace!(
+                    code = %machine_code,
+                    http_status = status.as_u16(),
+                    message,
+                    "Resource not found"
+                );
             }
+            AppError::DatabaseError(e) => match DatabaseErrorCategory::from_sqlx(e) {
+                DatabaseErrorCategory::Connection => {
+                    error!(error = ?e, "Database connection error");
+                }
+                DatabaseErrorCategory::UniqueViolation
+                | DatabaseErrorCategory::ForeignKeyViolation
+                | DatabaseErrorCategory::Query => {
+                    warn!(error = ?e, "Database query error");
+                }
+            },
             _ => {
-                error!(error = ?self, code, message, "Application error");
+                error!(
+                    error = ?self,
+                    code = %machine_code,
+                    http_status = status.as_u16(),
+                    message,
+                    "Application error"
+                );
             }
         }
 
-        let body = json!({
-            "success": false,
-            "error": {
-                "code": code,
-                "message": message
-            }
-        });
-
-        (status, axum::Json(body)).into_response()
+        ApiError::with_code(machine_code, status, message).into_response()
     }
+}
+
+/// Converts a boxed middleware error into the standard [`ApiError`] body.
+///
+/// Paired with [`tower_http::timeout::TimeoutLayer`] via `HandleErrorLayer` so
+/// a request that exceeds `REQUEST_TIMEOUT_SECS` returns a `504` in the same
+/// shape as every other error response, instead of tower's default plaintext
+/// error body.
+pub async fn handle_timeout_error(_err: axum::BoxError) -> ApiError {
+    ApiError::new(StatusCode::GATEWAY_TIMEOUT, "Request timed out")
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +358,7 @@ mod tests {
     use super::*;
     use axum::body::to_bytes;
     use axum::response::IntoResponse;
+    use sqlx::error::DatabaseError;
 
     // Helper: consume a Response and deserialise its JSON body.
     async fn body_json(resp: Response) -> serde_json::Value {
@@ -181,18 +407,45 @@ mod tests {
     fn test_error_codes() {
         assert_eq!(
             AppError::ValidationError("x".into()).error_code(),
-            "VALIDATION_ERROR"
+            ErrorCode::ValidationFailed
         );
-        assert_eq!(AppError::AuthError("x".into()).error_code(), "AUTH_ERROR");
-        assert_eq!(AppError::Forbidden("x".into()).error_code(), "FORBIDDEN");
-        assert_eq!(AppError::NotFound("x".into()).error_code(), "NOT_FOUND");
+        assert_eq!(
+            AppError::AuthError("x".into()).error_code(),
+            ErrorCode::Unauthorized
+        );
+        assert_eq!(
+            AppError::Forbidden("x".into()).error_code(),
+            ErrorCode::Forbidden
+        );
+        assert_eq!(
+            AppError::NotFound("x".into()).error_code(),
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            AppError::Conflict("x".into()).error_code(),
+            ErrorCode::Conflict
+        );
         assert_eq!(
             AppError::ExternalServiceError("x".into()).error_code(),
-            "EXTERNAL_SERVICE_ERROR"
+            ErrorCode::ServiceUnavailable
         );
         assert_eq!(
             AppError::InternalServerError("x".into()).error_code(),
-            "INTERNAL_SERVER_ERROR"
+            ErrorCode::InternalError
+        );
+    }
+
+    #[test]
+    fn test_error_code_serializes_screaming_snake_case() {
+        let json = serde_json::to_value(ErrorCode::ValidationFailed).unwrap();
+        assert_eq!(json, "VALIDATION_FAILED");
+        assert_eq!(
+            serde_json::to_value(ErrorCode::RateLimited).unwrap(),
+            "RATE_LIMITED"
+        );
+        assert_eq!(
+            serde_json::to_value(ErrorCode::InternalError).unwrap(),
+            "INTERNAL_ERROR"
         );
     }
 
@@ -224,10 +477,38 @@ mod tests {
 
     #[test]
     fn test_public_message_database_hides_details() {
-        // DatabaseError must never expose raw SQL details.
-        let raw_sql_error = sqlx::Error::RowNotFound; // simplest sqlx variant that needs no DB
+        let raw_sql_error = sqlx::Error::RowNotFound;
         let err = AppError::DatabaseError(raw_sql_error);
         assert_eq!(err.public_message(), "A database error occurred");
+    }
+
+    #[test]
+    fn test_public_message_connection_error_is_generic() {
+        let err = AppError::DatabaseError(sqlx::Error::PoolTimedOut);
+        assert_eq!(
+            err.public_message(),
+            "Database service is temporarily unavailable"
+        );
+    }
+
+    #[test]
+    fn test_public_message_unique_violation_is_generic() {
+        let err = AppError::DatabaseError(mock_db_error(MockDbErrorKind::UniqueViolation));
+        assert_eq!(
+            err.public_message(),
+            "A resource with this identifier already exists"
+        );
+        assert!(!err.public_message().contains("duplicate"));
+    }
+
+    #[test]
+    fn test_public_message_foreign_key_violation_is_generic() {
+        let err = AppError::DatabaseError(mock_db_error(MockDbErrorKind::ForeignKeyViolation));
+        assert_eq!(
+            err.public_message(),
+            "The referenced resource does not exist"
+        );
+        assert!(!err.public_message().contains("foreign key"));
     }
 
     #[test]
@@ -292,58 +573,101 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
+    #[tokio::test]
+    async fn test_into_response_pool_timeout_returns_503() {
+        let resp = AppError::DatabaseError(sqlx::Error::PoolTimedOut).into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let json = body_json(resp).await;
+        assert_eq!(json["code"], "SERVICE_UNAVAILABLE");
+        assert_eq!(
+            json["message"],
+            "Database service is temporarily unavailable"
+        );
+        assert!(!json["message"].as_str().unwrap().contains("timeout"));
+    }
+
+    #[tokio::test]
+    async fn test_into_response_pool_closed_returns_503() {
+        let resp = AppError::DatabaseError(sqlx::Error::PoolClosed).into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn test_into_response_unique_violation_returns_409() {
+        let resp = AppError::DatabaseError(mock_db_error(MockDbErrorKind::UniqueViolation))
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let json = body_json(resp).await;
+        assert_eq!(json["code"], "CONFLICT");
+        assert_eq!(
+            json["message"],
+            "A resource with this identifier already exists"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_into_response_foreign_key_violation_returns_409() {
+        let resp = AppError::DatabaseError(mock_db_error(MockDbErrorKind::ForeignKeyViolation))
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let json = body_json(resp).await;
+        assert_eq!(json["code"], "CONFLICT");
+        assert_eq!(json["message"], "The referenced resource does not exist");
+    }
+
     // -----------------------------------------------------------------------
     // IntoResponse — JSON body shape
     // -----------------------------------------------------------------------
 
     #[tokio::test]
-    async fn test_into_response_body_has_success_false() {
+    async fn test_into_response_body_has_flat_code_and_message() {
         let resp = AppError::ValidationError("oops".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["success"], false);
+        assert_eq!(json["code"], "VALIDATION_FAILED");
+        assert_eq!(json["message"], "oops");
+        assert!(json.get("success").is_none());
+        assert!(json.get("error").is_none());
     }
 
     #[tokio::test]
-    async fn test_into_response_body_has_error_object() {
-        let resp = AppError::NotFound("thing".into()).into_response();
+    async fn test_api_error_into_response_shape() {
+        let resp = ApiError::new(StatusCode::NOT_FOUND, "thing").into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
         let json = body_json(resp).await;
-        assert!(
-            json["error"].is_object(),
-            "expected 'error' key to be an object"
-        );
+        assert_eq!(json["code"], "NOT_FOUND");
+        assert_eq!(json["message"], "thing");
     }
 
     #[tokio::test]
     async fn test_into_response_validation_error_body() {
         let resp = AppError::ValidationError("name is required".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["success"], false);
-        assert_eq!(json["error"]["code"], "VALIDATION_ERROR");
-        assert_eq!(json["error"]["message"], "name is required");
+        assert_eq!(json["code"], "VALIDATION_FAILED");
+        assert_eq!(json["message"], "name is required");
     }
 
     #[tokio::test]
     async fn test_into_response_auth_error_body() {
         let resp = AppError::AuthError("token missing".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "AUTH_ERROR");
-        assert_eq!(json["error"]["message"], "token missing");
+        assert_eq!(json["code"], "UNAUTHORIZED");
+        assert_eq!(json["message"], "token missing");
     }
 
     #[tokio::test]
     async fn test_into_response_forbidden_body() {
         let resp = AppError::Forbidden("not allowed".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "FORBIDDEN");
-        assert_eq!(json["error"]["message"], "not allowed");
+        assert_eq!(json["code"], "FORBIDDEN");
+        assert_eq!(json["message"], "not allowed");
     }
 
     #[tokio::test]
     async fn test_into_response_not_found_body() {
         let resp = AppError::NotFound("record 42".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "NOT_FOUND");
-        assert_eq!(json["error"]["message"], "record 42");
+        assert_eq!(json["code"], "NOT_FOUND");
+        assert_eq!(json["message"], "record 42");
     }
 
     #[tokio::test]
@@ -351,30 +675,115 @@ mod tests {
         let resp =
             AppError::ExternalServiceError("payment gateway unreachable".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "EXTERNAL_SERVICE_ERROR");
-        assert_eq!(json["error"]["message"], "payment gateway unreachable");
+        assert_eq!(json["code"], "SERVICE_UNAVAILABLE");
+        assert_eq!(json["message"], "payment gateway unreachable");
     }
 
     #[tokio::test]
     async fn test_into_response_internal_server_error_body() {
         let resp = AppError::InternalServerError("crash".into()).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "INTERNAL_SERVER_ERROR");
-        assert_eq!(json["error"]["message"], "crash");
+        assert_eq!(json["code"], "INTERNAL_ERROR");
+        assert_eq!(json["message"], "crash");
     }
 
     #[tokio::test]
     async fn test_into_response_database_error_hides_details() {
         let resp = AppError::DatabaseError(sqlx::Error::RowNotFound).into_response();
         let json = body_json(resp).await;
-        assert_eq!(json["error"]["code"], "DATABASE_ERROR");
-        // Raw SQL details must NOT appear in the public message.
-        assert_eq!(json["error"]["message"], "A database error occurred");
+        assert_eq!(json["code"], "INTERNAL_ERROR");
+        assert_eq!(json["message"], "A database error occurred");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test helpers
+    // -----------------------------------------------------------------------
+
+    #[derive(Debug, Copy, Clone)]
+    enum MockDbErrorKind {
+        UniqueViolation,
+        ForeignKeyViolation,
+    }
+
+    #[derive(Debug)]
+    struct MockDbError {
+        kind: MockDbErrorKind,
+    }
+
+    impl std::fmt::Display for MockDbError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock database error")
+        }
+    }
+
+    impl std::error::Error for MockDbError {}
+
+    impl DatabaseError for MockDbError {
+        fn message(&self) -> &str {
+            "duplicate key value violates unique constraint users_email_key"
+        }
+
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            match self.kind {
+                MockDbErrorKind::UniqueViolation => sqlx::error::ErrorKind::UniqueViolation,
+                MockDbErrorKind::ForeignKeyViolation => sqlx::error::ErrorKind::ForeignKeyViolation,
+            }
+        }
+    }
+
+    fn mock_db_error(kind: MockDbErrorKind) -> sqlx::Error {
+        sqlx::Error::Database(Box::new(MockDbError { kind }))
     }
 
     // -----------------------------------------------------------------------
     // Content-Type header
     // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // request_id
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_request_id_in_body_matches_response_header() {
+        use crate::config::request_id::{
+            propagate_request_id_layer, set_request_id_layer, REQUEST_ID_HEADER,
+        };
+        use crate::middleware::request_id_tracing::{propagate_request_id, trace_request_id};
+        use axum::{body::Body, http::Request, middleware, routing::get, Router};
+        use tower::ServiceExt;
+
+        let router = Router::new()
+            .route("/", get(|| async { AppError::NotFound("missing".into()) }))
+            .layer(middleware::from_fn(trace_request_id))
+            .layer(middleware::from_fn(propagate_request_id))
+            .layer(propagate_request_id_layer())
+            .layer(set_request_id_layer());
+
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+
+        let header_id = resp
+            .headers()
+            .get(REQUEST_ID_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .expect("x-request-id header should be present")
+            .to_owned();
+
+        let json = body_json(resp).await;
+        assert_eq!(json["request_id"], header_id);
+    }
 
     #[tokio::test]
     async fn test_into_response_content_type_is_json() {

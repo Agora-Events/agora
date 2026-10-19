@@ -1,0 +1,9 @@
+[toolchain]
+# Pinned to match the version used in CI (see .github/workflows/backend.yml).
+# rustup will install this version automatically on first `cargo` invocation.
+channel = "1.94"
+components = ["rustfmt", "clippy"]
+targets = [
+  # Required by the Soroban smart contracts in contract/ (wasm32 build target).
+  "wasm32-unknown-unknown",
+]

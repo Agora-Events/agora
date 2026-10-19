@@ -1,15 +1,72 @@
-use axum::{extract::State, response::IntoResponse, response::Response};
+use axum::{
+    extract::{FromRef, State},
+    http::{header, HeaderValue},
+    response::IntoResponse,
+    response::Response,
+};
 use chrono::Utc;
 use serde::Serialize;
+use serde_json::json;
 use sqlx::PgPool;
+use std::sync::LazyLock;
+use std::time::Duration;
 
+use crate::cache::RedisCache;
+use crate::notifications::health::check_notifications_health;
 use crate::utils::error::AppError;
 use crate::utils::response::success;
 
-#[derive(Serialize)]
-struct HealthResponse {
+/// Combined state for the `/health` route, which — unlike its siblings
+/// (`/health/db`, `/health/redis`, ...) — needs both the DB pool and the
+/// Redis client to report a single combined status.
+#[derive(Clone)]
+pub struct HealthState {
+    pub pool: PgPool,
+    pub redis: RedisCache,
+}
+
+impl FromRef<HealthState> for PgPool {
+    fn from_ref(state: &HealthState) -> Self {
+        state.pool.clone()
+    }
+}
+
+impl FromRef<HealthState> for RedisCache {
+    fn from_ref(state: &HealthState) -> Self {
+        state.redis.clone()
+    }
+}
+
+static CATEGORY_SYNC_STATUS: LazyLock<std::sync::Mutex<bool>> =
+    LazyLock::new(|| std::sync::Mutex::new(true));
+
+/// Process start time used to report server uptime.
+pub static START_TIME: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
+
+/// Explicitly record the process start time at boot.
+pub fn init_start_time() {
+    let _ = *START_TIME;
+}
+
+/// Return elapsed process uptime in seconds.
+pub fn get_uptime_seconds() -> u64 {
+    START_TIME.elapsed().as_secs()
+}
+
+/// Update the category sync status. Called during startup after validation.
+pub fn set_category_sync_status(synced: bool) {
+    *CATEGORY_SYNC_STATUS.lock().unwrap() = synced;
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct HealthResponse {
     status: &'static str,
     timestamp: String,
+    category_sync: bool,
+    database: &'static str,
+    redis: &'static str,
+    /// Seconds since the server process started (Issue #1428).
+    uptime_seconds: u64,
 }
 
 #[derive(Serialize)]
@@ -24,36 +81,90 @@ struct HealthReadyResponse {
     status: &'static str,
     api: &'static str,
     database: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notifications: Option<crate::notifications::health::NotificationsHealth>,
+}
+
+#[derive(Serialize)]
+struct HealthBlockchainResponse {
+    status: &'static str,
+    blockchain: &'static str,
+    soroban_rpc: String,
+    timestamp: String,
 }
 
 /// GET /health – Combined check for API and Database.
 ///
 /// Returns 200 when both the API process and the database are healthy.
 /// On failure it returns a structured JSON 503 error (via [`AppError`]).
-pub async fn health_check(State(pool): State<PgPool>) -> Response {
-    match sqlx::query("SELECT 1").fetch_one(&pool).await {
-        Ok(_) => {
-            let payload = HealthResponse {
-                status: "ok",
-                timestamp: Utc::now().to_rfc3339(),
-            };
-            success(payload, "API is healthy").into_response()
-        }
-        Err(e) => {
-            tracing::error!("Health check failed: {:?}", e);
-            AppError::ExternalServiceError(format!(
-                "API is not ready: database is unreachable ({e})"
-            ))
-            .into_response()
-        }
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "API is healthy", body = HealthResponse)
+    )
+)]
+pub async fn health_check(
+    State(pool): State<PgPool>,
+    State(mut redis): State<crate::cache::RedisCache>,
+) -> Response {
+    let category_sync = *CATEGORY_SYNC_STATUS.lock().unwrap();
+
+    // Probe database (bounded so a hung DB cannot stall the health endpoint)
+    let db_ok = ping_database(&pool).await;
+    // Probe redis
+    let redis_ok = redis.ping().await.is_ok();
+
+    if db_ok && redis_ok {
+        let payload = HealthResponse {
+            status: "ok",
+            timestamp: Utc::now().to_rfc3339(),
+            category_sync,
+            database: "ok",
+            redis: "ok",
+            uptime_seconds: crate::runtime::uptime_seconds(),
+        };
+        return success(payload, "API is healthy").into_response();
     }
+
+    let db_status = if db_ok { "ok" } else { "unreachable" };
+    let redis_status = if redis_ok { "ok" } else { "unreachable" };
+
+    tracing::error!(
+        "Health check failed: database={}, redis={}",
+        db_status,
+        redis_status
+    );
+    AppError::ExternalServiceError(format!(
+        "Service is not ready: database={}, redis={}",
+        db_status, redis_status
+    ))
+    .into_response()
+}
+
+/// Maximum time to wait for the database `SELECT 1` probe before treating
+/// the connection as unreachable.
+const DB_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Ping the Postgres connection with a bounded `SELECT 1`.
+///
+/// Returns `false` when the query errors or exceeds [`DB_PROBE_TIMEOUT`],
+/// so callers can translate that into a `503 Service Unavailable`.
+async fn ping_database(pool: &PgPool) -> bool {
+    matches!(
+        tokio::time::timeout(
+            DB_PROBE_TIMEOUT,
+            sqlx::query("SELECT 1").fetch_one(pool)
+        )
+        .await,
+        Ok(Ok(_))
+    )
 }
 
 /// GET /health/db – Database connectivity check.
 ///
 /// Returns 200 when the database is reachable.
-/// Returns a structured JSON error (via [`AppError`]) when it is not,
-/// ensuring the error payload matches the API-wide error schema.
+/// Returns a structured JSON 503 (via [`AppError`]) when it is not.
 pub async fn health_check_db(State(pool): State<PgPool>) -> Response {
     match sqlx::query("SELECT 1").fetch_one(&pool).await {
         Ok(_) => {
@@ -76,20 +187,151 @@ pub async fn health_check_db(State(pool): State<PgPool>) -> Response {
 /// GET /health/ready – Readiness check.
 ///
 /// Returns 200 only when both the API process and the database are healthy.
+/// Includes per-provider notification health status without failing readiness.
 /// On failure the response uses [`AppError`] for a consistent error schema.
 pub async fn health_check_ready(State(pool): State<PgPool>) -> Response {
     let db_ok = sqlx::query("SELECT 1").fetch_one(&pool).await.is_ok();
 
     if db_ok {
+        let notifications_health = check_notifications_health().await;
+        
         let payload = HealthReadyResponse {
             status: "ready",
             api: "ok",
             database: "ok",
+            notifications: Some(notifications_health),
         };
         success(payload, "Service is ready").into_response()
     } else {
         AppError::ExternalServiceError("Service is not ready: database is unreachable".to_string())
             .into_response()
+    }
+}
+
+/// GET /health/live – Liveness probe.
+///
+/// Returns 200 immediately without touching the database or any external
+/// service.  Container platforms (Docker, Kubernetes, Fly, Render) use this
+/// to determine whether the process is alive and should receive traffic.  A
+/// liveness probe that hits the database would incorrectly restart healthy
+/// servers during short database blips – this endpoint avoids that.
+pub async fn health_check_live() -> Response {
+    #[derive(Serialize)]
+    struct LiveResponse {
+        status: &'static str,
+    }
+    success(LiveResponse { status: "ok" }, "Service is live").into_response()
+}
+
+/// GET /health/blockchain – Soroban RPC connectivity check.
+///
+/// Returns 200 when the configured Soroban RPC endpoint is reachable.
+/// On failure the response uses [`AppError`] for a consistent error schema.
+pub async fn health_check_blockchain() -> Response {
+    let soroban_rpc_url = std::env::var("SOROBAN_RPC_URL")
+        .unwrap_or_else(|_| "https://soroban-testnet.stellar.org".to_string());
+
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return AppError::ExternalServiceError(format!(
+                "Failed to initialize Soroban RPC probe client: {error}"
+            ))
+            .into_response();
+        }
+    };
+
+    let response = client
+        .post(&soroban_rpc_url)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": "health-check",
+            "method": "getHealth",
+        }))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let payload = HealthBlockchainResponse {
+                status: "ok",
+                blockchain: "soroban",
+                soroban_rpc: soroban_rpc_url,
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "Soroban RPC is reachable").into_response()
+        }
+        Ok(resp) => AppError::ExternalServiceError(format!(
+            "Soroban RPC health check failed with HTTP status {}",
+            resp.status()
+        ))
+        .into_response(),
+        Err(error) => {
+            AppError::ExternalServiceError(format!("Soroban RPC health check failed: {error}"))
+                .into_response()
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct HealthRedisResponse {
+    status: &'static str,
+    timestamp: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct VersionResponse {
+    version: &'static str,
+    git_sha: &'static str,
+    built_at: &'static str,
+    rust_version: &'static str,
+}
+
+/// GET /version – Build metadata for the running deployment.
+///
+/// Reports the crate version, git commit SHA, build timestamp, and the rustc
+/// version used to compile the binary, captured at compile time by
+/// `build.rs`. The git SHA falls back to `"unknown"` when built outside a
+/// git checkout (e.g. a Docker build context with no `.git` directory).
+#[utoipa::path(
+    get,
+    path = "/version",
+    responses(
+        (status = 200, description = "Build version metadata", body = VersionResponse)
+    )
+)]
+pub async fn version() -> Response {
+    let payload = VersionResponse {
+        version: env!("CARGO_PKG_VERSION"),
+        git_sha: env!("GIT_SHA"),
+        built_at: env!("BUILT_AT"),
+        rust_version: env!("RUSTC_VERSION"),
+    };
+    let mut resp = success(payload, "Build version").into_response();
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    resp
+}
+
+/// GET /health/redis – Redis connectivity check.
+///
+/// Returns 200 when Redis is reachable.
+/// Returns a structured JSON error (via [`AppError`]) when it is not.
+pub async fn health_check_redis(State(mut redis): State<crate::cache::RedisCache>) -> Response {
+    // Perform a basic Redis command to verify connectivity
+    match redis.ping().await {
+        Ok(_) => {
+            let payload = HealthRedisResponse {
+                status: "ok",
+                timestamp: Utc::now().to_rfc3339(),
+            };
+            success(payload, "Redis is healthy").into_response()
+        }
+        Err(e) => AppError::ExternalServiceError(format!("Redis health check failed: {e}"))
+            .into_response(),
     }
 }
 
@@ -111,6 +353,10 @@ mod tests {
         let payload = HealthResponse {
             status: "ok",
             timestamp: Utc::now().to_rfc3339(),
+            category_sync: true,
+            database: "ok",
+            redis: "ok",
+            uptime_seconds: 0,
         };
         let resp = success(payload, "API is healthy").into_response();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -125,6 +371,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ping_database_false_when_unreachable() {
+        // A lazy pool pointed at a closed port never connects, so the bounded
+        // `SELECT 1` probe must report the database as unreachable.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(250))
+            .connect_lazy("postgres://agora:agora@127.0.0.1:1/agora")
+            .expect("lazy pool should be constructible");
+        assert!(!ping_database(&pool).await);
+    }
+
+    #[tokio::test]
+    async fn test_health_db_endpoint_returns_503_when_unreachable() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(250))
+            .connect_lazy("postgres://agora:agora@127.0.0.1:1/agora")
+            .expect("lazy pool should be constructible");
+
+        let router = Router::new()
+            .route("/health/db", get(health_check_db))
+            .with_state(pool);
+
+        let req = Request::builder()
+            .uri("/health/db")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
     async fn test_health_endpoint_returns_200_with_expected_json() {
         let router = Router::new().route(
             "/health",
@@ -132,6 +409,10 @@ mod tests {
                 let payload = HealthResponse {
                     status: "ok",
                     timestamp: Utc::now().to_rfc3339(),
+                    category_sync: true,
+                    database: "ok",
+                    redis: "ok",
+                    uptime_seconds: crate::runtime::uptime_seconds(),
                 };
                 success(payload, "API is healthy").into_response()
             }),
@@ -155,5 +436,76 @@ mod tests {
         assert_eq!(json["message"], "API is healthy");
         assert_eq!(json["data"]["status"], "ok");
         assert!(json["data"]["timestamp"].is_string());
+        assert!(json["data"]["uptime_seconds"].is_number());
+    }
+
+    #[tokio::test]
+    async fn test_uptime_seconds_increases_or_non_negative() {
+        let start = get_uptime_seconds();
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        let later = get_uptime_seconds();
+        assert!(later >= start);
+    }
+
+    #[tokio::test]
+    async fn test_version_endpoint_returns_200_with_non_empty_version() {
+        let router = Router::new().route("/version", get(version));
+
+        let req = Request::builder()
+            .uri("/version")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["success"], true);
+        assert!(!json["data"]["version"].as_str().unwrap().is_empty());
+        assert!(!json["data"]["git_sha"].as_str().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_health_response_includes_uptime_seconds() {
+        let router = Router::new().route(
+            "/health",
+            get(|| async {
+                let payload = HealthResponse {
+                    status: "ok",
+                    timestamp: Utc::now().to_rfc3339(),
+                    category_sync: true,
+                    database: "ok",
+                    redis: "ok",
+                    uptime_seconds: crate::runtime::uptime_seconds(),
+                };
+                success(payload, "API is healthy").into_response()
+            }),
+        );
+
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert!(json["data"]["uptime_seconds"].is_number());
+        assert!(json["data"]["uptime_seconds"].as_u64().unwrap() >= 0);
     }
 }

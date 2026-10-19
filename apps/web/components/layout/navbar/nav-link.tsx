@@ -7,21 +7,25 @@ export function NavLink({
   icon,
   text,
   isActive,
+  ariaLabel,
 }: {
   href: string;
   icon: string;
   text: string;
   isActive: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <Link
       href={href}
-      className={`flex items-center gap-1 text-[15px] font-medium transition-colors ${
-        isActive ? "text-[#FDDA23]" : "text-black hover:opacity-80"
+      aria-label={ariaLabel}
+      aria-current={isActive ? "page" : undefined}
+      className={`flex items-center gap-1 text-[15px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
+        isActive ? "text-accent" : "text-black hover:opacity-80"
       }`}
     >
       <div
-        className={`w-6 h-6 transition-colors ${isActive ? "bg-[#FDDA23]" : "bg-black"}`}
+        className={`w-6 h-6 transition-colors ${isActive ? "bg-accent" : "bg-black"}`}
         style={{
           maskImage: `url("${icon}")`,
           WebkitMaskImage: `url("${icon}")`,

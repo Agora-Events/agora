@@ -1,0 +1,8 @@
+[
+  { "id": "evt-001", "title": "Lagos Tech Summit", "category": "Tech", "startsAt": "2026-08-14T09:00:00.000Z", "venue": "Landmark Centre", "latitude": 6.4281, "longitude": 3.4219, "imageUrl": null },
+  { "id": "evt-002", "title": "Afrobeats Live", "category": "Music", "startsAt": "2026-08-16T19:30:00.000Z", "venue": "Eko Hotel", "latitude": 6.4281, "longitude": 3.4306, "imageUrl": null },
+  { "id": "evt-003", "title": "Founders Breakfast", "category": "Business", "startsAt": "2026-08-18T07:30:00.000Z", "venue": "Civic Centre", "latitude": 6.4361, "longitude": 3.4269, "imageUrl": null },
+  { "id": "evt-004", "title": "City Marathon", "category": "Sports", "startsAt": "2026-08-22T06:00:00.000Z", "venue": "National Stadium", "latitude": 6.4899, "longitude": 3.3627, "imageUrl": null },
+  { "id": "evt-005", "title": "Contemporary Art Walk", "category": "Arts", "startsAt": "2026-08-25T11:00:00.000Z", "venue": "Rele Gallery", "latitude": 6.5027, "longitude": 3.3628, "imageUrl": null },
+  { "id": "evt-006", "title": "Indie Rock Night", "category": "Music", "startsAt": "2026-09-02T20:00:00.000Z", "venue": "Hard Rock Cafe", "latitude": 6.4241, "longitude": 3.4108, "imageUrl": null }
+]

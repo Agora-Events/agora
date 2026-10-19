@@ -1,4 +1,11 @@
-import type { Metadata } from "next";
+// Toast Notification System (sonner)
+// Usage: import { toast } from "sonner";
+//   toast.success("Event created!")
+//   toast.error("Something went wrong")
+//   toast.info("Loading...")
+// Toaster is globally mounted below — no per-page setup needed.
+
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import { NextIntlClientProvider } from "next-intl";

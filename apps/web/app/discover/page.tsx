@@ -1,17 +1,65 @@
+"use client";
+
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { CategorySection } from "@/components/events/category-section";
 import { PopularEventsSection } from "@/components/events/popular-events-section";
 import { OrganizerComponent } from "@/components/events/organizer-component";
 import { Footer } from "@/components/layout/footer";
+import { EmptyState } from "@/components/ui/empty-state";
+import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
+
+function DiscoverContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const category = searchParams.get("category") ?? "";
+  const organizer = searchParams.get("organizer") ?? "";
+  const free = searchParams.get("free") === "1" || searchParams.get("free") === "true";
+
+  const updateFilter = (name: "category" | "organizer" | "free", value: string | boolean) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (value) {
+      params.set(name, typeof value === "boolean" ? "1" : String(value));
+    } else {
+      params.delete(name);
+    }
+
+    const query = params.toString();
+    router.replace(query ? `/discover?${query}` : "/discover", {
+      scroll: false,
+    });
+  };
+
+  return (
+    <main id="main-content" tabIndex={-1} className="flex flex-col min-h-screen bg-base">
+      <Navbar />
+      <CategorySection
+        selectedCategory={category}
+        onCategoryChange={(value) => updateFilter("category", value)}
+      />
+      <PopularEventsSection
+        category={category}
+        onCategoryChange={(value) => updateFilter("category", value)}
+        selectedOrganizer={organizer}
+        onOrganizerChange={(value) => updateFilter("organizer", value)}
+        free={free}
+        onFreeChange={(value) => updateFilter("free", value)}
+      />
+      <OrganizerComponent
+        selectedOrganizer={organizer}
+        onOrganizerChange={(value) => updateFilter("organizer", value)}
+      />
+      <Footer />
+    </main>
+  );
+}
 
 export default function DiscoverPage() {
   return (
-    <main className="flex flex-col min-h-screen bg-[#FFFBE9]">
-      <Navbar />
-      <CategorySection />
-      <PopularEventsSection />
-      <OrganizerComponent />
-      <Footer />
-    </main>
+    <Suspense>
+      <DiscoverContent />
+    </Suspense>
   );
 }

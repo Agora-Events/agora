@@ -49,19 +49,31 @@ pub struct Ticket {
     /// Unique identifier for this ticket (UUID v4).
     pub id: Uuid,
     /// Foreign key referencing the [`super::user::User`] who owns this ticket.
-    pub user_id: Uuid,
+    /// `None` for tickets synced directly from on-chain events before user matching.
+    pub user_id: Option<Uuid>,
     /// Foreign key referencing the [`TicketTier`] this ticket was purchased under.
-    pub ticket_tier_id: Uuid,
+    /// `None` for tickets synced directly from on-chain events before tier matching.
+    pub ticket_tier_id: Option<Uuid>,
     /// Current lifecycle status of the ticket.
     ///
-    /// Known values (enforced at the application layer):
-    /// - `"active"` — issued and valid for entry
-    /// - `"used"` — scanned/checked in at the event
-    /// - `"cancelled"` — refunded or voided; no longer valid
+    /// Known values:
+    /// - `"Unused"` — issued and valid for entry
+    /// - `"Scanned"` — checked in at the event
+    /// - `"Revoked"` — refunded, voided, or otherwise barred from entry
     pub status: String,
+    /// Timestamp when the ticket was scanned at event entry.
+    pub scanned_at: Option<DateTime<Utc>>,
     /// Optional QR code payload used for event check-in scanning.
     /// `None` until the ticket is fully confirmed and a code is generated.
     pub qr_code: Option<String>,
+    /// On-chain Stellar transaction / ticket ID from the smart contract.
+    pub stellar_id: Option<String>,
+    /// Foreign key to the event (denormalized for on-chain synced tickets).
+    pub event_id: Option<Uuid>,
+    /// Stellar wallet address of the buyer (who paid).
+    pub buyer_wallet: Option<String>,
+    /// Stellar wallet address of the owner (who holds the ticket; may differ from buyer).
+    pub owner_wallet: Option<String>,
     /// Timestamp when this ticket was issued.
     pub created_at: DateTime<Utc>,
     /// Timestamp of the last update to this record. Managed by a DB trigger.
