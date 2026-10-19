@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { cookies } from "next/headers";
+import { NextIntlClientProvider } from "next-intl";
 import "./globals.css";
+
+const SUPPORTED_LOCALES = ["en", "es", "fr"] as const;
+type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 const inter = Inter({
   variable: "--font-inter",
@@ -31,14 +36,24 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const savedLocale = cookieStore.get("NEXT_LOCALE")?.value;
+  const locale: Locale =
+    SUPPORTED_LOCALES.find((supportedLocale) => supportedLocale === savedLocale) ??
+    "en";
+
   return (
-    <html lang="en">
-      <body className={`${inter.variable} antialiased`}>{children}</body>
+    <html lang={locale}>
+      <body className={`${inter.variable} antialiased`}>
+        <NextIntlClientProvider locale={locale}>
+          {children}
+        </NextIntlClientProvider>
+      </body>
     </html>
   );
 }

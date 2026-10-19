@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { NotificationDropdown } from "@/components/notifications/NotificationDropdown";
 import { NavLink } from "./nav-link";
 
 export function UserNav({ pathname }: { pathname: string }) {
@@ -67,21 +68,7 @@ export function UserNav({ pathname }: { pathname: string }) {
       </div>
 
       <div className="hidden md:flex items-center gap-4 lg:gap-[29px]">
-        <Button
-          backgroundColor="bg-white"
-          className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
-          textColor="text-black"
-          shadowColor="rgba(0,0,0,1)"
-        >
-          <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
-          <Image
-            src="/icons/notification.svg"
-            alt="Arrow"
-            width={24}
-            height={24}
-            className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-          />
-        </Button>
+        <NotificationDropdown />
         <Button
           backgroundColor="bg-white"
           className="relative w-[55.22px] h-[53px] !px-0 py-0"

@@ -1,4 +1,6 @@
 import Image from "next/image";
+import Link from "next/link";
+import { useProfileDetails } from "@/hooks/use-profile-details";
 
 const socials = [
   { name: "Instagram", icon: "/icons/instagram.svg", href: "#" },
@@ -8,6 +10,8 @@ const socials = [
 ];
 
 export function ProfileSidebar() {
+  const { details } = useProfileDetails();
+
   return (
     <aside className="bg-white rounded-2xl p-6 flex flex-col gap-6 shadow-sm border border-[#F0EAD6]">
       {/* Avatar */}
@@ -21,10 +25,17 @@ export function ProfileSidebar() {
           />
         </div>
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-[#1A1A1A]">John Stellar</h2>
-          <p className="text-sm text-gray-500">Designer</p>
+          <h2 className="text-xl font-semibold text-[#1A1A1A]">{details.displayName}</h2>
+          <p className="text-sm text-gray-500">{details.bio || "No biography yet"}</p>
         </div>
       </div>
+
+      <Link
+        href="/profile/edit"
+        className="self-center text-sm font-medium text-[#1A1A1A] underline underline-offset-4 hover:text-gray-600"
+      >
+        Edit profile
+      </Link>
 
       {/* Joined Date */}
       <div className="flex items-center gap-2 text-sm text-gray-500">

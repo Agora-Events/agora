@@ -2,8 +2,29 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useLocale } from "next-intl";
+
+const LOCALES = [
+  { code: "en", label: "English" },
+  { code: "es", label: "Español" },
+  { code: "fr", label: "Français" },
+] as const;
+
+type Locale = (typeof LOCALES)[number]["code"];
+const LOCALE_COOKIE = "NEXT_LOCALE";
 
 export function Footer() {
+  const router = useRouter();
+  const activeLocale = useLocale();
+  const locale =
+    LOCALES.find(({ code }) => code === activeLocale)?.code ?? "en";
+
+  const handleLocaleChange = (nextLocale: Locale) => {
+    document.cookie = `${LOCALE_COOKIE}=${nextLocale}; path=/; max-age=31536000; samesite=lax`;
+    router.refresh();
+  };
+
   return (
     <footer className="w-full bg-[#060606] pt-20 pb-12 relative overflow-hidden text-white select-none">
       <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 w-full max-w-[700px] h-[500px] pointer-events-none opacity-30 mix-blend-screen">
@@ -148,6 +169,29 @@ export function Footer() {
               </div>
               <span className="text-sm">Stellar</span>
             </a>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="footer-locale" className="text-sm font-medium text-gray-300">
+              Language
+            </label>
+            <select
+              id="footer-locale"
+              value={locale}
+              onChange={(event) => {
+                const selectedLocale = LOCALES.find(
+                  ({ code }) => code === event.target.value,
+                )?.code;
+                if (selectedLocale) handleLocaleChange(selectedLocale);
+              }}
+              className="rounded-lg border border-white/30 bg-[#060606] px-3 py-2 text-sm text-white outline-none focus:border-white"
+            >
+              {LOCALES.map(({ code, label }) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
