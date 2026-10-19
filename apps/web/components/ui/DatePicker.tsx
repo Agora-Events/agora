@@ -37,6 +37,10 @@ export interface DatePickerProps {
   endDatePlaceholder?: string;
   endTimePlaceholder?: string;
 
+  // Date validation:
+  /** Minimum selectable date (default: current date for event creation) */
+  minDate?: string;
+
   // General props:
   disabled?: boolean;
   className?: string;
@@ -44,6 +48,20 @@ export interface DatePickerProps {
 
 const NEUBRUTALIST_INPUT_CLASS =
   "w-full bg-white border border-gray-100 rounded-xl focus-within:border-black focus-within:border-2 focus-within:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all";
+
+/**
+ * Validates that a date string is not earlier than minDate.
+ * Returns true if valid, false otherwise.
+ */
+function isDateValid(dateStr: string, minDate: string): boolean {
+  if (!dateStr) return true; // Empty is handled by form validation
+  const date = new Date(dateStr);
+  const minimum = new Date(minDate);
+  // Normalize both dates to compare just the date portion
+  date.setHours(0, 0, 0, 0);
+  minimum.setHours(0, 0, 0, 0);
+  return date >= minimum;
+}
 
 /**
  * Reusable DatePicker component.
@@ -84,6 +102,8 @@ export function DatePicker({
   disabled = false,
   className = "",
 }: DatePickerProps) {
+  // Compute minDate with default to current date
+  const effectiveMinDate = minDate ?? new Date().toISOString().split("T")[0];
   // If isRange is true (or start/end props are supplied), render connected Start/End fields
   if (isRange || startDate || endDate || onStartDateChange) {
     return (
@@ -102,9 +122,10 @@ export function DatePicker({
             Start
           </span>
           <input
-            type="text"
+            type="date"
             name="startDate"
             value={startDate}
+            min={effectiveMinDate}
             disabled={disabled}
             aria-label="Start date"
             onChange={(e) => {
@@ -115,7 +136,7 @@ export function DatePicker({
             className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-full outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
           />
           <input
-            type="text"
+            type="time"
             name="startTime"
             value={startTime}
             disabled={disabled}
@@ -143,9 +164,10 @@ export function DatePicker({
             End
           </span>
           <input
-            type="text"
+            type="date"
             name="endDate"
             value={endDate}
+            min={effectiveMinDate}
             disabled={disabled}
             aria-label="End date"
             onChange={(e) => {
@@ -156,7 +178,7 @@ export function DatePicker({
             className="bg-muted rounded-lg px-3 py-2 text-sm font-medium w-full outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
           />
           <input
-            type="text"
+            type="time"
             name="endTime"
             value={endTime}
             disabled={disabled}
@@ -183,9 +205,10 @@ export function DatePicker({
       {label && <label className="block text-sm font-semibold mb-3">{label}</label>}
       <div className="flex items-center gap-4">
         <input
-          type="text"
+          type="date"
           name={name}
           value={value}
+          min={effectiveMinDate}
           disabled={disabled}
           onChange={(e) => {
             onChange?.(e.target.value);
@@ -196,7 +219,7 @@ export function DatePicker({
         />
         {(hasTime || timeValue || onTimeChange) && (
           <input
-            type="text"
+            type="time"
             name={timeName}
             value={timeValue}
             disabled={disabled}
