@@ -188,6 +188,15 @@ function AppNavigation() {
             headerShadowVisible: false,
           }}
         />
+        <Stack.Screen
+          name="settings/index"
+          options={{
+            title: 'Settings',
+            headerStyle,
+            headerTintColor,
+            headerShadowVisible: false,
+          }}
+        />
         <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
       </Stack>
       <OfflineFallbackScreen />
