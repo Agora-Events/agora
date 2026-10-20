@@ -4480,6 +4480,71 @@ fn test_csv_row_format() {
     assert!(row.contains("2"));
 }
 
+#[test]
+fn test_verify_export_attendees_auth_missing_header() {
+    let headers = HeaderMap::new();
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        AppError::AuthError(msg) => assert!(msg.contains("Missing Authorization")),
+        other => panic!("Unexpected error: {:?}", other),
+    }
+}
+
+#[test]
+fn test_verify_export_attendees_auth_invalid_scheme() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        "Basic invalid_token".parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        AppError::AuthError(msg) => assert!(msg.contains("must use Bearer scheme")),
+        other => panic!("Unexpected error: {:?}", other),
+    }
+}
+
+#[test]
+fn test_verify_export_attendees_auth_admin_token() {
+    std::env::set_var("ADMIN_TOKEN", "test-admin-secret-token");
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        "Bearer test-admin-secret-token".parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), None); // None signifies admin authorization
+}
+
+#[test]
+fn test_verify_export_attendees_auth_valid_jwt() {
+    std::env::set_var("JWT_SECRET", "super-secret-key-for-unit-testing-32-bytes");
+    let now = chrono::Utc::now();
+    let claims = crate::handlers::auth::Claims {
+        sub: "GAORGANIZERTESTWALLET123456789".to_string(),
+        iat: now.timestamp(),
+        exp: (now + chrono::Duration::hours(1)).timestamp(),
+    };
+    let token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret("super-secret-key-for-unit-testing-32-bytes".as_bytes()),
+    )
+    .unwrap();
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        format!("Bearer {}", token).parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), Some("GAORGANIZERTESTWALLET123456789".to_string()));
+}
+
 #[derive(Serialize)]
 pub struct CheckInStats {
     pub checked_in: i64,
@@ -5110,32 +5175,104 @@ pub fn sanitize_csv_field(field: &str) -> String {
     }
 }
 
+/// Validates caller authorization for exporting attendee CSV (Issue #1624).
+/// Returns `Ok(None)` if authorized as admin, `Ok(Some(wallet))` if authorized with organizer credentials,
+/// or `Err(AppError)` if missing, malformed, or invalid.
+pub fn verify_export_attendees_auth(headers: &HeaderMap) -> Result<Option<String>, AppError> {
+    if let Some(auth_hdr) = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
+        let token = auth_hdr
+            .strip_prefix("Bearer ")
+            .or_else(|| auth_hdr.strip_prefix("bearer "))
+            .unwrap_or(auth_hdr)
+            .trim();
+        if let Ok(admin_token) = std::env::var("ADMIN_TOKEN") {
+            if !admin_token.is_empty() && token == admin_token {
+                return Ok(None);
+            }
+        }
+    }
+
+    let wallet = crate::handlers::auth::extract_auth(headers)?;
+    Ok(Some(wallet))
+}
+
 /// GET /api/v1/events/:id/export-attendees
 ///
 /// Exports all attendees for an event as a CSV file.
+/// Requires the caller to be the event's organizer or an admin (Issue #1624).
 /// Returns owner_wallet, buyer_wallet, quantity, created_at for all tickets.
 pub async fn export_attendees_csv(
     State(state): State<EventState>,
+    headers: HeaderMap,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    // Verify the event exists
-    let event_exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    // 1. Verify authorization: admin token or organizer JWT / API key
+    let requester = match verify_export_attendees_auth(&headers) {
+        Ok(req) => req,
+        Err(e) => return e.into_response(),
+    };
+
+    // 2. Verify the event exists and fetch organizer_id
+    let organizer_id = match sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
     .bind(event_id)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     {
-        Ok(exists) => exists,
+        Ok(Some(Some(org_id))) => org_id,
+        Ok(Some(None)) => {
+            if requester.is_some() {
+                return AppError::Forbidden(
+                    "Only the event organizer or an admin is allowed to export attendee data"
+                        .to_string(),
+                )
+                .into_response();
+            }
+            Uuid::nil()
+        }
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
         Err(e) => {
             tracing::error!("Failed to check event existence: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
-    if !event_exists {
-        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+    // 3. If not admin, verify requester is the organizer
+    if let Some(ref wallet) = requester {
+        let is_organizer = match sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM organizers
+                WHERE id = $1 AND (wallet_address = $2 OR id::text = $2)
+            )
+            "#,
+        )
+        .bind(organizer_id)
+        .bind(wallet)
+        .fetch_one(&state.pool)
+        .await
+        {
+            Ok(is_org) => is_org,
+            Err(e) => {
+                tracing::error!("Failed to verify organizer: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+        if !is_organizer {
+            return AppError::Forbidden(
+                "Only the event organizer or an admin is allowed to export attendee data"
+                    .to_string(),
+            )
             .into_response();
+        }
     }
 
     // Fetch all tickets for the event

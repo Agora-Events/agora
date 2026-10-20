@@ -13,9 +13,11 @@ use sqlx::PgPool;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+pub use crate::models::webhook::{
+    CreateWebhookRequest, WebhookEndpoint,
+};
 use crate::models::webhook::{
-    validate_create_webhook, CreateWebhookRequest, WebhookEndpoint,
-    MAX_WEBHOOK_ENDPOINTS_PER_ORGANIZER,
+    validate_create_webhook, MAX_WEBHOOK_ENDPOINTS_PER_ORGANIZER,
 };
 use crate::utils::error::AppError;
 use crate::utils::response::success;
