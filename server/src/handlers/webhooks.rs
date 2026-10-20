@@ -13,9 +13,11 @@ use sqlx::PgPool;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+pub use crate::models::webhook::{
+    CreateWebhookRequest, WebhookDeliveryFailure, WebhookEndpoint,
+};
 use crate::models::webhook::{
-    validate_create_webhook, CreateWebhookRequest, WebhookEndpoint,
-    MAX_WEBHOOK_ENDPOINTS_PER_ORGANIZER,
+    validate_create_webhook, MAX_WEBHOOK_ENDPOINTS_PER_ORGANIZER,
 };
 use crate::utils::error::AppError;
 use crate::utils::response::success;
@@ -195,6 +197,92 @@ pub async fn delete_webhook(
             success((), "Webhook endpoint deactivated").into_response()
         }
         Err(e) => AppError::DatabaseError(e).into_response(),
+    }
+}
+
+/// Query parameters for `GET /api/v1/webhooks/failures`.
+#[derive(Debug, Deserialize, Default, IntoParams, ToSchema)]
+pub struct ListWebhookFailuresParams {
+    /// Filter failures by endpoint id.
+    pub endpoint_id: Option<Uuid>,
+    /// Filter failures by organiser id.
+    pub organizer_id: Option<Uuid>,
+}
+
+/// List webhook delivery failures from Dead-Letter Queue (DLQ).
+///
+/// # Endpoint
+/// GET `/api/v1/webhooks/failures`
+#[utoipa::path(
+    get,
+    path = "/webhooks/failures",
+    params(ListWebhookFailuresParams),
+    responses(
+        (status = 200, description = "Webhook DLQ failures retrieved", body = Vec<WebhookDeliveryFailure>),
+    ),
+    tag = "Webhooks"
+)]
+pub async fn list_webhook_failures(
+    State(state): State<WebhookState>,
+    Query(params): Query<ListWebhookFailuresParams>,
+) -> Response {
+    let result = if let Some(endpoint_id) = params.endpoint_id {
+        sqlx::query_as::<_, WebhookDeliveryFailure>(
+            "SELECT * FROM webhook_delivery_failures WHERE endpoint_id = $1 ORDER BY failed_at DESC",
+        )
+        .bind(endpoint_id)
+        .fetch_all(&state.pool)
+        .await
+    } else if let Some(organizer_id) = params.organizer_id {
+        sqlx::query_as::<_, WebhookDeliveryFailure>(
+            r#"
+            SELECT f.* FROM webhook_delivery_failures f
+            JOIN webhook_endpoints e ON f.endpoint_id = e.id
+            WHERE e.organizer_id = $1
+            ORDER BY f.failed_at DESC
+            "#,
+        )
+        .bind(organizer_id)
+        .fetch_all(&state.pool)
+        .await
+    } else {
+        sqlx::query_as::<_, WebhookDeliveryFailure>(
+            "SELECT * FROM webhook_delivery_failures ORDER BY failed_at DESC LIMIT 100",
+        )
+        .fetch_all(&state.pool)
+        .await
+    };
+
+    match result {
+        Ok(failures) => success(failures, "Webhook failures retrieved").into_response(),
+        Err(e) => AppError::DatabaseError(e).into_response(),
+    }
+}
+
+/// Retry a permanently failed webhook delivery from the Dead-Letter Queue (DLQ).
+///
+/// # Endpoint
+/// POST `/api/v1/webhooks/failures/:id/retry`
+#[utoipa::path(
+    post,
+    path = "/webhooks/failures/{id}/retry",
+    params(("id" = Uuid, Path, description = "Webhook failure identifier")),
+    responses(
+        (status = 200, description = "Webhook redelivered successfully", body = WebhookDeliveryFailure),
+        (status = 404, description = "Failure record or endpoint not found"),
+        (status = 502, description = "Webhook redelivery attempt failed"),
+    ),
+    tag = "Webhooks"
+)]
+pub async fn retry_webhook_failure(
+    State(state): State<WebhookState>,
+    Path(failure_id): Path<Uuid>,
+) -> Response {
+    match crate::services::webhook_dispatcher::retry_failed_delivery(&state.pool, failure_id).await {
+        Ok(failure) => success(failure, "Webhook redelivered successfully").into_response(),
+        Err((status, msg)) => {
+            crate::utils::error::ApiError::new(status, msg).into_response()
+        }
     }
 }
 

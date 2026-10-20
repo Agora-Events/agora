@@ -41,6 +41,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Async trait support for notification providers
 async-trait = "0.1"
 
+# Email sending (Issue #1627)
+lettre = { version = "0.11", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "builder"] }
+
 # HTTP body buffering for audit middleware
 bytes = "1.0"
 http-body-util = "0.1"
