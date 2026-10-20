@@ -478,6 +478,7 @@ export default function CreateEventForm() {
           endDate={formData.endDate}
           endTime={formData.endTime}
           onFieldChange={handleChange}
+          minDate={new Date().toISOString().split("T")[0]}
         />
 
         <div className="bg-base-alt rounded-xl p-4 shadow-sm w-full sm:w-auto min-w-[140px] flex items-center justify-between gap-4 border border-black shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]">
