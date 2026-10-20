@@ -34,5 +34,5 @@ storybook-static
 # Local PR description files (for reference only, not part of the repo)
 pr-*.md
 
-# Local changelog (for reference only, not part of the repo)
+# Session changelog (generated per-session, not part of the repo)
 CHANGES.md

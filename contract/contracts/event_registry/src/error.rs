@@ -54,4 +54,6 @@ pub enum EventRegistryError {
     ReplayAttackDetected = 87,
     InsufficientSignatures = 88,
     InvalidPrice = 89,
+    /// Too many events requested in a batch call.
+    BatchSizeExceeded = 100,
 }

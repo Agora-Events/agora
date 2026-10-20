@@ -4522,7 +4522,7 @@ fn test_get_events_batch_limit() {
     let client = EventRegistryContractClient::new(&env, &contract_id);
     
     let res = client.try_get_events_batch(&event_ids);
-    assert_eq!(res, Err(Ok(EventRegistryError::TooManyTiers)));
+    assert_eq!(res, Err(Ok(EventRegistryError::BatchSizeExceeded)));
 }
 
 // ── Issues #862, #863, #864: CID validation, is_tier_sold_out, add_tier, deactivate_tier ──
