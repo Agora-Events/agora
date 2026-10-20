@@ -20,7 +20,8 @@ use crate::events::{
 };
 use crate::types::{
     BlacklistAuditEntry, EventCapacity, EventInfo, EventReceipt, EventRegistrationArgs,
-    EventStatus, GuestProfile, MultiSigConfig, OrganizerStake, PaymentInfo, TicketTier,
+    EventStatus, GuestProfile, MultiSigConfig, OrganizerStake, PaymentInfo, StakingConfig,
+    TicketTier,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
@@ -1553,6 +1554,14 @@ impl EventRegistry {
         );
 
         Ok(())
+    }
+
+    /// Returns the configured staking token and minimum stake amount.
+    pub fn get_staking_config(env: Env) -> StakingConfig {
+        StakingConfig {
+            token: storage::get_staking_token(&env),
+            min_amount: storage::get_min_stake_amount(&env),
+        }
     }
 
     /// Allows an organizer to stake collateral tokens to unlock Verified status.

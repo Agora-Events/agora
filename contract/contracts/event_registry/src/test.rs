@@ -2851,7 +2851,9 @@ fn test_set_staking_config_success() {
     let token = Address::generate(&env);
     let min_amount = 1000_0000000i128;
     client.set_staking_config(&token, &min_amount);
-    // No error means success; verify via a stake attempt
+    let config = client.get_staking_config();
+    assert_eq!(config.token, Some(token));
+    assert_eq!(config.min_amount, min_amount);
 }
 
 #[test]
