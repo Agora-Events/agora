@@ -22,6 +22,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -144,6 +145,12 @@ pub struct PurchaseBroadcaster {
     sender: Arc<broadcast::Sender<PurchaseEvent>>,
 }
 
+#[derive(Clone)]
+pub struct PurchaseWsState {
+    pub pool: PgPool,
+    pub broadcaster: PurchaseBroadcaster,
+}
+
 impl PurchaseBroadcaster {
     pub fn new() -> Self {
         let (sender, _) = broadcast::channel(CHANNEL_CAPACITY);
@@ -210,10 +217,21 @@ impl Default for OrganizerBroadcaster {
 /// `?token=<jwt>` query parameter. Returns 401 if authentication fails.
 pub async fn ws_purchases_handler(
     ws: WebSocketUpgrade,
-    State(broadcaster): State<PurchaseBroadcaster>,
+    State(state): State<PurchaseWsState>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
+    let event_id = match params.get("event_id").and_then(|value| Uuid::parse_str(value).ok()) {
+        Some(event_id) => event_id,
+        None => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "A valid event_id query parameter is required",
+            )
+                .into_response();
+        }
+    };
+
     // Extract JWT from Authorization header or ?token= query param.
     let token = headers
         .get(axum::http::header::AUTHORIZATION)
@@ -221,7 +239,7 @@ pub async fn ws_purchases_handler(
         .and_then(|v| v.strip_prefix("Bearer "))
         .or_else(|| params.get("token").map(|s| s.as_str()));
 
-    let _wallet = match token {
+    let wallet = match token {
         Some(t) => match crate::handlers::auth::verify_jwt(t) {
             Ok(claims) => claims.sub,
             Err(e) => {
@@ -243,11 +261,44 @@ pub async fn ws_purchases_handler(
         }
     };
 
-    // Pass the authenticated wallet to the socket handler for per-user scoping.
-    ws.on_upgrade(move |socket| handle_socket(socket, broadcaster, _wallet))
+    let authorized = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (
+            SELECT 1 FROM events e
+            JOIN organizers o ON o.id = e.organizer_id
+            WHERE e.id = $1 AND o.wallet_address = $2
+        )",
+    )
+    .bind(event_id)
+    .bind(&wallet)
+    .fetch_one(&state.pool)
+    .await;
+    match authorized {
+        Ok(true) => {}
+        Ok(false) => {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                "Not authorized to view purchases for this event",
+            )
+                .into_response();
+        }
+        Err(error) => {
+            tracing::error!(?error, "Failed to authorize purchase WebSocket");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Unable to authorize event telemetry",
+            )
+                .into_response();
+        }
+    }
+
+    ws.on_upgrade(move |socket| handle_socket(socket, state.broadcaster, event_id))
 }
 
-async fn handle_socket(mut socket: WebSocket, broadcaster: PurchaseBroadcaster, _wallet: String) {
+async fn handle_socket(
+    mut socket: WebSocket,
+    broadcaster: PurchaseBroadcaster,
+    event_id: Uuid,
+) {
     let mut rx = broadcaster.subscribe();
 
     loop {
@@ -256,6 +307,9 @@ async fn handle_socket(mut socket: WebSocket, broadcaster: PurchaseBroadcaster, 
             result = rx.recv() => {
                 match result {
                     Ok(event) => {
+                        if event.event_id != event_id {
+                            continue;
+                        }
                         let json = match serde_json::to_string(&event) {
                             Ok(j) => j,
                             Err(e) => {

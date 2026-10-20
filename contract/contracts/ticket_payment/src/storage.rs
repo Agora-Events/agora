@@ -665,8 +665,10 @@ pub fn get_oracle_address(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&DataKey::OracleAddress)
 }
 
+pub const MAX_ALLOWED_SLIPPAGE_BPS: u32 = 500;
+
 pub fn set_slippage_bps(env: &Env, bps: u32) -> Result<(), TicketPaymentError> {
-    if bps > 5000 {
+    if bps > MAX_ALLOWED_SLIPPAGE_BPS {
         return Err(TicketPaymentError::InvalidSlippageBps);
     }
 

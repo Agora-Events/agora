@@ -269,7 +269,7 @@ pub async fn get_rates(
 
         if let Ok(Some(stale_rate)) = state.redis.get::<ExchangeRate>(&stale_key).await {
             let mut resp =
-                success(stale_rate, "Stale exchange rate served (circuit breaker open)")
+                success(stale_rate.clone(), "Stale exchange rate served (circuit breaker open)")
                     .into_response();
             resp.headers_mut().insert(
                 "X-Rate-Source",

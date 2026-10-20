@@ -14,6 +14,7 @@ The following environment variables must be configured in your environment or `.
 - `NEXT_PUBLIC_POSTHOG_HOST`: Host URL for the PostHog instance.
 - `NEXT_PUBLIC_SITE_URL`: The base URL of the deployed application (e.g., https://agora-web-eta.vercel.app).
 - `STELLAR_CONTRACT_ADDRESS`: Address of the deployed Stellar smart contract.
+- `NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID`: Public ticket-payment contract ID required for client-signed resale purchases.
 - `STELLAR_SOURCE_SECRET`: Secret key for the Stellar source account.
 - `STELLAR_RPC_URL`: RPC URL for connecting to the Stellar network.
 - `STELLAR_NETWORK_PASSPHRASE`: Passphrase for the Stellar network (e.g., TESTNET or PUBLIC).
@@ -24,6 +25,7 @@ The following environment variables must be configured in your environment or `.
 - `APPLE_CLIENT_SECRET`: OAuth client secret for Apple authentication.
 - `APPLE_REDIRECT_URI`: OAuth redirect URI for Apple authentication.
 - `BACKEND_URL`: URL of the backend API service.
+- `PINATA_JWT`: Server-side Pinata API token for IPFS event image uploads.
 
 ## Local Build and Run
 

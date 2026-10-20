@@ -19,7 +19,7 @@
 //! 3. Security headers
 //! 4. Database connection state
 
-use crate::handlers::indexer::{replay_indexer, IndexerAdminState};
+use crate::handlers::indexer::{indexer_health, replay_indexer, IndexerAdminState};
 use crate::handlers::{delta_sync, sync_status, SyncState};
 use axum::{
     middleware,
@@ -50,9 +50,10 @@ use crate::utils::rate_limit::RateLimitLayer;
 
 use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
-    categories::{get_category, list_categories, CategoryState},
+    categories::{create_category, get_category, list_categories, CategoryState},
     events::{
-        export_attendees_csv, flag_event, get_attendee_count, get_checkin_stats, get_event,
+        create_event, export_attendees_csv, flag_event, get_attendee_count,
+        get_checkin_stats, get_event,
         get_event_counts, get_event_organizer, get_event_share_link, get_event_social_proof,
         get_events_map, get_ratings_summary, list_event_attendees, list_event_ratings,
         list_event_tickets, list_events, list_events_by_category, list_past_events,
@@ -65,8 +66,8 @@ use crate::handlers::{
         GovernanceState,
     },
     health::{
-        health_check, health_check_blockchain, health_check_db, health_check_live,
-        health_check_ready, health_check_redis, version,
+        health_check, health_check_blockchain, health_check_db, health_check_live, health_check_ready,
+        health_check_redis, version,
     },
     marketplace::{
         cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
@@ -89,7 +90,7 @@ use crate::handlers::{
         join_queue, queue_status, queue_stream, request_challenge, WaitingRoomConfig,
         WaitingRoomState,
     },
-    ws::{ws_purchases_handler, PurchaseBroadcaster},
+    ws::{ws_purchases_handler, PurchaseBroadcaster, PurchaseWsState},
     zk_checkin::{get_ring, register_commitment, seal_bucket, zk_checkin, ZkCheckinState},
 };
 use crate::metrics::{metrics_handler, track_metrics};
@@ -119,6 +120,11 @@ use utoipa::OpenApi;
         crate::handlers::events::get_event,
         crate::handlers::events::search_events,
         crate::handlers::events::list_upcoming_events,
+        crate::handlers::tickets::get_ticket_pdf,
+        crate::handlers::webhooks::create_webhook,
+        crate::handlers::webhooks::list_webhooks,
+        crate::handlers::webhooks::delete_webhook,
+        crate::handlers::affiliates::register_affiliate,
     ),
     components(
         schemas(
@@ -128,12 +134,20 @@ use utoipa::OpenApi;
             crate::handlers::events::SearchParams,
             crate::handlers::events::GetEventParams,
             crate::handlers::events::UpcomingParams,
+            crate::handlers::webhooks::CreateWebhookRequest,
+            crate::handlers::webhooks::CreateWebhookResponse,
+            crate::handlers::webhooks::ListWebhooksParams,
+            crate::models::webhook::WebhookEndpoint,
+            crate::handlers::affiliates::AffiliateResponse,
             crate::utils::error::ApiError
         )
     ),
     tags(
         (name = "Agora API", description = "Agora Events Platform API"),
-        (name = "Events", description = "Event management endpoints")
+        (name = "Events", description = "Event management endpoints"),
+        (name = "Tickets", description = "Ticket management endpoints"),
+        (name = "Webhooks", description = "Organizer webhook endpoints"),
+        (name = "Affiliates", description = "Event affiliate registration")
     )
 )]
 pub struct ApiDoc;
@@ -272,6 +286,15 @@ pub async fn create_routes(
         token: config.admin_token.clone(),
     };
 
+    let admin_category_routes = Router::new()
+        .route("/categories", post(create_category))
+        .route_layer(middleware::from_fn_with_state(
+            admin_auth_state.clone(),
+            require_admin_token,
+        ))
+        .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
+        .with_state(pool.clone());
+
     let governance_state = GovernanceState { pool: pool.clone() };
 
     let governance_routes = Router::new()
@@ -295,7 +318,7 @@ pub async fn create_routes(
         .route("/events/:id/flag", patch(flag_event))
         .merge(governance_routes)
         .route_layer(middleware::from_fn_with_state(
-            admin_auth_state,
+            admin_auth_state.clone(),
             require_admin_token,
         ))
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
@@ -307,12 +330,16 @@ pub async fn create_routes(
                     pool: pool.clone(),
                     broker: Some(broadcaster.clone()),
                 }),
-        );
+            )
+            .merge(admin_category_routes);
 
     // WebSocket sub-router for real-time purchase updates.
     let ws_routes = Router::new()
         .route("/purchases", get(ws_purchases_handler))
-        .with_state(broadcaster);
+        .with_state(PurchaseWsState {
+            pool: pool.clone(),
+            broadcaster,
+        });
 
     // Virtual waiting room routes (Issue #1187)
     let waiting_room_state = WaitingRoomState {
@@ -376,7 +403,7 @@ pub async fn create_routes(
 
     // Event routes with Redis caching
     let event_routes = Router::new()
-        .route("/", get(list_events))
+        .route("/", get(list_events).post(create_event))
         .route("/map", get(get_events_map))
         .route("/count", get(get_event_counts))
         .route("/past", get(list_past_events))
@@ -504,6 +531,7 @@ pub async fn create_routes(
         .route("/examples/validation-error", get(example_validation_error))
         .route("/examples/empty-success", get(example_empty_success))
         .route("/examples/not-found/:id", get(example_not_found))
+        .route("/indexer/health", get(indexer_health))
         .route("/version", get(version))
         .with_state(pool.clone())
         .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));

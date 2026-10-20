@@ -10,7 +10,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::models::webhook::{
@@ -27,7 +27,7 @@ pub struct WebhookState {
 }
 
 /// Query parameters for `GET /api/v1/webhooks`.
-#[derive(Debug, Deserialize, Default, ToSchema)]
+#[derive(Debug, Deserialize, Default, IntoParams, ToSchema)]
 pub struct ListWebhooksParams {
     /// Organiser id whose endpoints should be listed.
     pub organizer_id: Option<Uuid>,
@@ -45,6 +45,16 @@ pub struct CreateWebhookResponse {
 ///
 /// # Endpoint
 /// POST `/api/v1/webhooks`
+#[utoipa::path(
+    post,
+    path = "/webhooks",
+    request_body = CreateWebhookRequest,
+    responses(
+        (status = 200, description = "Webhook endpoint created", body = CreateWebhookResponse),
+        (status = 400, description = "Invalid webhook configuration"),
+    ),
+    tag = "Webhooks"
+)]
 pub async fn create_webhook(
     State(state): State<WebhookState>,
     axum::extract::Json(payload): axum::extract::Json<CreateWebhookRequest>,
@@ -124,6 +134,16 @@ pub async fn create_webhook(
 ///
 /// # Endpoint
 /// GET `/api/v1/webhooks?organizer_id=...`
+#[utoipa::path(
+    get,
+    path = "/webhooks",
+    params(ListWebhooksParams),
+    responses(
+        (status = 200, description = "Organizer webhook endpoints", body = Vec<WebhookEndpoint>),
+        (status = 400, description = "organizer_id is required"),
+    ),
+    tag = "Webhooks"
+)]
 pub async fn list_webhooks(
     State(state): State<WebhookState>,
     Query(params): Query<ListWebhooksParams>,
@@ -148,6 +168,16 @@ pub async fn list_webhooks(
 ///
 /// # Endpoint
 /// DELETE `/api/v1/webhooks/:id`
+#[utoipa::path(
+    delete,
+    path = "/webhooks/{endpoint_id}",
+    params(("endpoint_id" = Uuid, Path, description = "Webhook endpoint identifier")),
+    responses(
+        (status = 200, description = "Webhook endpoint deactivated"),
+        (status = 404, description = "Webhook endpoint not found"),
+    ),
+    tag = "Webhooks"
+)]
 pub async fn delete_webhook(
     State(state): State<WebhookState>,
     Path(endpoint_id): Path<Uuid>,

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2, Gift } from "@/components/ui/icons";
+import { X, Minus, Plus, Ticket, ArrowRight, Gift } from "@/components/ui/icons";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
@@ -15,6 +15,7 @@ import { checkUsdcTrustline, addUsdcTrustlineViaFreighter } from "@/lib/stellar/
 import { StellarExplorerLink } from "@/components/stellar/stellar-explorer-link";
 import { parseAndLogError } from "@/lib/stellar/error-parser";
 import { syncTicketPurchase } from "@/lib/api-handler";
+import { PurchaseSuccessAnimation } from "@/components/events/PurchaseSuccessAnimation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ interface TicketModalProps {
   isOpen: boolean;
   onClose: () => void;
   event: {
-    id: number;
+    id: string | number;
     title: string;
     price: string;
     location: string;
@@ -714,13 +715,7 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
             {/* ── Purchased success view ─────────────────────────────────── */}
             {view === "purchased" && purchasedTicket && (
               <div className="p-8 sm:p-10 flex flex-col items-center text-center gap-8">
-                <motion.div
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center text-green-600"
-                >
-                  <CheckCircle2 size={48} aria-hidden="true" />
-                </motion.div>
+                <PurchaseSuccessAnimation active={view === "purchased"} />
 
                 <div className="flex flex-col gap-2">
                   <h2 className="text-3xl font-bold text-black font-heading">Ticket Minted!</h2>

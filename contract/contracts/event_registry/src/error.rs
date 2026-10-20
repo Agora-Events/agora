@@ -1,8 +1,7 @@
 use soroban_sdk::contracterror;
 
-#[contracterror]
+#[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-/// Error codes returned by the Event Registry contract.
 pub enum EventRegistryError {
     EventAlreadyExists = 1,
     EventNotFound = 2,
@@ -54,4 +53,7 @@ pub enum EventRegistryError {
     NotTicketHolder = 86,
     ReplayAttackDetected = 87,
     InsufficientSignatures = 88,
+    InvalidPrice = 89,
+    /// Too many events requested in a batch call.
+    BatchSizeExceeded = 100,
 }

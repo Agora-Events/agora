@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
-import { dataEvents } from "@/components/events/mockups";
 import { RegistrationBox } from "@/components/events/registration-box";
 import { ReportEventLink } from "@/components/events/ReportEventLink";
 import { notFound } from "next/navigation";
@@ -14,6 +13,115 @@ import { SecondaryMarketplaceTab } from "@/components/events/secondary-marketpla
 import { EventTimeDisplay } from "@/components/events/event-time-display";
 import ShareButton from "@/components/events/ShareButton";
 import { T } from "@/components/ui/t";
+import { AddToCalendar } from "@/components/events/add-to-calendar";
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://agora.events";
+const BACKEND_URL =
+  process.env.BACKEND_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:3001";
+
+interface EventPageData {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  startsAt: string;
+  date: string;
+  price: string;
+  imageUrl: string;
+  category: string;
+  host: {
+    name: string;
+    avatar: string;
+    handle: string;
+    hostPfp: string;
+  };
+}
+
+interface ApiEventDetail {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string;
+  start_time: string;
+  image_url: string | null;
+  is_free: boolean;
+  organizer_profile?: {
+    address: string;
+    display_name: string;
+    avatar_url: string | null;
+  } | null;
+  tiers?: Array<{ price: string | number }> | null;
+}
+
+async function fetchEvent(id: string): Promise<EventPageData | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return null;
+  }
+
+  const response = await fetch(
+    `${BACKEND_URL}/api/v1/events/${encodeURIComponent(id)}?include_tiers=true`,
+    { next: { revalidate: 60 } },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Event lookup failed (${response.status}).`);
+  }
+
+  const result = (await response.json()) as { data?: ApiEventDetail };
+  const event = result.data;
+  if (!event?.id || !event.title || !event.start_time) return null;
+
+  const startDate = new Date(event.start_time);
+  const date = Number.isNaN(startDate.getTime())
+    ? "Date to be announced"
+    : new Intl.DateTimeFormat("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      }).format(startDate);
+  const tierPrices = (event.tiers ?? [])
+    .map((tier) => Number(tier.price))
+    .filter((price) => Number.isFinite(price));
+  const startingPrice = tierPrices.length ? Math.min(...tierPrices) : null;
+  const price =
+    event.is_free || startingPrice === 0
+      ? "Free"
+      : startingPrice === null
+        ? "Free"
+        : startingPrice.toFixed(2);
+  const organizer = event.organizer_profile;
+  const wallet = organizer?.address ?? "";
+  const abbreviatedWallet = wallet
+    ? `${wallet.slice(0, 5)}…${wallet.slice(-4)}`
+    : "Event organizer";
+
+  return {
+    id: event.id,
+    title: event.title,
+    description: event.description ?? "",
+    location: event.location,
+    startsAt: event.start_time,
+    date,
+    price,
+    imageUrl: event.image_url || "/images/event1.png",
+    category: "Event",
+    host: {
+      name: organizer?.display_name || "Event organizer",
+      avatar: organizer?.avatar_url?.startsWith("/")
+        ? organizer.avatar_url
+        : "/icons/stellar-logo.svg",
+      handle: abbreviatedWallet,
+      hostPfp: organizer?.avatar_url?.startsWith("/")
+        ? organizer.avatar_url
+        : "/images/pfp.png",
+    },
+  };
+}
 
 function truncateDescription(text: string, maxLength = 160): string {
   if (text.length <= maxLength) return text;
@@ -26,7 +134,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const event = dataEvents.find((e) => e.id === parseInt(id));
+  const event = await fetchEvent(id);
   if (!event) return { title: "Event not found" };
   const ogImageUrl = `${SITE_URL}/api/og?eventId=${id}`;
   return buildMetadata({
@@ -39,8 +147,6 @@ export async function generateMetadata({
   });
 }
 
-const SITE_URL = "https://agora.events";
-
 function truncateTitle(title: string, maxLength = 40): string {
   if (title.length <= maxLength) return title;
   return `${title.slice(0, maxLength - 1).trimEnd()}…`;
@@ -52,20 +158,13 @@ export default async function EventDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const eventId = parseInt(id);
-  const event = dataEvents.find((e) => e.id === eventId);
+  const event = await fetchEvent(id);
 
   if (!event) {
     notFound();
   }
 
-  // Mock host data matching Figma
-  const host = {
-    name: "Stellar Community",
-    avatar: "/icons/stellar-logo.svg",
-    handle: "Daniel James",
-    hostPfp: "/images/pfp.png",
-  };
+  const host = event.host;
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -79,8 +178,11 @@ export default async function EventDetailPage({
 
   const isOnline = event.location === "Online";
   const eventUrl = `${SITE_URL}/events/${id}`;
-  const eventDescription = `Join us for ${event.title} on ${event.date} in ${event.location}. ${event.price === "Free" ? "Free entry." : `Tickets from $${event.price}.`} Secure your spot on Agora.`;
-  const parsedStartDate = new Date(event.date);
+  const eventDescription = event.description || `Join us for ${event.title} on ${event.date} in ${event.location}.`;
+  const parsedStartDate = new Date(event.startsAt);
+  const eventImage = event.imageUrl.startsWith("http")
+    ? event.imageUrl
+    : `${SITE_URL}${event.imageUrl}`;
 
   const eventJsonLd = {
     "@context": "https://schema.org",
@@ -92,7 +194,7 @@ export default async function EventDetailPage({
     location: isOnline
       ? { "@type": "VirtualLocation", url: eventUrl }
       : { "@type": "Place", name: event.location },
-    image: `${SITE_URL}${event.imageUrl}`,
+    image: eventImage,
     description: eventDescription,
     eventAttendanceMode: isOnline
       ? "https://schema.org/OnlineEventAttendanceMode"
@@ -140,8 +242,8 @@ export default async function EventDetailPage({
                   src={event.imageUrl}
                   alt={event.title}
                   fill
+                  unoptimized
                   className="object-contain"
-                  priority
                 />
               </div>
             </div>
@@ -197,7 +299,7 @@ export default async function EventDetailPage({
                 </a>
               )}
               <div className="relative aspect-16/10 w-full rounded-[24px] overflow-hidden border border-black/10">
-                <MapClient location={event.location} />
+                <MapClient location={event.location} category={event.category} title={event.title} price={event.price} imageUrl={event.imageUrl} />
               </div>
             </div>
           </div>
@@ -261,51 +363,8 @@ export default async function EventDetailPage({
               <h2 className="text-[20px] sm:text-[22px] font-bold text-black font-heading">
                 <T ns="eventDetail" k="aboutEvent" />
               </h2>
-              <div className="text-[16px] sm:text-[17px] text-black leading-relaxed font-normal flex flex-col gap-6">
-                <p>
-                  The Casa Stellar + Stellar Lab is an advanced, invitation-only
-                  week-long builder residency and pro hackathon in Buenos Aires,
-                  gathering top developers from across LATAM. This event is
-                  designed to deepen loyalty and long-term commitment to the
-                  Stellar ecosystem during DevConnect in Argentina. Unlike
-                  introductory hackathons, this activation is designed for pro
-                  builders: developers who have already engaged with Stellar
-                  through past hackathons and the Stellar Ambassador program
-                  across Latin America.
-                </p>
-                <div className="flex flex-col gap-2">
-                  <p>
-                    <span className="font-bold">Event:</span>{" "}
-                    <span className="underline cursor-pointer hover:text-gray-700">
-                      Stellar Asado
-                    </span>
-                  </p>
-                  <p>
-                    <span className="font-bold">Date:</span> November 17
-                  </p>
-                  <p>
-                    <span className="font-bold">Time:</span> 6:00 PM - 9:00 PM
-                  </p>
-                  <p>
-                    A builder-style kickoff to the residency with food, code and
-                    real conversations with the ecosystem&apos;s top
-                    contributors.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <p>
-                    <span className="font-bold">Event:</span> Stellar Lab
-                  </p>
-                  <p className="underline cursor-pointer hover:text-gray-700">
-                    Day 1: November 17 - The State of Stellar
-                  </p>
-                  <p className="underline cursor-pointer hover:text-gray-700">
-                    Day 2: November 18 - Designing for Scale
-                  </p>
-                  <p className="underline cursor-pointer hover:text-gray-700">
-                    Day 3: November 19 - From Vision to Execution
-                  </p>
-                </div>
+              <div className="whitespace-pre-line text-[16px] sm:text-[17px] text-black leading-relaxed font-normal">
+                {event.description || "The organizer has not added a description yet."}
               </div>
             </div>
 
@@ -339,7 +398,7 @@ export default async function EventDetailPage({
                 </a>
               )}
               <div className="relative aspect-16/10 w-full rounded-[24px] overflow-hidden border border-black/10">
-                <MapClient location={event.location} />
+                <MapClient location={event.location} category={event.category} title={event.title} price={event.price} imageUrl={event.imageUrl} />
               </div>
             </div>
           </div>

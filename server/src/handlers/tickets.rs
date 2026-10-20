@@ -24,6 +24,18 @@ pub struct TicketState {
 const PDF_CACHE_TTL: Duration = Duration::from_secs(3600);
 
 /// GET /api/v1/tickets/:id/pdf
+#[utoipa::path(
+    get,
+    path = "/tickets/{ticket_id}/pdf",
+    params(("ticket_id" = Uuid, Path, description = "Ticket identifier")),
+    responses(
+        (status = 200, description = "Ticket PDF", content_type = "application/pdf", body = String),
+        (status = 401, description = "Authentication required"),
+        (status = 403, description = "Requester does not own this ticket"),
+        (status = 404, description = "Ticket not found"),
+    ),
+    tag = "Tickets"
+)]
 pub async fn get_ticket_pdf(
     State(state): State<TicketState>,
     headers: HeaderMap,

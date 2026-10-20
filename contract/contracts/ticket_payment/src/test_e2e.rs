@@ -457,6 +457,7 @@ fn buy_ticket(
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     )
@@ -682,6 +683,7 @@ fn test_e2e_duplicate_payment_id_rejected() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -738,6 +740,7 @@ fn test_e2e_state_consistent_after_failed_payment() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -791,6 +794,7 @@ fn test_e2e_batch_purchase_then_partial_refund() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -925,6 +929,7 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -948,6 +953,7 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );

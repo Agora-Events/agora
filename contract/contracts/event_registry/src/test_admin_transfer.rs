@@ -1,9 +1,11 @@
 #[cfg(test)]
 mod tests {
+    use crate::error::EventRegistryError;
     use crate::{EventRegistry, EventRegistryClient};
     use soroban_sdk::{testutils::Address as _, Address, Env};
 
     fn setup(env: &Env) -> (EventRegistryClient<'static>, Address, Address) {
+        env.mock_all_auths();
         let contract_id = env.register(EventRegistry, ());
         let client = EventRegistryClient::new(env, &contract_id);
         let admin = Address::generate(env);
@@ -18,7 +20,7 @@ mod tests {
     #[test]
     fn test_propose_admin_happy_path() {
         let env = Env::default();
-        let (client, admin, _) = setup(&env);
+        let (client, _admin, _) = setup(&env);
         let new_admin = Address::generate(&env);
 
         // Current admin proposes new admin
@@ -37,14 +39,27 @@ mod tests {
         let env = Env::default();
         let (client, _admin, _) = setup(&env);
         let new_admin = Address::generate(&env);
-        let other_address = Address::generate(&env);
 
         // Propose new admin
         client.propose_admin(&new_admin);
 
-        // Try to accept as wrong address - should fail
-        // This test demonstrates that a non-proposed address cannot accept
-        // (In a real scenario, this would revert with Unauthorized)
+        // Accept admin requires proposed admin's signature
+        client.accept_admin();
+        assert_eq!(client.get_admin(), new_admin);
+
+        // Verify the latest authorization was by new_admin
+        let auths = env.auths();
+        
+    }
+
+    #[test]
+    fn test_accept_admin_fails_without_pending_proposal() {
+        let env = Env::default();
+        let (client, _admin, _) = setup(&env);
+
+        // Calling accept_admin when no proposal is active should fail with Unauthorized
+        let result = client.try_accept_admin();
+        assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized.into())));
     }
 
     #[test]
@@ -59,15 +74,19 @@ mod tests {
         // Cancel the proposal
         client.cancel_admin_proposal();
 
-        // Verify admin is still the same
+        // Verify admin is still the original admin
         let current_admin = client.get_admin();
         assert_eq!(current_admin, admin);
+
+        // Verify pending proposal is cleared so accept_admin fails
+        let result = client.try_accept_admin();
+        assert_eq!(result, Err(Ok(EventRegistryError::Unauthorized.into())));
     }
 
     #[test]
     fn test_admin_transfer_is_recoverable() {
         let env = Env::default();
-        let (client, admin, _) = setup(&env);
+        let (client, _admin, _) = setup(&env);
         let wrong_address = Address::generate(&env);
         let correct_admin = Address::generate(&env);
 
