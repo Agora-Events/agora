@@ -6,6 +6,10 @@
 mod integration_tests {
     use crate::crdt::{LWWElementSet, ORSet, VectorClock, VectorClockUtils};
 
+    // ───────────────────────────────────────────────────────────────────────────
+    // Vector Clock Tests (basic)
+    // ───────────────────────────────────────────────────────────────────────────
+
     #[test]
     fn test_vector_clock_creation() {
         let clock = VectorClock::new("node1", 0);
@@ -59,100 +63,141 @@ mod integration_tests {
         assert!(clock1.equals(&clock2));
     }
 
+    // ───────────────────────────────────────────────────────────────────────────
+    // Timestamp Monotonicity Tests
+    // ───────────────────────────────────────────────────────────────────────────
+
     #[test]
-    fn test_lww_element_set_add() {
+    fn test_timestamp_monotonicity_increasing_wins() {
+        // Later timestamp should always win regardless of node ID
         let mut set: LWWElementSet<String> = LWWElementSet::new();
+        
+        // Add with timestamp 100
         set.add("value1".to_string(), "node1", Some(100));
+        assert!(set.has(&"value1".to_string()));
+        
+        // Update with later timestamp 200
+        set.add("value1".to_string(), "node1", Some(200));
+        assert!(set.has(&"value1".to_string()));
+        assert_eq!(set.size(), 1);
+        
+        // Remove with even later timestamp 300
+        set.remove("value1".to_string(), "node1", Some(300));
+        assert!(!set.has(&"value1".to_string()));
+    }
+
+    #[test]
+    fn test_timestamp_monotonicity_non_monotonic_ignored() {
+        // Earlier timestamp should be ignored
+        let mut set: LWWElementSet<String> = LWWElementSet::new();
+        
+        set.add("value1".to_string(), "node1", Some(200));
+        
+        // Try to update with earlier timestamp - should be ignored
+        set.add("value1".to_string(), "node1", Some(100));
+        
         assert!(set.has(&"value1".to_string()));
         assert_eq!(set.size(), 1);
     }
 
     #[test]
-    fn test_lww_element_set_remove() {
+    fn test_timestamp_monotonicity_concurrent_same_timestamp() {
+        // When timestamps are equal, vector clock comparison breaks the tie
+        let mut set1: LWWElementSet<String> = LWWElementSet::new();
+        let mut set2: LWWElementSet<String> = LWWElementSet::new();
+
+        // Add with same timestamp from different nodes
+        set1.add("value1".to_string(), "node1", Some(100));
+        set2.add("value1".to_string(), "node2", Some(100));
+
+        // Merge - should resolve to one value based on vector clock comparison
+        set1.merge(&set2);
+
+        assert!(set1.has(&"value1".to_string()));
+        assert_eq!(set1.size(), 1);
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // Tombstone Removal Tests
+    // ───────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_tombstone_add_then_remove() {
+        // Add with timestamp 100, remove with timestamp 200
         let mut set: LWWElementSet<String> = LWWElementSet::new();
+        
         set.add("value1".to_string(), "node1", Some(100));
+        assert!(set.has(&"value1".to_string()));
+        
         set.remove("value1".to_string(), "node1", Some(200));
         assert!(!set.has(&"value1".to_string()));
     }
 
     #[test]
-    fn test_lww_element_set_later_add_wins() {
+    fn test_tombstone_remove_then_add() {
+        // Remove with timestamp 100, add with timestamp 200
         let mut set: LWWElementSet<String> = LWWElementSet::new();
+        
         set.remove("value1".to_string(), "node1", Some(100));
+        assert!(!set.has(&"value1".to_string()));
+        
         set.add("value1".to_string(), "node1", Some(200));
         assert!(set.has(&"value1".to_string()));
     }
 
     #[test]
-    fn test_lww_element_set_merge_convergence() {
+    fn test_tombstone_concurrent_add_remove_same_timestamp() {
+        // When add and remove have same timestamp, add wins (conservative conflict resolution)
         let mut set1: LWWElementSet<String> = LWWElementSet::new();
-        set1.add("value1".to_string(), "node1", Some(100));
-
         let mut set2: LWWElementSet<String> = LWWElementSet::new();
-        set2.add("value2".to_string(), "node2", Some(150));
+
+        // Node 1 adds
+        set1.add("value1".to_string(), "node1", Some(100));
+        // Node 2 removes (concurrent, same timestamp)
+        set2.remove("value1".to_string(), "node2", Some(100));
 
         set1.merge(&set2);
 
+        // Add should win due to tie-breaker preferring add over remove
         assert!(set1.has(&"value1".to_string()));
-        assert!(set1.has(&"value2".to_string()));
-        assert_eq!(set1.size(), 2);
     }
 
     #[test]
-    fn test_lww_element_set_serialization() {
+    fn test_tombstone_remove_lower_timestamp() {
+        // Remove with lower timestamp than add should be ignored
         let mut set: LWWElementSet<String> = LWWElementSet::new();
-        set.add("value1".to_string(), "node1", Some(100));
-
-        let json = serde_json::to_string(&set).unwrap();
-        let restored: LWWElementSet<String> = serde_json::from_str(&json).unwrap();
-
-        assert!(restored.has(&"value1".to_string()));
-    }
-
-    #[test]
-    fn test_or_set_add() {
-        let mut set: ORSet<String> = ORSet::new();
-        set.add("value1".to_string(), "node1");
+        
+        set.add("value1".to_string(), "node1", Some(200));
+        set.remove("value1".to_string(), "node1", Some(100));
+        
         assert!(set.has(&"value1".to_string()));
-        assert_eq!(set.size(), 1);
     }
 
     #[test]
-    fn test_or_set_remove() {
-        let mut set: ORSet<String> = ORSet::new();
-        set.add("value1".to_string(), "node1");
-        set.remove(&"value1".to_string());
+    fn test_tombstone_remove_higher_timestamp() {
+        // Remove with higher timestamp should work
+        let mut set: LWWElementSet<String> = LWWElementSet::new();
+        
+        set.add("value1".to_string(), "node1", Some(100));
+        set.remove("value1".to_string(), "node1", Some(300));
+        
         assert!(!set.has(&"value1".to_string()));
     }
 
     #[test]
-    fn test_or_set_concurrent_adds() {
-        let mut set1: ORSet<String> = ORSet::new();
-        set1.add("value1".to_string(), "node1");
-
-        let mut set2: ORSet<String> = ORSet::new();
-        set2.add("value1".to_string(), "node2");
-
-        set1.merge(&set2);
-
-        // Both adds should be preserved
-        assert!(set1.has(&"value1".to_string()));
+    fn test_tombstone_remove_by_different_node() {
+        // Remove from different node but higher timestamp should work
+        let mut set: LWWElementSet<String> = LWWElementSet::new();
+        
+        set.add("value1".to_string(), "node1", Some(100));
+        set.remove("value1".to_string(), "node2", Some(200));
+        
+        assert!(!set.has(&"value1".to_string()));
     }
 
-    #[test]
-    fn test_or_set_merge_convergence() {
-        let mut set1: ORSet<String> = ORSet::new();
-        set1.add("value1".to_string(), "node1");
-
-        let mut set2: ORSet<String> = ORSet::new();
-        set2.add("value2".to_string(), "node2");
-
-        set1.merge(&set2);
-
-        assert!(set1.has(&"value1".to_string()));
-        assert!(set1.has(&"value2".to_string()));
-        assert_eq!(set1.size(), 2);
-    }
+    // ───────────────────────────────────────────────────────────────────────────
+    // Concurrent Update Tests
+    // ───────────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_or_set_unobserved_concurrent_add_survives_remove() {
@@ -184,6 +229,22 @@ mod integration_tests {
         let restored: ORSet<String> = serde_json::from_str(&json).unwrap();
 
         assert!(restored.has(&"value1".to_string()));
+    }
+
+    #[test]
+    fn test_concurrent_updates_different_elements() {
+        // Different elements added concurrently should both be present
+        let mut replica1: LWWElementSet<String> = LWWElementSet::new();
+        let mut replica2: LWWElementSet<String> = LWWElementSet::new();
+
+        replica1.add("value1".to_string(), "node1", Some(100));
+        replica2.add("value2".to_string(), "node2", Some(150));
+
+        replica1.merge(&replica2);
+
+        assert!(replica1.has(&"value1".to_string()));
+        assert!(replica1.has(&"value2".to_string()));
+        assert_eq!(replica1.size(), 2);
     }
 
     #[test]
@@ -219,49 +280,202 @@ mod integration_tests {
     }
 
     #[test]
-    fn test_crdt_concurrent_updates() {
+    fn test_concurrent_updates_same_element_different_nodes() {
+        // Same element added concurrently from different nodes
         let mut replica1: LWWElementSet<String> = LWWElementSet::new();
         let mut replica2: LWWElementSet<String> = LWWElementSet::new();
 
-        // Both replicas update the same element concurrently
         replica1.add("value1".to_string(), "node1", Some(100));
         replica2.add("value1".to_string(), "node2", Some(100));
 
-        // Merge - last write wins based on vector clock
         replica1.merge(&replica2);
 
-        // Should have exactly one value
+        // Should have exactly one value (LWW resolution)
         assert_eq!(replica1.size(), 1);
         assert!(replica1.has(&"value1".to_string()));
     }
 
     #[test]
-    fn test_crdt_network_partition_recovery() {
+    fn test_concurrent_updates_merge_all_replicas() {
+        // Three replicas with concurrent updates
+        let mut replica1: LWWElementSet<String> = LWWElementSet::new();
+        let mut replica2: LWWElementSet<String> = LWWElementSet::new();
+        let mut replica3: LWWElementSet<String> = LWWElementSet::new();
+
+        // Different elements added to each replica
+        replica1.add("value1".to_string(), "node1", Some(100));
+        replica2.add("value2".to_string(), "node2", Some(200));
+        replica3.add("value3".to_string(), "node3", Some(300));
+
+        // Merge all replicas together
+        replica1.merge(&replica2);
+        replica1.merge(&replica3);
+
+        // All values should be present
+        assert!(replica1.has(&"value1".to_string()));
+        assert!(replica1.has(&"value2".to_string()));
+        assert!(replica1.has(&"value3".to_string()));
+        assert_eq!(replica1.size(), 3);
+    }
+
+    #[test]
+    fn test_concurrent_updates_interleaved() {
+        // Simulate interleaved updates between two replicas
         let mut replica1: LWWElementSet<String> = LWWElementSet::new();
         let mut replica2: LWWElementSet<String> = LWWElementSet::new();
 
-        // Initial state
+        // Replica 1 adds value1
         replica1.add("value1".to_string(), "node1", Some(100));
-        replica2.merge(&replica1);
+        // Replica 2 adds value2
+        replica2.add("value2".to_string(), "node2", Some(150));
 
-        // Network partition - both diverge
-        replica1.add("value2".to_string(), "node1", Some(200));
-        replica2.add("value3".to_string(), "node2", Some(250));
-
-        // Network recovery - merge
+        // Replica 1 merges
         replica1.merge(&replica2);
+        assert_eq!(replica1.size(), 2);
+
+        // Replica 2 merges later with different state
         replica2.merge(&replica1);
+        assert_eq!(replica2.size(), 2);
 
-        // Both should have all values
-        assert_eq!(replica1.size(), 3);
-        assert_eq!(replica2.size(), 3);
-
-        let mut values1 = replica1.values();
-        let mut values2 = replica2.values();
-        values1.sort();
-        values2.sort();
-        assert_eq!(values1, values2);
+        // Both should converge
+        assert!(replica1.has(&"value1".to_string()));
+        assert!(replica1.has(&"value2".to_string()));
+        assert!(replica2.has(&"value1".to_string()));
+        assert!(replica2.has(&"value2".to_string()));
     }
+
+    #[test]
+    fn test_concurrent_remove_operations() {
+        // Concurrent removes from different nodes
+        let mut replica1: LWWElementSet<String> = LWWElementSet::new();
+        let mut replica2: LWWElementSet<String> = LWWElementSet::new();
+
+        // Both add the same element
+        replica1.add("value1".to_string(), "node1", Some(100));
+        replica2.add("value1".to_string(), "node2", Some(100));
+
+        // Both remove concurrently
+        replica1.remove("value1".to_string(), "node1", Some(200));
+        replica2.remove("value1".to_string(), "node2", Some(200));
+
+        replica1.merge(&replica2);
+
+        // Should be removed
+        assert!(!replica1.has(&"value1".to_string()));
+    }
+
+    #[test]
+    fn test_concurrent_add_remove_different_timestamps() {
+        // Concurrent add and remove with different timestamps
+        let mut replica1: LWWElementSet<String> = LWWElementSet::new();
+        let mut replica2: LWWElementSet<String> = LWWElementSet::new();
+
+        // Replica 1 adds with timestamp 100
+        replica1.add("value1".to_string(), "node1", Some(100));
+
+        // Replica 2 adds and removes with higher timestamps
+        replica2.add("value1".to_string(), "node2", Some(200));
+        replica2.remove("value1".to_string(), "node2", Some(300));
+
+        replica1.merge(&replica2);
+
+        // Should be removed (remove with highest timestamp wins)
+        assert!(!replica1.has(&"value1".to_string()));
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // OR-Set Concurrent Tests
+    // ───────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_or_set_concurrent_adds_different_nodes() {
+        // Same element added concurrently from different nodes
+        let mut set1: ORSet<String> = ORSet::new();
+        let mut set2: ORSet<String> = ORSet::new();
+
+        set1.add("value1".to_string(), "node1");
+        set2.add("value1".to_string(), "node2");
+
+        set1.merge(&set2);
+
+        // OR-Set should preserve both adds
+        assert!(set1.has(&"value1".to_string()));
+    }
+
+    #[test]
+    fn test_or_set_add_remove_by_same_node() {
+        // Add then remove by the same node
+        let mut set: ORSet<String> = ORSet::new();
+
+        set.add("value1".to_string(), "node1");
+        assert!(set.has(&"value1".to_string()));
+
+        set.remove(&"value1".to_string());
+        assert!(!set.has(&"value1".to_string()));
+    }
+
+    #[test]
+    fn test_or_set_remove_by_different_node() {
+        // Add by node1, remove by node2
+        let mut set1: ORSet<String> = ORSet::new();
+        let mut set2: ORSet<String> = ORSet::new();
+
+        set1.add("value1".to_string(), "node1");
+        set2.remove(&"value1".to_string());
+
+        set1.merge(&set2);
+
+        // After merge, element should be removed
+        assert!(!set1.has(&"value1".to_string()));
+    }
+
+    #[test]
+    fn test_or_set_multiple_concurrent_adds() {
+        // Multiple concurrent adds should all be preserved
+        let mut set1: ORSet<String> = ORSet::new();
+        let mut set2: ORSet<String> = ORSet::new();
+        let mut set3: ORSet<String> = ORSet::new();
+
+        set1.add("value1".to_string(), "node1");
+        set2.add("value1".to_string(), "node2");
+        set3.add("value1".to_string(), "node3");
+
+        set1.merge(&set2);
+        set1.merge(&set3);
+
+        assert!(set1.has(&"value1".to_string()));
+    }
+
+    #[test]
+    fn test_or_set_cascading_merges() {
+        // Test that merges propagate correctly through multiple replicas
+        let mut replica1: ORSet<String> = ORSet::new();
+        let mut replica2: ORSet<String> = ORSet::new();
+        let mut replica3: ORSet<String> = ORSet::new();
+
+        // Different adds on each replica
+        replica1.add("value1".to_string(), "node1");
+        replica2.add("value2".to_string(), "node2");
+        replica3.add("value3".to_string(), "node3");
+
+        // Cascading merges
+        replica1.merge(&replica2);
+        replica2.merge(&replica3);
+        replica3.merge(&replica1);
+
+        // All replicas should converge
+        assert!(replica1.has(&"value1".to_string()));
+        assert!(replica1.has(&"value2".to_string()));
+        assert!(replica1.has(&"value3".to_string()));
+        assert_eq!(replica1.size(), 3);
+
+        assert_eq!(replica1.size(), replica2.size());
+        assert_eq!(replica1.size(), replica3.size());
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // Vector Clock Utility Tests
+    // ───────────────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_vector_clock_utils_merge() {
@@ -397,5 +611,128 @@ mod integration_tests {
         assert_eq!(clock1.compare(&clock2), -1);
         assert_eq!(clock2.compare(&clock1), 1);
         assert!(clock1.happened_before(&clock2));
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // Edge Cases and Complex Scenarios
+    // ───────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_empty_merge() {
+        // Merging with empty set should not change anything
+        let mut set1: LWWElementSet<String> = LWWElementSet::new();
+        let set2: LWWElementSet<String> = LWWElementSet::new();
+
+        set1.add("value1".to_string(), "node1", Some(100));
+        set1.merge(&set2);
+
+        assert!(set1.has(&"value1".to_string()));
+        assert_eq!(set1.size(), 1);
+    }
+
+    #[test]
+    fn test_self_merge() {
+        // Merging a set with itself should be idempotent
+        let mut set: LWWElementSet<String> = LWWElementSet::new();
+        set.add("value1".to_string(), "node1", Some(100));
+        set.add("value2".to_string(), "node2", Some(200));
+
+        let initial_size = set.size();
+        set.merge(&set);
+
+        assert_eq!(set.size(), initial_size);
+    }
+
+    #[test]
+    fn test_lww_vs_or_set_convergence() {
+        // Both CRDTs should converge to the same visible state
+        let mut lww_set: LWWElementSet<String> = LWWElementSet::new();
+        let mut or_set: ORSet<String> = ORSet::new();
+
+        let mut lww_replica1: LWWElementSet<String> = LWWElementSet::new();
+        let mut lww_replica2: LWWElementSet<String> = LWWElementSet::new();
+        let mut or_replica1: ORSet<String> = ORSet::new();
+        let mut or_replica2: ORSet<String> = ORSet::new();
+
+        // Add same values to both types
+        lww_replica1.add("value1".to_string(), "node1", Some(100));
+        or_replica1.add("value1".to_string(), "node1");
+
+        lww_replica2.add("value2".to_string(), "node2", Some(200));
+        or_replica2.add("value2".to_string(), "node2");
+
+        // Merge both types
+        lww_replica1.merge(&lww_replica2);
+        or_replica1.merge(&or_replica2);
+
+        // Both should have 2 elements
+        assert_eq!(lww_replica1.size(), 2);
+        assert_eq!(or_replica1.size(), 2);
+    }
+
+    #[test]
+    fn test_multiple_update_cycles() {
+        // Multiple add/remove cycles with increasing timestamps
+        let mut set: LWWElementSet<String> = LWWElementSet::new();
+
+        // Cycle 1
+        set.add("value1".to_string(), "node1", Some(100));
+        assert!(set.has(&"value1".to_string()));
+        assert_eq!(set.size(), 1);
+
+        // Cycle 2
+        set.remove("value1".to_string(), "node1", Some(200));
+        assert!(!set.has(&"value1".to_string()));
+        assert_eq!(set.size(), 0);
+
+        // Cycle 3 - add again
+        set.add("value1".to_string(), "node1", Some(300));
+        assert!(set.has(&"value1".to_string()));
+        assert_eq!(set.size(), 1);
+
+        // Cycle 4 - remove with different node
+        set.remove("value1".to_string(), "node2", Some(400));
+        assert!(!set.has(&"value1".to_string()));
+        assert_eq!(set.size(), 0);
+    }
+
+    #[test]
+    fn test_node_id_independence() {
+        // Same element from same node with higher timestamp should win
+        let mut set: LWWElementSet<String> = LWWElementSet::new();
+
+        set.add("value1".to_string(), "node1", Some(100));
+        set.add("value1".to_string(), "node1", Some(200));
+
+        assert!(set.has(&"value1".to_string()));
+        assert_eq!(set.size(), 1);
+    }
+
+    #[test]
+    fn test_tombstone_serialization_roundtrip() {
+        // Test that tombstones are properly serialized/deserialized
+        let mut set: LWWElementSet<String> = LWWElementSet::new();
+        set.add("value1".to_string(), "node1", Some(100));
+        set.remove("value1".to_string(), "node1", Some(200));
+
+        let json = serde_json::to_string(&set).unwrap();
+        let restored: LWWElementSet<String> = serde_json::from_str(&json).unwrap();
+
+        assert!(!restored.has(&"value1".to_string()));
+        assert_eq!(restored.size(), 0);
+    }
+
+    #[test]
+    fn test_or_set_serialization_with_tags() {
+        // Test OR-Set serialization preserves tags
+        let mut set: ORSet<String> = ORSet::new();
+        set.add("value1".to_string(), "node1");
+        set.add("value2".to_string(), "node2");
+
+        let json = serde_json::to_string(&set).unwrap();
+        let restored: ORSet<String> = serde_json::from_str(&json).unwrap();
+
+        assert!(restored.has(&"value1".to_string()));
+        assert!(restored.has(&"value2".to_string()));
+        assert_eq!(restored.size(), 2);
     }
 }

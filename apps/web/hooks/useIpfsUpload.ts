@@ -203,26 +203,19 @@ export function useIpfsUpload(
         let uploadedCid = "";
         let uploadedUrl = "";
 
-        // Attempt actual API upload if configured, else fallback to mock/generated CID
-        try {
-          const res = await fetch("/api/ipfs/upload", {
-            method: "POST",
-            body: formData,
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            uploadedCid = data.cid || data.hash;
-            uploadedUrl = data.url || `https://ipfs.io/ipfs/${uploadedCid}`;
-          }
-        } catch {
-          // If endpoint is not running locally, generate client CID representation
+        const response = await fetch("/api/ipfs/upload", {
+          method: "POST",
+          body: formData,
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(result.message || "Failed to upload image to IPFS.");
         }
 
+        uploadedCid = result.cid || result.hash;
+        uploadedUrl = result.url || `https://gateway.pinata.cloud/ipfs/${uploadedCid}`;
         if (!uploadedCid) {
-          // Simulated IPFS upload hash for offline / preview workflows
-          uploadedCid = `Qm${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
-          uploadedUrl = `https://ipfs.io/ipfs/${uploadedCid}`;
+          throw new Error("The IPFS service did not return a content ID.");
         }
 
         setCid(uploadedCid);

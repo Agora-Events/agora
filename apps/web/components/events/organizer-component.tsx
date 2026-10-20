@@ -166,6 +166,7 @@ export function OrganizerComponent({
                   alt={card.title}
                   height={65}
                   width={65}
+                  loading="lazy"
                   className="relative z-10 border-4 border-black rounded-full object-cover"
                 />
                 <div className="absolute -left-1 top-1 w-15 h-15 bg-white rounded-full z-0" />

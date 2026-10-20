@@ -22,6 +22,7 @@ import {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8_000;
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Module-scoped so the cache survives navigating away and back. */
 let cache: { fetchedAt: number; events: DiscoverEvent[] } | null = null;
@@ -55,6 +56,11 @@ export function useDiscoverEvents(filters: DiscoverFilters = {}) {
   const [isOffline, setOffline] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Debounce search query to avoid API requests on every character
+  const [debouncedQuery, setDebouncedQuery] = useState(filters.query ?? "");
+  const queryRef = useRef(filters.query ?? "");
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Guards against setting state after unmount, which React warns about and
   // which happens routinely here since the screen is a tab.
   const mounted = useRef(true);
@@ -62,6 +68,9 @@ export function useDiscoverEvents(filters: DiscoverFilters = {}) {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
     };
   }, []);
 
@@ -100,6 +109,28 @@ export function useDiscoverEvents(filters: DiscoverFilters = {}) {
     }
   }, []);
 
+  // Update debounced query when search input changes
+  useEffect(() => {
+    if (filters.query !== queryRef.current) {
+      queryRef.current = filters.query;
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      debounceTimerRef.current = setTimeout(() => {
+        setDebouncedQuery(filters.query ?? "");
+      }, SEARCH_DEBOUNCE_MS);
+    }
+  }, [filters.query]);
+
+  // Re-run search when debounced query changes
+  useEffect(() => {
+    // Only trigger search if we have a fresh cache or no cache at all
+    const isFresh = cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS;
+    if (!isFresh) {
+      void load(false);
+    }
+  }, [debouncedQuery, load]);
+
   useEffect(() => {
     const isFresh = cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS;
     if (isFresh) {
@@ -112,7 +143,9 @@ export function useDiscoverEvents(filters: DiscoverFilters = {}) {
 
   // Filtering is applied here rather than in the query so a category tap is
   // instant — it never waits on the network, which is the acceptance criterion.
-  const filtered = filterEvents(events, filters);
+  // Use debouncedQuery instead of filters.query to avoid filtering on every keystroke.
+  const filterWithDebouncedQuery = { ...filters, query: debouncedQuery };
+  const filtered = filterEvents(events, filterWithDebouncedQuery);
 
   return {
     events: filtered,

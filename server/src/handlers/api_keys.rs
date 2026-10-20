@@ -25,6 +25,7 @@ pub struct ApiKeysState {
 #[derive(Debug, Deserialize)]
 pub struct CreateApiKeyRequest {
     pub name: String,
+    pub expires_in_days: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Clone, sqlx::FromRow)]
@@ -37,6 +38,7 @@ pub struct ApiKeyRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
     pub is_active: bool,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,6 +49,7 @@ pub struct ApiKeyListItem {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
     pub is_active: bool,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -56,6 +59,7 @@ pub struct CreateApiKeyResponse {
     pub prefix: String,
     pub name: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 fn api_key_prefix() -> String {
@@ -100,19 +104,33 @@ pub async fn create_api_key(
         return AppError::ValidationError("name must not exceed 100 characters".to_string())
             .into_response();
     }
+    if payload
+        .expires_in_days
+        .is_some_and(|days| !(1..=365).contains(&days))
+    {
+        return AppError::ValidationError(
+            "expires_in_days must be between 1 and 365".to_string(),
+        )
+        .into_response();
+    }
+
+    let expires_at = payload
+        .expires_in_days
+        .map(|days| chrono::Utc::now() + chrono::Duration::days(i64::from(days)));
 
     let plaintext = generate_api_key();
     let key_hash = hash_api_key(&plaintext);
     let prefix = prefix_of(&plaintext);
 
     let row = match sqlx::query_as::<_, ApiKeyRow>(
-        r#"INSERT INTO developer_api_keys (organizer_id, key_hash, prefix, name)
-           VALUES ($1, $2, $3, $4) RETURNING *"#,
+        r#"INSERT INTO developer_api_keys (organizer_id, key_hash, prefix, name, expires_at)
+           VALUES ($1, $2, $3, $4, $5) RETURNING *"#,
     )
     .bind(&address)
     .bind(&key_hash)
     .bind(&prefix)
     .bind(payload.name.trim())
+    .bind(expires_at)
     .fetch_one(&state.pool)
     .await
     {
@@ -129,6 +147,7 @@ pub async fn create_api_key(
         prefix: row.prefix,
         name: row.name,
         created_at: row.created_at,
+        expires_at: row.expires_at,
     };
     success(resp, "API key created").into_response()
 }
@@ -166,6 +185,7 @@ pub async fn list_api_keys(
             created_at: r.created_at,
             last_used_at: r.last_used_at,
             is_active: r.is_active,
+            expires_at: r.expires_at,
         })
         .collect();
 

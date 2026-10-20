@@ -489,6 +489,7 @@ fn test_process_payment_success() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -602,6 +603,7 @@ fn test_process_payment_zero_amount() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -649,6 +651,7 @@ fn test_batch_purchase_success() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -714,6 +717,7 @@ fn test_fee_calculation_variants() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -759,6 +763,7 @@ fn test_process_payment_not_found() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1066,6 +1071,7 @@ fn test_process_payment_with_non_whitelisted_token() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1118,6 +1124,7 @@ fn test_process_payment_with_multiple_tokens() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1136,6 +1143,7 @@ fn test_process_payment_with_multiple_tokens() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1207,6 +1215,7 @@ fn test_process_payment_respects_event_specific_token() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &wrong_hash,
     );
@@ -1232,6 +1241,7 @@ fn test_process_payment_respects_event_specific_token() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &right_hash,
     );
@@ -1359,6 +1369,7 @@ fn test_process_payment_max_supply_exceeded() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1496,6 +1507,7 @@ fn test_inventory_increment_on_successful_payment() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1516,6 +1528,7 @@ fn test_inventory_increment_on_successful_payment() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1552,6 +1565,7 @@ fn test_withdraw_organizer_funds() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1596,6 +1610,7 @@ fn test_withdraw_platform_fees() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1761,6 +1776,7 @@ fn test_withdraw_with_milestones() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1782,6 +1798,7 @@ fn test_withdraw_with_milestones() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1809,6 +1826,7 @@ fn test_withdraw_with_milestones() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1832,6 +1850,7 @@ fn test_withdraw_with_milestones() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2193,6 +2212,7 @@ fn test_early_bird_pricing_active() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2242,6 +2262,7 @@ fn test_early_bird_pricing_expired() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2263,6 +2284,7 @@ fn test_early_bird_pricing_expired() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2313,6 +2335,7 @@ fn test_price_switched_event_emitted_exactly_once() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2333,6 +2356,7 @@ fn test_price_switched_event_emitted_exactly_once() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2353,6 +2377,7 @@ fn test_price_switched_event_emitted_exactly_once() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2373,6 +2398,7 @@ fn test_price_switched_event_emitted_exactly_once() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2450,6 +2476,7 @@ fn test_bulk_refund_cancelled_event() {
                 code_preimage: None,
                 referrer: None,
                 discount_code: None,
+            affiliate_address: None,
             },
             &hash,
         );
@@ -2587,6 +2614,7 @@ fn test_protocol_revenue_reporting_views() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2782,6 +2810,7 @@ fn test_add_discount_hashes_and_invalid_code_rejected() {
             code_preimage: Some(wrong_preimage),
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2821,6 +2850,7 @@ fn test_gas_profile_process_payment_budget() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2868,6 +2898,7 @@ fn test_process_payment_with_valid_discount_code() {
             code_preimage: Some(preimage),
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2910,6 +2941,7 @@ fn test_discount_code_one_time_use() {
             code_preimage: Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2928,6 +2960,7 @@ fn test_discount_code_one_time_use() {
             code_preimage: Some(Bytes::from_slice(&env, b"ONCE_ONLY")),
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -2960,6 +2993,7 @@ fn test_process_payment_no_code_unchanged() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -3257,6 +3291,7 @@ fn test_integration_full_platform_day() {
                 code_preimage: None,
                 referrer: None,
                 discount_code: None,
+            affiliate_address: None,
             },
             &hash,
         );
@@ -3329,6 +3364,7 @@ fn test_integration_edge_cases() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -3381,6 +3417,7 @@ fn test_integration_edge_cases() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -3407,6 +3444,7 @@ fn test_integration_edge_cases() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -3429,6 +3467,7 @@ fn test_integration_edge_cases() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -3506,6 +3545,7 @@ fn test_integration_concurrent_multi_guest_sales_no_state_corruption() {
                 code_preimage: None,
                 referrer: None,
                 discount_code: None,
+            affiliate_address: None,
             },
             &hash,
         );
@@ -4043,6 +4083,7 @@ fn test_request_guest_refund_success_with_fee() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4104,6 +4145,7 @@ fn test_request_guest_refund_deadline_passed() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4139,6 +4181,7 @@ fn test_platform_fee_withdrawal_with_cap() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4254,6 +4297,7 @@ fn test_process_payment_paused() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4502,6 +4546,7 @@ fn test_dispute_blocks_withdrawal() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4552,6 +4597,7 @@ fn test_admin_refund_during_dispute() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4761,6 +4807,7 @@ fn test_usd_priced_payment_success() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4795,6 +4842,7 @@ fn test_usd_priced_payment_within_slippage() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4829,6 +4877,7 @@ fn test_usd_priced_payment_above_slippage_fails() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4863,6 +4912,7 @@ fn test_usd_priced_payment_below_slippage_fails() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4906,6 +4956,7 @@ fn test_usd_priced_oracle_not_configured() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4951,6 +5002,7 @@ fn test_usd_priced_oracle_unavailable() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -4995,6 +5047,7 @@ fn test_usd_priced_oracle_stale() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -5028,6 +5081,7 @@ fn test_token_priced_payment_unchanged() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -5360,13 +5414,14 @@ fn test_close_auction_rejects_double_closure() {
 }
 
 #[test]
-fn test_governance_rejects_slippage_above_fifty_percent() {
+fn test_governance_rejects_slippage_above_max_bps() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (client, admin, _, _, _) = setup_test(&env);
+    // 501 bps exceeds MAX_ALLOWED_SLIPPAGE_BPS (500)
     let proposal_id =
-        client.propose_parameter_change(&admin, &ParameterChange::UpdateSlippage(5001));
+        client.propose_parameter_change(&admin, &ParameterChange::UpdateSlippage(501));
 
     env.ledger()
         .set_timestamp(env.ledger().timestamp() + 172801);
@@ -5374,6 +5429,24 @@ fn test_governance_rejects_slippage_above_fifty_percent() {
     let result = client.try_execute_proposal(&admin, &proposal_id);
     assert_eq!(result, Err(Ok(TicketPaymentError::InvalidSlippageBps)));
     assert_eq!(client.get_slippage(), 200);
+}
+
+#[test]
+fn test_set_slippage_enforces_max_allowed_bps() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _, _, _) = setup_test(&env);
+    assert_eq!(client.get_slippage(), 200);
+
+    // Valid slippage <= 500
+    assert!(client.try_set_slippage(&500).is_ok());
+    assert_eq!(client.get_slippage(), 500);
+
+    // Invalid slippage > 500
+    let err = client.try_set_slippage(&501);
+    assert_eq!(err, Err(Ok(TicketPaymentError::InvalidSlippageBps)));
+    assert_eq!(client.get_slippage(), 500);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -5516,6 +5589,7 @@ fn test_process_payment_ignores_loyalty_update_failure() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -5761,6 +5835,7 @@ fn test_loyalty_discount_is_capped_by_platform_fee() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -5819,6 +5894,7 @@ fn test_loyalty_discount_reduces_platform_fee() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -5858,6 +5934,7 @@ fn test_payment_without_loyalty_discount_unchanged() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6002,6 +6079,7 @@ fn test_process_payment_with_custom_fee() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6136,6 +6214,7 @@ fn test_process_payment_extremely_high_ticket_price() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6267,6 +6346,7 @@ fn test_refund_rejected_after_deadline() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6332,6 +6412,7 @@ fn test_get_payments_by_status_single_payment() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6401,6 +6482,7 @@ fn test_get_payments_by_status_multiple_payments() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6419,6 +6501,7 @@ fn test_get_payments_by_status_multiple_payments() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6437,6 +6520,7 @@ fn test_get_payments_by_status_multiple_payments() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6510,6 +6594,7 @@ fn test_get_payments_by_status_with_refunds() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6568,6 +6653,7 @@ fn test_get_payments_by_status_multiple_events() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6586,6 +6672,7 @@ fn test_get_payments_by_status_multiple_events() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -6675,6 +6762,7 @@ fn test_partial_refund_multi_batch_index_persisted() {
                 code_preimage: None,
                 referrer: None,
                 discount_code: None,
+            affiliate_address: None,
             },
             &hash,
         );
@@ -7279,6 +7367,7 @@ fn test_process_payment_respects_max_per_user() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -7302,6 +7391,7 @@ fn test_process_payment_respects_max_per_user() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -7357,6 +7447,7 @@ fn test_process_payment_allows_unlimited_max_per_user() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -7376,6 +7467,7 @@ fn test_process_payment_allows_unlimited_max_per_user() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -7614,6 +7706,7 @@ fn test_referral_reward_is_20_percent_of_platform_fee() {
             code_preimage: None,
             referrer: Some(referrer.clone()),
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -7682,6 +7775,7 @@ fn test_referral_reward_capped_when_platform_fee_is_zero() {
             code_preimage: None,
             referrer: Some(referrer.clone()),
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -7737,6 +7831,7 @@ fn test_referral_reward_does_not_exceed_platform_fee_invariant() {
             code_preimage: None,
             referrer: Some(referrer.clone()),
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -7808,6 +7903,7 @@ fn setup_withdrawal_cap_test(
                 code_preimage: None,
                 referrer: None,
                 discount_code: None,
+            affiliate_address: None,
             },
             &hash,
         );
@@ -8054,6 +8150,7 @@ fn test_no_referral_reward_without_referrer() {
             code_preimage: None,
             referrer: None, // no referrer,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -8342,6 +8439,7 @@ fn test_process_payment_with_discount_code() {
             code_preimage: None,
             referrer: None,
             discount_code: Some(code.clone()),
+            affiliate_address: None,
         },
         &hash,
     );
@@ -8394,6 +8492,7 @@ fn test_discount_code_expired_returns_error() {
             code_preimage: None,
             referrer: None,
             discount_code: Some(code),
+            affiliate_address: None,
         },
         &hash,
     );
@@ -8433,6 +8532,7 @@ fn test_discount_code_already_used() {
             code_preimage: None,
             referrer: None,
             discount_code: Some(code.clone()),
+            affiliate_address: None,
         },
         &hash,
     );
@@ -8454,6 +8554,7 @@ fn test_discount_code_already_used() {
             code_preimage: None,
             referrer: None,
             discount_code: Some(code),
+            affiliate_address: None,
         },
         &hash2,
     );
@@ -8487,6 +8588,7 @@ fn test_discount_code_invalid_code_returns_error() {
             code_preimage: None,
             referrer: None,
             discount_code: Some(String::from_str(&env, "NONEXISTENT")),
+            affiliate_address: None,
         },
         &hash,
     );
@@ -8526,6 +8628,7 @@ fn test_discount_code_price_calculation() {
             code_preimage: None,
             referrer: None,
             discount_code: Some(code),
+            affiliate_address: None,
         },
         &hash,
     );
@@ -8600,6 +8703,7 @@ fn test_affiliate_a_10pct_affiliate_b_5pct_same_event() {
             code_preimage: None,
             referrer: Some(affiliate_a.clone()),
             discount_code: None,
+            affiliate_address: None,
         },
         &hash_a,
     );
@@ -8627,6 +8731,7 @@ fn test_affiliate_a_10pct_affiliate_b_5pct_same_event() {
             code_preimage: None,
             referrer: Some(affiliate_b.clone()),
             discount_code: None,
+            affiliate_address: None,
         },
         &hash_b,
     );
@@ -8670,6 +8775,7 @@ fn test_unregistered_referrer_uses_default_20pct() {
             code_preimage: None,
             referrer: Some(referrer.clone()),
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -8728,6 +8834,7 @@ fn test_affiliate_reward_capped_at_platform_fee() {
             code_preimage: None,
             referrer: Some(affiliate.clone()),
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9028,6 +9135,7 @@ fn fund_fees_for_cap_tests(
                 code_preimage: None,
                 referrer: None,
                 discount_code: None,
+            affiliate_address: None,
             },
             &hash,
         );
@@ -9177,6 +9285,7 @@ fn test_process_payment_with_referral() {
             code_preimage: None,
             referrer: Some(referrer.clone()),
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9235,6 +9344,7 @@ fn test_process_payment_self_referral_rejected() {
             code_preimage: None,
             referrer: Some(buyer.clone()), // self-referral
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9284,6 +9394,7 @@ fn test_referral_commission_zero_when_no_referrer() {
             code_preimage: None,
             referrer: None, // no referrer
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9450,6 +9561,7 @@ fn test_process_payment_blocked_when_paused() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9487,6 +9599,7 @@ fn test_refund_blocked_when_paused() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9552,6 +9665,7 @@ fn test_operations_resume_after_unpause() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9575,6 +9689,7 @@ fn test_operations_resume_after_unpause() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9618,6 +9733,7 @@ fn test_partial_refund_correct_amount() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9659,6 +9775,7 @@ fn test_partial_refund_with_restocking_fee() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9899,6 +10016,7 @@ fn test_check_in_unauthorized_scanner() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -9947,6 +10065,7 @@ fn test_check_in_already_used_ticket() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -10004,6 +10123,7 @@ fn test_check_in_success() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -10280,364 +10400,6 @@ fn test_poap_minting_and_duplicate_prevention() {
     assert!(res2.is_err());
 }
 
-// ── Secondary market (issue #1184) ───────────────────────────────────────────
-//
-// The registry mock behind `setup_test_with_resale_cap` reports
-// `resale_cap_bps: Some(1000)` on a tier with a 1000 USDC face value, so the
-// ceiling under test is 1100 USDC. `setup_test`'s registry leaves the cap
-// unset, which exercises the marketplace's own 110% default.
-
-/// Stores a confirmed, transferable ticket owned by `owner` and returns its id.
-fn seed_resale_ticket(
-    env: &Env,
-    client: &TicketPaymentContractClient<'static>,
-    owner: &Address,
-    event_id: &str,
-    payment_id: &str,
-    amount: i128,
-) -> String {
-    let payment_id = String::from_str(env, payment_id);
-    let payment = Payment {
-        payment_id: payment_id.clone(),
-        event_id: String::from_str(env, event_id),
-        buyer_address: owner.clone(),
-        owner_address: owner.clone(),
-        ticket_tier_id: String::from_str(env, "general"),
-        token_address: env.as_contract(&client.address, || get_usdc_token(env)),
-        amount,
-        platform_fee: 0,
-        organizer_amount: amount,
-        status: PaymentStatus::Confirmed,
-        transaction_hash: String::from_str(env, "tx_resale"),
-        created_at: 100,
-        confirmed_at: Some(101),
-        refunded_amount: 0,
-        is_soulbound: false,
-        last_checked_in_at: 0,
-        referral_amount: 0,
-        referrer: None,
-    };
-
-    env.as_contract(&client.address, || store_payment(env, payment));
-    payment_id
-}
-
-#[test]
-fn test_list_for_resale_at_cap_succeeds() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
-
-    let seller = Address::generate(&env);
-    let payment_id = seed_resale_ticket(
-        &env,
-        &client,
-        &seller,
-        "event_capped",
-        "pay_resale_1",
-        1000_0000000,
-    );
-
-    // Exactly 110% of face value — the boundary must be inclusive.
-    let listing = client.list_for_resale(&payment_id, &1100_0000000);
-
-    assert_eq!(listing.seller, seller);
-    assert_eq!(listing.price, 1100_0000000);
-    assert_eq!(listing.max_price, 1100_0000000);
-    assert_eq!(
-        listing.royalty_bps,
-        crate::resale::DEFAULT_RESALE_ROYALTY_BPS
-    );
-    assert_eq!(listing.status, crate::resale::ResaleStatus::Active);
-    assert_eq!(client.get_max_resale_price(&payment_id), 1100_0000000);
-}
-
-#[test]
-fn test_list_for_resale_above_cap_rejected() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
-
-    let seller = Address::generate(&env);
-    let payment_id = seed_resale_ticket(
-        &env,
-        &client,
-        &seller,
-        "event_capped",
-        "pay_resale_2",
-        1000_0000000,
-    );
-
-    // One stroop over the ceiling.
-    let result = client.try_list_for_resale(&payment_id, &1100_0000001);
-    assert_eq!(result, Err(Ok(TicketPaymentError::ResalePriceExceedsCap)));
-
-    // Nothing should have been written for a rejected listing.
-    assert!(client.get_resale_listing(&payment_id).is_none());
-}
-
-#[test]
-fn test_list_for_resale_falls_back_to_default_cap() {
-    let env = Env::default();
-    env.mock_all_auths();
-    // This registry mock leaves `resale_cap_bps` as None.
-    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
-
-    let seller = Address::generate(&env);
-    let payment_id = seed_resale_ticket(&env, &client, &seller, "event_1", "pay_resale_3", 100);
-
-    // 110% of 100 = 110, from DEFAULT_MAX_RESALE_MARKUP_BPS rather than the
-    // uncapped free market `transfer_ticket` allows.
-    assert_eq!(client.get_max_resale_price(&payment_id), 110);
-
-    let result = client.try_list_for_resale(&payment_id, &111);
-    assert_eq!(result, Err(Ok(TicketPaymentError::ResalePriceExceedsCap)));
-
-    let listing = client.list_for_resale(&payment_id, &110);
-    assert_eq!(listing.max_price, 110);
-}
-
-#[test]
-fn test_double_listing_rejected() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
-
-    let seller = Address::generate(&env);
-    let payment_id = seed_resale_ticket(
-        &env,
-        &client,
-        &seller,
-        "event_capped",
-        "pay_resale_4",
-        1000_0000000,
-    );
-
-    client.list_for_resale(&payment_id, &1000_0000000);
-    let result = client.try_list_for_resale(&payment_id, &1050_0000000);
-    assert_eq!(result, Err(Ok(TicketPaymentError::TicketAlreadyListed)));
-}
-
-#[test]
-fn test_cancel_then_relist() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
-
-    let seller = Address::generate(&env);
-    let payment_id = seed_resale_ticket(
-        &env,
-        &client,
-        &seller,
-        "event_capped",
-        "pay_resale_5",
-        1000_0000000,
-    );
-
-    client.list_for_resale(&payment_id, &1000_0000000);
-    client.cancel_resale_listing(&payment_id);
-
-    let cancelled = client.get_resale_listing(&payment_id).unwrap();
-    assert_eq!(cancelled.status, crate::resale::ResaleStatus::Cancelled);
-
-    // Cancelling twice is not allowed…
-    let result = client.try_cancel_resale_listing(&payment_id);
-    assert_eq!(result, Err(Ok(TicketPaymentError::ResaleListingNotActive)));
-
-    // …but the ticket is free to be listed again.
-    let relisted = client.list_for_resale(&payment_id, &900_0000000);
-    assert_eq!(relisted.status, crate::resale::ResaleStatus::Active);
-    assert_eq!(relisted.price, 900_0000000);
-}
-
-#[test]
-fn test_purchase_resale_ticket_settles_atomically() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, usdc_id, _, _) = setup_test_with_resale_cap(&env);
-    let usdc_mint = token::StellarAssetClient::new(&env, &usdc_id);
-    let usdc = token::Client::new(&env, &usdc_id);
-
-    let seller = Address::generate(&env);
-    let buyer = Address::generate(&env);
-    let payment_id = seed_resale_ticket(
-        &env,
-        &client,
-        &seller,
-        "event_capped",
-        "pay_resale_6",
-        1000_0000000,
-    );
-
-    let price: i128 = 1100_0000000;
-    client.list_for_resale(&payment_id, &price);
-
-    usdc_mint.mint(&buyer, &price);
-    usdc.approve(&buyer, &client.address, &price, &9999);
-
-    let listing = client.purchase_resale_ticket(&payment_id, &buyer);
-
-    // 5% default royalty on 1100 USDC = 55 USDC to the organizer.
-    let expected_royalty =
-        price * crate::resale::DEFAULT_RESALE_ROYALTY_BPS as i128 / MAX_BPS as i128;
-    assert_eq!(listing.status, crate::resale::ResaleStatus::Sold);
-    assert_eq!(usdc.balance(&buyer), 0);
-    assert_eq!(usdc.balance(&seller), price - expected_royalty);
-    // Funds pass through the contract but must not be left sitting in it.
-    assert_eq!(usdc.balance(&client.address), 0);
-
-    // Ownership moved to the buyer on both fields the rest of the contract reads.
-    let payment = client.get_payment_status(&payment_id).unwrap();
-    assert_eq!(payment.buyer_address, buyer);
-    assert_eq!(payment.owner_address, buyer);
-
-    // …and the buyer index follows it.
-    assert!(client.get_buyer_payments(&buyer).contains(&payment_id));
-    assert!(!client.get_buyer_payments(&seller).contains(&payment_id));
-}
-
-#[test]
-fn test_purchase_resale_requires_allowance() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
-
-    let seller = Address::generate(&env);
-    let buyer = Address::generate(&env);
-    let payment_id = seed_resale_ticket(
-        &env,
-        &client,
-        &seller,
-        "event_capped",
-        "pay_resale_7",
-        1000_0000000,
-    );
-
-    client.list_for_resale(&payment_id, &1000_0000000);
-
-    // No approve() call — settlement must refuse rather than half-execute.
-    let result = client.try_purchase_resale_ticket(&payment_id, &buyer);
-    assert_eq!(result, Err(Ok(TicketPaymentError::InsufficientAllowance)));
-
-    // The listing is untouched and the ticket still belongs to the seller.
-    let listing = client.get_resale_listing(&payment_id).unwrap();
-    assert_eq!(listing.status, crate::resale::ResaleStatus::Active);
-    assert_eq!(
-        client
-            .get_payment_status(&payment_id)
-            .unwrap()
-            .buyer_address,
-        seller
-    );
-}
-
-#[test]
-fn test_seller_cannot_buy_own_listing() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
-
-    let seller = Address::generate(&env);
-    let payment_id = seed_resale_ticket(
-        &env,
-        &client,
-        &seller,
-        "event_capped",
-        "pay_resale_8",
-        1000_0000000,
-    );
-
-    client.list_for_resale(&payment_id, &1000_0000000);
-
-    let result = client.try_purchase_resale_ticket(&payment_id, &seller);
-    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAddress)));
-}
-
-#[test]
-fn test_resale_royalty_bps_is_configurable_and_bounded() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
-
-    let event_id = String::from_str(&env, "event_capped");
-    assert_eq!(
-        client.get_resale_royalty_bps(&event_id),
-        crate::resale::DEFAULT_RESALE_ROYALTY_BPS
-    );
-
-    client.set_resale_royalty_bps(&event_id, &250);
-    assert_eq!(client.get_resale_royalty_bps(&event_id), 250);
-
-    let result =
-        client.try_set_resale_royalty_bps(&event_id, &(crate::resale::MAX_RESALE_ROYALTY_BPS + 1));
-    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidRoyaltyBps)));
-
-    // The rejected write must not have clobbered the accepted one.
-    assert_eq!(client.get_resale_royalty_bps(&event_id), 250);
-}
-
-#[test]
-fn test_listing_captures_royalty_rate_at_listing_time() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
-
-    let event_id = String::from_str(&env, "event_capped");
-    let seller = Address::generate(&env);
-    let payment_id = seed_resale_ticket(
-        &env,
-        &client,
-        &seller,
-        "event_capped",
-        "pay_resale_9",
-        1000_0000000,
-    );
-
-    client.set_resale_royalty_bps(&event_id, &300);
-    let listing = client.list_for_resale(&payment_id, &1000_0000000);
-    assert_eq!(listing.royalty_bps, 300);
-
-    // Raising the rate afterwards must not retroactively change what the
-    // seller agreed to when they listed.
-    client.set_resale_royalty_bps(&event_id, &2000);
-    let stored = client.get_resale_listing(&payment_id).unwrap();
-    assert_eq!(stored.royalty_bps, 300);
-}
-
-#[test]
-fn test_soulbound_ticket_cannot_be_listed() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _usdc_id, _, _) = setup_test_with_resale_cap(&env);
-
-    let seller = Address::generate(&env);
-    let payment_id = String::from_str(&env, "pay_resale_10");
-    let payment = Payment {
-        payment_id: payment_id.clone(),
-        event_id: String::from_str(&env, "event_capped"),
-        buyer_address: seller.clone(),
-        owner_address: seller.clone(),
-        ticket_tier_id: String::from_str(&env, "general"),
-        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
-        amount: 1000_0000000,
-        platform_fee: 0,
-        organizer_amount: 1000_0000000,
-        status: PaymentStatus::Confirmed,
-        transaction_hash: String::from_str(&env, "tx_sb"),
-        created_at: 100,
-        confirmed_at: Some(101),
-        refunded_amount: 0,
-        is_soulbound: true,
-        last_checked_in_at: 0,
-        referral_amount: 0,
-        referrer: None,
-    };
-    env.as_contract(&client.address, || store_payment(&env, payment));
-
-    let result = client.try_list_for_resale(&payment_id, &1000_0000000);
-    assert_eq!(result, Err(Ok(TicketPaymentError::NonTransferable)));
-}
-
 // ─── Resale Escrow Tests ────────────────────────────────────────────────────
 
 #[test]
@@ -10686,7 +10448,9 @@ fn test_list_for_resale_price_exceeds_cap_rejected() {
         payment_id: payment_id.clone(),
         event_id: String::from_str(&env, "event_capped"),
         buyer_address: seller.clone(),
+        owner_address: seller.clone(),
         ticket_tier_id: String::from_str(&env, "general"),
+        token_address: env.as_contract(&client.address, || get_usdc_token(&env)),
         amount: 1000_0000000,
         platform_fee: 50_0000000,
         organizer_amount: 950_0000000,
@@ -10695,6 +10459,10 @@ fn test_list_for_resale_price_exceeds_cap_rejected() {
         created_at: 100,
         confirmed_at: Some(101),
         refunded_amount: 0,
+        is_soulbound: false,
+        last_checked_in_at: 0,
+        referral_amount: 0,
+        referrer: None,
     };
     env.as_contract(&client.address, || {
         store_payment(&env, payment);
@@ -10969,6 +10737,7 @@ fn test_process_payment_negative_amount_rejected() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -11013,6 +10782,7 @@ fn test_process_payment_zero_quantity_rejected() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -11058,6 +10828,7 @@ fn test_process_payment_zero_amount_on_paid_event_fails() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );

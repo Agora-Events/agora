@@ -7,10 +7,12 @@
 
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
-import { CookieBanner } from "@/components/layout/cookie-banner";
-import { LiveAnnouncer } from "@/components/ui/live-announcer";
-import { LocaleProvider } from "@/lib/i18n/locale-context";
+import { cookies } from "next/headers";
+import { NextIntlClientProvider } from "next-intl";
 import "./globals.css";
+
+const SUPPORTED_LOCALES = ["en", "es", "fr"] as const;
+type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 const inter = Inter({
   variable: "--font-inter",
@@ -41,65 +43,23 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#FFFBE9" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f1115" },
-  ],
-};
-
-import { Suspense } from "react";
-import LoadingBar from "@/components/ui/loading-bar";
-import { ThemeProvider } from "@/components/providers/theme-context";
-import { AttributionCapture } from "@/components/analytics/attribution-capture";
-import { TestnetBanner } from "@/components/layout/testnet-banner";
-import { NetworkProvider } from "@/lib/stellar/network-context";
-
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const savedLocale = cookieStore.get("NEXT_LOCALE")?.value;
+  const locale: Locale =
+    SUPPORTED_LOCALES.find((supportedLocale) => supportedLocale === savedLocale) ??
+    "en";
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale}>
       <body className={`${inter.variable} antialiased`}>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                var theme = localStorage.getItem("theme");
-                if (!theme) {
-                  theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-                }
-                document.documentElement.setAttribute("data-theme", theme);
-              })();
-            `,
-          }}
-        />
-        <a className="skip-link" href="#main-content">
-          Skip to main content
-        </a>
-        <LocaleProvider>
-          {/* ThemeProvider — pre-existing bug fix (Issue #1541 batch):
-              this was imported but never actually mounted, so any component
-              calling useTheme() (e.g. GuestNav's theme toggle) would throw.
-              Wiring it here is unrelated to the network switcher below but
-              was needed since GuestNav also renders the new NetworkSwitcher. */}
-          <ThemeProvider>
-            {/* NetworkProvider — Issue #1541. Makes the active
-                Testnet/Mainnet selection available to the header's
-                NetworkSwitcher (and anything else) app-wide. */}
-            <NetworkProvider>
-              <LiveAnnouncer />
-              {/* Testnet warning banner — Issue #1491.
-                  TestnetBanner is a client component that self-gates on
-                  NEXT_PUBLIC_STELLAR_NETWORK so it renders nothing in production. */}
-              <TestnetBanner />
-              {children}
-              <CookieBanner />
-            </NetworkProvider>
-          </ThemeProvider>
-        </LocaleProvider>
+        <NextIntlClientProvider locale={locale}>
+          {children}
+        </NextIntlClientProvider>
       </body>
     </html>
   );

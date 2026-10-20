@@ -13,7 +13,7 @@ import { EventCountdown } from "./event-countdown";
 
 interface RegistrationBoxProps {
   event: {
-    id: number;
+    id: string | number;
     title: string;
     price: string;
     location: string;

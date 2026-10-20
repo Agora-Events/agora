@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Colors from '@/constants/Colors';
 import { formatUsdc } from '@/services/ticketPaymentContract';
@@ -21,7 +21,10 @@ export default function OrderSummaryCard({
   quantity,
   unitPriceUsdc,
 }: OrderSummaryCardProps) {
-  const totals = computeOrderTotals({ unitPriceUsdc, quantity });
+  const totals = useMemo(
+    () => computeOrderTotals({ unitPriceUsdc, quantity }),
+    [unitPriceUsdc, quantity]
+  );
 
   return (
     <View style={styles.card}>
