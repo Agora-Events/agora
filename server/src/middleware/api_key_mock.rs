@@ -113,17 +113,21 @@ pub async fn api_key_auth_middleware(
             let key_hash = hash_key(token);
 
             // Look up key
-            let row = sqlx::query_as::<_, (String, bool)>(
-                "SELECT organizer_id, is_active FROM developer_api_keys WHERE key_hash = $1",
+            let row = sqlx::query_as::<_, (String, bool, bool)>(
+                "SELECT organizer_id, is_active, expires_at IS NULL OR expires_at > NOW() FROM developer_api_keys WHERE key_hash = $1",
             )
             .bind(&key_hash)
             .fetch_optional(&state.pool)
             .await;
 
             match row {
-                Ok(Some((organizer_id, is_active))) => {
+                Ok(Some((organizer_id, is_active, not_expired))) => {
                     if !is_active {
                         return ApiError::new(StatusCode::UNAUTHORIZED, "API key has been revoked")
+                            .into_response();
+                    }
+                    if !not_expired {
+                        return ApiError::new(StatusCode::UNAUTHORIZED, "API key has expired")
                             .into_response();
                     }
 

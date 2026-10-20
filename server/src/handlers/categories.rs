@@ -7,6 +7,7 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     response::Response,
+    Json,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -98,6 +99,74 @@ fn weak_etag(payload: &str) -> String {
 pub struct CategoryState {
     pub pool: PgPool,
     pub redis: RedisCache,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCategoryRequest {
+    pub name: String,
+    pub slug: String,
+    pub description: Option<String>,
+    pub parent_id: Option<Uuid>,
+}
+
+fn is_valid_category_slug(slug: &str) -> bool {
+    !slug.is_empty()
+        && slug
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+/// Create a category. This endpoint is mounted under the admin router.
+pub async fn create_category(
+    State(pool): State<PgPool>,
+    Json(payload): Json<CreateCategoryRequest>,
+) -> Response {
+    if payload.name.trim().is_empty() {
+        return AppError::ValidationError("name is required".to_string()).into_response();
+    }
+    if !is_valid_category_slug(&payload.slug) {
+        return AppError::ValidationError(
+            "slug must contain only lowercase letters, numbers, and hyphens".to_string(),
+        )
+        .into_response();
+    }
+
+    let slug_exists = match sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM categories WHERE LOWER(slug) = LOWER($1))",
+    )
+    .bind(&payload.slug)
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(exists) => exists,
+        Err(error) => return AppError::DatabaseError(error).into_response(),
+    };
+    if slug_exists {
+        return AppError::Conflict("category slug already exists".to_string()).into_response();
+    }
+
+    match sqlx::query_as::<_, Category>(
+        "INSERT INTO categories (name, slug, description, parent_id) VALUES ($1, $2, $3, $4) RETURNING *",
+    )
+    .bind(payload.name.trim())
+    .bind(&payload.slug)
+    .bind(payload.description)
+    .bind(payload.parent_id)
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(category) => (StatusCode::CREATED, Json(category)).into_response(),
+        Err(error)
+            if error
+                .as_database_error()
+                .and_then(|db_error| db_error.code())
+                .as_deref()
+                == Some("23505") =>
+        {
+            AppError::Conflict("category slug already exists".to_string()).into_response()
+        }
+        Err(error) => AppError::DatabaseError(error).into_response(),
+    }
 }
 
 /// Query parameters for filtering categories
@@ -406,6 +475,14 @@ pub async fn validate_categories_match_contract(pool: &PgPool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn category_slug_requires_lowercase_kebab_characters() {
+        assert!(is_valid_category_slug("live-music2"));
+        assert!(!is_valid_category_slug("Live-Music"));
+        assert!(!is_valid_category_slug("live_music"));
+        assert!(!is_valid_category_slug(""));
+    }
 
     #[test]
     fn test_categories_cache_key_is_deterministic() {

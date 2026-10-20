@@ -42,6 +42,9 @@ use crate::error::EventRegistryError;
 /// Maximum number of ticket tiers allowed per event during registration.
 const MAX_TIERS_PER_EVENT: u32 = 20;
 
+/// Maximum number of events that can be queried in a single batch call.
+const MAX_BATCH_SIZE: u32 = 50;
+
 #[contract]
 pub struct EventRegistry;
 
@@ -273,6 +276,10 @@ impl EventRegistry {
 
         if args.tiers.len() > MAX_TIERS_PER_EVENT {
             return Err(EventRegistryError::TooManyTiers);
+        }
+
+        for tier in args.tiers.values() {
+            validate_tier_price(&tier)?;
         }
 
         // Validate tier limits don't exceed max_supply
@@ -532,14 +539,16 @@ impl EventRegistry {
                 }
 
                 // Update metadata
+                let old_metadata_cid = event_info.metadata_cid.clone();
                 event_info.metadata_cid = new_metadata_cid.clone();
                 storage::update_event(&env, event_info.clone());
 
-                // Emit metadata update event
+                // Emit metadata update event so indexers can follow CID changes (#1561)
                 env.events().publish(
                     (AgoraEvent::MetadataUpdated,),
                     MetadataUpdatedEvent {
                         event_id,
+                        old_metadata_cid,
                         new_metadata_cid,
                         updated_by: event_info.organizer_address,
                         timestamp: env.ledger().timestamp(),
@@ -670,13 +679,42 @@ impl EventRegistry {
         })
     }
 
-    /// Retrieves a batch of events by their IDs (max 50).
+    /// Retrieves a batch of events by their IDs (max MAX_BATCH_SIZE).
+    ///
+    /// This function provides efficient batch retrieval of event information
+    /// for marketplace discovery and event listing features. It allows querying
+    /// multiple events in a single RPC call, reducing latency and preventing
+    /// RPC throttling that would occur with individual event queries.
+    ///
+    /// # Arguments
+    /// * `event_ids` - A vector of event IDs to retrieve. The length must not
+    ///   exceed `MAX_BATCH_SIZE` (currently 50).
+    ///
+    /// # Returns
+    /// Returns a vector of optional `EventInfo` objects in the same order as
+    /// the input IDs. If an event doesn't exist, its corresponding position
+    /// will be `None`.
+    ///
+    /// # Errors
+    /// Returns `EventRegistryError::BatchSizeExceeded` if the input vector
+    /// exceeds `MAX_BATCH_SIZE`.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let event_ids: Vec<String> = vec!["event1".to_string(), "event2".to_string()];
+    /// let events = event_registry::get_events_batch(env, event_ids)?;
+    /// for event in events {
+    ///     if let Some(event_info) = event {
+    ///         println!("Event: {}", event_info.name);
+    ///     }
+    /// }
+    /// ```
     pub fn get_events_batch(
         env: Env,
         event_ids: Vec<String>,
     ) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
-        if event_ids.len() > 50 {
-            return Err(EventRegistryError::TooManyTiers);
+        if event_ids.len() > MAX_BATCH_SIZE as usize {
+            return Err(EventRegistryError::BatchSizeExceeded);
         }
         let mut results = Vec::new(&env);
         for id in event_ids.into_iter() {
@@ -834,6 +872,20 @@ impl EventRegistry {
             .ok_or(EventRegistryError::NotInitialized)?;
 
         storage::set_admin(&env, &proposed_admin);
+
+        if let Some(mut config) = storage::get_multisig_config(&env) {
+            let mut updated_admins = soroban_sdk::Vec::new(&env);
+            for admin in config.admins.iter() {
+                if admin == previous_admin {
+                    updated_admins.push_back(proposed_admin.clone());
+                } else {
+                    updated_admins.push_back(admin);
+                }
+            }
+            config.admins = updated_admins;
+            storage::set_multisig_config(&env, &config);
+        }
+
         storage::clear_pending_admin(&env);
 
         #[allow(deprecated)]
@@ -1066,6 +1118,8 @@ impl EventRegistry {
         let mut event_info =
             storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
         event_info.organizer_address.require_auth();
+
+        validate_tier_price(&tier)?;
 
         if event_info.max_supply > 0 {
             let mut total_tier_limit: i128 = 0;
@@ -2203,7 +2257,7 @@ impl EventRegistry {
                 let mut new_config = config.clone();
                 new_config.admins.push_back(new_admin.clone());
                 storage::set_multisig_config(&env, &new_config);
-                storage::set_admin(&env, new_admin); // Update legacy admin storage
+                storage::set_admin(&env, &new_admin); // Update legacy admin storage
             }
             types::ParameterChange::RemoveAdmin(admin_to_remove) => {
                 let mut new_config = config.clone();
@@ -2228,7 +2282,7 @@ impl EventRegistry {
                 storage::set_multisig_config(&env, &new_config);
             }
             types::ParameterChange::UpdatePlatformWallet(new_wallet) => {
-                storage::set_platform_wallet(&env, new_wallet);
+                storage::set_platform_wallet(&env, &new_wallet);
             }
             types::ParameterChange::SetPlatformFee(fee) => {
                 storage::set_platform_fee(&env, *fee);
@@ -2460,6 +2514,15 @@ impl EventRegistry {
 fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryError> {
     if address == &env.current_contract_address() {
         return Err(EventRegistryError::InvalidAddress);
+    }
+    Ok(())
+}
+
+/// Tier prices are denominated in stroops. Zero is allowed (free tickets);
+/// negative prices are rejected (Issue #1559).
+fn validate_tier_price(tier: &TicketTier) -> Result<(), EventRegistryError> {
+    if tier.price < 0 {
+        return Err(EventRegistryError::InvalidPrice);
     }
     Ok(())
 }

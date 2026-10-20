@@ -1229,6 +1229,8 @@ fn build_past_event_where_clause(
                 order: SearchSortOrder::default(),
                 page: 1,
                 page_size: size,
+                sort_by: Default::default(),
+                order: Default::default(),
             };
             assert!(
                 params.validate_page_size().is_ok(),
@@ -1254,6 +1256,8 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 0,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
         let err = params.validate_page_size().unwrap_err();
         assert!(err.contains("page_size must be between 1 and 100"));
@@ -1275,6 +1279,8 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 101,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
         let err = params.validate_page_size().unwrap_err();
         assert!(err.contains("page_size must be between 1 and 100"));
@@ -1296,6 +1302,8 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
 
         assert_eq!(params.ticket_type, Some("VIP".to_string()));
@@ -1317,6 +1325,8 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
 
         assert!(params.ticket_type.is_none());
@@ -1427,6 +1437,8 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
         assert_eq!(params.location.as_deref(), Some("Lagos"));
     }
@@ -4393,6 +4405,8 @@ fn test_search_params_ticket_type() {
         order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
+        sort_by: Default::default(),
+        order: Default::default(),
     };
 
     assert_eq!(params.ticket_type, Some("VIP".to_string()));
@@ -4414,6 +4428,8 @@ fn test_search_params_ticket_type_none() {
         order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
+        sort_by: Default::default(),
+        order: Default::default(),
     };
 
     assert!(params.ticket_type.is_none());
@@ -4445,6 +4461,8 @@ fn test_search_params_location() {
         order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
+        sort_by: Default::default(),
+        order: Default::default(),
     };
     assert_eq!(params.location.as_deref(), Some("Lagos"));
 }

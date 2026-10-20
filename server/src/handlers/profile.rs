@@ -225,6 +225,17 @@ pub struct OrganizerProfileResponse {
     #[serde(flatten)]
     pub profile: OrganizerProfile,
     pub total_events: i64,
+    pub followers_count: i64,
+    pub following_count: i64,
+    pub is_following: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedProfileBase {
+    pub profile: OrganizerProfile,
+    pub total_events: i64,
+    pub followers_count: i64,
+    pub following_count: i64,
 }
 
 fn organizer_total_events_query() -> &'static str {
@@ -469,7 +480,7 @@ pub async fn get_my_profile(State(mut state): State<ProfileState>, headers: Head
         Err(e) => return e.into_response(),
     };
 
-    fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
+    fetch_profile_by_address(&state.pool, &mut state.redis, &address, Some(&address)).await
 }
 
 /// Summary of a payment transaction returned by `GET /api/v1/profile/transactions`.
@@ -555,61 +566,127 @@ pub async fn list_my_transactions(
 /// Returns any organizer's public profile by their Stellar wallet address.
 pub async fn get_profile_by_address(
     State(mut state): State<ProfileState>,
+    headers: HeaderMap,
     Path(address): Path<String>,
 ) -> Response {
-    fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
+    let viewer = extract_auth(&headers).ok();
+    fetch_profile_by_address(&state.pool, &mut state.redis, &address, viewer.as_deref()).await
 }
 
 async fn fetch_profile_by_address(
     pool: &PgPool,
     redis: &mut RedisCache,
     address: &str,
+    viewer: Option<&str>,
 ) -> Response {
     let cache_key = format!("profile:{address}");
 
-    if let Ok(Some(cached)) = redis.get::<OrganizerProfileResponse>(&cache_key).await {
-        return success(cached, "Profile retrieved successfully").into_response();
-    }
+    let base_data = if let Ok(Some(cached)) = redis.get::<CachedProfileBase>(&cache_key).await {
+        cached
+    } else {
+        match sqlx::query_as::<_, OrganizerProfile>(
+            "SELECT * FROM organizer_profiles WHERE address = $1",
+        )
+        .bind(address)
+        .fetch_optional(pool)
+        .await
+        {
+            Ok(Some(profile)) => {
+                let total_events: i64 = match sqlx::query_scalar(organizer_total_events_query())
+                    .bind(address)
+                    .fetch_one(pool)
+                    .await
+                {
+                    Ok(count) => count,
+                    Err(e) => {
+                        tracing::error!("Failed to count organizer events: {:?}", e);
+                        return AppError::DatabaseError(e).into_response();
+                    }
+                };
 
-    match sqlx::query_as::<_, OrganizerProfile>(
-        "SELECT * FROM organizer_profiles WHERE address = $1",
-    )
-    .bind(address)
-    .fetch_optional(pool)
-    .await
-    {
-        Ok(Some(profile)) => {
-            let total_events: i64 = match sqlx::query_scalar(organizer_total_events_query())
+                let followers_count: i64 = match sqlx::query_scalar::<_, i64>(
+                    "SELECT COUNT(*) FROM user_follows WHERE following_id = $1",
+                )
                 .bind(address)
                 .fetch_one(pool)
                 .await
-            {
-                Ok(count) => count,
-                Err(e) => {
-                    tracing::error!("Failed to count organizer events: {:?}", e);
-                    return AppError::DatabaseError(e).into_response();
+                {
+                    Ok(count) => count,
+                    Err(e) => {
+                        tracing::error!("Failed to count followers: {:?}", e);
+                        0
+                    }
+                };
+
+                let following_count: i64 = match sqlx::query_scalar::<_, i64>(
+                    "SELECT COUNT(*) FROM user_follows WHERE follower_id = $1",
+                )
+                .bind(address)
+                .fetch_one(pool)
+                .await
+                {
+                    Ok(count) => count,
+                    Err(e) => {
+                        tracing::error!("Failed to count following: {:?}", e);
+                        0
+                    }
+                };
+
+                let base = CachedProfileBase {
+                    profile,
+                    total_events,
+                    followers_count,
+                    following_count,
+                };
+
+                if let Err(e) = redis.set(&cache_key, &base, PROFILE_CACHE_TTL).await {
+                    tracing::warn!("Failed to cache profile for {address}: {:?}", e);
                 }
-            };
 
-            let response = OrganizerProfileResponse {
-                profile,
-                total_events,
-            };
-
-            if let Err(e) = redis.set(&cache_key, &response, PROFILE_CACHE_TTL).await {
-                tracing::warn!("Failed to cache profile for {address}: {:?}", e);
+                base
             }
+            Ok(None) => {
+                return AppError::NotFound(format!("No profile found for address '{address}'")).into_response();
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch organizer profile: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        }
+    };
 
-            success(response, "Profile retrieved successfully").into_response()
+    let is_following = if let Some(viewer_addr) = viewer {
+        if viewer_addr == address {
+            false
+        } else {
+            match sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM user_follows WHERE follower_id = $1 AND following_id = $2)",
+            )
+            .bind(viewer_addr)
+            .bind(address)
+            .fetch_one(pool)
+            .await
+            {
+                Ok(following) => following,
+                Err(e) => {
+                    tracing::error!("Failed to check follow status: {:?}", e);
+                    false
+                }
+            }
         }
-        Ok(None) => {
-            AppError::NotFound(format!("No profile found for address '{address}'")).into_response()
-        }
-        Err(e) => {
-            tracing::error!("Failed to fetch organizer profile: {:?}", e);
-            AppError::DatabaseError(e).into_response()
-        }
-    }
+    } else {
+        false
+    };
+
+    let response = OrganizerProfileResponse {
+        profile: base_data.profile,
+        total_events: base_data.total_events,
+        followers_count: base_data.followers_count,
+        following_count: base_data.following_count,
+        is_following,
+    };
+
+    success(response, "Profile retrieved successfully").into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -933,11 +1010,17 @@ mod tests {
                 updated_at: now,
             },
             total_events: 3,
+            followers_count: 12,
+            following_count: 4,
+            is_following: true,
         };
 
         let json = serde_json::to_value(response).unwrap();
         assert_eq!(json["address"], "GABC");
         assert_eq!(json["total_events"], 3);
+        assert_eq!(json["followers_count"], 12);
+        assert_eq!(json["following_count"], 4);
+        assert_eq!(json["is_following"], true);
     }
 
     #[test]
@@ -975,11 +1058,17 @@ mod tests {
                 updated_at: now,
             },
             total_events: 5,
+            followers_count: 20,
+            following_count: 8,
+            is_following: false,
         };
         let json_str = serde_json::to_string(&response).unwrap();
         let decoded: OrganizerProfileResponse = serde_json::from_str(&json_str).unwrap();
         assert_eq!(decoded.profile.address, "GABC");
         assert_eq!(decoded.total_events, 5);
+        assert_eq!(decoded.followers_count, 20);
+        assert_eq!(decoded.following_count, 8);
+        assert_eq!(decoded.is_following, false);
     }
 
     #[test]

@@ -1,97 +1,70 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-export interface ResaleListingItem {
-  id: string;
-  sellerName: string;
-  sellerAvatar: string;
-  sellerAddress?: string;
-  price: number;
-  originalPrice: number;
-  quantity: number;
-  listedAt: string;
+const BACKEND_URL =
+  process.env.BACKEND_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:3001";
+
+interface BackendListing {
+  payment_id: string;
+  seller_wallet: string;
+  price_stroops: number | string;
+  created_at: string;
 }
 
-// Mock database store for resale listings grouped by event ID
-const mockResaleListingsMap: Record<string, ResaleListingItem[]> = {
-  "1": [
-    {
-      id: "rsl-001",
-      sellerName: "Alex M.",
-      sellerAvatar: "/images/pfp.png",
-      sellerAddress: "GALEX1234567890",
-      price: 75,
-      originalPrice: 49,
-      quantity: 2,
-      listedAt: "2 hours ago",
-    },
-    {
-      id: "rsl-002",
-      sellerName: "Jordan K.",
-      sellerAvatar: "/images/pfp.png",
-      sellerAddress: "GJORDAN1234567890",
-      price: 60,
-      originalPrice: 49,
-      quantity: 1,
-      listedAt: "5 hours ago",
-    },
-    {
-      id: "rsl-003",
-      sellerName: "Sam T.",
-      sellerAvatar: "/images/pfp.png",
-      sellerAddress: "GSAM1234567890",
-      price: 55,
-      originalPrice: 49,
-      quantity: 1,
-      listedAt: "1 day ago",
-    },
-  ],
-};
+function relativeListedAt(createdAt: string): string {
+  const elapsedMs = Math.max(0, Date.now() - new Date(createdAt).getTime());
+  const hours = Math.floor(elapsedMs / 3_600_000);
+  if (hours < 1) return "less than an hour ago";
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
 
-/**
- * GET /api/v1/events/:id/resale
- *
- * Returns all active resale ticket listings for a specific event.
- */
 export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  try {
-    const { id: eventId } = await params;
+  const { id: eventId } = await params;
+  if (!eventId) {
+    return NextResponse.json({ message: "Missing event ID" }, { status: 400 });
+  }
 
-    if (!eventId) {
+  try {
+    const backendUrl = new URL("/api/v1/marketplace/listings", BACKEND_URL);
+    backendUrl.searchParams.set("event_id", eventId);
+    backendUrl.searchParams.set("status", "active");
+    const response = await fetch(backendUrl, { cache: "no-store" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
       return NextResponse.json(
-        { message: "Missing event ID" },
-        { status: 400 }
+        { message: result.message || "Could not load resale listings" },
+        { status: response.status },
       );
     }
 
-    const listings = mockResaleListingsMap[eventId] || [
-      {
-        id: `rsl-default-${eventId}-1`,
-        sellerName: "Alex M.",
-        sellerAvatar: "/images/pfp.png",
-        sellerAddress: "GALEX1234567890",
-        price: 75,
-        originalPrice: 49,
-        quantity: 1,
-        listedAt: "1 hour ago",
+    const listings = (Array.isArray(result.data) ? result.data : []).map(
+      (listing: BackendListing) => {
+        const sellerAddress = listing.seller_wallet;
+        const priceStroops = String(listing.price_stroops);
+        return {
+          id: listing.payment_id,
+          sellerName: `${sellerAddress.slice(0, 5)}…${sellerAddress.slice(-4)}`,
+          sellerAvatar: "/images/pfp.png",
+          sellerAddress,
+          price: Number(priceStroops) / 10_000_000,
+          priceStroops,
+          quantity: 1,
+          listedAt: relativeListedAt(listing.created_at),
+        };
       },
-    ];
-
-    return NextResponse.json(
-      {
-        success: true,
-        eventId,
-        count: listings.length,
-        data: listings,
-      },
-      { status: 200 }
     );
-  } catch (err: any) {
+
+    return NextResponse.json({ success: true, data: listings });
+  } catch (error) {
+    console.error("Resale listing proxy failed:", error);
     return NextResponse.json(
-      { message: err.message || "Internal server error" },
-      { status: 500 }
+      { message: "Marketplace is temporarily unavailable" },
+      { status: 502 },
     );
   }
 }
