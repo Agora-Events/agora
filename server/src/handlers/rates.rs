@@ -295,14 +295,6 @@ pub async fn get_rates(
                 "X-Rate-Source",
                 HeaderValue::from_static("stale-cache"),
             );
-            let mut resp = success(
-                stale_rate,
-                "Stale exchange rate served (circuit breaker open)",
-            )
-            .into_response();
-            resp.headers_mut()
-                .insert("X-Rate-Source", HeaderValue::from_static("stale-cache"));
-            return resp;
         }
 
         return AppError::ExternalServiceError(
