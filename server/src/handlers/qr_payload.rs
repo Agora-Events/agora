@@ -924,6 +924,34 @@ mod tests {
         let parsed = Uuid::parse_str(&uuid_str).unwrap();
         assert_eq!(test_uuid, parsed);
     }
+
+    #[test]
+    fn test_sanitize_attendee_metadata_escapes_delimiters() {
+        let sanitized =
+            sanitize_attendee_metadata("name", "  Alice \"A\" <b> & \\  ", MAX_ATTENDEE_NAME_LEN)
+                .unwrap();
+        assert_eq!(sanitized, "Alice \\\"A\\\" &lt;b&gt; &amp; \\\\");
+    }
+
+    #[test]
+    fn test_sanitize_attendee_metadata_rejects_control_chars() {
+        let err = sanitize_attendee_metadata("name", "Alice\nBob", MAX_ATTENDEE_NAME_LEN)
+            .unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_sanitize_attendee_metadata_rejects_empty() {
+        let err = sanitize_attendee_metadata("email", "   ", MAX_ATTENDEE_EMAIL_LEN).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_sanitize_attendee_metadata_enforces_max_length() {
+        let long = "a".repeat(MAX_ATTENDEE_NAME_LEN + 1);
+        let err = sanitize_attendee_metadata("name", &long, MAX_ATTENDEE_NAME_LEN).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -960,6 +988,70 @@ pub struct AttendeeQrResponse {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Maximum allowed length for an attendee name field.
+const MAX_ATTENDEE_NAME_LEN: usize = 128;
+/// Maximum allowed length for an attendee email field.
+const MAX_ATTENDEE_EMAIL_LEN: usize = 254;
+/// Maximum allowed length for any other attendee metadata field.
+const MAX_ATTENDEE_METADATA_LEN: usize = 256;
+
+/// Sanitize a single attendee metadata string before it is embedded in a QR
+/// payload.
+///
+/// This strips control characters (including newlines, carriage returns and
+/// tabs) and escapes payload-delimiter / JSON-breaking characters (`"`, `\`,
+/// `<`, `>`, `&`) so that a malicious value cannot manipulate the encoded
+/// payload. The sanitized value is then length-checked against `max_len`.
+///
+/// Returns `AppError::ValidationError` when the input exceeds `max_len` or
+/// contains content that cannot be safely represented.
+fn sanitize_attendee_metadata(
+    field: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<String, AppError> {
+    let trimmed = value.trim();
+
+    if trimmed.is_empty() {
+        return Err(AppError::ValidationError(format!(
+            "{} cannot be empty",
+            field
+        )));
+    }
+
+    // Reject any control characters outright – they have no legitimate place
+    // in attendee metadata and are a common payload-injection vector.
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err(AppError::ValidationError(format!(
+            "{} contains disallowed control characters",
+            field
+        )));
+    }
+
+    // Escape characters that could break out of the JSON payload or be used
+    // to inject markup into downstream SVG/QR renderers.
+    let mut sanitized = String::with_capacity(trimmed.len());
+    for c in trimmed.chars() {
+        match c {
+            '"' => sanitized.push_str("\\\""),
+            '\\' => sanitized.push_str("\\\\"),
+            '<' => sanitized.push_str("&lt;"),
+            '>' => sanitized.push_str("&gt;"),
+            '&' => sanitized.push_str("&amp;"),
+            _ => sanitized.push(c),
+        }
+    }
+
+    if sanitized.chars().count() > max_len {
+        return Err(AppError::ValidationError(format!(
+            "{} exceeds maximum length of {} characters",
+            field, max_len
+        )));
+    }
+
+    Ok(sanitized)
+}
+
 /// `POST /api/v1/qr/attendee`
 ///
 /// Generate a short-lived, signed QR payload for an attendee to present at
@@ -987,11 +1079,16 @@ pub async fn generate_attendee_qr(
     State(pool): State<PgPool>,
     Json(request): Json<AttendeeQrRequest>,
 ) -> Response {
-    // Basic input validation
-    if request.wallet_address.trim().is_empty() {
-        return AppError::ValidationError("wallet_address cannot be empty".to_string())
-            .into_response();
-    }
+    // Sanitize and strictly validate the attendee metadata before it is
+    // embedded in the signed payload (Issue #1632).
+    let wallet_address = match sanitize_attendee_metadata(
+        "wallet_address",
+        &request.wallet_address,
+        MAX_ATTENDEE_METADATA_LEN,
+    ) {
+        Ok(value) => value,
+        Err(err) => return err.into_response(),
+    };
 
     // Confirm the ticket exists and belongs to the claimed wallet address
     let ticket_ok = match sqlx::query_scalar::<_, bool>(
@@ -1005,7 +1102,7 @@ pub async fn generate_attendee_qr(
         "#,
     )
     .bind(request.ticket_id)
-    .bind(request.wallet_address.trim())
+    .bind(&wallet_address)
     .fetch_one(&pool)
     .await
     {
@@ -1034,7 +1131,7 @@ pub async fn generate_attendee_qr(
         id: qr_id.clone(),
         qr_type: "ticket".to_string(),
         data: serde_json::json!({
-            "wallet_address": request.wallet_address.trim(),
+            "wallet_address": wallet_address,
             "ticket_id": request.ticket_id.to_string(),
         }),
         created_at,
