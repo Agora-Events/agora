@@ -52,7 +52,7 @@ use crate::handlers::{
     auth::{logout, request_nonce, verify_signature},
     categories::{create_category, get_category, list_categories, CategoryState},
     events::{
-        create_event, export_attendees_csv, flag_event, get_attendee_count,
+        clone_event, create_event, export_attendees_csv, flag_event, get_attendee_count,
         get_checkin_stats, get_event,
         get_event_counts, get_event_organizer, get_event_share_link, get_event_social_proof,
         get_events_map, get_ratings_summary, list_event_attendees, list_event_ratings,
@@ -85,7 +85,7 @@ use crate::handlers::{
         delete_qr_payload, generate_attendee_qr, generate_qr_payload, list_event_qr_codes,
         list_qr_payloads, mark_qr_used, scan_ticket, verify_qr_payload,
     },
-    rates::{get_rates, RatesState},
+    rates::{circuit_breaker_status, get_rates, RatesState},
     waiting_room::{
         join_queue, queue_status, queue_stream, request_challenge, WaitingRoomConfig,
         WaitingRoomState,
@@ -410,6 +410,7 @@ pub async fn create_routes(
         .route("/upcoming", get(list_upcoming_events))
         .route("/search", get(search_events))
         .route("/:id", get(get_event))
+        .route("/:id/clone", post(clone_event))
         .route("/:id/attendees", get(list_event_attendees))
         .route("/:id/attendees/count", get(get_attendee_count))
         .route("/:id/rate", post(submit_event_rating))
@@ -539,6 +540,7 @@ pub async fn create_routes(
     // Public API routes with tower-governor rate limiting
     let rates_route = Router::new()
         .route("/rates", get(get_rates))
+        .route("/rates/circuit-breaker", get(circuit_breaker_status))
         .with_state(rates_state);
 
     // Sync routes for CRDT delta synchronization

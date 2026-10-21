@@ -231,6 +231,26 @@ pub fn circuit_breaker_health(breaker: &CircuitBreaker) -> CircuitBreakerHealth 
     }
 }
 
+/// Get the current circuit breaker state for the exchange rate provider.
+///
+/// # Endpoint
+/// `GET /api/v1/rates/circuit-breaker`
+///
+/// Returns the breaker status (`closed`, `open` or `half_open`), the number
+/// of consecutive upstream failures, the failure threshold and the reset
+/// window in seconds.
+pub async fn circuit_breaker_status(State(state): State<RatesState>) -> Response {
+    let mut health = circuit_breaker_health(&state.breaker);
+
+    // Distinguish the half-open probe state: the breaker is not blocking
+    // requests but the failure counter is still non-zero.
+    if health.status == "closed" && health.failure_count > 0 {
+        health.status = "half_open";
+    }
+
+    success(health, "Circuit breaker status retrieved").into_response()
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Handler
 // ──────────────────────────────────────────────────────────────────────────────

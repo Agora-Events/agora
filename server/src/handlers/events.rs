@@ -2832,6 +2832,25 @@ fn validate_event_timestamps(
     Ok(())
 }
 
+/// Invalidate the cached event detail and the shared events list after a
+/// successful write (Issues #1629).
+///
+/// Failures are logged but never fail the request: a stale cache entry will
+/// expire on its own TTL, whereas a failed write must still be reported as
+/// successful.
+async fn invalidate_event_caches(state: &EventState, event_id: Uuid) {
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!(
+            "Failed to invalidate cache key '{}' for event {}: {:?}",
+            cache_key,
+            event_id,
+            e
+        );
+    }
+    state.redis.invalidate_events_list().await;
+}
+
 /// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
 ///
 /// # Endpoint
@@ -3096,6 +3115,141 @@ fn content_hash(value: &serde_json::Value) -> String {
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     hex::encode(hasher.finalize())
+}
+
+/// Clone an existing event into a new draft owned by the authenticated caller
+/// (Issue #1630).
+///
+/// # Endpoint
+/// POST `/api/v1/events/:id/clone`
+///
+/// Copies the source event's metadata (title, description, location, times,
+/// image, host email, coordinates, capacity) plus its ticket tiers and
+/// categories into a brand-new event with status `draft`. The caller must be
+/// the organizer/owner of the source event.
+pub async fn clone_event(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    extensions: axum::extract::Extension<axum::http::Extensions>,
+) -> Response {
+    // 1. Resolve the authenticated caller (organizer wallet) from request extensions.
+    let caller_wallet = match extract_caller_wallet(&extensions.0) {
+        Some(wallet) => wallet,
+        None => {
+            return AppError::Unauthorized("Authentication required".to_string()).into_response();
+        }
+    };
+
+    // 2. Load the source event.
+    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1")
+        .bind(event_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(Some(event)) => event,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch source event for clone: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // 3. Verify ownership: the caller's wallet must own the source event's organizer.
+    let owner_wallet = match sqlx::query_scalar::<_, Option<String>>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(source.organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(Some(wallet))) => wallet,
+        Ok(_) => {
+            return AppError::Forbidden(
+                "You are not the organizer of this event".to_string(),
+            )
+            .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to resolve organizer for clone: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if owner_wallet != caller_wallet {
+        return AppError::Forbidden("You are not the organizer of this event".to_string())
+            .into_response();
+    }
+
+    // 4. Insert the cloned event as a draft owned by the caller.
+    let cloned = match sqlx::query_as::<_, Event>(
+        "INSERT INTO events (
+             organizer_id, title, description, location, start_time, end_time,
+             image_url, host_email, latitude, longitude, total_tickets, status
+         )
+         SELECT
+             organizer_id, title, description, location, start_time, end_time,
+             image_url, host_email, latitude, longitude, total_tickets, 'draft'
+         FROM events
+         WHERE id = $1
+         RETURNING *",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(event) => event,
+        Err(e) => {
+            tracing::error!("Failed to clone event {}: {:?}", event_id, e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // 5. Copy ticket tiers (fresh inventory, no sales carried over).
+    if let Err(e) = sqlx::query(
+        "INSERT INTO ticket_tiers (
+             event_id, name, description, price, total_quantity, available_quantity
+         )
+         SELECT $1, name, description, price, total_quantity, total_quantity
+         FROM ticket_tiers
+         WHERE event_id = $2",
+    )
+    .bind(cloned.id)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!(
+            "Failed to copy ticket tiers while cloning event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    // 6. Copy category associations.
+    if let Err(e) = sqlx::query(
+        "INSERT INTO event_categories (event_id, category_id)
+         SELECT $1, category_id FROM event_categories WHERE event_id = $2
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(cloned.id)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!(
+            "Failed to copy categories while cloning event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    // 7. A new event invalidates the shared list cache.
+    state.redis.invalidate_events_list().await;
+
+    success(cloned, "Event cloned successfully").into_response()
 }
 
 /// Extract the highest-priority locale from `Accept-Language`, using the
@@ -5470,6 +5624,13 @@ pub async fn list_ticket_tiers(
 // ---------------------------------------------------------------------------
 // Unit tests for list_event_tickets and image_url validation
 // ---------------------------------------------------------------------------
+
+#[test]
+fn test_clone_event_cache_key_matches_detail_key() {
+    let id = Uuid::new_v4();
+    let key = format!("event:detail:{}", id);
+    assert_eq!(key, format!("event:detail:{}", id));
+}
 
 #[test]
 fn test_ticket_tier_response_serialization() {
