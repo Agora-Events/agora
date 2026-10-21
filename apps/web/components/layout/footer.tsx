@@ -1,14 +1,16 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
+import Link from "next/link";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
 
 const LOCALES = [
   { code: "en", label: "English" },
-  { code: "es", label: "Español" },
-  { code: "fr", label: "Français" },
+  { code: "es", label: "EspaÃ±ol" },
+  { code: "fr", label: "FranÃ§ais" },
 ] as const;
 
 type Locale = (typeof LOCALES)[number]["code"];
@@ -17,8 +19,7 @@ const LOCALE_COOKIE = "NEXT_LOCALE";
 export function Footer() {
   const router = useRouter();
   const activeLocale = useLocale();
-  const locale =
-    LOCALES.find(({ code }) => code === activeLocale)?.code ?? "en";
+  const locale = LOCALES.find(({ code }) => code === activeLocale)?.code ?? "en";
 
   const handleLocaleChange = (nextLocale: Locale) => {
     document.cookie = `${LOCALE_COOKIE}=${nextLocale}; path=/; max-age=31536000; samesite=lax`;
@@ -53,7 +54,6 @@ export function Footer() {
 
         {/* Right Columns Container */}
         <div className="flex gap-16 md:gap-24">
-          
           {/* Nav Links Column: Updated with real routes & hover styles */}
           <div className="flex flex-col gap-2">
             <Link
@@ -100,7 +100,13 @@ export function Footer() {
               aria-label="Visit our Instagram"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              <Image src="/icons/instagram.svg" width={20} height={20} alt="Instagram" className="text-gray-300 group-hover:text-white" />
+              <Image
+                src="/icons/instagram.svg"
+                width={20}
+                height={20}
+                alt="Instagram"
+                className="text-gray-300 group-hover:text-white"
+              />
               <span className="text-sm">{t("instagram")}</span>
             </a>
 
@@ -112,7 +118,13 @@ export function Footer() {
               aria-label="Visit our Twitter"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              <Image src="/icons/x.svg" width={20} height={20} alt="X" className="text-gray-300 group-hover:text-white" />
+              <Image
+                src="/icons/x.svg"
+                width={20}
+                height={20}
+                alt="X"
+                className="text-gray-300 group-hover:text-white"
+              />
               <span className="text-sm">{t("x")}</span>
             </a>
 
@@ -122,7 +134,13 @@ export function Footer() {
               aria-label="Contact us via email"
               className="text-gray-300 hover:text-white hover:bg-white/5 px-3 py-1.5 -ml-3 rounded-md transition-all duration-200 flex items-center gap-2 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              <Image src="/icons/mail.svg" width={20} height={20} alt="Mail" className="text-gray-300 group-hover:text-white" />
+              <Image
+                src="/icons/mail.svg"
+                width={20}
+                height={20}
+                alt="Mail"
+                className="text-gray-300 group-hover:text-white"
+              />
               <span className="text-sm">{t("mail")}</span>
             </a>
 
@@ -154,7 +172,7 @@ export function Footer() {
               value={locale}
               onChange={(event) => {
                 const selectedLocale = LOCALES.find(
-                  ({ code }) => code === event.target.value,
+                  ({ code }) => code === event.target.value
                 )?.code;
                 if (selectedLocale) handleLocaleChange(selectedLocale);
               }}
@@ -173,7 +191,7 @@ export function Footer() {
       {/* Copyright Line: Added in Issue #1399 */}
       <div className="w-full max-w-[1240px] mx-auto px-4 relative z-10 mt-12">
         <p className="text-gray-400 text-sm text-center md:text-left">
-          © {new Date().getFullYear()} Agora. All rights reserved.
+          Â© {new Date().getFullYear()} Agora. All rights reserved.
         </p>
       </div>
     </footer>

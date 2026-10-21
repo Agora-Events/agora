@@ -9,14 +9,13 @@ describe("ExportAttendeesButton", () => {
 
   it("renders with default label and icon", () => {
     render(<ExportAttendeesButton eventId="test-event-123" />);
-    expect(
-      screen.getByRole("button", { name: /Export Attendees \(CSV\)/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Export Attendees \(CSV\)/i })).toBeInTheDocument();
   });
 
   it("triggers file download on successful click", async () => {
-    const csvContent = "owner_wallet,buyer_wallet,quantity,created_at\n0x1,0x2,1,2026-01-01T00:00:00Z";
-    
+    const csvContent =
+      "owner_wallet,buyer_wallet,quantity,created_at\n0x1,0x2,1,2026-01-01T00:00:00Z";
+
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -36,12 +35,7 @@ describe("ExportAttendeesButton", () => {
 
     const onSuccessMock = vi.fn();
 
-    render(
-      <ExportAttendeesButton
-        eventId="test-event-123"
-        onSuccess={onSuccessMock}
-      />
-    );
+    render(<ExportAttendeesButton eventId="test-event-123" onSuccess={onSuccessMock} />);
 
     const button = screen.getByRole("button", { name: /Export Attendees \(CSV\)/i });
     fireEvent.click(button);
@@ -67,20 +61,13 @@ describe("ExportAttendeesButton", () => {
 
     const onErrorMock = vi.fn();
 
-    render(
-      <ExportAttendeesButton
-        eventId="test-event-123"
-        onError={onErrorMock}
-      />
-    );
+    render(<ExportAttendeesButton eventId="test-event-123" onError={onErrorMock} />);
 
     const button = screen.getByRole("button", { name: /Export Attendees \(CSV\)/i });
     fireEvent.click(button);
 
     await waitFor(() => {
-      expect(
-        screen.getByText("Only organizers can export attendees")
-      ).toBeInTheDocument();
+      expect(screen.getByText("Only organizers can export attendees")).toBeInTheDocument();
       expect(onErrorMock).toHaveBeenCalledTimes(1);
     });
   });

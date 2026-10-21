@@ -1,9 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL =
-  process.env.BACKEND_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:3001";
+  process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -44,8 +42,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const csvData = await backendRes.text();
     const contentDisposition =
-      backendRes.headers.get("content-disposition") ??
-      `attachment; filename="attendees-${id}.csv"`;
+      backendRes.headers.get("content-disposition") ?? `attachment; filename="attendees-${id}.csv"`;
 
     return new NextResponse(csvData, {
       status: 200,
@@ -59,7 +56,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     console.error("Attendee export proxy failed:", error);
     return NextResponse.json(
       { message: "Unable to export attendees at this time" },
-      { status: 502 },
+      { status: 502 }
     );
   }
 }

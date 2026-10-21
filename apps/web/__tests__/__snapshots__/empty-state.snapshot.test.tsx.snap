@@ -1,0 +1,253 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`EmptyState snapshots > matches snapshot with a custom illustration 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-6 py-16 px-6 text-center"
+    data-testid="empty-state"
+  >
+    <div
+      class="w-40 h-40 flex items-center justify-center"
+    >
+      <img
+        alt="Empty state illustration"
+        class="w-full h-full object-contain opacity-80"
+        data-nimg="1"
+        decoding="async"
+        height="160"
+        loading="lazy"
+        src="/icons/empty-state-bg.svg"
+        style="color: transparent;"
+        width="160"
+      />
+    </div>
+    <div
+      class="flex flex-col items-center gap-2 max-w-sm"
+    >
+      <h3
+        class="text-lg font-semibold text-ink-deep"
+      >
+        Nothing saved yet
+      </h3>
+      <p
+        class="text-sm text-ink-deep/50 leading-relaxed"
+      >
+        Events you bookmark will appear here.
+      </p>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`EmptyState snapshots > matches snapshot with a custom title and description 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-6 py-16 px-6 text-center"
+    data-testid="empty-state"
+  >
+    <div
+      class="w-40 h-40 flex items-center justify-center"
+    >
+      <img
+        alt="Empty state illustration"
+        class="w-full h-full object-contain opacity-80"
+        data-nimg="1"
+        decoding="async"
+        height="160"
+        loading="lazy"
+        src="/icons/404-illustration.svg"
+        style="color: transparent;"
+        width="160"
+      />
+    </div>
+    <div
+      class="flex flex-col items-center gap-2 max-w-sm"
+    >
+      <h3
+        class="text-lg font-semibold text-ink-deep"
+      >
+        No upcoming events
+      </h3>
+      <p
+        class="text-sm text-ink-deep/50 leading-relaxed"
+      >
+        Check back soon for new events in your area.
+      </p>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`EmptyState snapshots > matches snapshot with an action button CTA and custom icon 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-6 py-16 px-6 text-center"
+    data-testid="empty-state"
+  >
+    <div
+      class="w-20 h-20 rounded-full bg-surface flex items-center justify-center"
+    >
+      <span
+        aria-hidden="true"
+      >
+        🔍
+      </span>
+    </div>
+    <div
+      class="flex flex-col items-center gap-2 max-w-sm"
+    >
+      <h3
+        class="text-lg font-semibold text-ink-deep"
+      >
+        No results
+      </h3>
+      <p
+        class="text-sm text-ink-deep/50 leading-relaxed"
+      >
+        Try another search.
+      </p>
+    </div>
+    <button
+      aria-busy="false"
+      class="
+        relative group flex items-center justify-center gap-2 px-6 py-3 rounded-full border border-black
+        font-semibold transition-all whitespace-nowrap
+        hover:-translate-x-[2px] hover:translate-y-[2px]
+        hover:shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]
+        active:-translate-x-[4px] active:translate-y-[4px] active:shadow-none
+        bg-white text-black 
+      "
+      style="box-shadow: -4px 4px 0px 0px rgba(0,0,0,1);"
+      variant="primary"
+    >
+      <span>
+        Clear filters
+      </span>
+    </button>
+  </div>
+</div>
+`;
+
+exports[`EmptyState snapshots > matches snapshot with an action link CTA 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-6 py-16 px-6 text-center"
+    data-testid="empty-state"
+  >
+    <div
+      class="w-40 h-40 flex items-center justify-center"
+    >
+      <img
+        alt="Empty state illustration"
+        class="w-full h-full object-contain opacity-80"
+        data-nimg="1"
+        decoding="async"
+        height="160"
+        loading="lazy"
+        src="/icons/404-illustration.svg"
+        style="color: transparent;"
+        width="160"
+      />
+    </div>
+    <div
+      class="flex flex-col items-center gap-2 max-w-sm"
+    >
+      <h3
+        class="text-lg font-semibold text-ink-deep"
+      >
+        No events found
+      </h3>
+      <p
+        class="text-sm text-ink-deep/50 leading-relaxed"
+      >
+        Try a different category or come back later.
+      </p>
+    </div>
+    <a
+      class="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-black text-white font-semibold text-sm shadow-[-4px_4px_0px_0px_rgba(0,0,0,0.4)] hover:-translate-x-[2px] hover:translate-y-[2px] active:-translate-x-[4px] active:translate-y-[4px] transition-transform"
+      href="/events/create"
+    >
+      Create an Event
+    </a>
+  </div>
+</div>
+`;
+
+exports[`EmptyState snapshots > matches snapshot with legacy ctaLabel/ctaLink props 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-6 py-16 px-6 text-center"
+    data-testid="empty-state"
+  >
+    <div
+      class="w-40 h-40 flex items-center justify-center"
+    >
+      <img
+        alt="Empty state illustration"
+        class="w-full h-full object-contain opacity-80"
+        data-nimg="1"
+        decoding="async"
+        height="160"
+        loading="lazy"
+        src="/icons/404-illustration.svg"
+        style="color: transparent;"
+        width="160"
+      />
+    </div>
+    <div
+      class="flex flex-col items-center gap-2 max-w-sm"
+    >
+      <h3
+        class="text-lg font-semibold text-ink-deep"
+      >
+        No tickets yet
+      </h3>
+      <p
+        class="text-sm text-ink-deep/50 leading-relaxed"
+      >
+        Tickets you buy will show up here.
+      </p>
+    </div>
+    <a
+      class="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-black text-white font-semibold text-sm shadow-[-4px_4px_0px_0px_rgba(0,0,0,0.4)] hover:-translate-x-[2px] hover:translate-y-[2px] active:-translate-x-[4px] active:translate-y-[4px] transition-transform"
+      href="/discover"
+    >
+      Browse events
+    </a>
+  </div>
+</div>
+`;
+
+exports[`EmptyState snapshots > matches snapshot with only a title (default illustration, no CTA) 1`] = `
+<div>
+  <div
+    class="flex flex-col items-center justify-center gap-6 py-16 px-6 text-center"
+    data-testid="empty-state"
+  >
+    <div
+      class="w-40 h-40 flex items-center justify-center"
+    >
+      <img
+        alt="Empty state illustration"
+        class="w-full h-full object-contain opacity-80"
+        data-nimg="1"
+        decoding="async"
+        height="160"
+        loading="lazy"
+        src="/icons/404-illustration.svg"
+        style="color: transparent;"
+        width="160"
+      />
+    </div>
+    <div
+      class="flex flex-col items-center gap-2 max-w-sm"
+    >
+      <h3
+        class="text-lg font-semibold text-ink-deep"
+      >
+        No events found
+      </h3>
+    </div>
+  </div>
+</div>
+`;

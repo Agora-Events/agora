@@ -43,11 +43,7 @@ const USER_NAV_ITEMS: NavItem[] = [
 
 const userCta = (
   <Link href="/create-event">
-    <Button
-      backgroundColor="bg-white"
-      textColor="text-black"
-      shadowColor="rgba(0,0,0,1)"
-    >
+    <Button backgroundColor="bg-white" textColor="text-black" shadowColor="rgba(0,0,0,1)">
       <span>Create Your Event</span>
       <Image
         src="/icons/arrow-up-right-01.svg"
@@ -61,8 +57,7 @@ const userCta = (
 );
 
 function NetworkPill() {
-  const { isCorrectNetwork, currentNetwork, isLoading, requestNetworkSwitch } =
-    useStellarNetwork();
+  const { isCorrectNetwork, currentNetwork, isLoading, requestNetworkSwitch } = useStellarNetwork();
 
   if (process.env.NEXT_PUBLIC_STELLAR_NETWORK !== "TESTNET") return null;
   if (isLoading) return null;
@@ -85,9 +80,7 @@ function NetworkPill() {
       }`}
     >
       <span
-        className={`w-1.5 h-1.5 rounded-full ${
-          isCorrectNetwork ? "bg-green-500" : "bg-red-500"
-        }`}
+        className={`w-1.5 h-1.5 rounded-full ${isCorrectNetwork ? "bg-green-500" : "bg-red-500"}`}
         aria-hidden="true"
       />
       {label}

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { mintTicket } from "@/utils/stellar";
 import crypto from "crypto";
@@ -21,7 +21,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: "Too many purchase attempts. Please wait and try again.", code: 429 },
-      { status: 429, headers: rateLimitHeaders(rateLimit) },
+      { status: 429, headers: rateLimitHeaders(rateLimit) }
     );
   }
 
@@ -55,7 +55,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   // Stellar keypair server-side and store the encrypted private key.
   // Detection heuristic: presence of an '@' character. Wallets on Stellar
   // start with 'G' so emails are distinguished.
-  let buyerIdentifier = buyerWallet as string;
+  const buyerIdentifier = buyerWallet as string;
   if (buyerIdentifier.includes("@")) {
     const email = buyerIdentifier.trim().toLowerCase();
 
@@ -71,7 +71,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       throwApiError("Server encryption key not configured", 500);
     }
     /*
-     Security note — Custodial wallet encryption
+     Security note â€” Custodial wallet encryption
 
      - Scheme: AES-256-GCM
      - Key derivation: HMAC-SHA256(email) keyed by `CUSTODIAL_ENCRYPTION_KEY`.
@@ -118,7 +118,11 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     buyerWallet = publicKey;
   }
 
-  if (recipientWallet !== undefined && recipientWallet !== null && typeof recipientWallet !== "string") {
+  if (
+    recipientWallet !== undefined &&
+    recipientWallet !== null &&
+    typeof recipientWallet !== "string"
+  ) {
     throwApiError("Invalid recipientWallet", 400);
   }
 
@@ -164,7 +168,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
         transactionXdr: mintResult.transactionXdr,
         requiresSignature: mintResult.unsigned !== false,
       },
-      { status: 200 },
+      { status: 200 }
     );
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -173,9 +177,11 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
 });
 
-function normalizeAttribution(
-  value: TicketRequestBody["attribution"],
-): { utmSource?: string; utmMedium?: string; utmCampaign?: string } {
+function normalizeAttribution(value: TicketRequestBody["attribution"]): {
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+} {
   if (value === undefined) return {};
   if (!value || typeof value !== "object") {
     throwApiError("Invalid attribution", 400);

@@ -34,9 +34,7 @@ export function ExportAttendeesButton({
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "");
-        throw new Error(
-          errorText || `Failed to export attendees (${response.status})`
-        );
+        throw new Error(errorText || `Failed to export attendees (${response.status})`);
       }
 
       const disposition = response.headers.get("Content-Disposition");

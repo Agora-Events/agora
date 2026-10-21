@@ -18,7 +18,8 @@ describe("GET /api/v1/events/[id]/export-attendees", () => {
   });
 
   it("forwards Authorization header and streams CSV from backend", async () => {
-    const csvContent = "owner_wallet,buyer_wallet,quantity,created_at\n0x1,0x2,1,2026-01-01T00:00:00Z";
+    const csvContent =
+      "owner_wallet,buyer_wallet,quantity,created_at\n0x1,0x2,1,2026-01-01T00:00:00Z";
 
     global.fetch = vi.fn().mockResolvedValue(
       new Response(csvContent, {
@@ -40,7 +41,9 @@ describe("GET /api/v1/events/[id]/export-attendees", () => {
     const res = await GET(req, context);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/csv");
-    expect(res.headers.get("content-disposition")).toBe('attachment; filename="attendees-event-123.csv"');
+    expect(res.headers.get("content-disposition")).toBe(
+      'attachment; filename="attendees-event-123.csv"'
+    );
 
     const text = await res.text();
     expect(text).toBe(csvContent);

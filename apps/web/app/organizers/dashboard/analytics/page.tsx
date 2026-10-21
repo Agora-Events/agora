@@ -32,7 +32,14 @@ function formatPercent(value: number) {
 
 function TicketIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+    >
       <path d="M2 9l10-6 10 6-10 6L2 9z" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M12 3v18" strokeLinecap="round" />
       <path d="M2 13l10 5 10-5" strokeLinecap="round" strokeLinejoin="round" />
@@ -42,7 +49,14 @@ function TicketIcon() {
 
 function RevenueIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+    >
       <circle cx="12" cy="12" r="10" />
       <path d="M12 6v12M8 10l4-2 4 2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -51,7 +65,14 @@ function RevenueIcon() {
 
 function RemainingIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+    >
       <rect x="3" y="3" width="18" height="18" rx="3" />
       <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -60,7 +81,14 @@ function RemainingIcon() {
 
 function SellThroughIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+    >
       <path d="M22 12h-4l-3 9L9 3l-3 9H2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -68,10 +96,25 @@ function SellThroughIcon() {
 
 function BuyersIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-      <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+    >
+      <path
+        d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -87,7 +130,10 @@ function EventSelector({
 }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-      <label htmlFor="event-select" className="text-sm font-semibold text-gray-600 whitespace-nowrap">
+      <label
+        htmlFor="event-select"
+        className="text-sm font-semibold text-gray-600 whitespace-nowrap"
+      >
         Select Event
       </label>
       <select
@@ -114,7 +160,9 @@ function ChartErrorBoundary({ children }: { children: React.ReactNode }) {
       key={retryKey}
       fallback={
         <div className="rounded-2xl border-2 border-black bg-white p-6 shadow-[-4px_4px_0_rgba(0,0,0,1)] text-center flex flex-col items-center justify-center min-h-[200px]">
-          <p className="text-base font-semibold text-ink-deep mb-3">This chart couldn&apos;t be loaded</p>
+          <p className="text-base font-semibold text-ink-deep mb-3">
+            This chart couldn&apos;t be loaded
+          </p>
           <button
             type="button"
             onClick={() => setRetryKey((prev) => prev + 1)}
@@ -154,10 +202,12 @@ export default function OrganizerAnalyticsDashboard() {
           throw new Error(body.error || `Request failed with status ${res.status}`);
         }
         const json = await res.json();
-        const items: EventOption[] = (json.items || []).map((evt: { id: string; title: string }) => ({
-          id: evt.id,
-          title: evt.title,
-        }));
+        const items: EventOption[] = (json.items || []).map(
+          (evt: { id: string; title: string }) => ({
+            id: evt.id,
+            title: evt.title,
+          })
+        );
 
         if (!cancelled) {
           setEvents(items);
@@ -194,7 +244,9 @@ export default function OrganizerAnalyticsDashboard() {
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-8">
             <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-ink-deep italic">Analytics Dashboard</h1>
+              <h1 className="text-3xl md:text-4xl font-bold text-ink-deep italic">
+                Analytics Dashboard
+              </h1>
               <p className="text-sm text-gray-500 mt-1.5">
                 {hasData
                   ? `Insights for "${data.eventTitle}"`
@@ -210,10 +262,7 @@ export default function OrganizerAnalyticsDashboard() {
                   onChange={setSelectedEventId}
                 />
                 {selectedEventId && (
-                  <ExportAttendeesButton
-                    eventId={selectedEventId}
-                    variant="outline"
-                  />
+                  <ExportAttendeesButton eventId={selectedEventId} variant="outline" />
                 )}
               </div>
             )}
@@ -223,7 +272,10 @@ export default function OrganizerAnalyticsDashboard() {
           {eventsLoading && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-28 rounded-2xl border-2 border-black bg-white animate-pulse shadow-[-4px_4px_0_rgba(0,0,0,0.08)]" />
+                <div
+                  key={i}
+                  className="h-28 rounded-2xl border-2 border-black bg-white animate-pulse shadow-[-4px_4px_0_rgba(0,0,0,0.08)]"
+                />
               ))}
             </div>
           )}
@@ -231,7 +283,9 @@ export default function OrganizerAnalyticsDashboard() {
           {/* Events error state */}
           {eventsError && (
             <div className="rounded-2xl border-2 border-black bg-red-50 p-6 shadow-[-4px_4px_0_rgba(0,0,0,1)]">
-              <p className="text-sm font-medium text-red-700">Failed to load events: {eventsError}</p>
+              <p className="text-sm font-medium text-red-700">
+                Failed to load events: {eventsError}
+              </p>
             </div>
           )}
 
@@ -239,7 +293,13 @@ export default function OrganizerAnalyticsDashboard() {
           {!eventsLoading && !eventsError && events.length === 0 && (
             <div className="rounded-2xl border-2 border-black bg-white p-12 shadow-[-6px_6px_0_rgba(0,0,0,1)] text-center">
               <div className="w-16 h-16 rounded-full bg-surface mx-auto flex items-center justify-center mb-4 border-2 border-black">
-                <Image src="/icons/calendar.svg" width={32} height={32} alt="Calendar" className="invert" />
+                <Image
+                  src="/icons/calendar.svg"
+                  width={32}
+                  height={32}
+                  alt="Calendar"
+                  className="invert"
+                />
               </div>
               <h3 className="text-lg font-bold text-ink-deep italic mb-1">No hosted events yet</h3>
               <p className="text-sm text-gray-500 max-w-sm mx-auto">
@@ -255,7 +315,10 @@ export default function OrganizerAnalyticsDashboard() {
               {loading && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                   {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-28 rounded-2xl border-2 border-black bg-white animate-pulse shadow-[-4px_4px_0_rgba(0,0,0,0.08)]" />
+                    <div
+                      key={i}
+                      className="h-28 rounded-2xl border-2 border-black bg-white animate-pulse shadow-[-4px_4px_0_rgba(0,0,0,0.08)]"
+                    />
                   ))}
                 </div>
               )}
@@ -308,7 +371,10 @@ export default function OrganizerAnalyticsDashboard() {
                   </section>
 
                   {/* Charts section */}
-                  <section aria-label="Analytics charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <section
+                    aria-label="Analytics charts"
+                    className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+                  >
                     <ChartErrorBoundary>
                       <AnalyticsChartPlaceholder
                         title="Attendance Trends"
@@ -335,4 +401,3 @@ export default function OrganizerAnalyticsDashboard() {
     </main>
   );
 }
-
