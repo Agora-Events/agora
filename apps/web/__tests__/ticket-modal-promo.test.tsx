@@ -27,14 +27,7 @@ describe("TicketModal Promo Code Flow", () => {
       }),
     });
 
-    render(
-      <TicketModal
-        isOpen={true}
-        onClose={vi.fn()}
-        event={mockEvent}
-        initialQuantity={1}
-      />
-    );
+    render(<TicketModal isOpen={true} onClose={vi.fn()} event={mockEvent} initialQuantity={1} />);
 
     const input = screen.getByPlaceholderText(/enter code/i);
     const applyButton = screen.getByRole("button", { name: /apply/i });
@@ -58,14 +51,7 @@ describe("TicketModal Promo Code Flow", () => {
       }),
     });
 
-    render(
-      <TicketModal
-        isOpen={true}
-        onClose={vi.fn()}
-        event={mockEvent}
-        initialQuantity={1}
-      />
-    );
+    render(<TicketModal isOpen={true} onClose={vi.fn()} event={mockEvent} initialQuantity={1} />);
 
     const input = screen.getByPlaceholderText(/enter code/i);
     const applyButton = screen.getByRole("button", { name: /apply/i });

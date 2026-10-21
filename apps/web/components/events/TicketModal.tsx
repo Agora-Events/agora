@@ -77,7 +77,9 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
-  const [purchasedTicket, setPurchasedTicket] = useState<{ id: string; txHash?: string } | null>(null);
+  const [purchasedTicket, setPurchasedTicket] = useState<{ id: string; txHash?: string } | null>(
+    null
+  );
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
   const [recipientWallet, setRecipientWallet] = useState<string>("");
   const [isGiftMode, setIsGiftMode] = useState(false);
@@ -208,7 +210,9 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       toast.success("USDC trustline added! You can now purchase tickets.");
       setView("purchase");
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to add trustline. Please try again.");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to add trustline. Please try again."
+      );
     } finally {
       setIsAddingTrustline(false);
     }
@@ -280,7 +284,8 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
             toast.info("Please sign the transaction in your Freighter wallet...");
             await freighter.signTransaction(data.transactionXdr, {
               networkPassphrase:
-                process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015",
+                process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ||
+                "Test SDF Network ; September 2015",
             });
             txHash = data.transactionXdr?.slice(0, 64);
           }
@@ -314,7 +319,8 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       setPurchasedTicket({ id: data.ticketId, txHash });
       setView("purchased");
     } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      const errorMsg =
+        error instanceof Error ? error.message : "Something went wrong. Please try again.";
       toast.error(errorMsg);
     } finally {
       setIsPurchasing(false);
@@ -385,7 +391,8 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       setPurchasedTicket({ id: data.ticketId, txHash: data.txHash });
       setView("purchased");
     } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      const errorMsg =
+        error instanceof Error ? error.message : "Something went wrong. Please try again.";
       toast.error(errorMsg);
       setActiveTab("wallet");
     } finally {
@@ -409,7 +416,9 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       setView("waitlist_success");
       toast.success(`You're #${data.position} on the waitlist!`);
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong. Please try again."
+      );
     } finally {
       setIsJoiningWaitlist(false);
     }
@@ -452,12 +461,7 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
             </button>
 
             {/* Screen reader live region */}
-            <div
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              className="sr-only"
-            >
+            <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
               {liveAnnouncement}
             </div>
 
@@ -489,7 +493,9 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                         type="button"
                         onClick={() => setActiveTab("wallet")}
                         className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
-                          activeTab === "wallet" ? "bg-accent text-white" : "bg-transparent text-black/70"
+                          activeTab === "wallet"
+                            ? "bg-accent text-white"
+                            : "bg-transparent text-black/70"
                         }`}
                       >
                         Pay with Wallet
@@ -498,7 +504,9 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                         type="button"
                         onClick={() => setActiveTab("card")}
                         className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
-                          activeTab === "card" ? "bg-accent text-white" : "bg-transparent text-black/70"
+                          activeTab === "card"
+                            ? "bg-accent text-white"
+                            : "bg-transparent text-black/70"
                         }`}
                       >
                         Pay with Card
@@ -570,7 +578,10 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
 
                       {isGiftMode && (
                         <div className="flex flex-col gap-2">
-                          <label htmlFor="recipientWallet" className="text-sm font-bold text-black/70">
+                          <label
+                            htmlFor="recipientWallet"
+                            className="text-sm font-bold text-black/70"
+                          >
                             Recipient Wallet Address
                           </label>
                           <input
@@ -767,8 +778,8 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                       All tickets for this event have been claimed.
                     </p>
                     <p className="text-sm text-black/60 leading-relaxed">
-                      Join the waitlist and we&apos;ll notify you automatically if a
-                      spot becomes available. You won&apos;t be charged anything now.
+                      Join the waitlist and we&apos;ll notify you automatically if a spot becomes
+                      available. You won&apos;t be charged anything now.
                     </p>
 
                     <ul className="flex flex-col gap-2 pt-2 border-t border-black/5">
@@ -851,15 +862,15 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                       Your wallet does not have a USDC trustline set up.
                     </p>
                     <p className="text-sm text-amber-800 leading-relaxed">
-                      A <strong>trustline</strong> is a voluntary link between your Stellar account and a specific
-                      asset issuer (in this case, USDC). Without one, your account cannot receive or hold USDC,
-                      so ticket payments cannot be processed.
+                      A <strong>trustline</strong> is a voluntary link between your Stellar account
+                      and a specific asset issuer (in this case, USDC). Without one, your account
+                      cannot receive or hold USDC, so ticket payments cannot be processed.
                     </p>
                     <p className="text-sm text-amber-800 leading-relaxed">
                       Clicking the button below will prompt Freighter to sign a{" "}
-                      <code className="bg-amber-100 px-1 rounded text-xs">ChangeTrust</code> transaction on your
-                      behalf. This is a one-time, no-cost operation — you will only need XLM for the tiny base-reserve
-                      fee (~0.5 XLM).
+                      <code className="bg-amber-100 px-1 rounded text-xs">ChangeTrust</code>{" "}
+                      transaction on your behalf. This is a one-time, no-cost operation — you will
+                      only need XLM for the tiny base-reserve fee (~0.5 XLM).
                     </p>
                   </div>
 
@@ -951,8 +962,7 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
                       You&apos;re on the list!
                     </h2>
                     <p className="text-black/60 font-medium">
-                      We&apos;ll notify you if a spot opens up for{" "}
-                      <strong>{event.title}</strong>.
+                      We&apos;ll notify you if a spot opens up for <strong>{event.title}</strong>.
                     </p>
                   </div>
 
@@ -986,7 +996,13 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
 
             {/* Background watermark */}
             <div className="absolute -right-10 -bottom-10 opacity-[0.03] pointer-events-none -rotate-12 z-0">
-              <Image src="/icons/stellar-logo.svg" width={300} height={300} alt="" aria-hidden="true" />
+              <Image
+                src="/icons/stellar-logo.svg"
+                width={300}
+                height={300}
+                alt=""
+                aria-hidden="true"
+              />
             </div>
           </motion.div>
         </div>
