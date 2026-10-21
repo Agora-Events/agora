@@ -1,13 +1,15 @@
 /**
- * locationService.ts  (Issue: Event Discovery Engine)
+ * locationService.ts  (Issue: Event Discovery Engine & #1650 Battery Optimization)
  *
  * Background location tracking for geofence detection using Expo with minimal
  * battery impact.
  *
  * ## Strategy
- *   1. Significant-location-change tracking — OS wakes app only when the
- *      device moves ≥ 300 m, consuming negligible power.
- *   2. OS geofence region monitoring (`expo-location` geofencing API) — the
+ *   1. Distance-filtered location updates — OS wakes app only when the
+ *      device moves >= 100 m, throttling GPS wakeups when stationary.
+ *   2. Deferred location updates — batches background updates (interval: 60s,
+ *      distance: 100m) to save power during day-long events.
+ *   3. OS geofence region monitoring (`expo-location` geofencing API) — the
  *      OS monitors 150 m perimeter regions around venue coordinates. Works
  *      even when the app is killed.
  *
@@ -87,13 +89,10 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
     }
     if (!data?.locations?.length) return;
     const latest = data.locations[data.locations.length - 1];
-    await reportLocationToServer(
-      latest.coords.latitude,
-      latest.coords.longitude,
-    ).catch((e) =>
-      console.warn('[LocationService] Server location report failed:', e),
+    await reportLocationToServer(latest.coords.latitude, latest.coords.longitude).catch((e) =>
+      console.warn('[LocationService] Server location report failed:', e)
     );
-  },
+  }
 );
 
 TaskManager.defineTask<{
@@ -109,7 +108,9 @@ TaskManager.defineTask<{
     const eventId = data.region.identifier;
     console.info(`[LocationService] Entered geofence: ${eventId}`);
     geofenceEnterHandlers.forEach((cb) => {
-      try { cb(eventId); } catch (e) {
+      try {
+        cb(eventId);
+      } catch (e) {
         console.warn('[LocationService] Handler threw:', e);
       }
     });
@@ -135,7 +136,7 @@ class LocationService {
     if (fg !== 'granted') {
       throw new LocationError(
         'Foreground location permission is required',
-        'PERMISSION_DENIED_FOREGROUND',
+        'PERMISSION_DENIED_FOREGROUND'
       );
     }
 
@@ -147,7 +148,7 @@ class LocationService {
     } else {
       console.warn(
         '[LocationService] Background permission denied. ' +
-        'Proximity alerts will only fire when the app is foregrounded.',
+          'Proximity alerts will only fire when the app is foregrounded.'
       );
     }
 
@@ -260,10 +261,11 @@ class LocationService {
 
     await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
       accuracy: Location.Accuracy.Balanced,
-      // Wake only when device moves ≥ 300 m — minimal battery cost.
-      distanceInterval: 300,
+      // Throttle GPS wakeups: trigger updates only when user moves >= 100 meters
+      distanceInterval: 100,
+      // Batch deferred updates to conserve power when stationary or moving slowly
       deferredUpdatesInterval: 60_000,
-      deferredUpdatesDistance: 300,
+      deferredUpdatesDistance: 100,
       foregroundService: {
         notificationTitle: 'Agora is tracking your location',
         notificationBody: 'Tap to check in when you arrive at the venue.',
@@ -279,10 +281,7 @@ class LocationService {
 // Module-level server reporter (used by both the class and the task)
 // ---------------------------------------------------------------------------
 
-async function reportLocationToServer(
-  latitude: number,
-  longitude: number,
-): Promise<void> {
+async function reportLocationToServer(latitude: number, longitude: number): Promise<void> {
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), 10_000);
   try {
