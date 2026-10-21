@@ -16,6 +16,25 @@ const RECORD_PAYMENT_TIMEOUT_MS = 15_000;
 const RECORD_PAYMENT_MAX_RETRIES = 2;
 const RECORD_PAYMENT_RETRY_DELAY_MS = 1500;
 
+export interface TicketDetails {
+  id: string;
+  paymentId: string;
+  status: string;
+  eventTitle: string | null;
+  ticketTierName: string | null;
+  eventStartTime: string | null;
+}
+
+export class TicketLookupError extends Error {
+  readonly status: number | null;
+
+  constructor(message: string, status: number | null = null) {
+    super(message);
+    this.name = 'TicketLookupError';
+    this.status = status;
+  }
+}
+
 export interface RecordTicketPaymentRequest {
   eventId: string;
   tierId: string;
@@ -80,6 +99,66 @@ export async function recordTicketPurchase(
 function isRetryableStatus(status: number | null): boolean {
   if (status == null) return true; // network error / timeout
   return status >= 500;
+}
+
+export async function getTicket(id: string): Promise<TicketDetails> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), RECORD_PAYMENT_TIMEOUT_MS);
+
+  try {
+    const token = useAuthStore.getState().token;
+    const response = await fetch(`${API_BASE_URL}/api/v1/profile/tickets`, {
+      headers: {
+        ...(token ? { Authorization: `****** } : {}),
+      },
+      signal: controller.signal,
+    });
+
+    let body: any = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+
+    if (!response.ok) {
+      throw new TicketLookupError(
+        body?.message || body?.error || `Failed to load ticket (${response.status}).`,
+        response.status
+      );
+    }
+
+    const tickets = body?.data ?? body;
+    if (!Array.isArray(tickets?.upcoming) || !Array.isArray(tickets?.past)) {
+      throw new TicketLookupError('The ticket response was invalid.', response.status);
+    }
+
+    const ticket = [...tickets.upcoming, ...tickets.past].find(
+      (item: any) => item?.id === id || item?.stellar_id === id
+    );
+    if (!ticket) {
+      throw new TicketLookupError('Ticket not found in your account.', 404);
+    }
+
+    return {
+      id: ticket.id,
+      paymentId: ticket.stellar_id ?? ticket.id,
+      status: ticket.status,
+      eventTitle: ticket.event_title ?? null,
+      ticketTierName: ticket.ticket_tier_name ?? null,
+      eventStartTime: ticket.event_start_time ?? null,
+    };
+  } catch (error) {
+    if (error instanceof TicketLookupError) throw error;
+    if ((error as any)?.name === 'AbortError') {
+      throw new TicketLookupError('Timed out loading your ticket.');
+    }
+    throw new TicketLookupError(
+      error instanceof Error ? error.message : 'Failed to load your ticket.'
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function postTicketPayment(

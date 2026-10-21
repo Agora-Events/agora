@@ -1199,6 +1199,7 @@ mod tests {
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct WalletTicket {
     pub id: Uuid,
+    pub stellar_id: Option<String>,
     pub status: String,
     pub ticket_tier_id: Option<Uuid>,
     pub ticket_tier_name: Option<String>,
@@ -1254,6 +1255,7 @@ pub async fn get_wallet_tickets(State(state): State<ProfileState>, headers: Head
         r#"
         SELECT
             t.id,
+            t.stellar_id,
             t.status,
             t.ticket_tier_id,
             tt.name        AS ticket_tier_name,

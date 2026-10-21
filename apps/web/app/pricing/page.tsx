@@ -1,6 +1,16 @@
+import type { Metadata } from "next";
 import { Navbar } from "@/components/layout/navbar";
 import { PricingSection } from "@/components/landing/pricing-section";
 import { Footer } from "@/components/layout/footer";
+
+export const metadata: Metadata = {
+  title: { absolute: "Pricing | Agora" },
+  description: "Compare Agora plans and fees for event organizers.",
+  openGraph: {
+    title: "Pricing | Agora",
+    description: "Compare Agora plans and fees for event organizers.",
+  },
+};
 
 export default function PricingPage() {
   return (
