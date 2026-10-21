@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/navbar";
@@ -9,6 +9,7 @@ import {
   AnalyticsChartPlaceholder,
   useAnalytics,
 } from "@/components/analytics/analytics-kpi-card";
+import { ExportAttendeesButton } from "@/components/dashboard/ExportAttendeesButton";
 import Image from "next/image";
 
 interface EventOption {
@@ -202,11 +203,19 @@ export default function OrganizerAnalyticsDashboard() {
             </div>
 
             {events.length > 0 && (
-              <EventSelector
-                events={events}
-                selectedId={selectedEventId}
-                onChange={setSelectedEventId}
-              />
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <EventSelector
+                  events={events}
+                  selectedId={selectedEventId}
+                  onChange={setSelectedEventId}
+                />
+                {selectedEventId && (
+                  <ExportAttendeesButton
+                    eventId={selectedEventId}
+                    variant="outline"
+                  />
+                )}
+              </div>
             )}
           </div>
 
