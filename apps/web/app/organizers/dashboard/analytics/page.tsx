@@ -114,7 +114,7 @@ function ChartErrorBoundary({ children }: { children: React.ReactNode }) {
       key={retryKey}
       fallback={
         <div className="rounded-2xl border-2 border-black bg-white p-6 shadow-[-4px_4px_0_rgba(0,0,0,1)] text-center flex flex-col items-center justify-center min-h-[200px]">
-          <p className="text-base font-semibold text-ink-deep mb-3">This chart couldn't be loaded</p>
+          <p className="text-base font-semibold text-ink-deep mb-3">This chart couldn&apos;t be loaded</p>
           <button
             type="button"
             onClick={() => setRetryKey((prev) => prev + 1)}
@@ -335,3 +335,4 @@ export default function OrganizerAnalyticsDashboard() {
     </main>
   );
 }
+
