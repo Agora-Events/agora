@@ -46,7 +46,7 @@ pub trait NotificationProvider: Send + Sync {
 /// Orchestrates one or more [`NotificationProvider`]s.
 ///
 /// Providers are tried in registration order. If a provider fails the error
-/// is logged and the next provider is attempted (fan-out / fallback pattern).
+/// is logged and the next provider is attempted (fallback pattern).
 pub struct NotificationService {
     providers: Vec<Box<dyn NotificationProvider>>,
 }
@@ -63,29 +63,40 @@ impl NotificationService {
         self.providers.push(Box::new(provider));
     }
 
-    /// Send `notification` through all registered providers.
+    /// Send `notification` through registered providers in registration order.
     ///
-    /// Returns the first error encountered, or `Ok(())` if all providers
-    /// succeeded (or no providers are registered).
+    /// Providers are tried one at a time (fallback). The first provider that
+    /// succeeds delivers the notification and the call returns `Ok(())`; later
+    /// providers are not attempted. If every provider fails, the last error is
+    /// returned. With no providers registered the call succeeds.
     pub async fn send(&self, notification: &Notification) -> Result<(), NotificationError> {
-        for provider in &self.providers {
-            if let Err(e) = provider.send(notification).await {
-                tracing::error!(
-                    provider = provider.name(),
-                    error = %e,
-                    recipient = %notification.recipient,
-                    "Notification delivery failed"
-                );
-                return Err(e);
-            }
-            tracing::info!(
-                provider = provider.name(),
-                recipient = %notification.recipient,
-                subject = %notification.subject,
-                "Notification sent"
-            );
+        if self.providers.is_empty() {
+            return Ok(());
         }
-        Ok(())
+        let mut last_error = None;
+        for provider in &self.providers {
+            match provider.send(notification).await {
+                Ok(()) => {
+                    tracing::info!(
+                        provider = provider.name(),
+                        recipient = %notification.recipient,
+                        subject = %notification.subject,
+                        "Notification sent"
+                    );
+                    return Ok(());
+                }
+                Err(e) => {
+                    tracing::error!(
+                        provider = provider.name(),
+                        error = %e,
+                        recipient = %notification.recipient,
+                        "Notification delivery failed"
+                    );
+                    last_error = Some(e);
+                }
+            }
+        }
+        Err(last_error.unwrap())
     }
 }
 

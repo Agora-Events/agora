@@ -294,7 +294,24 @@ The following endpoints are planned for future implementation:
 - `PUT /users/profile` - Update user profile
 
 ### Events
-- `GET /events` - List events
+- `GET /events` - List events (cursor pagination)
+
+  Query parameters:
+  - `limit` (optional): page size, default 20, maximum 100
+  - `cursor` (optional): opaque cursor from previous response `pagination.next_cursor`
+  - `count` (optional): set `false` to omit `meta.total` for faster responses (default true)
+
+  Response includes `pagination.has_more`, `pagination.page_size`, and `pagination.next_cursor`. Pass `pagination.next_cursor` as `cursor` in the next request. `meta.total` is included unless `count=false`.
+
+  Example:
+  ```
+  GET /api/v1/events?limit=20
+  ```
+  Response:
+  ```json
+  { "success": true, "data": [], "pagination": { "has_more": true, "page_size": 20, "next_cursor": "..." }, "meta": { "total": 100 } }
+  ```
+  Next page: `GET /api/v1/events?limit=20&cursor=...`
 - `POST /events` - Create event
 - `GET /events/:id` - Get event details
 - `PUT /events/:id` - Update event

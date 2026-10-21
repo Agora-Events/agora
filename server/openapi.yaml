@@ -82,6 +82,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse'
 
+  /api/v1/events:
+    get:
+      tags: [Events]
+      summary: List events
+      description: List and filter events with sorting/pagination.
+      parameters:
+        - name: sort
+          in: query
+          description: Simple sort parameter. newest (start_time DESC, legacy alias) or popular (count_of_ratings DESC, legacy alias).
+          schema:
+            type: string
+            enum: [newest, popular]
+            deprecated: true
+        - name: sort_by
+          in: query
+          description: Sort field. Supported values start_time, created_at, popularity, count_of_ratings.
+          schema:
+            type: string
+            enum: [start_time, created_at, popularity, count_of_ratings]
+        - name: sort_order
+          in: query
+          description: Sort direction. Supported values asc, desc.
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        '200':
+          description: Event list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
   /api/v1/events/{id}:
     get:
       tags: [Events]
