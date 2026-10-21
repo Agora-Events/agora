@@ -1,9 +1,8 @@
 use soroban_sdk::contracterror;
 
-#[contracterror]
+#[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum EventRegistryError {
-    // Core event errors
     EventAlreadyExists = 1,
     EventNotFound = 2,
     Unauthorized = 3,
@@ -28,35 +27,33 @@ pub enum EventRegistryError {
     EventAlreadyCanceled = 23,
     InvalidGracePeriod = 24,
     EventIsActive = 25,
-    // Staking / loyalty
     AlreadyStaked = 26,
     NotStaked = 27,
-    InsufficientStake = 28,
     InvalidStakeAmount = 29,
     StakingNotConfigured = 30,
     NoRewardsAvailable = 31,
     InvalidRewardAmount = 32,
-    AdminAlreadyExists = 33,
-    CannotRemoveLast = 35,
     InvalidThreshold = 36,
     PropAlreadyExecuted = 38,
     EventNotEnded = 39,
     InvalidMilestonePlan = 41,
-    RestockingFeeHigh = 42,
     InvalidTags = 43,
     ProposalExpired = 44,
-    PropAlreadyApproved = 45,
-    StateError = 46,
     MultisigError = 47,
     PropAlreadyCanceled = 49,
-    DeadlinePastEnd = 55,
     PerUserLimitExceeded = 60,
     InvalidDeadline = 61,
-    InvalidCategoryId = 71,
     AlreadyOnWaitlist = 75,
     NotOnWaitlist = 76,
     TooManyTiers = 80,
-    // TooManyIds = 81,
-    /// Issue #851: payment token is not in the event's accepted_tokens list.
     TokenNotAccepted = 82,
+    DisputeNotFound = 83,
+    DisputeNotOpen = 84,
+    AlreadyVoted = 85,
+    NotTicketHolder = 86,
+    ReplayAttackDetected = 87,
+    InsufficientSignatures = 88,
+    InvalidPrice = 89,
+    /// Too many events requested in a batch call.
+    BatchSizeExceeded = 100,
 }

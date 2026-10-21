@@ -1,88 +1,45 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { BaseNav, type NavItem } from "./base-nav";
-
-const USER_NAV_ITEMS: NavItem[] = [
-  {
-    href: "/",
-    icon: "/icons/home.svg",
-    text: "Home",
-    isActive: (p) => p === "/",
-  },
-  {
-    href: "/discover",
-    icon: "/icons/earth-yellow.svg",
-    text: "Discover Events",
-    isActive: (p) => p === "/discover" || p.startsWith("/events"),
-  },
-  {
-    href: "/organizers",
-    icon: "/icons/user-group.svg",
-    text: "Organizers",
-    isActive: (p) => p === "/organizers",
-  },
-  {
-    href: "/stellar",
-    icon: "/icons/stellar-xlm-logo 1.svg",
-    text: "Stellar Ecosystem",
-    isActive: (p) => p === "/stellar",
-  },
-];
-
-
-
-const userCta = (
-  <Link href="/create-event">
-    <Button
-      backgroundColor="bg-white"
-      textColor="text-black"
-      shadowColor="rgba(0,0,0,1)"
-    >
-      <span>Create Your Event</span>
-      <Image
-        src="/icons/arrow-up-right-01.svg"
-        alt="Arrow"
-        width={24}
-        height={24}
-        className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-      />
-    </Button>
-  </Link>
-);
-
-function UserEndSlot() {
-  const [notifications] = useState<any[]>([]);
+import { NotificationDropdown } from "@/components/notifications/NotificationDropdown";
+import { NavLink } from "./nav-link";
 
   return (
-    <>
-      <div className="relative">
-        <Link href="/notifications">
-          <Button
-            backgroundColor="bg-white"
-            className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
-            textColor="text-black"
-            shadowColor="rgba(0,0,0,1)"
-            aria-label="View notifications"
-          >
-            {notifications.length > 0 && (
-              <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
-            )}
-            <Image
-              src="/icons/notification.svg"
-              alt="Notifications"
-              width={24}
-              height={24}
-              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-            />
-          </Button>
-        </Link>
-      </div>
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={isCorrectNetwork ? undefined : requestNetworkSwitch}
+      className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border transition-colors ${
+        isCorrectNetwork
+          ? "bg-green-50 border-green-300 text-green-700 cursor-default"
+          : "bg-red-50 border-red-300 text-red-700 cursor-pointer hover:bg-red-100"
+      }`}
+    >
+      <span
+        className={`w-1.5 h-1.5 rounded-full ${
+          isCorrectNetwork ? "bg-green-500" : "bg-red-500"
+        }`}
+        aria-hidden="true"
+      />
+      {label}
+    </button>
+  );
+}
 
-      <Link href="/profile">
+function UserEndSlot() {
+  return (
+    <>
+      {/* Testnet/Mainnet switcher — Issue #1541 */}
+      <NetworkSwitcher />
+
+      {/* Network status pill — only visible on testnet builds */}
+      <NetworkPill />
+
+      <div className="hidden md:flex items-center gap-4 lg:gap-[29px]">
+        <NotificationDropdown />
         <Button
           backgroundColor="bg-white"
           className="relative w-[55.22px] h-[53px] px-0! py-0"

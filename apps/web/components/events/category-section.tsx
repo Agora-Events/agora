@@ -1,10 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
 import { motion, type Transition } from "framer-motion";
+import Image from "next/image";
 import useSWR from "swr";
 import { fetchCategories, type DiscoverCategory } from "@/utils/api";
+import { CategoryChips } from "./category-chips";
 
-const defaultCategories = [
+const defaultCategories: DiscoverCategory[] = [
   { name: "Tech", icon: "/icons/Tech.svg", color: "#DBF4B9" },
   { name: "Party", icon: "/icons/party.svg", color: "#FFA4D5" },
   { name: "global", icon: "/icons/global.svg", color: "#B9C7FE" },
@@ -40,40 +43,15 @@ const item = {
   },
 };
 
-import { CategoryChips } from "./category-chips";
-
-type CategorySectionProps = {
-  activeCategory: string;
+interface CategorySectionProps {
+  selectedCategory: string;
   onCategoryChange: (category: string) => void;
-  onError: (message: string) => void;
-};
+}
 
-export function CategorySection({ activeCategory, onCategoryChange, onError }: CategorySectionProps) {
-  // Use SWR for category fetching with automatic caching and revalidation
-  const { data: categories, error, isLoading } = useSWR<DiscoverCategory[]>(
-    "/api/events/discover/categories",
-    () => fetchCategories(),
-    {
-      // Revalidate on window focus to keep data fresh
-      revalidateOnFocus: true,
-      // Revalidate on reconnect
-      revalidateOnReconnect: true,
-      // Don't revalidate on mount if data is already cached
-      revalidateIfStale: false,
-      // Keep previous data while revalidating
-      keepPreviousData: true,
-      // Deduplicate requests within 2 seconds
-      dedupingInterval: 2000,
-    }
-  );
-
-  // Handle errors from SWR
-  if (error && !categories) {
-    onError("Could not load categories");
-  }
-
-  const categoriesToRender = categories && categories.length > 0 ? categories : defaultCategories;
-
+export function CategorySection({
+  selectedCategory,
+  onCategoryChange,
+}: CategorySectionProps) {
   return (
     <section className="px-4 bg-base pt-12 pb-6">
       <div className="mx-auto max-w-[1221px]">
@@ -93,19 +71,51 @@ export function CategorySection({ activeCategory, onCategoryChange, onError }: C
         </motion.div>
 
         <motion.div variants={container} initial="hidden" animate="show">
-          <motion.h3
-            variants={item}
-            className="font-semibold text-xl mb-6 flex items-center gap-2"
-          >
-            Browse by Category
-          </motion.h3>
+          {/* Heading is suppressed while loading so it doesn't float above skeletons */}
+          {!isLoading && (
+            <motion.h3
+              variants={item}
+              className="font-semibold text-xl mb-6 flex items-center gap-2"
+            >
+              Browse by Category
+            </motion.h3>
+          )}
+          {isLoading && (
+            <div className="h-7 w-48 rounded-md bg-black/10 animate-pulse mb-6" />
+          )}
 
-          <CategoryChips 
-            categories={categoriesToRender} 
-            activeCategory={activeCategory} 
-            onCategoryChange={onCategoryChange} 
-            isLoading={isLoading} 
-          />
+          <motion.div variants={container} className="flex flex-wrap gap-4">
+            {categories.map((category) => (
+              <motion.div key={category.name} variants={item}>
+                <button
+                  onClick={() =>
+                    onCategoryChange(
+                      selectedCategory === category.name ? "" : category.name,
+                    )
+                  }
+                  aria-pressed={selectedCategory === category.name}
+                  style={{ backgroundColor: category.color }}
+                  className={`
+                    flex items-center gap-2 px-[26px] py-[13px] rounded-full border-2 border-black
+                    font-medium text-[15px] whitespace-nowrap transition-all
+                    shadow-[-4px_4px_0px_0px_rgba(0,0,0,1)]
+                    active:translate-x-[2px] active:translate-y-[2px] active:shadow-none
+                    hover:opacity-90 min-w-32 justify-center
+                    ${selectedCategory === category.name ? "ring-4 ring-black/30" : ""}
+                  `}
+                >
+                  <Image
+                    src={category.icon}
+                    alt={`${category.name} icon`}
+                    width={20}
+                    height={20}
+                    className="mr-[2px] object-contain"
+                  />
+                  <span className="text-black capitalize">{category.name}</span>
+                </button>
+              </motion.div>
+            ))}
+          </motion.div>
         </motion.div>
       </div>
     </section>

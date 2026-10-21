@@ -6,6 +6,53 @@ This guide explains the end-to-end technical flow of purchasing a ticket on Agor
 
 The ticket purchase flow is a multi-step process involving the frontend UI, a backend API route, and the Stellar network.
 
+```mermaid
+sequenceDiagram
+    actor User
+    participant Web App
+    participant Freighter Wallet
+    participant Next.js API
+    participant Axum Server
+    participant Soroban Contract
+    participant Indexer
+    participant Database
+
+    User->>Web App: Select event and quantity
+    User->>Web App: Confirm purchase
+    Web App->>Next.js API: POST /api/payments/ticket(eventId, quantity, buyerWallet)
+    Next.js API->>Database: Load event and check availability
+    Database-->>Next.js API: Event capacity and minted ticket count
+
+    alt Tickets unavailable
+        Next.js API-->>Web App: 409 Not enough tickets available
+        Web App-->>User: Show availability error
+    else Tickets available
+        Next.js API->>Axum Server: Request Stellar ticket mint
+        Axum Server->>Soroban Contract: Build mint_ticket(eventId, buyer, quantity)
+        Soroban Contract-->>Axum Server: Unsigned transaction XDR
+        Axum Server-->>Next.js API: transactionXdr and ticketId
+        Next.js API-->>Web App: transactionXdr and requiresSignature
+        Web App->>Freighter Wallet: Request XDR signature
+
+        alt Signature rejected
+            Freighter Wallet-->>Web App: Signature rejected
+            Web App-->>User: Show signing error; purchase not confirmed
+        else Signature accepted
+            Freighter Wallet-->>Web App: Signed transaction XDR
+            Web App->>Axum Server: Submit signed transaction
+            Axum Server->>Soroban Contract: Submit mint_ticket transaction
+            Soroban Contract-->>Axum Server: On-chain confirmation and event
+            Axum Server-->>Indexer: Poll/read confirmed contract event
+            Indexer->>Database: Upsert ticket and sync confirmation
+            Database-->>Indexer: Ticket persisted
+            Indexer-->>Web App: Indexed on-chain confirmation
+            Web App-->>User: Show ticket ID and QR code
+        end
+    end
+```
+
+> The API performs the availability check and persists the initial ticket record. The Indexer independently observes confirmed Soroban events and upserts the on-chain purchase in the database.
+
 1.  **User Selection**: In the `TicketModal`, the user selects the desired quantity of tickets for an event.
 2.  **API Request**: Upon clicking "Confirm Purchase", the frontend sends a `POST` request to `/api/payments/ticket` with the `eventId`, `quantity`, and `buyerWallet`.
 3.  **Availability Check**: The API route validates the request and checks the internal `events-store` to ensure sufficient tickets are available.

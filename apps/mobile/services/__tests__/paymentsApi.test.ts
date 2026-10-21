@@ -1,4 +1,9 @@
-import { recordTicketPurchase, RecordPaymentError } from '../paymentsApi';
+import {
+  getTicket,
+  recordTicketPurchase,
+  RecordPaymentError,
+  TicketLookupError,
+} from '../paymentsApi';
 import { useAuthStore } from '@/hooks/useAuth';
 
 /**
@@ -95,4 +100,49 @@ describe('recordTicketPurchase', () => {
     // initial attempt + RECORD_PAYMENT_MAX_RETRIES(2) retries = 3 calls total
     expect(global.fetch).toHaveBeenCalledTimes(3);
   }, 15000);
+});
+
+describe('getTicket', () => {
+  it('loads the requested ticket from the authenticated ticket collection', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      jsonResponse(200, {
+        success: true,
+        data: {
+          upcoming: [{
+            id: 'record-1',
+            stellar_id: 'ticket-1',
+            status: 'Unused',
+            event_title: 'Stellar Meridian 2026',
+            ticket_tier_name: 'General Admission',
+            event_start_time: '2026-10-15T18:00:00.000Z',
+          }],
+          past: [],
+        },
+      })
+    );
+
+    await expect(getTicket('ticket-1')).resolves.toEqual({
+      id: 'record-1',
+      paymentId: 'ticket-1',
+      status: 'Unused',
+      eventTitle: 'Stellar Meridian 2026',
+      ticketTierName: 'General Admission',
+      eventStartTime: '2026-10-15T18:00:00.000Z',
+    });
+
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toMatch(/\/api\/v1\/profile\/tickets$/);
+    expect(init.headers.Authorization).toBe('Bearer mock-jwt-token-agora');
+  });
+
+  it('returns an explicit not-found error when the ticket is not owned by the user', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      jsonResponse(200, { upcoming: [], past: [] })
+    );
+
+    await expect(getTicket('missing-ticket')).rejects.toMatchObject({
+      name: 'TicketLookupError',
+      status: 404,
+    } satisfies Partial<TicketLookupError>);
+  });
 });

@@ -52,6 +52,18 @@ pub static CACHE_MISSES_TOTAL: Lazy<CounterVec> = Lazy::new(|| {
     .unwrap()
 });
 
+pub static DB_SLOW_QUERIES_TOTAL: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec_with_registry!(
+        Opts::new(
+            "db_slow_queries_total",
+            "Total number of database queries exceeding the slow query threshold"
+        ),
+        &["query_name"],
+        REGISTRY
+    )
+    .unwrap()
+});
+
 pub async fn metrics_handler() -> Response {
     let encoder = TextEncoder::new();
     let mut buffer = Vec::new();
@@ -82,4 +94,11 @@ pub async fn track_metrics(request: Request, next: Next) -> Response {
         .observe(duration);
 
     response
+}
+
+/// Increment the slow query counter for a given query name.
+pub fn increment_slow_query(query_name: &str) {
+    DB_SLOW_QUERIES_TOTAL
+        .with_label_values(&[query_name])
+        .inc();
 }

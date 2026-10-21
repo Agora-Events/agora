@@ -26,12 +26,14 @@ Agora is an event and ticketing platform built for organizers, creators, and com
 This project is organized as a monorepo:
 
 - [`apps/web`](apps/web/README.md): The main frontend application (Next.js). **Please read the [Frontend Guidelines](apps/web/README.md) regarding styles and components before contributing.**
+- [`apps/mobile`](apps/mobile/README.md): The mobile application (Expo).
 - [`contract`](contract/README.md): Smart contracts and blockchain logic.
 - [`docs`](docs/): Detailed platform documentation and guides.
 
 ## 📚 Documentation
 
 - [**Ticket Purchase & Stellar Integration Guide**](docs/payments/ticket-purchase-guide.md): Deep dive into the ticketing technical flow.
+- [**Stellar Testnet Setup Guide**](docs/stellar/testnet-setup-guide.md): Install Freighter, fund via Friendbot, add a USDC trustline, and run your first Testnet purchase.
 - [**Stellar Smart Contracts**](docs/contracts/stellar-contract.md): Overview of our on-chain logic.
 - [**Database Schema**](docs/DATABASE_SCHEMA.md): Detailed view of the system's data model.
 
@@ -97,3 +99,8 @@ Distributed under the MIT License. See [`LICENSE.md`](LICENSE.md) for more infor
 ---
 
 © 2026 Agora. All rights reserved.
+
+## Handsoff notes
+
+<!-- handsoff-issue-1397 -->
+- #1397: [FRONTEND] Remove debug console.log from create-event form submit

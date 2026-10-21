@@ -1,0 +1,4 @@
+ALTER TABLE "Ticket"
+ADD COLUMN "utmSource" VARCHAR(255),
+ADD COLUMN "utmMedium" VARCHAR(255),
+ADD COLUMN "utmCampaign" VARCHAR(255);

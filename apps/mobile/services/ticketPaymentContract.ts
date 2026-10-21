@@ -222,7 +222,7 @@ export const TICKET_PAYMENT_ERROR_MESSAGES: Record<number, string> = {
   23: 'The refund window for this ticket has passed.',
   24: 'This withdrawal would exceed the organizer’s daily withdrawal cap.',
   25: 'There are insufficient platform fees available for this action.',
-  26: 'The resale price exceeds the price cap set for this ticket.',
+  26: 'The resale price exceeds the anti-scalping cap set for this ticket.',
   27: 'Ticket sales are temporarily paused. Please try again later.',
   35: 'This event has been cancelled.',
   36: 'This event is currently under dispute and cannot process payments.',
@@ -253,6 +253,10 @@ export const TICKET_PAYMENT_ERROR_MESSAGES: Record<number, string> = {
   61: 'The secret provided does not match this ticket.',
   62: 'That discount code has expired.',
   63: 'That discount code has reached its maximum number of uses.',
+  64: 'This ticket is not listed for resale.',
+  65: 'This listing is no longer active — it may have been cancelled or already sold.',
+  66: 'This ticket is already listed for resale. Cancel the existing listing first.',
+  67: 'The royalty percentage provided is invalid.',
 };
 
 export const INSUFFICIENT_ALLOWANCE_ERROR_CODE = 12;

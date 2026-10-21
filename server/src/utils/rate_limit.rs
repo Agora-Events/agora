@@ -18,11 +18,13 @@ use std::{
 
 use axum::{
     body::Body,
-    http::{Request, Response, StatusCode},
+    http::{header::HeaderValue, HeaderMap, Request, Response, StatusCode},
+    response::IntoResponse,
 };
 use dashmap::DashMap;
-use serde_json::json;
 use tower::{Layer, Service};
+
+use crate::utils::error::ApiError;
 
 // ---------------------------------------------------------------------------
 // Token bucket
@@ -43,8 +45,7 @@ impl TokenBucket {
     }
 
     /// Refill tokens based on elapsed time, then try to consume one.
-    /// Returns `true` if the request is allowed.
-    fn try_acquire(&mut self, capacity: f64, refill_per_sec: f64) -> bool {
+    fn try_acquire(&mut self, capacity: f64, refill_per_sec: f64) -> AcquireOutcome {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_refill).as_secs_f64();
         self.tokens = (self.tokens + elapsed * refill_per_sec).min(capacity);
@@ -52,11 +53,67 @@ impl TokenBucket {
 
         if self.tokens >= 1.0 {
             self.tokens -= 1.0;
-            true
+            let secs_until_full = if refill_per_sec > 0.0 {
+                ((capacity - self.tokens) / refill_per_sec).ceil() as u64
+            } else {
+                1
+            };
+            AcquireOutcome {
+                allowed: true,
+                remaining: self.tokens.floor() as u64,
+                retry_after: secs_until_full.max(1),
+            }
         } else {
-            false
+            let retry_after = if refill_per_sec > 0.0 {
+                ((1.0 - self.tokens) / refill_per_sec).ceil() as u64
+            } else {
+                1
+            };
+            AcquireOutcome {
+                allowed: false,
+                remaining: 0,
+                retry_after: retry_after.max(1),
+            }
         }
     }
+}
+
+struct AcquireOutcome {
+    allowed: bool,
+    remaining: u64,
+    retry_after: u64,
+}
+
+/// Apply standard rate-limit headers. `Retry-After` is set only on 429s.
+pub fn apply_rate_limit_headers(
+    headers: &mut HeaderMap,
+    limit: usize,
+    remaining: u64,
+    reset_epoch: u64,
+    retry_after: Option<u64>,
+) {
+    if let Ok(v) = HeaderValue::from_str(&limit.to_string()) {
+        headers.insert("x-ratelimit-limit", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&remaining.to_string()) {
+        headers.insert("x-ratelimit-remaining", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&reset_epoch.to_string()) {
+        headers.insert("x-ratelimit-reset", v);
+    }
+    if let Some(secs) = retry_after {
+        let value = secs.max(1);
+        if let Ok(v) = HeaderValue::from_str(&value.to_string()) {
+            headers.insert("retry-after", v);
+        }
+    }
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 type Store = Arc<DashMap<IpAddr, TokenBucket>>;
@@ -152,12 +209,21 @@ where
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         let ip = extract_ip(&req);
-
-        let allowed = if self.max_requests == 0 {
-            false
+        let window_secs = self.window.as_secs().max(1);
+        let capacity = self.max_requests as f64;
+        let refill_per_sec = if self.max_requests == 0 {
+            0.0
         } else {
-            let capacity = self.max_requests as f64;
-            let refill_per_sec = capacity / self.window.as_secs_f64().max(0.001);
+            capacity / self.window.as_secs_f64().max(0.001)
+        };
+
+        let outcome = if self.max_requests == 0 {
+            AcquireOutcome {
+                allowed: false,
+                remaining: 0,
+                retry_after: window_secs,
+            }
+        } else {
             let mut entry = self
                 .store
                 .entry(ip)
@@ -165,29 +231,34 @@ where
             entry.try_acquire(capacity, refill_per_sec)
         };
 
-        if !allowed {
-            let retry_after = self.window.as_secs().max(1).to_string();
-            let body = json!({
-                "success": false,
-                "error": {
-                    "code": 429,
-                    "message": "Too many requests. Please try again later."
-                }
-            })
-            .to_string();
+        let limit = self.max_requests;
+        let remaining = outcome.remaining;
+        let retry_after = outcome.retry_after.max(1);
+        let reset_epoch = unix_now().saturating_add(retry_after);
 
-            let response = Response::builder()
-                .status(StatusCode::TOO_MANY_REQUESTS)
-                .header("Content-Type", "application/json")
-                .header("Retry-After", retry_after)
-                .body(Body::from(body))
-                .unwrap();
-
+        if !outcome.allowed {
+            let mut response = ApiError::with_code(
+                crate::utils::error::ErrorCode::RateLimited,
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too many requests. Please try again later.",
+            )
+            .into_response();
+            apply_rate_limit_headers(
+                response.headers_mut(),
+                limit,
+                remaining,
+                reset_epoch,
+                Some(retry_after),
+            );
             return Box::pin(async move { Ok(response) });
         }
 
         let future = self.inner.call(req);
-        Box::pin(future)
+        Box::pin(async move {
+            let mut response = future.await?;
+            apply_rate_limit_headers(response.headers_mut(), limit, remaining, reset_epoch, None);
+            Ok(response)
+        })
     }
 }
 
@@ -249,12 +320,16 @@ mod tests {
     }
 
     async fn send(router: &Router, ip: &str) -> StatusCode {
+        send_full(router, ip).await.status()
+    }
+
+    async fn send_full(router: &Router, ip: &str) -> axum::http::Response<Body> {
         let req = Request::builder()
             .uri("/test")
             .header("x-forwarded-for", ip)
             .body(Body::empty())
             .unwrap();
-        router.clone().oneshot(req).await.unwrap().status()
+        router.clone().oneshot(req).await.unwrap()
     }
 
     #[tokio::test]
@@ -322,8 +397,8 @@ mod tests {
 
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(body["success"], false);
-        assert_eq!(body["error"]["code"], 429);
+        assert_eq!(body["code"], "RATE_LIMITED");
+        assert!(body["message"].is_string());
     }
 
     #[tokio::test]
@@ -336,6 +411,44 @@ mod tests {
             .unwrap();
         let resp = router.oneshot(req).await.unwrap();
         assert!(resp.headers().contains_key("retry-after"));
+        let secs: u64 = resp
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        assert!(secs >= 1, "Retry-After must be at least 1, got {secs}");
+        assert!(resp.headers().contains_key("x-ratelimit-limit"));
+        assert!(resp.headers().contains_key("x-ratelimit-remaining"));
+        assert!(resp.headers().contains_key("x-ratelimit-reset"));
+    }
+
+    #[tokio::test]
+    async fn test_exhausted_limit_retry_after_is_present_and_positive() {
+        let router = rate_limited_router(1, Duration::from_secs(60));
+        let allowed = send_full(&router, "8.8.8.8").await;
+        assert_eq!(allowed.status(), StatusCode::OK);
+        assert_eq!(
+            allowed.headers().get("x-ratelimit-limit").unwrap(),
+            "1"
+        );
+        assert!(allowed.headers().contains_key("x-ratelimit-remaining"));
+        assert!(allowed.headers().contains_key("x-ratelimit-reset"));
+        assert!(allowed.headers().get("retry-after").is_none());
+
+        let rejected = send_full(&router, "8.8.8.8").await;
+        assert_eq!(rejected.status(), StatusCode::TOO_MANY_REQUESTS);
+        let secs: u64 = rejected
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse().ok())
+            .expect("Retry-After header");
+        assert!(secs >= 1);
+        assert_eq!(
+            rejected.headers().get("x-ratelimit-remaining").unwrap(),
+            "0"
+        );
     }
 
     #[tokio::test]

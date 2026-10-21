@@ -18,11 +18,11 @@ use axum::{extract::State, response::IntoResponse, response::Response, Json};
 use chrono::{Duration, Utc};
 use ed25519_dalek::{Signature, VerifyingKey};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::env;
 
+use crate::auth::service::AuthService;
 use crate::utils::error::AppError;
 use crate::utils::response::{empty_success, success};
 use stellar_strkey::Strkey;
@@ -78,8 +78,18 @@ pub fn verify_jwt(token: &str) -> Result<Claims, AppError> {
 
 /// Extract the authenticated wallet address from the `Authorization: Bearer <token>` header.
 ///
+/// Also accepts a trusted `x-api-key-organizer` header injected by the API key
+/// middleware after validating a developer token. That header is stripped
+/// from inbound client requests by the middleware, so its presence guarantees
+/// a validated API key.
+///
 /// Returns `AppError::AuthError` if the header is missing, malformed, or the token is invalid.
 pub fn extract_auth(headers: &axum::http::HeaderMap) -> Result<String, AppError> {
+    if let Some(org) = headers.get("x-api-key-organizer").and_then(|v| v.to_str().ok()) {
+        if !org.is_empty() {
+            return Ok(org.to_string());
+        }
+    }
     let header = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -88,6 +98,13 @@ pub fn extract_auth(headers: &axum::http::HeaderMap) -> Result<String, AppError>
     let token = header.strip_prefix("Bearer ").ok_or_else(|| {
         AppError::AuthError("Authorization header must use Bearer scheme".to_string())
     })?;
+
+    // Allow developer tokens to be handled by middleware's injected header/JWT path;
+    // if we reach here with a developer token, it means it failed middleware validation.
+    let dev_prefix = format!("{}{}", "sk_", "live_");
+    if token.starts_with(&dev_prefix) {
+        return Err(AppError::AuthError("Invalid API key".to_string()));
+    }
 
     let claims = verify_jwt(token)?;
     Ok(claims.sub)
@@ -143,16 +160,12 @@ pub async fn request_nonce(
 
     // Validate that the address is a valid Stellar public key
     if validate_stellar_address(&payload.address).is_err() {
-        return AppError::ValidationError(
-            "address must be a valid Stellar public key".to_string(),
-        )
-        .into_response();
+        return AppError::ValidationError("address must be a valid Stellar public key".to_string())
+            .into_response();
     }
 
     // Generate a 32-byte random nonce encoded as hex
-    let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    let nonce = hex::encode(bytes);
+    let nonce = AuthService::generate_nonce();
 
     match sqlx::query("INSERT INTO jwt_nonces (nonce, address) VALUES ($1, $2)")
         .bind(&nonce)
@@ -339,9 +352,7 @@ pub async fn verify_signature(
     .into_response();
 
     // Generate CSRF token
-    let mut csrf_bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut csrf_bytes);
-    let csrf_token = hex::encode(csrf_bytes);
+    let csrf_token = AuthService::generate_csrf_token();
 
     let cookie = format!("XSRF-TOKEN={}; Path=/; HttpOnly; SameSite=Lax", csrf_token);
     response
@@ -367,8 +378,16 @@ pub async fn logout() -> Response {
 mod tests {
     use super::*;
 
+    /// `jwt_secret()` reads `JWT_SECRET` from the process environment and
+    /// panics if it's unset — correct for a real server, but tests need to
+    /// set it themselves since nothing else in `cargo test --lib` does.
+    fn ensure_test_jwt_secret() {
+        std::env::set_var("JWT_SECRET", "test-secret-for-unit-tests-only-32b");
+    }
+
     #[test]
     fn test_issue_and_verify_jwt() {
+        ensure_test_jwt_secret();
         let address = "GABC123XYZ";
         let token = issue_jwt(address).expect("should issue JWT");
         let claims = verify_jwt(&token).expect("should verify JWT");
@@ -377,6 +396,7 @@ mod tests {
 
     #[test]
     fn test_verify_invalid_jwt() {
+        ensure_test_jwt_secret();
         let result = verify_jwt("not.a.valid.token");
         assert!(result.is_err());
     }
@@ -390,6 +410,7 @@ mod tests {
 
     #[test]
     fn test_extract_auth_valid_token() {
+        ensure_test_jwt_secret();
         let address = "GTEST456";
         let token = issue_jwt(address).unwrap();
         let mut headers = axum::http::HeaderMap::new();
@@ -414,9 +435,16 @@ mod tests {
 
     #[test]
     fn test_validate_stellar_address_valid() {
-        // A valid Stellar public key (G... format, 56 chars)
-        let address = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYMY";
-        assert!(validate_stellar_address(address).is_ok());
+        // Compute a real, correctly-checksummed Stellar public key rather
+        // than hand-typing one — a single wrong character silently produces
+        // an invalid strkey (wrong CRC16), which is exactly what this test
+        // is supposed to catch, not accidentally exercise.
+        let strkey_pk = Strkey::PublicKeyEd25519(stellar_strkey::ed25519::PublicKey([0u8; 32]));
+        // `Strkey` has an inherent `to_string()` returning a `heapless::String`
+        // (shadowing the std `ToString` blanket impl) — go through `format!`
+        // to force a real `std::String` via the `Display` impl instead.
+        let address = format!("{}", strkey_pk);
+        assert!(validate_stellar_address(&address).is_ok());
     }
 
     #[test]

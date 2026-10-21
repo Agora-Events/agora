@@ -83,4 +83,6 @@ export interface CheckoutReceipt {
   paymentTxHash: string;
   buyerPublicKey: string;
   completedAt: string; // ISO timestamp
+  /** Signed waiting-room access grant the buyer redeemed (Issue #1187). */
+  grantToken?: string;
 }

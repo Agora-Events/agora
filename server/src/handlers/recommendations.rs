@@ -12,17 +12,21 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    errors::AppError,
+    utils::error::AppError,
     middleware::auth::AuthUser,
 };
 
 // ── Request & Response types ──────────────────────────────────────────────────
+
+pub const DEFAULT_LIMIT: i64 = 12;
+pub const MIN_LIMIT: i64 = 1;
+pub const MAX_LIMIT: i64 = 24;
 
 #[derive(Debug, Deserialize)]
 pub struct RecommendQuery {
@@ -32,17 +36,22 @@ pub struct RecommendQuery {
 }
 
 fn default_limit() -> i64 {
-    12
+    DEFAULT_LIMIT
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+/// Clamp the limit parameter between `MIN_LIMIT` and `MAX_LIMIT`.
+pub fn clamp_limit(limit: i64) -> i64 {
+    limit.clamp(MIN_LIMIT, MAX_LIMIT)
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct RecommendedEvent {
     pub id: Uuid,
     pub title: String,
     pub slug: String,
     pub description: Option<String>,
-    pub start_time: OffsetDateTime,
-    pub end_time: OffsetDateTime,
+    pub start_time: DateTime<Utc>,
+    pub end_time: DateTime<Utc>,
     pub location: Option<String>,
     pub banner_url: Option<String>,
     pub category_id: Uuid,
@@ -65,6 +74,20 @@ pub struct RecommendationsResponse {
     pub based_on_categories: Vec<String>,
 }
 
+/// Pure helper to assemble the recommendations response DTO.
+pub fn build_recommendations_response(
+    events: Vec<RecommendedEvent>,
+    user_categories: &[(Uuid, String)],
+) -> RecommendationsResponse {
+    let personalised = !user_categories.is_empty();
+    let based_on_categories: Vec<String> = user_categories.iter().map(|(_, n)| n.clone()).collect();
+    RecommendationsResponse {
+        events,
+        personalised,
+        based_on_categories,
+    }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 pub async fn get_recommended_events(
@@ -72,7 +95,7 @@ pub async fn get_recommended_events(
     Extension(auth_user): Extension<AuthUser>,
     Query(params): Query<RecommendQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let limit = params.limit.clamp(1, 24);
+    let limit = clamp_limit(params.limit);
     let user_id = auth_user.user_id;
 
     // 1. Discover the categories from the user's last 3 purchases
@@ -93,7 +116,6 @@ pub async fn get_recommended_events(
     .await?;
 
     let personalised = !user_categories.is_empty();
-    let based_on_categories: Vec<String> = user_categories.iter().map(|(_, n)| n.clone()).collect();
 
     let events: Vec<RecommendedEvent> = if personalised {
         // ── Personalised path ─────────────────────────────────────────────────
@@ -216,12 +238,122 @@ pub async fn get_recommended_events(
         .await?
     };
 
+    let based_on_categories: Vec<String> = user_categories.into_iter().map(|(_, n)| n).collect();
     Ok((
         StatusCode::OK,
-        Json(RecommendationsResponse {
-            events,
-            personalised,
-            based_on_categories,
-        }),
+        Json(build_recommendations_response(events, &user_categories)),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Tests (Issue #1432)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        middleware,
+        routing::get,
+        Router,
+    };
+    use serde_json::json;
+    use tower::ServiceExt;
+
+    // Test that RecommendQuery defaults and clamps correctly.
+    #[test]
+    fn test_recommend_query_default_limit() {
+        let q: RecommendQuery = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(q.limit, 12);
+    }
+
+    #[test]
+    fn test_recommend_query_custom_limit() {
+        let q: RecommendQuery = serde_json::from_str(r#"{"limit":24}"#).unwrap();
+        assert_eq!(q.limit, 24);
+    }
+
+    #[test]
+    fn test_recommend_query_clamps_to_max() {
+        let q: RecommendQuery = serde_json::from_str(r#"{"limit":100}"#).unwrap();
+        assert_eq!(q.limit, 100);
+        // The handler clamps at 24.
+        let clamped = q.limit.clamp(1, 24);
+        assert_eq!(clamped, 24);
+    }
+
+    #[test]
+    fn test_recommend_query_clamps_minimum() {
+        let q: RecommendQuery = serde_json::from_str(r#"{"limit":0}"#).unwrap();
+        assert_eq!(q.limit, 0);
+        let clamped = q.limit.clamp(1, 24);
+        assert_eq!(clamped, 1);
+    }
+
+    #[tokio::test]
+    async fn test_recommendations_route_exists() {
+        let pool = PgPool::connect_lazy("postgresql://localhost/test").expect("test pool");
+        let router = Router::new()
+            .route(
+                "/api/v1/recommendations/events",
+                get(get_recommended_events),
+            )
+            .layer(middleware::from_fn_with_state(
+                pool.clone(),
+                crate::middleware::auth::require_auth,
+            ))
+            .with_state(pool);
+
+        // Build a request with a dummy JWT-like Authorization header.
+        // The middleware will reject invalid tokens with 401, but the route
+        // itself must exist (not 404).
+        let req = Request::builder()
+            .uri("/api/v1/recommendations/events")
+            .header("Authorization", "Bearer dummy.token.that.will.fail")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+        // 401 means the route exists but auth failed; 404 would mean the
+        // route is missing entirely.
+        assert_ne!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_recommendations_requires_auth() {
+        let pool = PgPool::connect_lazy("postgresql://localhost/test").expect("test pool");
+        let router = Router::new()
+            .route(
+                "/api/v1/recommendations/events",
+                get(get_recommended_events),
+            )
+            .layer(middleware::from_fn_with_state(
+                pool.clone(),
+                crate::middleware::auth::require_auth,
+            ))
+            .with_state(pool);
+
+        let req = Request::builder()
+            .uri("/api/v1/recommendations/events")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_recommended_event_response_shape() {
+        let response = RecommendationsResponse {
+            events: vec![],
+            personalised: false,
+            based_on_categories: vec![],
+        };
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["events"], json!([]));
+        assert_eq!(json["personalised"], false);
+        assert_eq!(json["based_on_categories"], json!([]));
+    }
 }

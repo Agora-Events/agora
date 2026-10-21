@@ -1,4 +1,9 @@
 #![no_std]
+#![warn(missing_docs)]
+//! Pro Subscription smart contract for the Agora platform.
+//!
+//! This contract manages organizer Pro subscriptions, including subscription
+//! creation, renewal, cancellation, and admin controls.
 
 mod contract;
 mod error;
@@ -6,6 +11,10 @@ mod events;
 mod storage;
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod test_version;
+
 mod types;
 mod validation;
 

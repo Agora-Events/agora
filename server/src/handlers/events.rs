@@ -4,11 +4,15 @@
 //! listing, creating, updating, and deleting events.
 
 use axum::{
-    extract::{Path, Query, State},
-    response::IntoResponse,
-    response::Response,
-    Json,
+    extract::OriginalUri, extract::Path, extract::Query, extract::State,
+    response::IntoResponse, response::Response,
 };
+use axum::http::HeaderMap;
+use crate::models::event_translation::{
+    validate_translations, EventTranslation, EventTranslationInput,
+};
+use sha2::{Digest, Sha256};
+use crate::utils::extract::ValidatedJson;
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -16,9 +20,7 @@ use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::cache::{
-    RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL,
-};
+use crate::cache::{RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL};
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
@@ -31,9 +33,61 @@ use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
 use axum::http::HeaderValue;
+use utoipa::ToSchema;
+
+/// Sort field for search results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchSortBy {
+    /// Sort by event start time (default).
+    StartTime,
+    /// Sort by the date the event was created.
+    CreatedAt,
+    /// Sort by the number of minted tickets (popularity proxy).
+    Popularity,
+}
+
+impl Default for SearchSortBy {
+    fn default() -> Self {
+        Self::StartTime
+    }
+}
+
+impl SearchSortBy {
+    fn column(self) -> &'static str {
+        match self {
+            Self::StartTime => "e.start_time",
+            Self::CreatedAt => "e.created_at",
+            Self::Popularity => "e.minted_tickets",
+        }
+    }
+}
+
+/// Sort direction for search results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchSortOrder {
+    Asc,
+    Desc,
+}
+
+impl Default for SearchSortOrder {
+    fn default() -> Self {
+        Self::Desc
+    }
+}
+
+impl SearchSortOrder {
+    fn sql(self) -> &'static str {
+        match self {
+            Self::Asc => "ASC",
+            Self::Desc => "DESC",
+        }
+    }
+}
 
 /// Query parameters for searching events with filters
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
 pub struct SearchParams {
     /// Keyword search in title/description
     pub q: Option<String>,
@@ -53,6 +107,12 @@ pub struct SearchParams {
     pub location: Option<String>,
     /// Filter by ticket tier name (partial match, case-insensitive)
     pub ticket_type: Option<String>,
+    /// Sort field: `start_time` (default), `created_at`, or `popularity`
+    #[serde(default)]
+    pub sort_by: SearchSortBy,
+    /// Sort direction: `asc` or `desc` (default)
+    #[serde(default)]
+    pub order: SearchSortOrder,
     /// Page number (default: 1)
     #[serde(default = "default_page")]
     pub page: u32,
@@ -94,7 +154,7 @@ pub struct EventState {
 }
 
 /// Event detail response that includes the organizer's public profile (Issue #486).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct EventDetail {
     #[serde(flatten)]
     pub event: Event,
@@ -104,14 +164,21 @@ pub struct EventDetail {
     /// Only present when `?include_tiers=true` is passed (Issue #884).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiers: Option<Vec<TicketTierResponse>>,
+    /// Localised title/description variants, if any (Issue #1344).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub translations: Option<Vec<EventTranslation>>,
 }
 
 /// Query parameters for `GET /api/v1/events/:id`.
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, ToSchema)]
 pub struct GetEventParams {
     /// When `true`, includes a `tiers` array in the response (Issue #884).
     #[serde(default)]
     pub include_tiers: bool,
+    /// Optional explicit language tag (e.g. `?lang=es`). Takes precedence over
+    /// the `Accept-Language` header when requesting a localised event (Issue #1344).
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 /// Query parameters for filtering events
@@ -174,6 +241,8 @@ pub enum EventSortBy {
     Popularity,
     /// Sort by review count (alias of "popular" but exposes the underlying column).
     CountOfRatings,
+    /// Sort by minimum ticket-tier price.
+    Price,
 }
 
 impl EventSortBy {
@@ -247,29 +316,14 @@ impl EventFilters {
 
     /// Validate `sort_by` and `sort_order`, applying defaults when omitted.
     /// The `sort` field takes precedence when provided.
+    ///
+    /// Accepted `sort` values (allow-list, never interpolated into SQL):
+    /// `starts_at_asc` (default), `starts_at_desc`, `price_asc`, `price_desc`,
+    /// `popularity_desc`. Legacy values `newest` and `popular` are still accepted.
     pub fn validate_sort(&self) -> Result<ValidatedEventSort, String> {
         // Simple `sort` param takes precedence over the legacy `sort_by`/`sort_order` pair.
         if let Some(ref sort) = self.sort {
-            match sort.as_str() {
-                "newest" => {
-                    return Ok(ValidatedEventSort {
-                        sort_by: EventSortBy::StartTime,
-                        sort_order: SortOrder::Desc,
-                    });
-                }
-                "popular" => {
-                    return Ok(ValidatedEventSort {
-                        sort_by: EventSortBy::CountOfRatings,
-                        sort_order: SortOrder::Desc,
-                    });
-                }
-                other => {
-                    return Err(format!(
-                        "Invalid sort value '{}'. Supported values: newest, popular",
-                        other
-                    ));
-                }
-            }
+            return parse_sort_param(sort);
         }
 
         let sort_by = match self.sort_by.as_deref() {
@@ -287,6 +341,49 @@ impl EventFilters {
     }
 }
 
+/// Allow-listed `?sort=` values. The raw parameter is never concatenated into SQL.
+fn parse_sort_param(sort: &str) -> Result<ValidatedEventSort, String> {
+    match sort {
+        "starts_at_asc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::StartTime,
+            sort_order: SortOrder::Asc,
+        }),
+        "starts_at_desc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::StartTime,
+            sort_order: SortOrder::Desc,
+        }),
+        "price_asc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::Price,
+            sort_order: SortOrder::Asc,
+        }),
+        "price_desc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::Price,
+            sort_order: SortOrder::Desc,
+        }),
+        "popularity_desc" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::Popularity,
+            sort_order: SortOrder::Desc,
+        }),
+        "newest" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::StartTime,
+            sort_order: SortOrder::Desc,
+        }),
+        "popular" => Ok(ValidatedEventSort {
+            sort_by: EventSortBy::CountOfRatings,
+            sort_order: SortOrder::Desc,
+        }),
+        other => Err(format!(
+            "Invalid sort value '{}'. Supported values: starts_at_asc, starts_at_desc, price_asc, price_desc, popularity_desc",
+            other
+        )),
+    }
+}
+
+/// Allow-listed SQL expression for the cheapest ticket-tier price.
+/// Never interpolates user input.
+const MIN_TICKET_PRICE_SQL: &str =
+    "COALESCE((SELECT MIN(tt.price) FROM ticket_tiers tt WHERE tt.event_id = events.id), 0)";
+
 /// Build the ORDER BY clause for event listings.
 fn build_event_order_by_clause(sort: &ValidatedEventSort) -> String {
     let (column, tiebreaker_direction) = match sort.sort_by {
@@ -294,6 +391,7 @@ fn build_event_order_by_clause(sort: &ValidatedEventSort) -> String {
         EventSortBy::CreatedAt => ("created_at", sort.sort_order.sql()),
         EventSortBy::Popularity => ("minted_tickets", sort.sort_order.sql()),
         EventSortBy::CountOfRatings => ("count_of_ratings", "ASC"),
+        EventSortBy::Price => (MIN_TICKET_PRICE_SQL, sort.sort_order.sql()),
     };
     let direction = sort.sort_order.sql();
     format!("ORDER BY {column} {direction}, id {tiebreaker_direction}")
@@ -342,20 +440,6 @@ fn build_event_where_clause(
         ));
     }
 
-    let where_clause = if where_clauses.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", where_clauses.join(" AND "))
-    };
-
-    // Count total items
-    let count_query = format!("SELECT COUNT(*) FROM events e {}", where_clause);
-    let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
-    
-    if let Some(organizer_id) = filters.organizer_id {
-        count_query_builder = count_query_builder.bind(organizer_id);
-    }
-
     if let Some(_min_tickets) = filters.min_tickets_available {
         param_count += 1;
         where_clauses.push(format!(
@@ -388,27 +472,6 @@ fn build_event_where_clause(
             where_clauses.push("is_featured = FALSE".to_string());
         }
     };
-    
-    // Fetch paginated items, joining ticket_tiers to expose total/minted ticket counts
-    let items_query = format!(
-        "SELECT e.*, \
-         COALESCE(SUM(tt.total_quantity), 0)::bigint AS total_tickets, \
-         COALESCE(SUM(tt.total_quantity - tt.available_quantity), 0)::bigint AS minted_tickets \
-         FROM events e \
-         LEFT JOIN ticket_tiers tt ON tt.event_id = e.id \
-         {} \
-         GROUP BY e.id \
-         ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
-        where_clause,
-        param_count + 1,
-        param_count + 2
-    );
-    
-    let mut items_query_builder = sqlx::query_as::<_, Event>(&items_query);
-    
-    if let Some(organizer_id) = filters.organizer_id {
-        items_query_builder = items_query_builder.bind(organizer_id);
-    }
 
     // Cursor condition for keyset pagination on the active sort column.
     if cursor.is_some() {
@@ -426,6 +489,8 @@ fn build_event_where_clause(
             (EventSortBy::Popularity, SortOrder::Desc) => ("minted_tickets", "<", "<"),
             (EventSortBy::CountOfRatings, SortOrder::Asc) => ("count_of_ratings", ">", ">"),
             (EventSortBy::CountOfRatings, SortOrder::Desc) => ("count_of_ratings", "<", "<"),
+            (EventSortBy::Price, SortOrder::Asc) => (MIN_TICKET_PRICE_SQL, ">", ">"),
+            (EventSortBy::Price, SortOrder::Desc) => (MIN_TICKET_PRICE_SQL, "<", "<"),
         };
 
         where_clauses.push(format!(
@@ -489,8 +554,206 @@ fn build_past_event_where_clause(
 }
 
 #[cfg(test)]
-mod tests {
+ mod tests {
     use super::*;
+
+    // ── Localised descriptions (Issue #1344) ─────────────────────────────
+
+    #[test]
+    fn best_locale_prefers_explicit_lang_query() {
+        let mut headers = HeaderMap::new();
+        headers.insert(axum::http::header::ACCEPT_LANGUAGE, "fr;q=1.0".parse().unwrap());
+        assert_eq!(best_locale(&headers, Some("es")), Some("es".to_string()));
+    }
+
+    #[test]
+    fn best_locale_parses_accept_language_priority() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::ACCEPT_LANGUAGE,
+            "es-MX,es;q=0.9,en;q=0.8,fr;q=0.7".parse().unwrap(),
+        );
+        assert_eq!(best_locale(&headers, None), Some("es-mx".to_string()));
+    }
+
+    #[test]
+    fn best_locale_returns_none_without_header() {
+        let headers = HeaderMap::new();
+        assert_eq!(best_locale(&headers, None), None);
+    }
+
+    #[test]
+    fn apply_translation_overrides_title_and_description() {
+        let mut event = Event {
+            is_featured: false,
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            title: "Stellar Summit".to_string(),
+            description: Some("English description".to_string()),
+            location: "Lagos".into(),
+            start_time: DateTime::default(),
+            end_time: None,
+            is_flagged: false,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: DateTime::default(),
+            updated_at: DateTime::default(),
+            image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
+            is_free: false,
+            minted_tickets: 0,
+            is_free_populated: false,
+            min_ticket_price: 0.0,
+        };
+        let translations = vec![EventTranslation {
+            id: Uuid::new_v4(),
+            event_id: event.id,
+            locale: "es".to_string(),
+            title: "Cumbre Stellar".to_string(),
+            description: Some("Descripción en español".to_string()),
+            created_at: DateTime::default(),
+            updated_at: DateTime::default(),
+        }];
+
+        apply_translation(&mut event, &translations, Some("es"));
+        assert_eq!(event.title, "Cumbre Stellar");
+        assert_eq!(event.description.as_deref(), Some("Descripción en español"));
+    }
+
+    #[test]
+    fn apply_translation_falls_back_to_default_locale_when_unavailable() {
+        let mut event = Event {
+            is_featured: false,
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            title: "Stellar Summit".to_string(),
+            description: Some("English".to_string()),
+            location: "Lagos".into(),
+            start_time: DateTime::default(),
+            end_time: None,
+            is_flagged: false,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: DateTime::default(),
+            updated_at: DateTime::default(),
+            image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
+            is_free: false,
+            minted_tickets: 0,
+            is_free_populated: false,
+            min_ticket_price: 0.0,
+        };
+        let translations = vec![EventTranslation {
+            id: Uuid::new_v4(),
+            event_id: event.id,
+            locale: "fr".to_string(),
+            title: "Sommet Stellar".to_string(),
+            description: Some("Français".to_string()),
+            created_at: DateTime::default(),
+            updated_at: DateTime::default(),
+        }];
+
+        // Requested "de" is not available → English default must be preserved.
+        apply_translation(&mut event, &translations, Some("de"));
+        assert_eq!(event.title, "Stellar Summit");
+        assert_eq!(event.description.as_deref(), Some("English"));
+    }
+
+    #[test]
+    fn apply_translation_matches_on_primary_language_tag() {
+        let mut event = Event {
+            is_featured: false,
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            title: "Original".to_string(),
+            description: None,
+            location: "Lagos".into(),
+            start_time: DateTime::default(),
+            end_time: None,
+            is_flagged: false,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: DateTime::default(),
+            updated_at: DateTime::default(),
+            image_url: None,
+            latitude: None,
+            longitude: None,
+            total_tickets: 0,
+            is_free: false,
+            minted_tickets: 0,
+            is_free_populated: false,
+            min_ticket_price: 0.0,
+        };
+        let translations = vec![EventTranslation {
+            id: Uuid::new_v4(),
+            event_id: event.id,
+            locale: "es".to_string(),
+            title: "Traducido".to_string(),
+            description: None,
+            created_at: DateTime::default(),
+            updated_at: DateTime::default(),
+        }];
+
+        // "es-AR" (region-specific) should match the stored "es" translation.
+        apply_translation(&mut event, &translations, Some("es-AR"));
+        assert_eq!(event.title, "Traducido");
+    }
+
+    #[test]
+    fn validate_translations_rejects_duplicate_locales() {
+        let es = EventTranslationInput {
+            locale: "es".to_string(),
+            title: "A".to_string(),
+            description: None,
+        };
+        let fr = EventTranslationInput {
+            locale: "ES".to_string(),
+            title: "B".to_string(),
+            description: None,
+        };
+        assert!(validate_translations(&[es, fr]).is_err());
+    }
+
+    #[test]
+    fn validate_translations_rejects_blank_title() {
+        let bad = EventTranslationInput {
+            locale: "es".to_string(),
+            title: "  ".to_string(),
+            description: None,
+        };
+        assert!(validate_translations(&[bad]).is_err());
+    }
+
+    #[test]
+    fn content_hash_is_deterministic() {
+        let value = serde_json::json!({"locale": "es", "title": "Hola"});
+        assert_eq!(content_hash(&value), content_hash(&value));
+    }
+
+    #[test]
+    fn build_localised_metadata_contains_all_locales() {
+        let translations = vec![EventTranslation {
+            id: Uuid::new_v4(),
+            event_id: Uuid::new_v4(),
+            locale: "es".to_string(),
+            title: "Título".to_string(),
+            description: Some("Desc".to_string()),
+            created_at: DateTime::default(),
+            updated_at: DateTime::default(),
+        }];
+        let meta = build_localised_metadata(
+            Uuid::new_v4(),
+            "Title",
+            Some("Default"),
+            &translations,
+        );
+        assert_eq!(meta["defaultLocale"], "en");
+        assert_eq!(meta["translations"][0]["locale"], "es");
+    }
 
     #[test]
     fn build_where_clause_includes_min_tickets_available() {
@@ -713,6 +976,75 @@ mod tests {
     }
 
     #[test]
+    fn test_start_date_and_end_date_filters_bind_expected_param_count() {
+        let filters = EventFilters {
+            is_featured: None,
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: None,
+            min_tickets_available: None,
+            is_free: None,
+            start_date: Some("2026-06-15".to_string()),
+            end_date: Some("2026-06-20".to_string()),
+            followers_only: None,
+            sort_by: None,
+            sort_order: None,
+            sort: None,
+        };
+        let (where_clause, param_count) =
+            build_event_where_clause(&filters, &default_event_sort(), None);
+        assert_eq!(
+            param_count, 2,
+            "Expected param_count of 2 for start_date + end_date, got: {}. where_clause: {}",
+            param_count, where_clause
+        );
+        assert!(where_clause.contains("start_time >= $1"));
+        assert!(where_clause.contains("start_time <= $2"));
+    }
+
+    #[test]
+    fn test_whitespace_only_search_is_treated_as_no_search() {
+        let filters = EventFilters {
+            is_featured: None,
+            organizer_id: None,
+            organizer_wallet: None,
+            location: None,
+            start_after: None,
+            start_before: None,
+            search: Some("   ".to_string()),
+            min_tickets_available: None,
+            is_free: None,
+            start_date: None,
+            end_date: None,
+            followers_only: None,
+            sort_by: None,
+            sort_order: None,
+            sort: None,
+        };
+
+        let normalized = filters
+            .search
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        assert_eq!(
+            normalized, None,
+            "Whitespace-only search should normalize to None"
+        );
+    }
+
+    #[test]
+    fn test_real_search_term_is_preserved_after_trim() {
+        let raw = "  concert  ".to_string();
+        let normalized = Some(raw.trim().to_string()).filter(|s| !s.is_empty());
+        assert_eq!(normalized, Some("concert".to_string()));
+    }
+
+    #[test]
     fn test_followers_only_filter() {
         let filters = EventFilters {
             is_featured: None,
@@ -893,8 +1225,12 @@ mod tests {
                 date_to: None,
                 location: None,
                 ticket_type: None,
+                sort_by: SearchSortBy::default(),
+                order: SearchSortOrder::default(),
                 page: 1,
                 page_size: size,
+                sort_by: Default::default(),
+                order: Default::default(),
             };
             assert!(
                 params.validate_page_size().is_ok(),
@@ -916,8 +1252,12 @@ mod tests {
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 0,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
         let err = params.validate_page_size().unwrap_err();
         assert!(err.contains("page_size must be between 1 and 100"));
@@ -935,8 +1275,12 @@ mod tests {
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 101,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
         let err = params.validate_page_size().unwrap_err();
         assert!(err.contains("page_size must be between 1 and 100"));
@@ -954,8 +1298,12 @@ mod tests {
             date_to: None,
             location: None,
             ticket_type: Some("VIP".to_string()),
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
 
         assert_eq!(params.ticket_type, Some("VIP".to_string()));
@@ -973,8 +1321,12 @@ mod tests {
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
 
         assert!(params.ticket_type.is_none());
@@ -986,7 +1338,10 @@ mod tests {
         let end = start - chrono::Duration::hours(1); // end before start
         let result = validate_event_timestamps(start, Some(end));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("end_time must be strictly after start_time"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("end_time must be strictly after start_time"));
     }
 
     #[test]
@@ -995,7 +1350,10 @@ mod tests {
         let end = start; // end equals start
         let result = validate_event_timestamps(start, Some(end));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("end_time must be strictly after start_time"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("end_time must be strictly after start_time"));
     }
 
     #[test]
@@ -1004,7 +1362,10 @@ mod tests {
         let end = Some(start + chrono::Duration::hours(2));
         let result = validate_event_timestamps(start, end);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("start_time must be in the future"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("start_time must be in the future"));
     }
 
     #[test]
@@ -1036,7 +1397,10 @@ mod tests {
         let end = Some(start + chrono::Duration::days(31)); // 31 days exceeds max
         let result = validate_event_timestamps(start, end);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("event duration must not exceed"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("event duration must not exceed"));
     }
 
     #[test]
@@ -1069,8 +1433,12 @@ mod tests {
             date_to: None,
             location: Some("Lagos".to_string()),
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
         assert_eq!(params.location.as_deref(), Some("Lagos"));
     }
@@ -1145,6 +1513,28 @@ mod tests {
     fn test_validate_event_location_rejects_too_long_location() {
         let err = validate_event_location(&"A".repeat(MAX_LOCATION_LENGTH + 1)).unwrap_err();
         assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_accepts_none() {
+        assert!(validate_event_coordinates(None, None).is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_accepts_valid_pair() {
+        assert!(validate_event_coordinates(Some(6.5244), Some(3.3792)).is_ok());
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_rejects_partial_pair() {
+        assert!(validate_event_coordinates(Some(6.5244), None).is_err());
+        assert!(validate_event_coordinates(None, Some(3.3792)).is_err());
+    }
+
+    #[test]
+    fn test_validate_event_coordinates_rejects_out_of_range() {
+        assert!(validate_event_coordinates(Some(91.0), Some(0.0)).is_err());
+        assert!(validate_event_coordinates(Some(0.0), Some(181.0)).is_err());
     }
 
     #[test]
@@ -1232,6 +1622,96 @@ mod tests {
         assert!(err.contains("Invalid sort_order value 'sideways'"));
     }
 
+    fn assert_sort(value: &str, expected_by: EventSortBy, expected_order: SortOrder, sql: &str) {
+        let filters = EventFilters {
+            sort: Some(value.to_string()),
+            ..Default::default()
+        };
+        let sort = filters.validate_sort().expect(value);
+        assert_eq!(sort.sort_by, expected_by, "sort_by for {value}");
+        assert_eq!(sort.sort_order, expected_order, "sort_order for {value}");
+        assert_eq!(
+            build_event_order_by_clause(&sort),
+            sql,
+            "ORDER BY for {value}"
+        );
+        assert!(
+            !sql.contains(value) || value.chars().all(|c| c == '_' || c.is_ascii_alphabetic()),
+            "raw sort parameter must not be interpolated into SQL"
+        );
+    }
+
+    #[test]
+    fn test_sort_starts_at_asc() {
+        assert_sort(
+            "starts_at_asc",
+            EventSortBy::StartTime,
+            SortOrder::Asc,
+            "ORDER BY start_time ASC, id ASC",
+        );
+        // Omitted sort defaults to starts_at_asc.
+        let default = EventFilters::default().validate_sort().unwrap();
+        assert_eq!(default.sort_by, EventSortBy::StartTime);
+        assert_eq!(default.sort_order, SortOrder::Asc);
+    }
+
+    #[test]
+    fn test_sort_starts_at_desc() {
+        assert_sort(
+            "starts_at_desc",
+            EventSortBy::StartTime,
+            SortOrder::Desc,
+            "ORDER BY start_time DESC, id DESC",
+        );
+    }
+
+    #[test]
+    fn test_sort_price_asc() {
+        assert_sort(
+            "price_asc",
+            EventSortBy::Price,
+            SortOrder::Asc,
+            &format!("ORDER BY {MIN_TICKET_PRICE_SQL} ASC, id ASC"),
+        );
+    }
+
+    #[test]
+    fn test_sort_price_desc() {
+        assert_sort(
+            "price_desc",
+            EventSortBy::Price,
+            SortOrder::Desc,
+            &format!("ORDER BY {MIN_TICKET_PRICE_SQL} DESC, id DESC"),
+        );
+    }
+
+    #[test]
+    fn test_sort_popularity_desc() {
+        assert_sort(
+            "popularity_desc",
+            EventSortBy::Popularity,
+            SortOrder::Desc,
+            "ORDER BY minted_tickets DESC, id DESC",
+        );
+    }
+
+    #[test]
+    fn test_sort_unrecognised_value_returns_validation_error() {
+        let filters = EventFilters {
+            sort: Some("not_a_real_sort".to_string()),
+            ..Default::default()
+        };
+        let err = filters.validate_sort().unwrap_err();
+        assert!(err.contains("Invalid sort value 'not_a_real_sort'"));
+        // Handler maps this to 400 VALIDATION_FAILED, never 500.
+        let app_err = AppError::ValidationError(err);
+        assert_eq!(app_err.status_code(), axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            app_err.error_code(),
+            crate::utils::error::ErrorCode::ValidationFailed
+        );
+    }
+
     #[test]
     fn test_keyword_search_clause_includes_location() {
         // Mirrors the format string used inside search_events for the `q` param.
@@ -1246,9 +1726,111 @@ mod tests {
             clause
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Issue #1263 — search query validation / sanitisation
+    // -----------------------------------------------------------------------
+
+    /// Helper that applies the same normalisation logic used in `search_events`.
+    fn normalise_search_q(raw: &str) -> Result<Option<String>, String> {
+        if raw.len() > MAX_SEARCH_QUERY_LENGTH {
+            return Err(format!(
+                "Search query must not exceed {} characters",
+                MAX_SEARCH_QUERY_LENGTH
+            ));
+        }
+        let trimmed = raw.trim().to_string();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        let sanitised = trimmed.to_lowercase().replace('%', "").replace('_', " ");
+        let sanitised = sanitised.trim().to_string();
+        Ok(if sanitised.is_empty() {
+            None
+        } else {
+            Some(sanitised)
+        })
+    }
+
+    #[test]
+    fn test_search_q_over_128_chars_is_rejected() {
+        let long_q = "a".repeat(MAX_SEARCH_QUERY_LENGTH + 1);
+        assert!(
+            normalise_search_q(&long_q).is_err(),
+            "query longer than {} characters should be rejected",
+            MAX_SEARCH_QUERY_LENGTH
+        );
+    }
+
+    #[test]
+    fn test_search_q_exactly_128_chars_is_accepted() {
+        let q = "a".repeat(MAX_SEARCH_QUERY_LENGTH);
+        assert!(
+            normalise_search_q(&q).is_ok(),
+            "query of exactly {} characters should be accepted",
+            MAX_SEARCH_QUERY_LENGTH
+        );
+    }
+
+    #[test]
+    fn test_search_q_empty_string_treated_as_absent() {
+        let result = normalise_search_q("").unwrap();
+        assert_eq!(result, None, "empty query should normalise to None");
+    }
+
+    #[test]
+    fn test_search_q_whitespace_only_treated_as_absent() {
+        let result = normalise_search_q("   ").unwrap();
+        assert_eq!(
+            result, None,
+            "whitespace-only query should normalise to None"
+        );
+    }
+
+    #[test]
+    fn test_search_q_percent_wildcard_stripped() {
+        // A bare `%` must not produce a full-scan LIKE pattern.
+        let result = normalise_search_q("%").unwrap();
+        assert_eq!(
+            result, None,
+            "a bare '%' should be stripped and treated as absent"
+        );
+    }
+
+    #[test]
+    fn test_search_q_percent_mixed_stripped() {
+        // `%music%` should become `music`.
+        let result = normalise_search_q("%music%").unwrap();
+        assert_eq!(result, Some("music".to_string()));
+    }
+
+    #[test]
+    fn test_search_q_underscore_wildcard_replaced_with_space() {
+        let result = normalise_search_q("hello_world").unwrap();
+        // `_` is replaced with a space, then the result is trimmed.
+        assert!(result.is_some());
+        let inner = result.unwrap();
+        assert!(
+            !inner.contains('_'),
+            "underscore should be removed from query"
+        );
+    }
+
+    #[test]
+    fn test_search_q_normalised_to_lowercase() {
+        let result = normalise_search_q("CONCERT").unwrap();
+        assert_eq!(result, Some("concert".to_string()));
+    }
+
+    #[test]
+    fn test_search_q_trimmed_before_use() {
+        let result = normalise_search_q("  jazz  ").unwrap();
+        assert_eq!(result, Some("jazz".to_string()));
+    }
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubmitEventRatingRequest {
     pub ticket_id: Uuid,
     pub rating: i16,
@@ -1276,15 +1858,60 @@ pub struct SubmitEventRatingResponse {
 /// - `start_before` (optional): Filter events starting before date
 /// - `search` (optional): Search in title and description
 /// - `is_free` (optional): Filter by free events (true = ticket_price = 0, false = ticket_price > 0)
-/// - `sort_by` (optional): Sort field — `start_time` (default), `created_at`, or `popularity`
-/// - `sort_order` (optional): Sort direction — `asc` (default) or `desc`
+/// - `sort` (optional): `starts_at_asc` (default), `starts_at_desc`, `price_asc`, `price_desc`, `popularity_desc`
+/// - `sort_by` (optional, legacy): Sort field — `start_time` (default), `created_at`, or `popularity`
+/// - `sort_order` (optional, legacy): Sort direction — `asc` (default) or `desc`
+/// - `count` (optional): When `false`, skip the COUNT(*) query and omit `meta.total`
 ///
 /// # Response
 /// Returns a cursor-paginated list of upcoming events with metadata
+/// List all events with cursor-based pagination and optional filters.
+///
+/// # Query Parameters
+/// - `limit` (optional): Number of items per page (default: 20, max: 100)
+/// - `cursor` (optional): Pagination cursor from previous response
+/// - `count` (optional): Include total count (default: true)
+/// - `organizer_id` (optional): Filter by organizer UUID
+/// - `organizer_wallet` (optional): Filter by organizer Stellar address
+/// - `location` (optional): Filter by location (partial match)
+/// - `start_after` (optional): Events starting after this timestamp
+/// - `start_before` (optional): Events starting before this timestamp
+/// - `search` (optional): Search in title and description
+/// - `min_tickets_available` (optional): Minimum available tickets
+/// - `is_free` (optional): Filter by free events only
+/// - `start_date` (optional): Filter by start date (YYYY-MM-DD)
+/// - `end_date` (optional): Filter by end date (YYYY-MM-DD)
+/// - `sort` (optional): Sort order (start_time_asc, start_time_desc, price_asc, price_desc, popularity_desc)
+///
+/// # Example Requests
+/// ```
+/// GET /api/v1/events?limit=20&sort=start_time_asc
+/// GET /api/v1/events?location=Lagos&min_price=1000&max_price=50000
+/// ```
+#[utoipa::path(
+    get,
+    path = "/events",
+    params(
+        ("limit" = Option<u32>, Query, description = "Items per page (1-100, default 20)"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("count" = Option<bool>, Query, description = "Include total count"),
+    ),
+    responses(
+        (status = 200, description = "List of events", body = Vec<Event>,
+            headers(
+                ("X-Total-Count" = i64, description = "Total number of matching events (omitted when `count=false`)"),
+                ("Link" = String, description = "RFC 5988 `rel=\"next\"` link to the next page, present when more results are available"),
+            ),
+        ),
+        (status = 400, description = "Invalid parameters"),
+    ),
+    tag = "Events"
+)]
 pub async fn list_events(
     State(mut state): State<EventState>,
+    OriginalUri(original_uri): OriginalUri,
     Query(pagination): Query<CursorParams>,
-    Query(filters): Query<EventFilters>,
+    Query(mut filters): Query<EventFilters>,
 ) -> Response {
     let validated = pagination.validate();
 
@@ -1293,9 +1920,10 @@ pub async fn list_events(
         Err(message) => return AppError::ValidationError(message).into_response(),
     };
 
-    // Serve the default (unfiltered, first-page) list from cache when available.
+    // Serve the default (unfiltered, first-page, with total) list from cache when available.
     let use_list_cache = validated.cursor.is_none()
         && filters.is_unfiltered()
+        && validated.include_count
         && validated.limit == crate::utils::cursor_pagination::DEFAULT_PAGE_SIZE;
     if use_list_cache {
         match state
@@ -1305,7 +1933,12 @@ pub async fn list_events(
         {
             Ok(Some(cached)) => {
                 tracing::debug!("Cache hit for {}", EVENTS_LIST_CACHE_KEY);
-                return success(cached, "Events retrieved successfully (cached)").into_response();
+                let total = cached.meta.total;
+                let next_cursor = cached.pagination.next_cursor.clone();
+                let mut resp =
+                    success(cached, "Events retrieved successfully (cached)").into_response();
+                apply_pagination_headers(&mut resp, total, next_cursor.as_deref(), &original_uri);
+                return resp;
             }
             Ok(None) => {
                 tracing::debug!("Cache miss for {}", EVENTS_LIST_CACHE_KEY);
@@ -1332,62 +1965,84 @@ pub async fn list_events(
         None => None,
     };
 
+    // Normalize search: treat whitespace-only search as no search term at all,
+    // so a single space doesn't match every event via `% %` ILIKE.
+    if let Some(trimmed) = filters.search.as_ref().map(|s| s.trim().to_string()) {
+        filters.search = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        };
+    }
+
     // Build the WHERE clause dynamically based on filters
     let (where_clause, param_count) = build_event_where_clause(&filters, &sort, cursor.as_ref());
 
-    // Count total matching events (no cursor so the number reflects the full filter set).
-    let (count_where, count_param_count) = build_event_where_clause(&filters, &sort, None);
-    let count_query = format!("SELECT COUNT(*) FROM events {}", count_where);
-    let mut count_builder = sqlx::query_scalar::<_, i64>(&count_query);
-    if let Some(organizer_id) = filters.organizer_id {
-        count_builder = count_builder.bind(organizer_id);
-    }
-    if let Some(ref w) = filters.organizer_wallet {
-        count_builder = count_builder.bind(w.clone());
-    }
-    if let Some(ref l) = filters.location {
-        count_builder = count_builder.bind(format!("%{}%", l));
-    }
-    if let Some(start_after) = filters.start_after {
-        count_builder = count_builder.bind(start_after);
-    }
-    if let Some(start_before) = filters.start_before {
-        count_builder = count_builder.bind(start_before);
-    }
-    if let Some(ref s) = filters.search {
-        count_builder = count_builder.bind(format!("%{}%", s));
-    }
-    if let Some(min_tickets) = filters.min_tickets_available {
-        count_builder = count_builder.bind(min_tickets);
-    }
-    if let Some(ref date_str) = filters.start_date {
-        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-            let dt: DateTime<Utc> =
-                Utc.from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
-            count_builder = count_builder.bind(dt);
+    // Count total matching events (same WHERE as the page query, no cursor).
+    // Skipped when `?count=false` so hot paths avoid the extra round-trip.
+    let total_count: Option<i64> = if validated.include_count {
+        let (count_where, count_param_count) = build_event_where_clause(&filters, &sort, None);
+        let count_query = format!("SELECT COUNT(*) FROM events {}", count_where);
+        let mut count_builder = sqlx::query_scalar::<_, i64>(&count_query);
+        if let Some(organizer_id) = filters.organizer_id {
+            count_builder = count_builder.bind(organizer_id);
         }
-    }
-    if let Some(ref date_str) = filters.end_date {
-        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-            let dt: DateTime<Utc> =
-                Utc.from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
-            count_builder = count_builder.bind(dt);
+        if let Some(ref w) = filters.organizer_wallet {
+            count_builder = count_builder.bind(w.clone());
         }
-    }
-    let _ = count_param_count; // used only to drive param numbering above
+        if let Some(ref l) = filters.location {
+            count_builder = count_builder.bind(format!("%{}%", l));
+        }
+        if let Some(start_after) = filters.start_after {
+            count_builder = count_builder.bind(start_after);
+        }
+        if let Some(start_before) = filters.start_before {
+            count_builder = count_builder.bind(start_before);
+        }
+        if let Some(ref s) = filters.search {
+            count_builder = count_builder.bind(format!("%{}%", s));
+        }
+        if let Some(min_tickets) = filters.min_tickets_available {
+            count_builder = count_builder.bind(min_tickets);
+        }
+        if let Some(ref date_str) = filters.start_date {
+            if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                let dt: DateTime<Utc> = Utc
+                    .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+                count_builder = count_builder.bind(dt);
+            }
+        }
+        if let Some(ref date_str) = filters.end_date {
+            if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                let dt: DateTime<Utc> = Utc
+                    .from_utc_datetime(&date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()));
+                count_builder = count_builder.bind(dt);
+            }
+        }
+        let _ = count_param_count;
 
-    let total_count: i64 = match count_builder.fetch_one(&state.pool).await {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::warn!("Failed to fetch total count for list_events: {:?}", e);
-            0
+        match count_builder.fetch_one(&state.pool).await {
+            Ok(n) => Some(n),
+            Err(e) => {
+                tracing::warn!("Failed to fetch total count for list_events: {:?}", e);
+                Some(0)
+            }
         }
+    } else {
+        None
     };
 
-    // Fetch items (limit + 1 to detect has_more)
+    // Fetch items (limit + 1 to detect has_more). Price sort selects the
+    // allow-listed MIN(price) expression so cursor pagination stays stable.
     let order_by = build_event_order_by_clause(&sort);
+    let select_list = if sort.sort_by == EventSortBy::Price {
+        format!("SELECT events.*, ({MIN_TICKET_PRICE_SQL})::float8 AS min_ticket_price FROM events")
+    } else {
+        "SELECT * FROM events".to_string()
+    };
     let items_query = format!(
-        "SELECT * FROM events {} {} LIMIT ${}",
+        "{} {} {} LIMIT ${}",
+        select_list,
         where_clause,
         order_by,
         param_count + 1
@@ -1483,6 +2138,18 @@ pub async fn list_events(
                 };
                 items_query_builder = items_query_builder.bind(sort_key).bind(c.id);
             }
+            EventSortBy::Price => {
+                let price = match c.min_ticket_price {
+                    Some(value) => value,
+                    None => {
+                        return AppError::ValidationError(
+                            "Cursor is missing min_ticket_price for price sort".to_string(),
+                        )
+                        .into_response();
+                    }
+                };
+                items_query_builder = items_query_builder.bind(price).bind(c.id);
+            }
         }
     }
 
@@ -1509,6 +2176,7 @@ pub async fn list_events(
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
             count_of_ratings: Some(last.count_of_ratings as i64),
+            min_ticket_price: Some(last.min_ticket_price),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -1523,7 +2191,9 @@ pub async fn list_events(
 
     populate_is_free(&mut items, &state.pool).await;
 
-    let response = CursorResponse::new(items, &validated, next_cursor);
+    let next_cursor_for_header = next_cursor.clone();
+    let response = CursorResponse::new(items, &validated, next_cursor)
+        .with_total(total_count.unwrap_or(0), validated.include_count);
 
     if use_list_cache {
         if let Err(e) = state
@@ -1536,10 +2206,49 @@ pub async fn list_events(
     }
 
     let mut resp = success(response, "Events retrieved successfully").into_response();
-    if let Ok(v) = HeaderValue::from_str(&total_count.to_string()) {
-        resp.headers_mut().insert("X-Total-Count", v);
-    }
+    apply_pagination_headers(
+        &mut resp,
+        total_count,
+        next_cursor_for_header.as_deref(),
+        &original_uri,
+    );
     resp
+}
+
+/// Attach standard pagination response headers to a cursor-paginated list response:
+///
+/// - `X-Total-Count`: total number of matching rows (when the count was requested).
+/// - `Link`: an RFC 5988-style `rel="next"` link carrying the cursor for the next
+///   page, built from the original request URI so existing filters/sort params
+///   are preserved.
+fn apply_pagination_headers(
+    resp: &mut Response,
+    total_count: Option<i64>,
+    next_cursor: Option<&str>,
+    original_uri: &axum::http::Uri,
+) {
+    if let Some(total) = total_count {
+        if let Ok(v) = HeaderValue::from_str(&total.to_string()) {
+            resp.headers_mut().insert("X-Total-Count", v);
+        }
+    }
+
+    if let Some(next) = next_cursor {
+        let path = original_uri.path();
+        let mut params: Vec<String> = original_uri
+            .query()
+            .unwrap_or("")
+            .split('&')
+            .filter(|p| !p.is_empty() && !p.starts_with("cursor="))
+            .map(|p| p.to_string())
+            .collect();
+        // `next` is a URL_SAFE_NO_PAD base64 cursor, so it needs no percent-encoding.
+        params.push(format!("cursor={}", next));
+        let link_url = format!("{}?{}", path, params.join("&"));
+        if let Ok(v) = HeaderValue::from_str(&format!("<{}>; rel=\"next\"", link_url)) {
+            resp.headers_mut().insert(axum::http::header::LINK, v);
+        }
+    }
 }
 
 /// GET `/api/v1/events/featured`
@@ -1550,22 +2259,37 @@ pub async fn list_featured_events(State(_state): State<EventState>) -> Response 
 }
 
 /// Query parameters for `GET /api/v1/events/upcoming`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
 pub struct UpcomingParams {
     /// Number of events to return (clamped to 1–20, default 5).
     pub limit: Option<u32>,
 }
 
-/// List the next upcoming events ordered by `start_time ASC`.
+/// List the next upcoming events ordered by start time.
 ///
-/// A simplified feed for home pages and the mobile app — no cursor contract,
-/// just a single `limit` parameter.
-///
-/// # Endpoint
-/// GET `/api/v1/events/upcoming`
+/// A simplified feed endpoint for home pages and mobile apps. Returns upcoming
+/// unflagged events in chronological order with no cursor contract — just a single
+/// limit parameter.
 ///
 /// # Query Parameters
 /// - `limit` (optional): Number of events to return (1–20, default 5)
+///
+/// # Example Requests
+/// ```
+/// GET /api/v1/events/upcoming
+/// GET /api/v1/events/upcoming?limit=10
+/// ```
+#[utoipa::path(
+    get,
+    path = "/events/upcoming",
+    params(
+        UpcomingParams,
+    ),
+    responses(
+        (status = 200, description = "List of upcoming events", body = Vec<Event>),
+    ),
+    tag = "Events"
+)]
 pub async fn list_upcoming_events(
     State(state): State<EventState>,
     Query(params): Query<UpcomingParams>,
@@ -1679,18 +2403,52 @@ pub async fn list_past_events(
 /// # Caching
 /// Event details are cached in Redis with a 5-minute TTL to reduce database load.
 /// The response includes the organizer's public profile when available (Issue #486).
+/// Retrieve a single event by ID with optional ticket tier details.
+///
+/// Returns event information including organizer profile and optionally ticket tiers.
+/// Flagged events return 404 Not Found.
+///
+/// # Path Parameters
+/// - `event_id` (UUID): The unique identifier of the event
+///
+/// # Query Parameters
+/// - `include_tiers` (optional): When true, includes ticket tier details (default: false)
+///
+/// # Example Requests
+/// ```
+/// GET /api/v1/events/550e8400-e29b-41d4-a716-446655440000
+/// GET /api/v1/events/550e8400-e29b-41d4-a716-446655440000?include_tiers=true
+/// ```
+#[utoipa::path(
+    get,
+    path = "/events/{event_id}",
+    params(
+        ("event_id" = Uuid, Path, description = "Event identifier"),
+        ("include_tiers" = Option<bool>, Query, description = "Include ticket tiers in response"),
+    ),
+    responses(
+        (status = 200, description = "Event details", body = EventDetail),
+        (status = 404, description = "Event not found"),
+    ),
+    tag = "Events"
+)]
 pub async fn get_event(
     State(mut state): State<EventState>,
     axum::extract::Path(event_id): axum::extract::Path<Uuid>,
     Query(params): Query<GetEventParams>,
+    headers: HeaderMap,
 ) -> Response {
     // Cache is only used when tiers are not requested, to avoid caching partial data.
     let cache_key = format!("event:detail:{}", event_id);
+
+    // 1. Cache lookup — cached shapes are locale-agnostic; localisation is
+    //    applied per-request below so one cache entry serves all languages.
+    let mut detail: Option<EventDetail> = None;
     if !params.include_tiers {
         match state.redis.get::<EventDetail>(&cache_key).await {
-            Ok(Some(detail)) => {
+            Ok(Some(cached)) => {
                 tracing::debug!("Cache hit for event {}", event_id);
-                return success(detail, "Event retrieved successfully (cached)").into_response();
+                detail = Some(cached);
             }
             Ok(None) => {
                 tracing::debug!("Cache miss for event {}", event_id);
@@ -1701,96 +2459,133 @@ pub async fn get_event(
         }
     }
 
-    // Cache miss or error, fetch from database
-    let start = std::time::Instant::now();
-    let event = match sqlx::query_as::<_, Event>(
-        "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE",
-    )
-    .bind(event_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(event)) => event,
-        Ok(None) => {
-            log_if_slow("get_event", start.elapsed());
-            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
-                .into_response();
-        }
-        Err(e) => {
-            log_if_slow("get_event", start.elapsed());
-            tracing::error!("Failed to fetch event: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
-        }
-    };
-    log_if_slow("get_event", start.elapsed());
+    // 2. Fetch from database on a miss (or when tiers are requested).
+    let mut fetched_from_db = false;
+    if detail.is_none() {
+        let start = std::time::Instant::now();
+        let event = match sqlx::query_as::<_, Event>(
+            "SELECT * FROM events WHERE id = $1 AND is_flagged = FALSE",
+        )
+        .bind(event_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(Some(event)) => event,
+            Ok(None) => {
+                log_if_slow("get_event", start.elapsed());
+                return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                    .into_response();
+            }
+            Err(e) => {
+                log_if_slow("get_event", start.elapsed());
+                tracing::error!("Failed to fetch event: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+        log_if_slow("get_event", start.elapsed());
 
-    // Fetch organizer profile by wallet address (Issue #486)
-    // Look up the organizer's Stellar wallet, then fetch their profile.
-    let organizer_profile = match sqlx::query_scalar::<_, Option<String>>(
-        "SELECT wallet_address FROM organizers WHERE id = $1",
-    )
-    .bind(event.organizer_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(Some(wallet))) => {
-            match sqlx::query_as::<_, OrganizerProfile>(
-                "SELECT * FROM organizer_profiles WHERE address = $1",
+        // Fetch organizer profile by wallet address (Issue #486)
+        let organizer_profile = match sqlx::query_scalar::<_, Option<String>>(
+            "SELECT wallet_address FROM organizers WHERE id = $1",
+        )
+        .bind(event.organizer_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(Some(Some(wallet))) => {
+                match sqlx::query_as::<_, OrganizerProfile>(
+                    "SELECT * FROM organizer_profiles WHERE address = $1",
+                )
+                .bind(&wallet)
+                .fetch_optional(&state.pool)
+                .await
+                {
+                    Ok(profile) => profile,
+                    Err(e) => {
+                        tracing::warn!("Failed to fetch organizer profile: {:?}", e);
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
+
+        // Optionally fetch ticket tiers sorted by price ascending (Issue #884).
+        let tiers = if params.include_tiers {
+            match sqlx::query_as::<_, TicketTierResponse>(
+                r#"
+                SELECT
+                    id,
+                    name,
+                    price,
+                    total_quantity    AS quantity,
+                    (total_quantity - available_quantity) AS sold
+                FROM ticket_tiers
+                WHERE event_id = $1
+                ORDER BY price ASC
+                "#,
             )
-            .bind(&wallet)
-            .fetch_optional(&state.pool)
+            .bind(event_id)
+            .fetch_all(&state.pool)
             .await
             {
-                Ok(profile) => profile,
+                Ok(rows) => Some(rows),
                 Err(e) => {
-                    tracing::warn!("Failed to fetch organizer profile: {:?}", e);
+                    tracing::warn!(
+                        "Failed to fetch ticket tiers for event {}: {:?}",
+                        event_id,
+                        e
+                    );
                     None
                 }
             }
-        }
-        _ => None,
-    };
+        } else {
+            None
+        };
 
-    // Optionally fetch ticket tiers sorted by price ascending (Issue #884).
-    let tiers = if params.include_tiers {
-        match sqlx::query_as::<_, TicketTierResponse>(
-            r#"
-            SELECT
-                id,
-                name,
-                price,
-                total_quantity    AS quantity,
-                (total_quantity - available_quantity) AS sold
-            FROM ticket_tiers
-            WHERE event_id = $1
-            ORDER BY price ASC
-            "#,
-        )
-        .bind(event_id)
-        .fetch_all(&state.pool)
-        .await
-        {
-            Ok(rows) => Some(rows),
-            Err(e) => {
-                tracing::warn!("Failed to fetch ticket tiers for event {}: {:?}", event_id, e);
-                None
-            }
-        }
-    } else {
-        None
-    };
+        detail = Some(EventDetail {
+            event,
+            organizer_profile,
+            tiers,
+            translations: None,
+        });
+        fetched_from_db = true;
+    }
 
-    let detail = EventDetail {
-        event,
-        organizer_profile,
-        tiers,
-    };
+    let mut detail = detail.expect("detail is populated above");
 
-    // Only cache responses without tiers to keep the cached shape stable.
-    if !params.include_tiers {
+    // 3. Cache only the database-built shape (without translations) so the
+    //    cached entry stays locale-agnostic and never goes stale per language.
+    if fetched_from_db && !params.include_tiers {
         if let Err(e) = state.redis.set(&cache_key, &detail, EVENT_CACHE_TTL).await {
             tracing::warn!("Failed to cache event {}: {:?}", event_id, e);
         }
+    }
+
+    // 4. Localised content (Issue #1344) — overlay the requested language and
+    //    attach the full set of available translations for language switchers.
+    let translations = match sqlx::query_as::<_, EventTranslation>(
+        "SELECT * FROM event_translations WHERE event_id = $1 ORDER BY locale",
+    )
+    .bind(event_id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to fetch translations for event {}: {:?}",
+                event_id,
+                e
+            );
+            Vec::new()
+        }
+    };
+
+    let requested = best_locale(&headers, params.lang.as_deref());
+    apply_translation(&mut detail.event, &translations, requested.as_deref());
+    if !translations.is_empty() {
+        detail.translations = Some(translations);
     }
 
     success(detail, "Event retrieved successfully").into_response()
@@ -1905,6 +2700,7 @@ pub fn validate_event_description(description: &Option<String>) -> Result<(), St
 
 /// Request body for creating a new event
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateEventRequest {
     pub organizer_id: Uuid,
     pub title: String,
@@ -1916,6 +2712,13 @@ pub struct CreateEventRequest {
     pub image_url: Option<String>,
     /// Optional contact email for the event host.
     pub host_email: Option<String>,
+    /// Optional latitude in decimal degrees (-90 to 90) for map discovery.
+    pub latitude: Option<f64>,
+    /// Optional longitude in decimal degrees (-180 to 180) for map discovery.
+    pub longitude: Option<f64>,
+    /// Optional localised title/description variants (Issue #1344).
+    #[serde(default)]
+    pub translations: Option<Vec<EventTranslationInput>>,
 }
 
 const MAX_IMAGE_URL_LEN: usize = 2048;
@@ -1974,12 +2777,43 @@ fn validate_event_location(location: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Validates optional event coordinates used for map-based discovery.
+/// Both must be present together; individually omitting either is allowed only
+/// when both are `None` (existing events without geocoding remain valid).
+fn validate_event_coordinates(
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+) -> Result<(), AppError> {
+    match (latitude, longitude) {
+        (None, None) => Ok(()),
+        (Some(_), None) | (None, Some(_)) => Err(AppError::ValidationError(
+            "latitude and longitude must both be provided together".to_string(),
+        )),
+        (Some(lat), Some(lng)) => {
+            if !(-90.0..=90.0).contains(&lat) {
+                return Err(AppError::ValidationError(
+                    "latitude must be between -90 and 90".to_string(),
+                ));
+            }
+            if !(-180.0..=180.0).contains(&lng) {
+                return Err(AppError::ValidationError(
+                    "longitude must be between -180 and 180".to_string(),
+                ));
+            }
+            Ok(())
+        }
+    }
+}
+
 /// Validates event timestamps for create/update requests.
 /// Ensures start_time is not too far in the past, end_time > start_time (if provided),
 /// and event duration does not exceed the maximum allowed.
-fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTime<Utc>>) -> Result<(), AppError> {
+fn validate_event_timestamps(
+    start_time: DateTime<Utc>,
+    end_time: Option<DateTime<Utc>>,
+) -> Result<(), AppError> {
     let now = Utc::now();
-    
+
     // Check that start_time is not too far in the past (with grace period)
     let grace_period = chrono::Duration::seconds(START_TIME_GRACE_PERIOD_SECONDS);
     if start_time + grace_period < now {
@@ -1987,7 +2821,7 @@ fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTim
             "start_time must be in the future or within the grace period".to_string(),
         ));
     }
-    
+
     // If end_time is provided, validate it
     if let Some(end) = end_time {
         // end_time must be strictly after start_time
@@ -1996,7 +2830,7 @@ fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTim
                 "end_time must be strictly after start_time".to_string(),
             ));
         }
-        
+
         // Check event duration does not exceed maximum
         let max_duration = chrono::Duration::days(MAX_EVENT_DURATION_DAYS);
         if end - start_time > max_duration {
@@ -2006,8 +2840,27 @@ fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTim
             )));
         }
     }
-    
+
     Ok(())
+}
+
+/// Invalidate the cached event detail and the shared events list after a
+/// successful write (Issues #1629).
+///
+/// Failures are logged but never fail the request: a stale cache entry will
+/// expire on its own TTL, whereas a failed write must still be reported as
+/// successful.
+async fn invalidate_event_caches(state: &EventState, event_id: Uuid) {
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!(
+            "Failed to invalidate cache key '{}' for event {}: {:?}",
+            cache_key,
+            event_id,
+            e
+        );
+    }
+    state.redis.invalidate_events_list().await;
 }
 
 /// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
@@ -2016,7 +2869,7 @@ fn validate_event_timestamps(start_time: DateTime<Utc>, end_time: Option<DateTim
 /// POST `/api/v1/events`
 pub async fn create_event(
     State(mut state): State<EventState>,
-    Json(payload): Json<CreateEventRequest>,
+    ValidatedJson(payload): ValidatedJson<CreateEventRequest>,
 ) -> Response {
     if let Some(ref url) = payload.image_url {
         if let Err(e) = validate_image_url(url) {
@@ -2045,13 +2898,24 @@ pub async fn create_event(
     // Validate event timestamps
     if let Err(e) = validate_event_timestamps(payload.start_time, payload.end_time) {
         return e.into_response();
+    }
     if let Err(message) = validate_event_description(&payload.description) {
         return AppError::ValidationError(message).into_response();
     }
 
+    if let Err(e) = validate_event_coordinates(payload.latitude, payload.longitude) {
+        return e.into_response();
+    }
+
+    if let Some(translations) = &payload.translations {
+        if let Err(message) = validate_translations(translations) {
+            return AppError::ValidationError(message).into_response();
+        }
+    }
+
     let event = match sqlx::query_as::<_, Event>(
-        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time, image_url, host_email)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "INSERT INTO events (organizer_id, title, description, location, start_time, end_time, image_url, host_email, latitude, longitude)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING *",
     )
     .bind(payload.organizer_id)
@@ -2062,6 +2926,8 @@ pub async fn create_event(
     .bind(payload.end_time)
     .bind(&payload.image_url)
     .bind(&payload.host_email)
+    .bind(payload.latitude)
+    .bind(payload.longitude)
     .fetch_one(&state.pool)
     .await
     {
@@ -2071,6 +2937,50 @@ pub async fn create_event(
             return AppError::DatabaseError(e).into_response();
         }
     };
+
+    // Persist localised descriptions (Issue #1344) — atomic, unique per (event_id, locale).
+    let translations = if let Some(input) = &payload.translations {
+        if input.is_empty() {
+            None
+        } else {
+            match insert_event_translations(&state.pool, event.id, input).await {
+                Ok(stored) => Some(stored),
+                Err(e) => {
+                    // Keep the event; translations are additive. Log the failure.
+                    tracing::error!(
+                        "Failed to persist translations for event {}: {:?}",
+                        event.id,
+                        e
+                    );
+                    None
+                }
+            }
+        }
+    } else {
+        None
+    };
+
+    // Localised metadata JSON (ready to pin to IPFS); store its content hash
+    // so it can be published on-chain via event_registry `update_metadata`.
+    let localised_metadata_cid = translations.as_ref().map(|stored| {
+        let meta =
+            build_localised_metadata(event.id, &event.title, event.description.as_deref(), stored);
+        content_hash(&meta)
+    });
+    if let Some(cid) = &localised_metadata_cid {
+        if let Err(e) = sqlx::query("UPDATE events SET localised_metadata_cid = $1 WHERE id = $2")
+            .bind(cid)
+            .bind(event.id)
+            .execute(&state.pool)
+            .await
+        {
+            tracing::warn!(
+                "Failed to store localised_metadata_cid for event {}: {:?}",
+                event.id,
+                e
+            );
+        }
+    }
 
     // Cache warm-up: pre-populate event:detail:{id} so the first GET hits cache.
     let organizer_profile = match sqlx::query_scalar::<_, Option<String>>(
@@ -2102,6 +3012,7 @@ pub async fn create_event(
         event: event.clone(),
         organizer_profile,
         tiers: None,
+        translations,
     };
 
     let cache_key = format!("event:detail:{}", event.id);
@@ -2112,7 +3023,304 @@ pub async fn create_event(
     // New events invalidate the shared list cache.
     state.redis.invalidate_events_list().await;
 
+    // Notify followers of the organiser (Issue #1346) – fire-and-forget
+    if let Ok(Some(Some(wallet))) = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(event.organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        let pool = state.pool.clone();
+        let eid = event.id;
+        let w = wallet.clone();
+        tokio::spawn(async move {
+            crate::handlers::follows::notify_followers_on_new_event(&pool, &w, eid).await;
+        });
+    }
+
+    // Fire outgoing webhooks (Issue #1339) – EventCreated
+    {
+        let pool = state.pool.clone();
+        let organizer_id = event.organizer_id;
+        let event_id = event.id;
+        let title = event.title.clone();
+        let description = event.description.clone();
+        tokio::spawn(async move {
+            let data = serde_json::json!({
+                "event_id": event_id,
+                "title": title,
+                "description": description,
+                "created_at": Utc::now(),
+            });
+            crate::services::webhook_dispatcher::dispatch_webhooks(
+                pool,
+                organizer_id,
+                crate::models::webhook::WEBHOOK_EVENT_EVENT_CREATED,
+                data,
+            );
+        });
+    }
+
     success(event, "Event created successfully").into_response()
+}
+
+// ── Localised content (Issue #1344) ───────────────────────────────────────────
+
+/// Persist the `translations` payload for a freshly created event.
+///
+/// All inserts share a single transaction so a bad row cannot leave the event
+/// with partial translations; the `(event_id, locale)` unique constraint is
+/// enforced by the database (see `event_translations` migration).
+async fn insert_event_translations(
+    pool: &PgPool,
+    event_id: Uuid,
+    translations: &[EventTranslationInput],
+) -> Result<Vec<EventTranslation>, AppError> {
+    let mut tx = pool.begin().await.map_err(AppError::DatabaseError)?;
+    let mut stored = Vec::with_capacity(translations.len());
+    for t in translations {
+        let row = sqlx::query_as::<_, EventTranslation>(
+            "INSERT INTO event_translations (event_id, locale, title, description)
+             VALUES ($1, $2, $3, $4)
+             RETURNING *",
+        )
+        .bind(event_id)
+        .bind(&t.locale.trim().to_lowercase())
+        .bind(t.title.trim())
+        .bind(t.description.as_deref().map(str::trim))
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(AppError::DatabaseError)?;
+        stored.push(row);
+    }
+    tx.commit().await.map_err(AppError::DatabaseError)?;
+    Ok(stored)
+}
+
+/// Build the localised metadata JSON that organisers can pin to IPFS and
+/// reference on-chain via the event_registry contract's `update_metadata`.
+fn build_localised_metadata(
+    event_id: Uuid,
+    title: &str,
+    default_description: Option<&str>,
+    translations: &[EventTranslation],
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": event_id,
+        "defaultLocale": "en",
+        "defaultTitle": title,
+        "defaultDescription": default_description,
+        "translations": translations.iter().map(|t| serde_json::json!({
+            "locale": t.locale,
+            "title": t.title,
+            "description": t.description,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+/// Deterministic content hash (SHA-256, hex) for the localised metadata JSON.
+/// This is the stable identifier used as `localised_metadata_cid`; a real IPFS
+/// CIDv0 is derived from the same SHA-256 digest via base58btc(multihash).
+fn content_hash(value: &serde_json::Value) -> String {
+    let bytes = serde_json::to_vec(value).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    hex::encode(hasher.finalize())
+}
+
+/// Clone an existing event into a new draft owned by the authenticated caller
+/// (Issue #1630).
+///
+/// # Endpoint
+/// POST `/api/v1/events/:id/clone`
+///
+/// Copies the source event's metadata (title, description, location, times,
+/// image, host email, coordinates, capacity) plus its ticket tiers and
+/// categories into a brand-new event with status `draft`. The caller must be
+/// the organizer/owner of the source event.
+pub async fn clone_event(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    extensions: axum::extract::Extension<axum::http::Extensions>,
+) -> Response {
+    // 1. Resolve the authenticated caller (organizer wallet) from request extensions.
+    let caller_wallet = match extract_caller_wallet(&extensions.0) {
+        Some(wallet) => wallet,
+        None => {
+            return AppError::Unauthorized("Authentication required".to_string()).into_response();
+        }
+    };
+
+    // 2. Load the source event.
+    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1")
+        .bind(event_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(Some(event)) => event,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch source event for clone: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // 3. Verify ownership: the caller's wallet must own the source event's organizer.
+    let owner_wallet = match sqlx::query_scalar::<_, Option<String>>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(source.organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(Some(wallet))) => wallet,
+        Ok(_) => {
+            return AppError::Forbidden(
+                "You are not the organizer of this event".to_string(),
+            )
+            .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to resolve organizer for clone: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if owner_wallet != caller_wallet {
+        return AppError::Forbidden("You are not the organizer of this event".to_string())
+            .into_response();
+    }
+
+    // 4. Insert the cloned event as a draft owned by the caller.
+    let cloned = match sqlx::query_as::<_, Event>(
+        "INSERT INTO events (
+             organizer_id, title, description, location, start_time, end_time,
+             image_url, host_email, latitude, longitude, total_tickets, status
+         )
+         SELECT
+             organizer_id, title, description, location, start_time, end_time,
+             image_url, host_email, latitude, longitude, total_tickets, 'draft'
+         FROM events
+         WHERE id = $1
+         RETURNING *",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(event) => event,
+        Err(e) => {
+            tracing::error!("Failed to clone event {}: {:?}", event_id, e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // 5. Copy ticket tiers (fresh inventory, no sales carried over).
+    if let Err(e) = sqlx::query(
+        "INSERT INTO ticket_tiers (
+             event_id, name, description, price, total_quantity, available_quantity
+         )
+         SELECT $1, name, description, price, total_quantity, total_quantity
+         FROM ticket_tiers
+         WHERE event_id = $2",
+    )
+    .bind(cloned.id)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!(
+            "Failed to copy ticket tiers while cloning event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    // 6. Copy category associations.
+    if let Err(e) = sqlx::query(
+        "INSERT INTO event_categories (event_id, category_id)
+         SELECT $1, category_id FROM event_categories WHERE event_id = $2
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(cloned.id)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!(
+            "Failed to copy categories while cloning event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    // 7. A new event invalidates the shared list cache.
+    state.redis.invalidate_events_list().await;
+
+    success(cloned, "Event cloned successfully").into_response()
+}
+
+/// Extract the highest-priority locale from `Accept-Language`, using the
+/// explicit `lang` query parameter first when present.
+fn best_locale(headers: &HeaderMap, lang: Option<&str>) -> Option<String> {
+    if let Some(l) = lang.map(str::trim).filter(|l| !l.is_empty()) {
+        return Some(l.to_lowercase());
+    }
+    let header = headers
+        .get(axum::http::header::ACCEPT_LANGUAGE)?
+        .to_str()
+        .ok()?;
+    let mut candidates: Vec<(f32, String)> = header
+        .split(',')
+        .filter_map(|part| {
+            let mut it = part.split(';');
+            let tag = it.next()?.trim();
+            if tag.is_empty() || tag == "*" {
+                return None;
+            }
+            let q = it
+                .next()
+                .and_then(|s| s.trim().strip_prefix("q="))
+                .and_then(|q| q.trim().parse::<f32>().ok())
+                .unwrap_or(1.0);
+            Some((q, tag.to_lowercase()))
+        })
+        .collect();
+    candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.first().map(|(_, tag)| tag.clone())
+}
+
+/// Overlay the requested locale's title/description onto an event, falling
+/// back to the default (English) content when no translation exists.
+/// Accepts a language tag (e.g. "es-MX") and matches on the primary tag.
+fn apply_translation(event: &mut Event, translations: &[EventTranslation], locale: Option<&str>) {
+    let requested = locale.map(|l| l.split('-').next().unwrap_or(l).to_lowercase());
+    let translation = translations
+        .iter()
+        .find(|t| {
+            t.locale
+                .split('-')
+                .next()
+                .is_some_and(|l| requested.as_deref() == Some(&l.to_lowercase()))
+        })
+        .or_else(|| {
+            requested.as_deref().and_then(|r| {
+                translations
+                    .iter()
+                    .find(|t| t.locale.eq_ignore_ascii_case(r))
+            })
+        });
+
+    if let Some(t) = translation {
+        event.title = t.title.clone();
+        if let Some(desc) = &t.description {
+            event.description = Some(desc.clone());
+        }
+    }
 }
 
 /// Record a star rating for an event.
@@ -2122,7 +3330,7 @@ pub async fn create_event(
 pub async fn submit_event_rating(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    Json(payload): Json<SubmitEventRatingRequest>,
+    ValidatedJson(payload): ValidatedJson<SubmitEventRatingRequest>,
 ) -> Response {
     if payload.rating < 1 || payload.rating > 5 {
         return AppError::ValidationError("Rating must be between 1 and 5".to_string())
@@ -2182,12 +3390,45 @@ pub async fn submit_event_rating(
             .into_response();
     }
 
-    if ticket_status != "used" {
+    if ticket_status != "Scanned" {
         log_if_slow("submit_event_rating", start.elapsed());
         return AppError::ValidationError(
-            "Only attendees with a used ticket may leave a rating".to_string(),
+            "Only attendees with a scanned ticket may leave a rating".to_string(),
         )
         .into_response();
+    }
+
+    // Verify event has ended (if end_time is set). Ratings are only allowed after event end.
+    let maybe_end_time = match sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>(
+        "SELECT end_time FROM events WHERE id = $1 AND is_flagged = FALSE",
+    )
+    .bind(event_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(opt) => opt,
+        Err(e) => {
+            log_if_slow("submit_event_rating", start.elapsed());
+            tracing::error!("Failed to fetch event end_time for rating: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if maybe_end_time.is_none() {
+        // event not found or flagged
+        log_if_slow("submit_event_rating", start.elapsed());
+        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+            .into_response();
+    }
+
+    if let Some(end_time) = maybe_end_time.unwrap() {
+        if end_time > Utc::now() {
+            log_if_slow("submit_event_rating", start.elapsed());
+            return AppError::ValidationError(
+                "Ratings may only be submitted after the event has ended".to_string(),
+            )
+            .into_response();
+        }
     }
 
     let mut tx = match state.pool.begin().await {
@@ -2216,10 +3457,8 @@ pub async fn submit_event_rating(
 
     if already_rated {
         log_if_slow("submit_event_rating", start.elapsed());
-        return AppError::ValidationError(
-            "Each attendee may only submit one rating per event".to_string(),
-        )
-        .into_response();
+        return AppError::Conflict("Rating already submitted for this ticket".to_string())
+            .into_response();
     }
 
     if let Err(e) = sqlx::query(
@@ -2284,13 +3523,17 @@ pub async fn submit_event_rating(
     success(response, "Rating recorded successfully").into_response()
 }
 
+/// Maximum length for the free-text search query parameter `q`.
+/// Queries longer than this are rejected with a 400 to prevent expensive full-table scans.
+const MAX_SEARCH_QUERY_LENGTH: usize = 128;
+
 /// Search events with advanced filters
 ///
 /// # Endpoint
 /// GET `/api/v1/events/search`
 ///
 /// # Query Parameters
-/// - `q` (optional): Keyword search in title and description
+/// - `q` (optional): Keyword search in title and description (max 128 chars)
 /// - `category_id` (optional): Filter by category UUID
 /// - `min_price` (optional): Minimum ticket price in cents
 /// - `max_price` (optional): Maximum ticket price in cents
@@ -2304,22 +3547,86 @@ pub async fn submit_event_rating(
 /// Returns a paginated list of events matching the search criteria
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(120);
 
+/// Search and filter events with advanced options.
+///
+/// Supports full-text keyword search, price filtering, date range filtering,
+/// and category/location filtering with offset-based pagination.
+///
+/// # Query Parameters
+/// - `q` (optional): Keyword search in title and description (max 128 chars)
+/// - `category_id` (optional): Filter by category ID
+/// - `category_ids` (optional): Filter by multiple categories (comma-separated)
+/// - `min_price` (optional): Minimum ticket price in cents (e.g., 1000 = $10.00)
+/// - `max_price` (optional): Maximum ticket price in cents
+/// - `location` (optional): Filter by location (partial match)
+/// - `ticket_type` (optional): Filter by ticket tier name
+/// - `date_from` (optional): Events starting after this timestamp
+/// - `date_to` (optional): Events starting before this timestamp
+/// - `page` (optional): Page number (default 1)
+/// - `page_size` (optional): Items per page (1-100, default 20)
+///
+/// # Example Requests
+/// ```
+/// GET /api/v1/events/search?q=concert&location=Lagos&page=1
+/// GET /api/v1/events/search?min_price=0&max_price=50000&page_size=50
+/// ```
+#[utoipa::path(
+    get,
+    path = "/events/search",
+    params(
+        SearchParams,
+    ),
+    responses(
+        (status = 200, description = "Search results", body = Vec<Event>),
+        (status = 400, description = "Invalid search parameters"),
+    ),
+    tag = "Events"
+)]
 pub async fn search_events(
     State(mut state): State<EventState>,
-    Query(params): Query<SearchParams>,
+    Query(mut params): Query<SearchParams>,
 ) -> Response {
     if let Err(msg) = params.validate_page_size() {
         return AppError::ValidationError(msg).into_response();
     }
+
+    // --- Issue #1263: sanitise and validate the free-text search parameter ---
+    if let Some(raw_q) = params.q.take() {
+        // Reject queries that exceed the maximum allowed length.
+        if raw_q.len() > MAX_SEARCH_QUERY_LENGTH {
+            return AppError::ValidationError(format!(
+                "Search query must not exceed {} characters",
+                MAX_SEARCH_QUERY_LENGTH
+            ))
+            .into_response();
+        }
+
+        // Trim whitespace; treat empty/whitespace-only queries as absent.
+        let trimmed = raw_q.trim().to_string();
+        if trimmed.is_empty() {
+            params.q = None;
+        } else {
+            // Normalise to lowercase and strip SQL LIKE wildcards.
+            let sanitised = trimmed.to_lowercase().replace('%', "").replace('_', " ");
+            let sanitised = sanitised.trim().to_string();
+            params.q = if sanitised.is_empty() {
+                None
+            } else {
+                Some(sanitised)
+            };
+        }
+    }
+
     let pagination = PaginationParams {
         page: params.page,
         page_size: params.page_size,
+        count: true,
     };
     let validated_pagination = pagination.validate();
 
     // Deterministic cache key from all search parameters (issue #592).
     let cache_key = format!(
-        "search:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        "search:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
         params.q.as_deref().unwrap_or(""),
         params
             .category_id
@@ -2332,6 +3639,8 @@ pub async fn search_events(
         params.date_to.map(|d| d.timestamp()).unwrap_or(0),
         validated_pagination.page,
         validated_pagination.page_size,
+        params.sort_by.column(),
+        params.order.sql(),
     );
 
     // Try cache first; fall through to DB on miss or Redis error.
@@ -2488,12 +3797,16 @@ pub async fn search_events(
         }
     };
 
-    // Fetch paginated items with DISTINCT to handle joins
+    // Fetch paginated items with DISTINCT to handle joins.
+    // Apply the caller-supplied sort column and direction instead of the
+    // previous hard-coded `ORDER BY e.start_time DESC`.
     let items_query = format!(
-        "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
+        "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY {} {} LIMIT ${} OFFSET ${}",
         category_join,
         ticket_tiers_join,
         where_clause,
+        params.sort_by.column(),
+        params.order.sql(),
         param_count + 1,
         param_count + 2
     );
@@ -2628,6 +3941,7 @@ pub async fn toggle_event_flag(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SetEventFeaturedRequest {
     pub featured: bool,
 }
@@ -2638,7 +3952,7 @@ pub struct SetEventFeaturedRequest {
 pub async fn set_event_featured(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    Json(payload): Json<SetEventFeaturedRequest>,
+    ValidatedJson(payload): ValidatedJson<SetEventFeaturedRequest>,
 ) -> Response {
     let updated = match sqlx::query_as::<_, (bool,)>(
         "UPDATE events SET is_featured = $1 WHERE id = $2 RETURNING is_featured",
@@ -2683,6 +3997,7 @@ pub async fn set_event_featured(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FlagEventRequest {
     pub flagged: bool,
 }
@@ -2693,7 +4008,7 @@ pub struct FlagEventRequest {
 pub async fn flag_event(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    Json(payload): Json<FlagEventRequest>,
+    ValidatedJson(payload): ValidatedJson<FlagEventRequest>,
 ) -> Response {
     let updated = match sqlx::query_as::<_, (bool,)>(
         "UPDATE events SET is_flagged = $1 WHERE id = $2 RETURNING is_flagged",
@@ -3240,8 +4555,12 @@ fn test_search_params_ticket_type() {
         date_to: None,
         location: None,
         ticket_type: Some("VIP".to_string()),
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
+        sort_by: Default::default(),
+        order: Default::default(),
     };
 
     assert_eq!(params.ticket_type, Some("VIP".to_string()));
@@ -3259,8 +4578,12 @@ fn test_search_params_ticket_type_none() {
         date_to: None,
         location: None,
         ticket_type: None,
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
+        sort_by: Default::default(),
+        order: Default::default(),
     };
 
     assert!(params.ticket_type.is_none());
@@ -3288,8 +4611,12 @@ fn test_search_params_location() {
         date_to: None,
         location: Some("Lagos".to_string()),
         ticket_type: None,
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
+        sort_by: Default::default(),
+        order: Default::default(),
     };
     assert_eq!(params.location.as_deref(), Some("Lagos"));
 }
@@ -3323,6 +4650,71 @@ fn test_csv_row_format() {
     assert!(row.contains(owner));
     assert!(row.contains(buyer));
     assert!(row.contains("2"));
+}
+
+#[test]
+fn test_verify_export_attendees_auth_missing_header() {
+    let headers = HeaderMap::new();
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        AppError::AuthError(msg) => assert!(msg.contains("Missing Authorization")),
+        other => panic!("Unexpected error: {:?}", other),
+    }
+}
+
+#[test]
+fn test_verify_export_attendees_auth_invalid_scheme() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        "Basic invalid_token".parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        AppError::AuthError(msg) => assert!(msg.contains("must use Bearer scheme")),
+        other => panic!("Unexpected error: {:?}", other),
+    }
+}
+
+#[test]
+fn test_verify_export_attendees_auth_admin_token() {
+    std::env::set_var("ADMIN_TOKEN", "test-admin-secret-token");
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        "Bearer test-admin-secret-token".parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), None); // None signifies admin authorization
+}
+
+#[test]
+fn test_verify_export_attendees_auth_valid_jwt() {
+    std::env::set_var("JWT_SECRET", "super-secret-key-for-unit-testing-32-bytes");
+    let now = chrono::Utc::now();
+    let claims = crate::handlers::auth::Claims {
+        sub: "GAORGANIZERTESTWALLET123456789".to_string(),
+        iat: now.timestamp(),
+        exp: (now + chrono::Duration::hours(1)).timestamp(),
+    };
+    let token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret("super-secret-key-for-unit-testing-32-bytes".as_bytes()),
+    )
+    .unwrap();
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        format!("Bearer {}", token).parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), Some("GAORGANIZERTESTWALLET123456789".to_string()));
 }
 
 #[derive(Serialize)]
@@ -3559,6 +4951,162 @@ pub async fn get_event_counts(State(mut state): State<EventState>) -> Response {
     success(counts, "Event counts retrieved").into_response()
 }
 
+/// Query parameters for `GET /api/v1/events/map`.
+#[derive(Debug, Deserialize)]
+pub struct MapSearchParams {
+    /// Center latitude in decimal degrees.
+    pub latitude: f64,
+    /// Center longitude in decimal degrees.
+    pub longitude: f64,
+    /// Search radius in kilometres (default: 50, max: 500).
+    pub radius: Option<f64>,
+    /// Maximum results (default: 50, max: 200).
+    pub limit: Option<u32>,
+}
+
+/// A nearby event with computed distance from the query point.
+#[derive(Debug, Serialize)]
+pub struct MapEvent {
+    #[serde(flatten)]
+    pub event: Event,
+    /// Distance from the query point in kilometres.
+    pub distance_km: f64,
+}
+
+/// Parses a single row from the `get_events_map` distance query into an
+/// `Event` plus its computed `distance_km`. Pulled out of `get_events_map`
+/// itself because `?` can only be used in a function returning `Result`/
+/// `Option`, and that handler returns a bare `Response`.
+fn map_event_row(row: &sqlx::postgres::PgRow) -> Result<(Event, f64), sqlx::Error> {
+    let event = Event {
+        id: row.try_get("id")?,
+        organizer_id: row.try_get("organizer_id")?,
+        title: row.try_get("title")?,
+        description: row.try_get("description")?,
+        location: row.try_get("location")?,
+        start_time: row.try_get("start_time")?,
+        end_time: row.try_get("end_time")?,
+        is_flagged: row.try_get("is_flagged")?,
+        is_featured: row.try_get("is_featured")?,
+        sum_of_ratings: row.try_get("sum_of_ratings")?,
+        count_of_ratings: row.try_get("count_of_ratings")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+        image_url: row.try_get("image_url")?,
+        latitude: row.try_get("latitude")?,
+        longitude: row.try_get("longitude")?,
+        is_free: false,
+        is_free_populated: false,
+        min_ticket_price: 0.0,
+        total_tickets: 0,
+        minted_tickets: 0,
+    };
+    let distance_km: f64 = row.try_get("distance_km")?;
+    Ok((event, distance_km))
+}
+
+/// GET /api/v1/events/map
+///
+/// Returns upcoming events within a given radius of a geographic coordinate,
+/// sorted by distance ascending. Events without coordinates are excluded.
+///
+/// # Query Parameters
+/// - `latitude` (required): Center latitude in decimal degrees (-90 to 90).
+/// - `longitude` (required): Center longitude in decimal degrees (-180 to 180).
+/// - `radius` (optional): Search radius in kilometres (default: 50, max: 500).
+/// - `limit` (optional): Maximum results (default: 50, max: 200).
+///
+/// # Response
+/// Returns a list of nearby events with a `distance_km` field.
+pub async fn get_events_map(
+    State(state): State<EventState>,
+    Query(params): Query<MapSearchParams>,
+) -> Response {
+    let lat = params.latitude;
+    let lng = params.longitude;
+    let radius_km = params.radius.unwrap_or(50.0);
+    if !radius_km.is_finite() {
+        return AppError::ValidationError("radius must be a finite number".to_string())
+            .into_response();
+    }
+    let radius_km = radius_km.clamp(1.0, 500.0);
+    let limit = (params.limit.unwrap_or(50) as i64).clamp(1, 200);
+
+    if !(-90.0..=90.0).contains(&lat) {
+        return AppError::ValidationError("latitude must be between -90 and 90".to_string())
+            .into_response();
+    }
+    if !(-180.0..=180.0).contains(&lng) {
+        return AppError::ValidationError("longitude must be between -180 and 180".to_string())
+            .into_response();
+    }
+
+    let rad_lat = lat.to_radians();
+    let rad_lng = lng.to_radians();
+
+    let query = r#"
+        SELECT e.*, (
+            6371 * ACOS(
+                LEAST(1.0, COS($1) * COS(RADIANS(e.latitude)) * COS(RADIANS(e.longitude) - $2)
+                      + SIN($1) * SIN(RADIANS(e.latitude)))
+            )
+        ) AS distance_km
+        FROM events e
+        WHERE e.latitude IS NOT NULL
+          AND e.longitude IS NOT NULL
+          AND e.is_flagged = FALSE
+          AND (e.end_time IS NULL OR e.end_time > NOW())
+          AND (
+              6371 * ACOS(
+                  LEAST(1.0, COS($1) * COS(RADIANS(e.latitude)) * COS(RADIANS(e.longitude) - $2)
+                        + SIN($1) * SIN(RADIANS(e.latitude)))
+              )
+          ) <= $3
+        ORDER BY distance_km ASC
+        LIMIT $4
+        "#;
+
+    let rows = match sqlx::query(query)
+        .bind(rad_lat)
+        .bind(rad_lng)
+        .bind(radius_km)
+        .bind(limit)
+        .fetch_all(&state.pool)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch map events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let mut parsed_events: Vec<Event> = Vec::with_capacity(rows.len());
+    let mut distances: Vec<f64> = Vec::with_capacity(rows.len());
+    for row in &rows {
+        match map_event_row(row) {
+            Ok((event, distance_km)) => {
+                parsed_events.push(event);
+                distances.push(distance_km);
+            }
+            Err(e) => {
+                tracing::error!("Failed to parse map event row: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        }
+    }
+
+    populate_is_free(&mut parsed_events, &state.pool).await;
+
+    let events: Vec<MapEvent> = parsed_events
+        .into_iter()
+        .zip(distances)
+        .map(|(event, distance_km)| MapEvent { event, distance_km })
+        .collect();
+
+    success(events, "Map events retrieved successfully").into_response()
+}
+
 /// GET /api/v1/events/:id/check-in-stats
 pub async fn get_checkin_stats(
     State(state): State<EventState>,
@@ -3567,7 +5115,7 @@ pub async fn get_checkin_stats(
     let row = sqlx::query(
         r#"
         SELECT
-            COUNT(*) FILTER (WHERE status = 'used') AS checked_in,
+            COUNT(*) FILTER (WHERE status IN ('used', 'Scanned')) AS checked_in,
             COUNT(*) AS total_sold
         FROM tickets
         WHERE event_id = $1
@@ -3611,7 +5159,7 @@ pub async fn get_event_organizer(
          FROM events e \
          LEFT JOIN ticket_tiers tt ON tt.event_id = e.id \
          WHERE e.id = $1 \
-         GROUP BY e.id"
+         GROUP BY e.id",
     )
     .bind(event_id)
     .fetch_optional(&state.pool)
@@ -3785,32 +5333,118 @@ pub async fn list_event_attendees(
     success(response, "Attendees retrieved successfully").into_response()
 }
 
+/// Sanitizes a string field to prevent CSV formula injection when opened in spreadsheet applications.
+/// Fields starting with '=', '+', '-', or '@' are escaped with a leading single quote (').
+pub fn sanitize_csv_field(field: &str) -> String {
+    if field.starts_with('=')
+        || field.starts_with('+')
+        || field.starts_with('-')
+        || field.starts_with('@')
+    {
+        format!("'{}", field)
+    } else {
+        field.to_string()
+    }
+}
+
+/// Validates caller authorization for exporting attendee CSV (Issue #1624).
+/// Returns `Ok(None)` if authorized as admin, `Ok(Some(wallet))` if authorized with organizer credentials,
+/// or `Err(AppError)` if missing, malformed, or invalid.
+pub fn verify_export_attendees_auth(headers: &HeaderMap) -> Result<Option<String>, AppError> {
+    if let Some(auth_hdr) = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
+        let token = auth_hdr
+            .strip_prefix("Bearer ")
+            .or_else(|| auth_hdr.strip_prefix("bearer "))
+            .unwrap_or(auth_hdr)
+            .trim();
+        if let Ok(admin_token) = std::env::var("ADMIN_TOKEN") {
+            if !admin_token.is_empty() && token == admin_token {
+                return Ok(None);
+            }
+        }
+    }
+
+    let wallet = crate::handlers::auth::extract_auth(headers)?;
+    Ok(Some(wallet))
+}
+
 /// GET /api/v1/events/:id/export-attendees
 ///
 /// Exports all attendees for an event as a CSV file.
+/// Requires the caller to be the event's organizer or an admin (Issue #1624).
 /// Returns owner_wallet, buyer_wallet, quantity, created_at for all tickets.
 pub async fn export_attendees_csv(
     State(state): State<EventState>,
+    headers: HeaderMap,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    // Verify the event exists
-    let event_exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    // 1. Verify authorization: admin token or organizer JWT / API key
+    let requester = match verify_export_attendees_auth(&headers) {
+        Ok(req) => req,
+        Err(e) => return e.into_response(),
+    };
+
+    // 2. Verify the event exists and fetch organizer_id
+    let organizer_id = match sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
     .bind(event_id)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     {
-        Ok(exists) => exists,
+        Ok(Some(Some(org_id))) => org_id,
+        Ok(Some(None)) => {
+            if requester.is_some() {
+                return AppError::Forbidden(
+                    "Only the event organizer or an admin is allowed to export attendee data"
+                        .to_string(),
+                )
+                .into_response();
+            }
+            Uuid::nil()
+        }
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
         Err(e) => {
             tracing::error!("Failed to check event existence: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
-    if !event_exists {
-        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+    // 3. If not admin, verify requester is the organizer
+    if let Some(ref wallet) = requester {
+        let is_organizer = match sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM organizers
+                WHERE id = $1 AND (wallet_address = $2 OR id::text = $2)
+            )
+            "#,
+        )
+        .bind(organizer_id)
+        .bind(wallet)
+        .fetch_one(&state.pool)
+        .await
+        {
+            Ok(is_org) => is_org,
+            Err(e) => {
+                tracing::error!("Failed to verify organizer: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+        if !is_organizer {
+            return AppError::Forbidden(
+                "Only the event organizer or an admin is allowed to export attendee data"
+                    .to_string(),
+            )
             .into_response();
+        }
     }
 
     // Fetch all tickets for the event
@@ -3843,10 +5477,10 @@ pub async fn export_attendees_csv(
     for (owner_wallet, buyer_wallet, quantity, created_at) in tickets {
         csv.push_str(&format!(
             "{},{},{},{}\n",
-            owner_wallet,
-            buyer_wallet,
-            quantity,
-            created_at.to_rfc3339()
+            sanitize_csv_field(&owner_wallet),
+            sanitize_csv_field(&buyer_wallet),
+            sanitize_csv_field(&quantity.to_string()),
+            sanitize_csv_field(&created_at.to_rfc3339())
         ));
     }
 
@@ -4059,6 +5693,7 @@ pub async fn list_events_by_category(
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
             count_of_ratings: Some(last.count_of_ratings as i64),
+            min_ticket_price: Some(last.min_ticket_price),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -4076,7 +5711,7 @@ pub async fn list_events_by_category(
 }
 
 /// Response shape for a single ticket tier.
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct TicketTierResponse {
     pub id: Uuid,
     pub name: String,
@@ -4146,6 +5781,13 @@ pub async fn list_ticket_tiers(
 // ---------------------------------------------------------------------------
 
 #[test]
+fn test_clone_event_cache_key_matches_detail_key() {
+    let id = Uuid::new_v4();
+    let key = format!("event:detail:{}", id);
+    assert_eq!(key, format!("event:detail:{}", id));
+}
+
+#[test]
 fn test_ticket_tier_response_serialization() {
     use rust_decimal::Decimal;
     let tier = TicketTierResponse {
@@ -4184,21 +5826,28 @@ fn test_event_detail_tiers_omitted_when_none() {
         created_at: DateTime::default(),
         updated_at: DateTime::default(),
         image_url: None,
+        latitude: None,
+        longitude: None,
         is_free: false,
         minted_tickets: 0,
         total_tickets: 0,
         is_free_populated: true,
+        min_ticket_price: 0.0,
     };
 
     let detail = EventDetail {
         event,
         organizer_profile: None,
         tiers: None,
+        translations: None,
     };
 
     let json = serde_json::to_value(&detail).unwrap();
     // `tiers` must not appear in the response when None.
-    assert!(json.get("tiers").is_none(), "tiers should be omitted when None");
+    assert!(
+        json.get("tiers").is_none(),
+        "tiers should be omitted when None"
+    );
 }
 
 #[test]
@@ -4222,10 +5871,13 @@ fn test_event_detail_tiers_present_when_some() {
         created_at: DateTime::default(),
         updated_at: DateTime::default(),
         image_url: None,
+        latitude: None,
+        longitude: None,
         is_free: true,
         minted_tickets: 0,
         total_tickets: 0,
         is_free_populated: true,
+        min_ticket_price: 0.0,
     };
 
     let tier = TicketTierResponse {
@@ -4242,10 +5894,13 @@ fn test_event_detail_tiers_present_when_some() {
         event,
         organizer_profile: None,
         tiers: Some(vec![tier]),
+        translations: None,
     };
 
     let json = serde_json::to_value(&detail).unwrap();
-    let tiers = json.get("tiers").expect("tiers should be present when Some");
+    let tiers = json
+        .get("tiers")
+        .expect("tiers should be present when Some");
     assert!(tiers.is_array());
     assert_eq!(tiers.as_array().unwrap().len(), 1);
     assert_eq!(tiers[0]["name"], "VIP");
@@ -4370,6 +6025,7 @@ fn test_list_events_by_category_params() {
     let params = CursorParams {
         limit: 15,
         cursor: Some("test-cursor-token".to_string()),
+        count: true,
     };
     let validated = params.validate();
     assert_eq!(validated.page_size(), 15);
@@ -4434,10 +6090,18 @@ mod search_cache_tests {
             location: "Remote".to_string(),
             start_time: Utc::now(),
             end_time: None,
+            is_flagged: false,
+            is_featured: false,
             sum_of_ratings: 0,
             count_of_ratings: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            image_url: None,
+            latitude: None,
+            longitude: None,
+            is_free: false,
+            is_free_populated: false,
+            min_ticket_price: 0.0,
             total_tickets: 100,
             minted_tickets: 42,
         };
@@ -4445,5 +6109,21 @@ mod search_cache_tests {
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["total_tickets"], 100);
         assert_eq!(json["minted_tickets"], 42);
+    }
+
+    #[test]
+    fn test_sanitize_csv_field() {
+        assert_eq!(sanitize_csv_field("=1+2"), "'=1+2");
+        assert_eq!(
+            sanitize_csv_field("+cmd|' /C calc'!A0"),
+            "'+cmd|' /C calc'!A0"
+        );
+        assert_eq!(sanitize_csv_field("-100"), "'-100");
+        assert_eq!(sanitize_csv_field("@SUM(A1:A10)"), "'@SUM(A1:A10)");
+        assert_eq!(sanitize_csv_field("10"), "10");
+        assert_eq!(
+            sanitize_csv_field("GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+            "GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
     }
 }

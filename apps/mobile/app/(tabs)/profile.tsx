@@ -11,12 +11,15 @@ import * as Clipboard from 'expo-clipboard';
 import Colors from '@/constants/Colors';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import ProfileHeader from '@/components/ProfileHeader';
 import { useAuth } from '@/hooks/useAuth';
+import { useCurrencyPreference } from '@/hooks/useCurrencyPreference';
 import { StellarWalletManager, StellarBalances } from '@/services/stellar';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout, updateWalletAddress } = useAuth();
+  const { currency } = useCurrencyPreference();
   const [secretInput, setSecretInput] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [balances, setBalances] = useState<StellarBalances | null>(null);
@@ -126,15 +129,12 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>
-              {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
-            </Text>
-          </View>
-          <Text style={styles.nameText}>{user?.name || 'Agora User'}</Text>
-          <Text style={styles.emailText}>{user?.email || 'user@agora.events'}</Text>
-        </View>
+        <ProfileHeader
+          username={user?.name}
+          email={user?.email}
+          publicKey={publicKey || user?.walletAddress}
+          onAvatarChange={(uri) => console.log('New Avatar:', uri)}
+        />
 
         <View style={styles.detailsCard}>
           <Text style={styles.sectionTitle}>Wallet Information</Text>
@@ -183,6 +183,13 @@ export default function ProfileScreen() {
             style={styles.actionButton}
           />
 
+          <Button
+            title={`Display Currency: ${currency}`}
+            onPress={() => router.push('/settings')}
+            variant="outline"
+            style={styles.actionButton}
+          />
+
           {balances?.accountExists && !balances.hasUSDCTrustline ? (
             <Button
               title="Add USDC Trustline"
@@ -196,7 +203,7 @@ export default function ProfileScreen() {
         <Button
           title="Log Out"
           onPress={logout}
-          variant="outline"
+          variant="destructive"
           style={styles.logoutButton}
         />
       </ScrollView>
@@ -213,34 +220,6 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     justifyContent: 'space-between',
-  },
-  profileHeader: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  avatarPlaceholder: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: Colors.primaryYellow,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: Colors.darkBackground,
-  },
-  nameText: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: Colors.primaryText,
-    marginBottom: 4,
-  },
-  emailText: {
-    fontSize: 14,
-    color: Colors.secondaryText,
   },
   detailsCard: {
     backgroundColor: '#1E1E20',

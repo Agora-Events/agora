@@ -109,7 +109,7 @@ impl MockRegistryE2E {
         _tier_id: String,
         _user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         let key = Symbol::new(&env, "supply");
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
@@ -345,7 +345,7 @@ impl MockRegistryWithGoal {
         _tier_id: String,
         _user: Address,
         quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
         let key = (Symbol::new(&env, "supply"), event_id);
         let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
@@ -457,6 +457,7 @@ fn buy_ticket(
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     )
@@ -682,6 +683,7 @@ fn test_e2e_duplicate_payment_id_rejected() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -738,6 +740,7 @@ fn test_e2e_state_consistent_after_failed_payment() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -791,6 +794,7 @@ fn test_e2e_batch_purchase_then_partial_refund() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -925,6 +929,7 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -948,6 +953,7 @@ fn test_e2e_pause_blocks_operations_resume_allows() {
             code_preimage: None,
             referrer: None,
             discount_code: None,
+            affiliate_address: None,
         },
         &hash,
     );
@@ -1182,7 +1188,7 @@ impl MockRegistryAuction {
         _tier_id: String,
         _user: Address,
         _quantity: u32,
-    _payment_token: Address,
+        _payment_token: Address,
     ) {
     }
     pub fn decrement_inventory(_env: Env, _event_id: String, _tier_id: String, _user: Address) {}

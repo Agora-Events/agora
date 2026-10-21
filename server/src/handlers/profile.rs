@@ -12,8 +12,8 @@ use axum::{
     extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
-    Json,
 };
+use crate::utils::extract::ValidatedJson;
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use std::time::Duration;
 
@@ -87,9 +87,9 @@ fn validate_socials(socials: &Value) -> Result<(), AppError> {
         return Ok(());
     }
 
-    let obj = socials.as_object().ok_or_else(|| {
-        AppError::ValidationError("socials must be a JSON object".to_string())
-    })?;
+    let obj = socials
+        .as_object()
+        .ok_or_else(|| AppError::ValidationError("socials must be a JSON object".to_string()))?;
 
     for (key, value) in obj {
         if !ALLOWED_SOCIAL_KEYS.contains(&key.as_str()) {
@@ -134,9 +134,7 @@ fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
         }
     }
     if let Some(ref avatar_url) = req.avatar_url {
-        if let Err(e) = validate_avatar_url(avatar_url) {
-            return Err(e);
-        }
+        validate_avatar_url(avatar_url)?;
     }
     validate_socials(&req.socials)?;
     Ok(())
@@ -144,11 +142,7 @@ fn validate_upsert(req: &UpsertProfileRequest) -> Result<(), AppError> {
 
 fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
     let has_socials = !req.socials.is_null();
-    if req.display_name.is_none()
-        && req.bio.is_none()
-        && req.avatar_url.is_none()
-        && !has_socials
-    {
+    if req.display_name.is_none() && req.bio.is_none() && req.avatar_url.is_none() && !has_socials {
         return Err(AppError::ValidationError(
             "At least one profile field is required".to_string(),
         ));
@@ -176,9 +170,7 @@ fn validate_patch(req: &PatchProfileRequest) -> Result<(), AppError> {
     }
 
     if let Some(ref avatar_url) = req.avatar_url {
-        if let Err(e) = validate_avatar_url(avatar_url) {
-            return Err(e);
-        }
+        validate_avatar_url(avatar_url)?;
     }
 
     validate_socials(&req.socials)?;
@@ -217,6 +209,7 @@ fn validate_profile_deletion(active_upcoming_events: i64) -> Result<(), AppError
 
 /// Payload accepted by `PATCH /api/v1/profile`.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PatchProfileRequest {
     #[serde(alias = "displayName")]
     pub display_name: Option<String>,
@@ -232,6 +225,17 @@ pub struct OrganizerProfileResponse {
     #[serde(flatten)]
     pub profile: OrganizerProfile,
     pub total_events: i64,
+    pub followers_count: i64,
+    pub following_count: i64,
+    pub is_following: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedProfileBase {
+    pub profile: OrganizerProfile,
+    pub total_events: i64,
+    pub followers_count: i64,
+    pub following_count: i64,
 }
 
 fn organizer_total_events_query() -> &'static str {
@@ -259,7 +263,7 @@ fn organizer_total_events_query() -> &'static str {
 pub async fn upsert_profile(
     State(mut state): State<ProfileState>,
     headers: HeaderMap,
-    Json(payload): Json<UpsertProfileRequest>,
+    ValidatedJson(payload): ValidatedJson<UpsertProfileRequest>,
 ) -> Response {
     // Authenticate
     let address = match extract_auth(&headers) {
@@ -309,7 +313,10 @@ pub async fn upsert_profile(
         .delete(&organizer_stats_cache_key(&address))
         .await
     {
-        tracing::warn!("Failed to invalidate organizer stats cache for {address}: {:?}", e);
+        tracing::warn!(
+            "Failed to invalidate organizer stats cache for {address}: {:?}",
+            e
+        );
     }
 
     if let Err(e) = state.redis.delete(&cache_key).await {
@@ -325,7 +332,7 @@ pub async fn upsert_profile(
 pub async fn patch_profile(
     State(mut state): State<ProfileState>,
     headers: HeaderMap,
-    Json(payload): Json<PatchProfileRequest>,
+    ValidatedJson(payload): ValidatedJson<PatchProfileRequest>,
 ) -> Response {
     let address = match extract_auth(&headers) {
         Ok(a) => a,
@@ -351,9 +358,9 @@ pub async fn patch_profile(
         if let Some(ref avatar_url) = payload.avatar_url {
             separated.push("avatar_url = ").push_bind(avatar_url);
         }
-    if !payload.socials.is_null() {
-        separated.push("socials = ").push_bind(payload.socials);
-    }
+        if !payload.socials.is_null() {
+            separated.push("socials = ").push_bind(payload.socials);
+        }
 
         separated.push("updated_at = NOW()");
     }
@@ -386,7 +393,10 @@ pub async fn patch_profile(
         .delete(&organizer_stats_cache_key(&address))
         .await
     {
-        tracing::warn!("Failed to invalidate organizer stats cache for {address}: {:?}", e);
+        tracing::warn!(
+            "Failed to invalidate organizer stats cache for {address}: {:?}",
+            e
+        );
     }
 
     if let Err(e) = state.redis.delete(&cache_key).await {
@@ -447,7 +457,10 @@ pub async fn delete_profile(State(mut state): State<ProfileState>, headers: Head
         .delete(&organizer_stats_cache_key(&address))
         .await
     {
-        tracing::warn!("Failed to invalidate organizer stats cache for {address}: {:?}", e);
+        tracing::warn!(
+            "Failed to invalidate organizer stats cache for {address}: {:?}",
+            e
+        );
     }
 
     if let Err(e) = state.redis.delete(&cache_key).await {
@@ -467,7 +480,7 @@ pub async fn get_my_profile(State(mut state): State<ProfileState>, headers: Head
         Err(e) => return e.into_response(),
     };
 
-    fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
+    fetch_profile_by_address(&state.pool, &mut state.redis, &address, Some(&address)).await
 }
 
 /// Summary of a payment transaction returned by `GET /api/v1/profile/transactions`.
@@ -553,61 +566,127 @@ pub async fn list_my_transactions(
 /// Returns any organizer's public profile by their Stellar wallet address.
 pub async fn get_profile_by_address(
     State(mut state): State<ProfileState>,
+    headers: HeaderMap,
     Path(address): Path<String>,
 ) -> Response {
-    fetch_profile_by_address(&state.pool, &mut state.redis, &address).await
+    let viewer = extract_auth(&headers).ok();
+    fetch_profile_by_address(&state.pool, &mut state.redis, &address, viewer.as_deref()).await
 }
 
 async fn fetch_profile_by_address(
     pool: &PgPool,
     redis: &mut RedisCache,
     address: &str,
+    viewer: Option<&str>,
 ) -> Response {
     let cache_key = format!("profile:{address}");
 
-    if let Ok(Some(cached)) = redis.get::<OrganizerProfileResponse>(&cache_key).await {
-        return success(cached, "Profile retrieved successfully").into_response();
-    }
+    let base_data = if let Ok(Some(cached)) = redis.get::<CachedProfileBase>(&cache_key).await {
+        cached
+    } else {
+        match sqlx::query_as::<_, OrganizerProfile>(
+            "SELECT * FROM organizer_profiles WHERE address = $1",
+        )
+        .bind(address)
+        .fetch_optional(pool)
+        .await
+        {
+            Ok(Some(profile)) => {
+                let total_events: i64 = match sqlx::query_scalar(organizer_total_events_query())
+                    .bind(address)
+                    .fetch_one(pool)
+                    .await
+                {
+                    Ok(count) => count,
+                    Err(e) => {
+                        tracing::error!("Failed to count organizer events: {:?}", e);
+                        return AppError::DatabaseError(e).into_response();
+                    }
+                };
 
-    match sqlx::query_as::<_, OrganizerProfile>(
-        "SELECT * FROM organizer_profiles WHERE address = $1",
-    )
-    .bind(address)
-    .fetch_optional(pool)
-    .await
-    {
-        Ok(Some(profile)) => {
-            let total_events: i64 = match sqlx::query_scalar(organizer_total_events_query())
+                let followers_count: i64 = match sqlx::query_scalar::<_, i64>(
+                    "SELECT COUNT(*) FROM user_follows WHERE following_id = $1",
+                )
                 .bind(address)
                 .fetch_one(pool)
                 .await
-            {
-                Ok(count) => count,
-                Err(e) => {
-                    tracing::error!("Failed to count organizer events: {:?}", e);
-                    return AppError::DatabaseError(e).into_response();
+                {
+                    Ok(count) => count,
+                    Err(e) => {
+                        tracing::error!("Failed to count followers: {:?}", e);
+                        0
+                    }
+                };
+
+                let following_count: i64 = match sqlx::query_scalar::<_, i64>(
+                    "SELECT COUNT(*) FROM user_follows WHERE follower_id = $1",
+                )
+                .bind(address)
+                .fetch_one(pool)
+                .await
+                {
+                    Ok(count) => count,
+                    Err(e) => {
+                        tracing::error!("Failed to count following: {:?}", e);
+                        0
+                    }
+                };
+
+                let base = CachedProfileBase {
+                    profile,
+                    total_events,
+                    followers_count,
+                    following_count,
+                };
+
+                if let Err(e) = redis.set(&cache_key, &base, PROFILE_CACHE_TTL).await {
+                    tracing::warn!("Failed to cache profile for {address}: {:?}", e);
                 }
-            };
 
-            let response = OrganizerProfileResponse {
-                profile,
-                total_events,
-            };
-
-            if let Err(e) = redis.set(&cache_key, &response, PROFILE_CACHE_TTL).await {
-                tracing::warn!("Failed to cache profile for {address}: {:?}", e);
+                base
             }
+            Ok(None) => {
+                return AppError::NotFound(format!("No profile found for address '{address}'")).into_response();
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch organizer profile: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        }
+    };
 
-            success(response, "Profile retrieved successfully").into_response()
+    let is_following = if let Some(viewer_addr) = viewer {
+        if viewer_addr == address {
+            false
+        } else {
+            match sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM user_follows WHERE follower_id = $1 AND following_id = $2)",
+            )
+            .bind(viewer_addr)
+            .bind(address)
+            .fetch_one(pool)
+            .await
+            {
+                Ok(following) => following,
+                Err(e) => {
+                    tracing::error!("Failed to check follow status: {:?}", e);
+                    false
+                }
+            }
         }
-        Ok(None) => {
-            AppError::NotFound(format!("No profile found for address '{address}'")).into_response()
-        }
-        Err(e) => {
-            tracing::error!("Failed to fetch organizer profile: {:?}", e);
-            AppError::DatabaseError(e).into_response()
-        }
-    }
+    } else {
+        false
+    };
+
+    let response = OrganizerProfileResponse {
+        profile: base_data.profile,
+        total_events: base_data.total_events,
+        followers_count: base_data.followers_count,
+        following_count: base_data.following_count,
+        is_following,
+    };
+
+    success(response, "Profile retrieved successfully").into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -756,6 +835,7 @@ pub async fn list_events_by_organizer(
             created_at: Some(last.created_at),
             minted_tickets: Some(last.minted_tickets),
             count_of_ratings: Some(last.count_of_ratings as i64),
+            min_ticket_price: Some(last.min_ticket_price),
         }) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -930,11 +1010,17 @@ mod tests {
                 updated_at: now,
             },
             total_events: 3,
+            followers_count: 12,
+            following_count: 4,
+            is_following: true,
         };
 
         let json = serde_json::to_value(response).unwrap();
         assert_eq!(json["address"], "GABC");
         assert_eq!(json["total_events"], 3);
+        assert_eq!(json["followers_count"], 12);
+        assert_eq!(json["following_count"], 4);
+        assert_eq!(json["is_following"], true);
     }
 
     #[test]
@@ -972,11 +1058,17 @@ mod tests {
                 updated_at: now,
             },
             total_events: 5,
+            followers_count: 20,
+            following_count: 8,
+            is_following: false,
         };
         let json_str = serde_json::to_string(&response).unwrap();
         let decoded: OrganizerProfileResponse = serde_json::from_str(&json_str).unwrap();
         assert_eq!(decoded.profile.address, "GABC");
         assert_eq!(decoded.total_events, 5);
+        assert_eq!(decoded.followers_count, 20);
+        assert_eq!(decoded.following_count, 8);
+        assert_eq!(decoded.is_following, false);
     }
 
     #[test]
@@ -1058,6 +1150,7 @@ mod tests {
         let params = CursorParams {
             limit: 10,
             cursor: None,
+            count: true,
         };
         let validated = params.validate();
         assert_eq!(validated.page_size(), 10);
@@ -1070,6 +1163,7 @@ mod tests {
         let params = CursorParams {
             limit: 5,
             cursor: Some("some-cursor-value".to_string()),
+            count: true,
         };
         let validated = params.validate();
         assert_eq!(validated.cursor.as_deref(), Some("some-cursor-value"));
@@ -1094,4 +1188,115 @@ mod tests {
         assert_eq!(value["status"], json!("completed"));
         assert!(value.get("created_at").is_some());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Wallet Ticket Aggregation (#1122)
+// ---------------------------------------------------------------------------
+
+/// A single ticket enriched with its event details, returned by
+/// `GET /api/v1/profile/tickets`.
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct WalletTicket {
+    pub id: Uuid,
+    pub stellar_id: Option<String>,
+    pub status: String,
+    pub ticket_tier_id: Option<Uuid>,
+    pub ticket_tier_name: Option<String>,
+    pub ticket_price: Option<rust_decimal::Decimal>,
+    pub event_id: Option<Uuid>,
+    pub event_title: Option<String>,
+    pub event_location: Option<String>,
+    pub event_start_time: Option<DateTime<Utc>>,
+    pub event_image_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Response shape for `GET /api/v1/profile/tickets`.
+///
+/// Tickets are split into two collections:
+/// - `upcoming` – tickets for events that have not yet started, sorted
+///   soonest-first.
+/// - `past` – tickets for events that have already started, sorted most-recent
+///   first.
+///
+/// Empty wallets receive `{ "upcoming": [], "past": [] }` with a 200 status.
+#[derive(Debug, Serialize)]
+pub struct WalletTicketsResponse {
+    pub upcoming: Vec<WalletTicket>,
+    pub past: Vec<WalletTicket>,
+}
+
+/// `GET /api/v1/profile/tickets`
+///
+/// Aggregates all tickets that belong to the authenticated wallet address and
+/// groups them into upcoming and past collections.
+///
+/// # Authentication
+/// Requires a valid JWT (`Authorization: Bearer <token>` or `auth_token` cookie).
+///
+/// # Response
+/// ```json
+/// {
+///   "upcoming": [ { "id": "...", "status": "active", "event_title": "...", ... } ],
+///   "past":     [ { "id": "...", "status": "used",   "event_title": "...", ... } ]
+/// }
+/// ```
+pub async fn get_wallet_tickets(State(state): State<ProfileState>, headers: HeaderMap) -> Response {
+    let address = match extract_auth(&headers) {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+
+    // Single query: fetch all tickets for this wallet address joined with their
+    // event and ticket-tier information. We bring back everything in one round
+    // trip and split on the application side.
+    let tickets = match sqlx::query_as::<_, WalletTicket>(
+        r#"
+        SELECT
+            t.id,
+            t.stellar_id,
+            t.status,
+            t.ticket_tier_id,
+            tt.name        AS ticket_tier_name,
+            tt.price       AS ticket_price,
+            t.event_id,
+            e.title        AS event_title,
+            e.location     AS event_location,
+            e.start_time   AS event_start_time,
+            e.image_url    AS event_image_url,
+            t.created_at
+        FROM tickets t
+        LEFT JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
+        LEFT JOIN events        e  ON e.id  = t.event_id
+        WHERE
+            t.owner_wallet = $1
+            OR t.buyer_wallet = $1
+        ORDER BY e.start_time ASC NULLS LAST
+        "#,
+    )
+    .bind(&address)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch wallet tickets for {address}: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    let now = Utc::now();
+
+    let (upcoming, mut past): (Vec<WalletTicket>, Vec<WalletTicket>) =
+        tickets.into_iter().partition(|t| {
+            t.event_start_time.map(|start| start >= now).unwrap_or(true) // tickets without an event date are treated as upcoming
+        });
+
+    // Upcoming: soonest first (already ordered by query).
+    // Past: most-recent first — reverse the chronological order.
+    past.sort_by_key(|b| std::cmp::Reverse(b.event_start_time));
+
+    let response = WalletTicketsResponse { upcoming, past };
+    success(response, "Wallet tickets retrieved successfully").into_response()
 }

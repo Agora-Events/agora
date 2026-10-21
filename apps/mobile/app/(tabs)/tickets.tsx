@@ -1,86 +1,280 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useState, useCallback, useEffect } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  RefreshControl,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
+import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/hooks/useTheme';
 import Colors from '@/constants/Colors';
-
-interface TicketItem {
-  id: string;
-  eventTitle: string;
-  date: string;
-  seat: string;
-  txHash: string;
-}
-
-const MOCK_TICKETS: TicketItem[] = [
-  {
-    id: 'T-1004',
-    eventTitle: 'Stellar Meridian 2026',
-    date: 'Oct 15, 2026',
-    seat: 'General Admission',
-    txHash: '0x3f...b82d',
-  },
-];
+import {
+  AttendeeTicket,
+  FALLBACK_TICKETS,
+  fetchAttendeeTickets,
+  getCachedAttendeeTickets,
+} from '@/services/ticketService';
 
 export default function TicketsScreen() {
+  const { theme, palette } = useTheme();
+  const [tickets, setTickets] = useState<AttendeeTicket[]>(FALLBACK_TICKETS);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [networkError, setNetworkError] = useState<string | null>(null);
+
+  const loadTickets = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    }
+    try {
+      const fetchedTickets = await fetchAttendeeTickets();
+      setTickets(fetchedTickets);
+      setNetworkError(null);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Unable to refresh tickets. Please check your network connection.';
+      setNetworkError(message);
+
+      // Attempt to preserve previously cached tickets on error
+      const cached = await getCachedAttendeeTickets();
+      if (cached && cached.length > 0) {
+        setTickets(cached);
+      }
+    } finally {
+      if (isRefresh) {
+        setRefreshing(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    // Initial fetch on mount
+    void loadTickets(false);
+
+    // Subscribe to network connectivity changes
+    const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
+      const isOffline = state.isConnected === false || state.isInternetReachable === false;
+      if (isOffline) {
+        setNetworkError('You are currently offline. Check your network connection.');
+      } else if (state.isConnected === true && state.isInternetReachable !== false) {
+        // Auto-clear network error if connectivity is restored
+        setNetworkError(null);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [loadTickets]);
+
+  const onRefresh = useCallback(async () => {
+    await loadTickets(true);
+  }, [loadTickets]);
+
+  const handleRetry = useCallback(async () => {
+    setIsRetrying(true);
+    try {
+      await loadTickets(false);
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [loadTickets]);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.header}>My Tickets</Text>
-      
-      {MOCK_TICKETS.length > 0 ? (
-        MOCK_TICKETS.map((ticket) => (
-          <View key={ticket.id} style={styles.ticketCard}>
-            <View style={styles.ticketHeader}>
-              <Text style={styles.ticketId}>{ticket.id}</Text>
-              <Text style={styles.verifiedBadge}>Verified</Text>
-            </View>
-            <Text style={styles.eventTitle}>{ticket.eventTitle}</Text>
-            <View style={styles.detailsRow}>
-              <View>
-                <Text style={styles.label}>Date</Text>
-                <Text style={styles.value}>{ticket.date}</Text>
-              </View>
-              <View>
-                <Text style={styles.label}>Section/Seat</Text>
-                <Text style={styles.value}>{ticket.seat}</Text>
-              </View>
-            </View>
-            <View style={styles.txContainer}>
-              <Text style={styles.txLabel}>Transaction Hash</Text>
-              <Text style={styles.txValue}>{ticket.txHash}</Text>
-            </View>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Network Error Retry Banner */}
+      {networkError && (
+        <View
+          style={[styles.bannerContainer, { backgroundColor: '#DC2626' }]}
+          testID="network-error-banner"
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+        >
+          <View style={styles.bannerContent}>
+            <Ionicons
+              name="cloud-offline-outline"
+              size={20}
+              color="#FFFFFF"
+              style={styles.bannerIcon}
+            />
+            <Text style={styles.bannerText} numberOfLines={2}>
+              {networkError}
+            </Text>
           </View>
-        ))
-      ) : (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>You don't have any tickets yet.</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={handleRetry}
+            disabled={isRetrying || refreshing}
+            testID="retry-button"
+            accessibilityRole="button"
+            accessibilityLabel="Retry ticket refresh"
+          >
+            {isRetrying ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <View style={styles.retryButtonContent}>
+                <Ionicons name="refresh" size={14} color="#FFFFFF" style={styles.retryIcon} />
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       )}
-    </ScrollView>
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        testID="tickets-scroll-view"
+        refreshControl={
+          <RefreshControl
+            testID="tickets-refresh-control"
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.palette.primaryYellow}
+            colors={[Colors.palette.primaryYellow]}
+          />
+        }
+      >
+        <Text style={[styles.header, { color: theme.text }]}>My Tickets</Text>
+
+        {tickets.length > 0 ? (
+          tickets.map((ticket) => (
+            <View
+              key={ticket.id}
+              testID="ticket-card"
+              style={[
+                styles.ticketCard,
+                {
+                  backgroundColor: theme.cardBackground,
+                  borderColor: theme.border,
+                  borderLeftColor: palette.primaryYellow,
+                },
+              ]}
+            >
+              <View style={styles.ticketHeader}>
+                <Text style={[styles.ticketId, { color: theme.icon }]}>{ticket.id}</Text>
+                <Text
+                  style={[
+                    styles.verifiedBadge,
+                    {
+                      backgroundColor: theme.successBadgeBackground,
+                      color: theme.successBadgeText,
+                    },
+                  ]}
+                >
+                  Verified
+                </Text>
+              </View>
+
+              <Text style={[styles.eventTitle, { color: theme.text }]}>
+                {ticket.eventTitle}
+              </Text>
+
+              <View style={styles.detailsRow}>
+                <View>
+                  <Text style={[styles.label, { color: theme.icon }]}>Date</Text>
+                  <Text style={[styles.value, { color: theme.text }]}>{ticket.date}</Text>
+                </View>
+                <View>
+                  <Text style={[styles.label, { color: theme.icon }]}>Section/Seat</Text>
+                  <Text style={[styles.value, { color: theme.text }]}>{ticket.seat}</Text>
+                </View>
+              </View>
+
+              <View style={[styles.txContainer, { borderTopColor: theme.border }]}>
+                <Text style={[styles.txLabel, { color: theme.icon }]}>Transaction Hash</Text>
+                <Text style={[styles.txValue, { color: palette.primaryYellow }]}>
+                  {ticket.txHash}
+                </Text>
+              </View>
+            </View>
+          ))
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyText, { color: theme.icon }]}>
+              You don&apos;t have any tickets yet.
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.darkBackground,
   },
   content: {
     padding: 16,
   },
+  bannerContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 10,
+    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+  },
+  bannerContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  bannerIcon: {
+    marginRight: 8,
+  },
+  bannerText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  retryButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  retryIcon: {
+    marginRight: 4,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   header: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: Colors.primaryText,
     marginBottom: 20,
   },
   ticketCard: {
-    backgroundColor: '#1E1E20',
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     borderLeftWidth: 4,
-    borderLeftColor: Colors.primaryYellow,
     borderWidth: 1,
-    borderColor: '#2C2C2E',
   },
   ticketHeader: {
     flexDirection: 'row',
@@ -88,13 +282,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   ticketId: {
-    color: Colors.secondaryText,
     fontSize: 12,
     fontWeight: 'bold',
   },
   verifiedBadge: {
-    backgroundColor: '#34C75922',
-    color: '#34C759',
     fontSize: 10,
     fontWeight: 'bold',
     paddingHorizontal: 8,
@@ -105,7 +296,6 @@ const styles = StyleSheet.create({
   eventTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: Colors.primaryText,
     marginBottom: 16,
   },
   detailsRow: {
@@ -115,27 +305,22 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 12,
-    color: Colors.secondaryText,
     marginBottom: 4,
   },
   value: {
     fontSize: 14,
-    color: Colors.primaryText,
     fontWeight: '500',
   },
   txContainer: {
     borderTopWidth: 1,
-    borderTopColor: '#2C2C2E',
     paddingTop: 12,
   },
   txLabel: {
     fontSize: 11,
-    color: Colors.secondaryText,
     marginBottom: 2,
   },
   txValue: {
     fontSize: 12,
-    color: Colors.primaryYellow,
     fontFamily: 'SpaceMono',
   },
   emptyContainer: {
@@ -145,7 +330,6 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   emptyText: {
-    color: Colors.secondaryText,
     fontSize: 16,
     textAlign: 'center',
   },

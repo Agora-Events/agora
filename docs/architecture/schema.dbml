@@ -8,6 +8,8 @@ Table Event {
   description String [not null, default: '']
   startsAt DateTime [not null]
   location String [not null]
+  latitude Float [note: 'Optional WGS84 latitude for map discovery (-90 to 90).']
+  longitude Float [note: 'Optional WGS84 longitude for map discovery (-180 to 180).']
   category String [not null]
   organizerName String [not null]
   organizerWallet String [not null]
@@ -20,6 +22,7 @@ Table Event {
   createdAt DateTime [default: `now()`, not null]
   updatedAt DateTime [not null]
   tickets Ticket [not null]
+  analyticsEvents AnalyticsEvent [not null]
 }
 
 Table Ticket {
@@ -30,6 +33,9 @@ Table Ticket {
   buyerWallet String [not null]
   ownerWallet String [not null]
   quantity Int [not null, default: 1]
+  utmSource String
+  utmMedium String
+  utmCampaign String
   createdAt DateTime [default: `now()`, not null]
 }
 
@@ -46,4 +52,14 @@ Table OrganizerProfile {
 Issue #486: Organizer Profile Management'
 }
 
+Table AnalyticsEvent {
+  id String [pk]
+  eventId String [not null]
+  event Event [not null]
+  type String [not null]
+  createdAt DateTime [default: `now()`, not null]
+}
+
 Ref: Ticket.eventId > Event.id
+
+Ref: AnalyticsEvent.eventId > Event.id [delete: Cascade]

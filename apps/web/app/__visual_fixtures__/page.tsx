@@ -122,25 +122,77 @@ export default function VisualFixturesPage() {
         </div>
       </section>
 
-      {/* ── EventCard ─────────────────────────────────────────────────────── */}
+      {/* ── EventCard Variants ───────────────────────────────────────────── */}
       <section data-testid="fixture-event-card" className="flex flex-col gap-6 max-w-xl">
         <h2 className="text-2xl font-extrabold">EventCard</h2>
-        <EventCard
-          id={1}
-          title="Stellar Developer Summit"
-          date="Thu, 22 Jan · 1:00 PM"
-          location="Online"
-          price="Free"
-          imageUrl="/images/event1.png"
-        />
-        <EventCard
-          id={2}
-          title="React Summit 2026 — A Very Long Event Title That Should Wrap Correctly"
-          date="Mon, 10 Feb · 9:00 AM"
-          location="London, UK"
-          price="49"
-          imageUrl="/images/event2.png"
-        />
+        
+        <div data-testid="fixture-event-card-free">
+          <EventCard
+            id="free"
+            title="Stellar Developer Summit"
+            date="Thu, 22 Jan · 1:00 PM"
+            location="Online"
+            price="Free"
+            imageUrl="/images/event1.png"
+          />
+        </div>
+
+        <div data-testid="fixture-event-card-paid">
+          <EventCard
+            id="paid"
+            title="Web3 Developers Workshop"
+            date="Fri, 15 Feb · 2:00 PM"
+            location="San Francisco, CA"
+            price="49"
+            imageUrl="/images/event2.png"
+          />
+        </div>
+
+        <div data-testid="fixture-event-card-sold-out">
+          <EventCard
+            id="sold-out"
+            title="VIP Gala & Dinner"
+            date="Sat, 1 Mar · 7:00 PM"
+            location="New York, NY"
+            price="99"
+            isSoldOut
+            imageUrl="/images/event1.png"
+          />
+        </div>
+
+        <div data-testid="fixture-event-card-followers-only">
+          <EventCard
+            id="followers-only"
+            title="Exclusive Organizer Hangout"
+            date="Sun, 10 Mar · 4:00 PM"
+            location="Discord"
+            price="Free"
+            isFollowersOnly
+            imageUrl="/images/event2.png"
+          />
+        </div>
+
+        <div data-testid="fixture-event-card-long-title">
+          <EventCard
+            id="long-title"
+            title="React Summit 2026 — A Very Long Event Title That Should Wrap Correctly Across Multiple Lines Without Overflowing Container"
+            date="Mon, 10 Feb · 9:00 AM"
+            location="London, UK"
+            price="25"
+            imageUrl="/images/event1.png"
+          />
+        </div>
+
+        <div data-testid="fixture-event-card-missing-image">
+          <EventCard
+            id="missing-image"
+            title="Community Meetup"
+            date="Wed, 25 Mar · 6:00 PM"
+            location="Austin, TX"
+            price="10"
+            imageUrl=""
+          />
+        </div>
       </section>
 
       {/* ── RegistrationBox ───────────────────────────────────────────────── */}

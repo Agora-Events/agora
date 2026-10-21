@@ -1,5 +1,15 @@
 use soroban_sdk::{contracttype, Address, Map, String, Vec};
 
+/// Platform-wide collateral staking configuration.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StakingConfig {
+    /// Token contract accepted for organizer collateral.
+    pub token: Option<Address>,
+    /// Minimum amount required for Verified status, in token base units.
+    pub min_amount: i128,
+}
+
 /// Role-based access control for event teams.
 /// Defines granular permissions for large events with multiple team members.
 #[contracttype]
@@ -236,6 +246,22 @@ pub struct PaymentInfo {
     pub referral_rate_bps: u32,
 }
 
+/// Lightweight capacity snapshot for an event (Issue #1560).
+///
+/// Lets indexers and the frontend query how many tickets are still available
+/// without fetching and deserializing the full `EventInfo` struct.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct EventCapacity {
+    /// Maximum number of tickets available for this event (0 = unlimited).
+    pub max_supply: i128,
+    /// Current number of tickets that have been successfully purchased.
+    pub current_supply: i128,
+    /// Remaining tickets (`max_supply - current_supply`). `None` when the
+    /// event has unlimited supply (`max_supply == 0`).
+    pub available: Option<i128>,
+}
+
 /// Arguments required to register a new event
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -391,11 +417,49 @@ pub enum ParameterChange {
     SetMinStakeAmount(i128),
 }
 
+/// Status of a dispute
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    Open,
+    Voting,
+    ResolvedBuyer,
+    ResolvedOrganizer,
+    Expired,
+}
+
+/// Vote type in a dispute
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum DisputeVote {
+    BuyerFavor = 1,
+    OrganizerFavor = 2,
+}
+
+/// Represents a dispute on an event
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Dispute {
+    pub event_id: String,
+    pub opened_by: Address,
+    pub opened_at: u64,
+    pub closes_at: u64,
+    pub status: DisputeStatus,
+    pub total_votes: u32,
+    pub buyer_votes: u32,
+    pub organizer_votes: u32,
+    pub quorum_threshold_bps: u32,
+    pub total_eligible_tickets: i128,
+}
+
 /// Storage keys for the Event Registry contract.
 #[contracttype]
 pub enum DataKey {
     /// The administrator address for contract management (legacy, kept for backward compatibility)
     Admin,
+    /// Proposed new administrator address awaiting acceptance
+    PendingAdmin,
     /// Multi-signature configuration
     MultiSigConfig,
     /// The platform wallet address for fee collection
@@ -485,4 +549,14 @@ pub enum DataKey {
     CategoryEvents(u32),
     /// Mapping of (event_id, team_member_address) to Role for team-based access control (Persistent)
     EventTeamRole(String, Address),
+
+    // ── Dispute Storage ───────────────────────────────────────────────────────
+    /// Mapping of event_id to Dispute (Persistent)
+    Dispute(String),
+    /// Mapping of (event_id, voter_address) to DisputeVote (Persistent)
+    DisputeVote(String, Address),
+    /// Sharded list of voters for a dispute (Persistent)
+    DisputeVoteShard(String, u32),
+    /// Total number of votes for a dispute (Persistent)
+    DisputeVoteCount(String),
 }

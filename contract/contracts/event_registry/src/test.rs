@@ -2851,7 +2851,9 @@ fn test_set_staking_config_success() {
     let token = Address::generate(&env);
     let min_amount = 1000_0000000i128;
     client.set_staking_config(&token, &min_amount);
-    // No error means success; verify via a stake attempt
+    let config = client.get_staking_config();
+    assert_eq!(config.token, Some(token));
+    assert_eq!(config.min_amount, min_amount);
 }
 
 #[test]
@@ -4522,7 +4524,7 @@ fn test_get_events_batch_limit() {
     let client = EventRegistryContractClient::new(&env, &contract_id);
     
     let res = client.try_get_events_batch(&event_ids);
-    assert_eq!(res, Err(Ok(EventRegistryError::TooManyTiers)));
+    assert_eq!(res, Err(Ok(EventRegistryError::BatchSizeExceeded)));
 }
 
 // ── Issues #862, #863, #864: CID validation, is_tier_sold_out, add_tier, deactivate_tier ──

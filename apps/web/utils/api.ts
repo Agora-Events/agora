@@ -12,6 +12,7 @@ export type DiscoverEvent = {
   price: string;
   imageUrl: string;
   category: string;
+  mintedTickets?: number;
 };
 
 export type DiscoverOrganizer = {
@@ -19,6 +20,7 @@ export type DiscoverOrganizer = {
   title: string;
   description: string;
   image: string;
+  wallet?: string;
 };
 
 type DiscoverResponse = {

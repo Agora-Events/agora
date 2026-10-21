@@ -1,6 +1,7 @@
 //! # Storage Module
 //!
 //! This module is the single point of contact between the EventRegistry contract
+#![allow(missing_docs)]
 //! logic and the Soroban persistent ledger. Every read and write to on-chain state
 //! goes through a thin wrapper function defined here, keeping the rest of the codebase
 //! free of raw storage calls.
@@ -70,6 +71,61 @@ use crate::types::{
 };
 use crate::types::{SeriesPass, SeriesRegistry};
 use soroban_sdk::{vec, Address, Env, String, Vec};
+
+// ── TTL / Ledger-Lifetime Constants ──────────────────────────────────────────
+//
+// Stellar produces roughly one ledger every 5 seconds.
+//   1 day  ≈ 17_280 ledgers
+//   1 week ≈ 120_960 ledgers
+//   30 days ≈ 518_400 ledgers
+//
+// Persistent-storage entries expire after their TTL lapses. We keep all
+// persistent keys alive for ≈ 30 days and extend them whenever they drop
+// below the 7-day threshold.  Instance storage (contract-level config) gets
+// a longer lifetime of ≈ 90 days / 30-day threshold.
+
+/// Number of ledgers in approximately 30 days (persistent bump target).
+/// 30 × 24 × 3600 / 5 = 518_400 ledgers.
+pub const PERSISTENT_BUMP_AMOUNT: u32 = 518_400;
+
+/// Minimum remaining TTL (≈ 7 days) before a persistent entry is re-extended.
+/// 7 × 24 × 3600 / 5 = 120_960 ledgers.
+pub const PERSISTENT_LIFETIME_THRESHOLD: u32 = 120_960;
+
+/// Number of ledgers in approximately 90 days (instance bump target).
+/// 90 × 24 × 3600 / 5 = 1_555_200 ledgers.
+pub const INSTANCE_BUMP_AMOUNT: u32 = 1_555_200;
+
+/// Minimum remaining TTL (≈ 30 days) before instance storage is re-extended.
+/// 30 × 24 × 3600 / 5 = 518_400 ledgers.
+pub const INSTANCE_LIFETIME_THRESHOLD: u32 = 518_400;
+
+/// Extend the TTL of a specific persistent-storage key so it lives for at least
+/// another [`PERSISTENT_BUMP_AMOUNT`] ledgers (≈ 30 days).
+///
+/// The call is a no-op when the current TTL already exceeds
+/// [`PERSISTENT_LIFETIME_THRESHOLD`] (≈ 7 days), preventing unnecessary
+/// ledger writes.
+pub fn bump_persistent(env: &Env, key: &DataKey) {
+    env.storage().persistent().extend_ttl(
+        key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+/// Extend the TTL of the contract's *instance* storage so it lives for at
+/// least another [`INSTANCE_BUMP_AMOUNT`] ledgers (≈ 90 days).
+///
+/// Instance storage holds infrequently-changed configuration (admin address,
+/// approved organizers, initialized flag).  Call this on any mutating entry
+/// point that touches instance keys.
+pub fn bump_instance(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+}
+
 // ── Series Storage ────────────────────────────────────────────────────────────
 /// Persists a SeriesRegistry and indexes every event it contains.
 /// Storage keys: DataKey::Series(series_id) and DataKey::SeriesEvent(series_id, event_id).
@@ -199,6 +255,22 @@ pub fn set_admin(env: &Env, admin: &Address) {
 /// Retrieves the administrator address of the contract (legacy function).
 pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&DataKey::Admin)
+}
+
+/// Sets a pending administrator address awaiting acceptance.
+pub fn set_pending_admin(env: &Env, admin: &Address) {
+    env.storage().persistent().set(&DataKey::PendingAdmin, admin);
+    bump_persistent(env, &DataKey::PendingAdmin);
+}
+
+/// Retrieves the pending administrator address, if any.
+pub fn get_pending_admin(env: &Env) -> Option<Address> {
+    env.storage().persistent().get(&DataKey::PendingAdmin)
+}
+
+/// Clears the pending administrator address.
+pub fn clear_pending_admin(env: &Env) {
+    env.storage().persistent().remove(&DataKey::PendingAdmin);
 }
 
 /// Sets the multi-signature configuration.
@@ -656,11 +728,9 @@ pub fn get_organizer_events(env: &Env, organizer: &Address, caller: &Address) ->
             // Filter out private events if caller is not the organizer
             if is_owner {
                 all_events.push_back(id);
-            } else {
-                if let Some(event_info) = get_event(env, id.clone()) {
-                    if !event_info.is_private {
-                        all_events.push_back(id);
-                    }
+            } else if let Some(event_info) = get_event(env, id.clone()) {
+                if !event_info.is_private {
+                    all_events.push_back(id);
                 }
             }
         }
@@ -1050,29 +1120,36 @@ pub fn decrement_global_active_event_count(env: &Env) {
 }
 
 /// Returns the total number of tickets sold across all events.
+/// Uses the standard Soroban bumpable counter pattern to extend the key's TTL.
 pub fn get_global_tickets_sold(env: &Env) -> i128 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::GlobalTicketsSold)
-        .unwrap_or(0)
+    let key = DataKey::GlobalTicketsSold;
+    let count: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+    bump_persistent(env, &key);
+    count
 }
 
 /// Adds `quantity` to the global tickets sold counter.
+/// Uses the standard Soroban bumpable counter pattern to persist the new value and extend its TTL.
 pub fn add_to_global_tickets_sold(env: &Env, quantity: i128) {
-    let current = get_global_tickets_sold(env);
+    let key = DataKey::GlobalTicketsSold;
+    let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
     env.storage().persistent().set(
-        &DataKey::GlobalTicketsSold,
+        &key,
         &(current.saturating_add(quantity)),
     );
+    bump_persistent(env, &key);
 }
 
 /// Subtracts `quantity` from the global tickets sold counter.
+/// Uses the standard Soroban bumpable counter pattern to persist the new value and extend its TTL.
 pub fn subtract_from_global_tickets_sold(env: &Env, quantity: i128) {
-    let current = get_global_tickets_sold(env);
+    let key = DataKey::GlobalTicketsSold;
+    let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
     env.storage().persistent().set(
-        &DataKey::GlobalTicketsSold,
+        &key,
         &(current.saturating_sub(quantity)),
     );
+    bump_persistent(env, &key);
 }
 
 /// Returns the number of tickets a user has purchased for a specific event tier.
@@ -1259,9 +1336,107 @@ pub fn has_event_role(
     required_role: crate::types::Role,
 ) -> bool {
     if let Some(member_role) = get_event_team_role(env, event_id, member) {
-        // Check role hierarchy: Admin (1) > Manager (2) > Scanner (3)
         (member_role as u32) <= (required_role as u32)
     } else {
         false
     }
+}
+
+// ── Dispute Storage ────────────────────────────────────────────────────────────
+
+const DISPUTE_SHARD_SIZE: u32 = 50;
+
+/// Stores a dispute for an event.
+pub fn store_dispute(env: &Env, dispute: &crate::types::Dispute) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Dispute(dispute.event_id.clone()), dispute);
+}
+
+/// Retrieves a dispute by event_id.
+pub fn get_dispute(env: &Env, event_id: String) -> Option<crate::types::Dispute> {
+    env.storage().persistent().get(&DataKey::Dispute(event_id))
+}
+
+/// Adds a vote to the dispute vote shard list.
+pub fn add_dispute_vote(env: &Env, event_id: String, voter: &Address) {
+    let count = get_dispute_vote_count(env, event_id.clone());
+    let shard_id = count / DISPUTE_SHARD_SIZE;
+
+    let mut shard: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::DisputeVoteShard(event_id.clone(), shard_id))
+        .unwrap_or_else(|| Vec::new(env));
+
+    shard.push_back(voter.clone());
+    env.storage().persistent().set(
+        &DataKey::DisputeVoteShard(event_id.clone(), shard_id),
+        &shard,
+    );
+
+    env.storage()
+        .persistent()
+        .set(&DataKey::DisputeVoteCount(event_id.clone()), &(count + 1));
+}
+
+/// Gets all votes for a dispute.
+pub fn get_dispute_votes(env: &Env, event_id: String) -> Vec<crate::types::DisputeVote> {
+    let count = get_dispute_vote_count(env, event_id.clone());
+    let mut votes = Vec::new(env);
+
+    if count == 0 {
+        return votes;
+    }
+
+    let num_shards = count.div_ceil(DISPUTE_SHARD_SIZE);
+    for i in 0..num_shards {
+        let shard: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::DisputeVoteShard(event_id.clone(), i))
+            .unwrap_or_else(|| Vec::new(env));
+
+        for voter in shard.iter() {
+            if let Some(vote) = env
+                .storage()
+                .persistent()
+                .get::<_, crate::types::DisputeVote>(&DataKey::DisputeVote(
+                    event_id.clone(),
+                    voter.clone(),
+                ))
+            {
+                votes.push_back(vote);
+            }
+        }
+    }
+
+    votes
+}
+
+/// Gets the total number of votes for a dispute.
+pub fn get_dispute_vote_count(env: &Env, event_id: String) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DisputeVoteCount(event_id))
+        .unwrap_or(0)
+}
+
+/// Checks if a voter has already voted on a dispute.
+pub fn has_voted(env: &Env, event_id: String, voter: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::DisputeVote(event_id, voter.clone()))
+}
+
+/// Stores a dispute vote.
+pub fn store_dispute_vote(
+    env: &Env,
+    event_id: String,
+    voter: &Address,
+    vote: &crate::types::DisputeVote,
+) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DisputeVote(event_id, voter.clone()), vote);
 }

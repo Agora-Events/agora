@@ -16,7 +16,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 /** Navigate to the fixture page and wait for it to be fully hydrated. */
 async function goToFixtures(page: Page) {
-  await page.goto("/__visual_fixtures__");
+  await page.goto("/visual-fixtures");
   // Wait for the fixture page heading to be visible before taking any screenshot.
   await page.waitForSelector("h2", { state: "visible" });
   // Freeze CSS animations/transitions so snapshots are deterministic.
@@ -46,10 +46,7 @@ test.describe("Button – visual snapshot", () => {
     await expect(section).toBeVisible();
 
     const theme = themeLabel(testInfo.project.name);
-    await expect(section).toHaveScreenshot(`button-${theme}.png`, {
-      // Clip to the section so surrounding layout changes don't break this test.
-      clip: await section.boundingBox() ?? undefined,
-    });
+    await expect(section).toHaveScreenshot(`button-${theme}.png`);
   });
 });
 
@@ -62,9 +59,7 @@ test.describe("EventCard – visual snapshot", () => {
     await expect(section).toBeVisible();
 
     const theme = themeLabel(testInfo.project.name);
-    await expect(section).toHaveScreenshot(`event-card-${theme}.png`, {
-      clip: await section.boundingBox() ?? undefined,
-    });
+    await expect(section).toHaveScreenshot(`event-card-${theme}.png`);
   });
 });
 
@@ -77,9 +72,7 @@ test.describe("RegistrationBox – visual snapshot", () => {
     await expect(section).toBeVisible();
 
     const theme = themeLabel(testInfo.project.name);
-    await expect(section).toHaveScreenshot(`registration-box-${theme}.png`, {
-      clip: await section.boundingBox() ?? undefined,
-    });
+    await expect(section).toHaveScreenshot(`registration-box-${theme}.png`);
   });
 });
 

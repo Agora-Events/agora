@@ -1,21 +1,80 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
+/**
+ * ticket/[id].tsx — Issue #1179: Offline Ticket Vault
+ *
+ * Ticket detail screen with:
+ *   - Biometric authentication gate before any vault decryption (issue #1179)
+ *   - Rotating QR display via DynamicQrView (replaces the old ad-hoc approach)
+ *   - Explicit biometric-unavailable and biometric-failure states
+ *
+ * Biometric flow:
+ *   1. Screen mounts → useBiometricAuth checks hardware availability.
+ *   2. If unavailable (no hardware / not enrolled): show an error banner;
+ *      the QR section is never shown. Do NOT silently unlock.
+ *   3. User taps "Show Ticket QR" → OS biometric prompt appears.
+ *   4. On success: vault secret is read, keypair derived in memory, passed
+ *      to DynamicQrView. The secretKey is held only in React state for the
+ *      lifetime of the screen — it is cleared on unmount.
+ *   5. On failure / cancel: explicit error message shown; QR stays hidden.
+ *
+ * Android note: expo-secure-store on Android does not self-prompt for
+ * biometrics. We call useBiometricAuth().authenticate() first, and only call
+ * getTicketSecret() after it resolves with success. On iOS the Keychain item
+ * itself requires authentication, so the OS prompts automatically — the
+ * explicit authenticate() call before reading is belt-and-suspenders.
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Modal,
+  Alert,
+  ActivityIndicator,
+  TouchableOpacity,
+} from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import Colors from '@/constants/Colors';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Keypair, Networks, TransactionBuilder, Horizon } from '@stellar/stellar-sdk';
 import { StellarWalletManager } from '@/services/stellar';
+import { useBiometricAuth } from '@/hooks/useBiometricAuth';
+import { getTicketSecret } from '@/services/ticketVault';
+import { getTicket, type TicketDetails } from '@/services/paymentsApi';
+import { deriveTicketKeyPair } from '@/lib/crypto';
+import DynamicQrView from '@/components/ticket/DynamicQrView';
+
+function formatTicketDate(value: string | null): string {
+  if (!value) return 'Date unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? 'Date unavailable'
+    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatTicketStatus(status: string): string {
+  if (status.toLowerCase() === 'unused' || status.toLowerCase() === 'active') {
+    return 'Active';
+  }
+  return status ? status[0].toUpperCase() + status.slice(1).toLowerCase() : 'Unknown';
+}
 
 export default function TicketDetailsScreen() {
-  const { id } = useLocalSearchParams();
-  
-  const [ticketStatus, setTicketStatus] = useState<'Active' | 'Transferred' | 'Listed'>('Active');
-  
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const ticketId = typeof id === 'string' ? id : undefined;
+
+  const [ticketStatus, setTicketStatus] = useState('Active');
+  const [ticket, setTicket] = useState<TicketDetails | null>(null);
+  const [ticketLoading, setTicketLoading] = useState(true);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+
   // Modals state
   const [isTransferModalOpen, setTransferModalOpen] = useState(false);
   const [isSellModalOpen, setSellModalOpen] = useState(false);
-  
+
   // Form states
   const [recipientAddress, setRecipientAddress] = useState('');
   const [recipientError, setRecipientError] = useState('');
@@ -23,14 +82,114 @@ export default function TicketDetailsScreen() {
   const [sellError, setSellError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // MOCK Ticket Details (consistent with `tickets.tsx` style)
-  const ticket = {
-    id: id || 'T-1004',
-    eventTitle: 'Stellar Meridian 2026',
-    date: 'Oct 15, 2026',
-    seat: 'General Admission',
-    txHash: '0x3f...b82d',
-  };
+  // Vault state — secretKey held in memory only, never persisted to state storage.
+  // Cleared when the screen unmounts.
+  const [vaultSecretKey, setVaultSecretKey] = useState<Uint8Array | null>(null);
+  const [vaultError, setVaultError] = useState<string | null>(null);
+  const [vaultLoading, setVaultLoading] = useState(false);
+
+  const biometric = useBiometricAuth();
+
+  useEffect(() => {
+    let isCurrent = true;
+    setTicket(null);
+    setTicketError(null);
+    setTicketLoading(true);
+    setTicketStatus('Active');
+    setVaultSecretKey(null);
+
+    if (!ticketId) {
+      setTicketError('No ticket was specified.');
+      setTicketLoading(false);
+      return () => {
+        isCurrent = false;
+      };
+    }
+
+    getTicket(ticketId)
+      .then((result) => {
+        if (!isCurrent) return;
+        setTicket(result);
+        setTicketStatus(formatTicketStatus(result.status));
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent) return;
+        setTicketError(
+          error instanceof Error ? error.message : 'Failed to load your ticket.'
+        );
+      })
+      .finally(() => {
+        if (isCurrent) setTicketLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [ticketId, loadAttempt]);
+
+  // Clear the in-memory key when the screen unmounts to minimise the window
+  // during which the key is resident in JS heap.
+  useEffect(() => {
+    return () => {
+      setVaultSecretKey(null);
+    };
+  }, []);
+
+  /**
+   * Gate: authenticate with biometrics, then read the vault.
+   *
+   * Called when the user taps "Show Ticket QR". Never called automatically
+   * on mount — we require explicit user intent before prompting biometrics.
+   */
+  const handleShowQr = useCallback(async () => {
+    if (!ticket) return;
+    if (biometric.state === 'unavailable') {
+      // Already shown the banner — no point prompting again.
+      return;
+    }
+
+    setVaultError(null);
+    setVaultLoading(true);
+
+    try {
+      // Step 1: authenticate (required on Android; belt-and-suspenders on iOS).
+      await biometric.authenticate();
+
+      // If authentication failed, biometric.state will be 'failed' or 'error'.
+      // We check after awaiting because authenticate() does not throw on failure.
+      if (biometric.state !== 'success') {
+        setVaultLoading(false);
+        return;
+      }
+
+      // Step 2: read vault (OS may re-prompt on iOS if required).
+      const secretBytes = await getTicketSecret(ticket.paymentId);
+      if (!secretBytes) {
+        setVaultError(
+          'No ticket secret found for this ticket. This device may not be the original ' +
+          'purchase device, or the ticket was purchased on a different account.'
+        );
+        setVaultLoading(false);
+        return;
+      }
+
+      // Step 3: derive the signing keypair in memory.
+      const { secretKey } = deriveTicketKeyPair(secretBytes);
+      setVaultSecretKey(secretKey);
+    } catch (err) {
+      setVaultError(
+        err instanceof Error ? err.message : 'Failed to access the ticket vault.'
+      );
+    } finally {
+      setVaultLoading(false);
+    }
+  }, [biometric, ticket]);
+
+  /** Hide the QR and clear the in-memory key. */
+  const handleHideQr = useCallback(() => {
+    setVaultSecretKey(null);
+    biometric.reset();
+  }, [biometric]);
 
   const handleTransferSubmit = async () => {
     // Validate target string against Stellar public key constraints or email
@@ -122,6 +281,30 @@ export default function TicketDetailsScreen() {
     }
   };
 
+  if (ticketLoading) {
+    return (
+      <View style={[styles.container, styles.lookupState]}>
+        <ActivityIndicator size="large" color={Colors.primaryYellow} />
+        <Text style={styles.lookupText}>Loading ticket…</Text>
+      </View>
+    );
+  }
+
+  if (ticketError || !ticket) {
+    return (
+      <View style={[styles.container, styles.lookupState]}>
+        <Text style={styles.lookupError}>{ticketError ?? 'Ticket not found.'}</Text>
+        {ticketId && (
+          <Button
+            title="Try Again"
+            onPress={() => setLoadAttempt((attempt) => attempt + 1)}
+            style={styles.actionButton}
+          />
+        )}
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.header}>Ticket Details</Text>
@@ -129,23 +312,112 @@ export default function TicketDetailsScreen() {
       <View style={styles.ticketCard}>
         <View style={styles.ticketHeader}>
           <Text style={styles.ticketId}>{ticket.id}</Text>
-          <Text style={styles.statusBadge}>{ticketStatus}</Text>
+          <Text
+            style={styles.statusBadge}
+            accessible={true}
+            accessibilityRole="text"
+            accessibilityLabel={`Ticket status: ${ticketStatus}`}
+          >
+            {ticketStatus}
+          </Text>
         </View>
-        <Text style={styles.eventTitle}>{ticket.eventTitle}</Text>
+        <Text style={styles.eventTitle}>
+          {ticket.eventTitle ?? 'Event details unavailable'}
+        </Text>
         <View style={styles.detailsRow}>
           <View>
             <Text style={styles.label}>Date</Text>
-            <Text style={styles.value}>{ticket.date}</Text>
+            <Text style={styles.value}>{formatTicketDate(ticket.eventStartTime)}</Text>
           </View>
           <View>
             <Text style={styles.label}>Section/Seat</Text>
-            <Text style={styles.value}>{ticket.seat}</Text>
+            <Text style={styles.value}>{ticket.ticketTierName ?? 'Ticket tier unavailable'}</Text>
           </View>
         </View>
         <View style={styles.txContainer}>
           <Text style={styles.txLabel}>Transaction Hash</Text>
-          <Text style={styles.txValue}>{ticket.txHash}</Text>
+          <Text style={styles.txValue}>Unavailable</Text>
         </View>
+      </View>
+
+      {/* ── Biometric gate + Rotating QR ──────────────────────────────────── */}
+      <View style={styles.qrSection}>
+        <Text style={styles.sectionTitle}>Entry QR Code</Text>
+
+        {/* Biometric unavailable — explicit error, no silent passthrough */}
+        {biometric.state === 'unavailable' && (
+          <View style={styles.warningBox} accessibilityRole="alert">
+            <Text style={styles.warningText}>
+              ⚠️ Biometric authentication is not available on this device.{'\n'}
+              {biometric.errorMessage ?? 'Please enroll Face ID or Touch ID to display your ticket QR.'}
+            </Text>
+          </View>
+        )}
+
+        {/* Biometric failed — explicit error, no silent passthrough */}
+        {(biometric.state === 'failed' || biometric.state === 'error') && !vaultSecretKey && (
+          <View style={styles.errorBox} accessibilityRole="alert">
+            <Text style={styles.errorText}>
+              {biometric.errorMessage ?? 'Authentication failed. Please try again.'}
+            </Text>
+            <TouchableOpacity
+              onPress={handleShowQr}
+              style={styles.retryButton}
+              accessibilityRole="button"
+              accessibilityLabel="Try Again"
+              accessibilityHint="Retries biometric authentication to display your ticket QR code"
+            >
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Vault error */}
+        {vaultError && (
+          <View style={styles.errorBox} accessibilityRole="alert">
+            <Text style={styles.errorText}>{vaultError}</Text>
+          </View>
+        )}
+
+        {/* Loading */}
+        {vaultLoading && (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={Colors.primaryYellow} accessible={false} />
+            <Text style={styles.loadingText}>Verifying…</Text>
+          </View>
+        )}
+
+        {/* QR unlocked and visible */}
+        {vaultSecretKey && !vaultLoading && (
+          <>
+            <DynamicQrView
+              ticketId={ticket.paymentId}
+              secretKey={vaultSecretKey}
+            />
+            <TouchableOpacity
+              onPress={handleHideQr}
+              style={styles.hideButton}
+              accessibilityRole="button"
+              accessibilityLabel="Hide QR Code"
+              accessibilityHint="Hides the entry QR code and locks the vault"
+            >
+              <Text style={styles.hideButtonText}>Hide QR</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Prompt to authenticate */}
+        {!vaultSecretKey && !vaultLoading && biometric.state !== 'unavailable' && !vaultError && (
+          <Button
+            title="Show Ticket QR"
+            onPress={handleShowQr}
+            accessibilityRole="button"
+            accessibilityLabel="Show Ticket QR"
+            accessibilityHint="Prompts for biometric authentication to display your ticket entry QR code"
+            accessibilityState={{ disabled: vaultLoading || biometric.state === 'unavailable' }}
+            style={styles.actionButton}
+          />
+        )}
       </View>
 
       <View style={styles.actionsContainer}>
@@ -153,12 +425,20 @@ export default function TicketDetailsScreen() {
           title="Transfer Ticket" 
           onPress={() => setTransferModalOpen(true)} 
           disabled={ticketStatus !== 'Active'}
+          accessibilityRole="button"
+          accessibilityLabel="Transfer Ticket"
+          accessibilityHint="Opens dialog to transfer this ticket to another recipient"
+          accessibilityState={{ disabled: ticketStatus !== 'Active' }}
           style={styles.actionButton}
         />
         <Button 
           title="Sell Ticket" 
           onPress={() => setSellModalOpen(true)} 
           disabled={ticketStatus !== 'Active'}
+          accessibilityRole="button"
+          accessibilityLabel="Sell Ticket"
+          accessibilityHint="Opens dialog to list this ticket for secondary resale"
+          accessibilityState={{ disabled: ticketStatus !== 'Active' }}
           style={styles.actionButton}
         />
       </View>
@@ -175,19 +455,38 @@ export default function TicketDetailsScreen() {
               onChangeText={setRecipientAddress}
               error={recipientError}
               autoCapitalize="none"
+              accessibilityLabel="Recipient Stellar Public Key or Email"
+              accessibilityHint="Enter the 56-character Stellar public key starting with G or recipient email address"
             />
-            <View style={styles.warningBox}>
+            <View style={styles.warningBox} accessibilityRole="alert">
               <Text style={styles.warningText}>
                 Estimated Gas Fee: ~0.01 USDC{'\n'}
                 Secondary Transfer Fee: 2.50 USDC
               </Text>
             </View>
             {isProcessing ? (
-              <ActivityIndicator size="large" color={Colors.primaryYellow} />
+              <ActivityIndicator size="large" color={Colors.primaryYellow} accessible={false} />
             ) : (
               <View style={styles.modalActions}>
-                <Button title="Cancel" onPress={() => setTransferModalOpen(false)} style={[styles.modalButton, styles.cancelButton]} />
-                <Button title="Confirm Transfer" onPress={handleTransferSubmit} style={styles.modalButton} />
+                <Button
+                  title="Cancel"
+                  onPress={() => setTransferModalOpen(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel Transfer"
+                  accessibilityHint="Closes the transfer dialog without transferring"
+                  style={[styles.modalButton, styles.cancelButton]}
+                />
+                <Button
+                  title="Confirm Transfer"
+                  onPress={handleTransferSubmit}
+                  disabled={isProcessing}
+                  loading={isProcessing}
+                  accessibilityRole="button"
+                  accessibilityLabel="Confirm Transfer"
+                  accessibilityHint="Confirms and transfers this ticket to the specified recipient"
+                  accessibilityState={{ disabled: isProcessing }}
+                  style={styles.modalButton}
+                />
               </View>
             )}
           </View>
@@ -206,153 +505,43 @@ export default function TicketDetailsScreen() {
               value={sellPrice}
               onChangeText={setSellPrice}
               error={sellError}
+              accessibilityLabel="Listing Price in USDC"
+              accessibilityHint="Enter ticket resale price in USDC"
             />
-            <View style={styles.warningBox}>
+            <View style={styles.warningBox} accessibilityRole="alert">
               <Text style={styles.warningText}>
                 Warning: Organizers may levy contract-level secondary fees (e.g. 10% royalty) on resale transactions.
               </Text>
             </View>
             {isProcessing ? (
-              <ActivityIndicator size="large" color={Colors.primaryYellow} />
+              <ActivityIndicator size="large" color={Colors.primaryYellow} accessible={false} />
             ) : (
               <View style={styles.modalActions}>
-                <Button title="Cancel" onPress={() => setSellModalOpen(false)} style={[styles.modalButton, styles.cancelButton]} />
-                <Button title="Confirm Listing" onPress={handleSellSubmit} style={styles.modalButton} />
+                <Button
+                  title="Cancel"
+                  onPress={() => setSellModalOpen(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel Listing"
+                  accessibilityHint="Closes the listing dialog without listing ticket"
+                  style={[styles.modalButton, styles.cancelButton]}
+                />
+                <Button
+                  title="Confirm Listing"
+                  onPress={handleSellSubmit}
+                  disabled={isProcessing}
+                  loading={isProcessing}
+                  accessibilityRole="button"
+                  accessibilityLabel="Confirm Listing"
+                  accessibilityHint="Confirms and lists this ticket for sale on the secondary marketplace"
+                  accessibilityState={{ disabled: isProcessing }}
+                  style={styles.modalButton}
+                />
               </View>
             )}
           </View>
         </View>
       </Modal>
     </ScrollView>
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import { Keypair } from '@stellar/stellar-sdk';
-
-interface Ticket {
-  id: string;
-  eventName: string;
-  date: string;
-  venue: string;
-  seat: string;
-}
-
-export default function TicketDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [qrPayload, setQrPayload] = useState<string | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const fetchTicket = useCallback(async () => {
-    try {
-      // Offline support: try to load from cache first
-      const cached = await SecureStore.getItemAsync('ticket_cache');
-      let tickets: Ticket[] = cached ? JSON.parse(cached) : [];
-
-      // Try to fetch from API if online
-      try {
-        const response = await fetch('/api/profile');
-        if (response.ok) {
-          const data = await response.json();
-          tickets = data.tickets || [];
-          await SecureStore.setItemAsync('ticket_cache', JSON.stringify(tickets));
-        }
-      } catch (e) {
-        // Offline: continue with cached tickets
-      }
-
-      const found = tickets.find((t) => t.id === id);
-      if (found) {
-        setTicket(found);
-      }
-    } catch (e) {
-      console.error('Error fetching ticket', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
-
-  const generateDynamicPayload = useCallback(async () => {
-    if (!id) return;
-    try {
-      // Fetch private key from secure store ONLY for the signature process
-      const privateKey = await SecureStore.getItemAsync('privateKey');
-      if (!privateKey) {
-        console.error('No private key found');
-        return;
-      }
-
-      // Use system time (works offline)
-      const timestamp = Math.floor(Date.now() / 1000);
-      const payload = {
-        ticketId: id,
-        timestamp,
-      };
-
-      const payloadString = JSON.stringify(payload);
-      const keypair = Keypair.fromSecret(privateKey);
-      
-      // Cryptographic signature
-      const signatureBuffer = keypair.sign(Buffer.from(payloadString));
-      const signature = signatureBuffer.toString('base64');
-
-      setQrPayload(JSON.stringify({
-        ...payload,
-        signature
-      }));
-      
-      // Explicitly clear from memory by not keeping it in component state
-      // Garbage collection will handle the local variable cleanup.
-    } catch (e) {
-      console.error('Error generating payload', e);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    fetchTicket();
-  }, [fetchTicket]);
-
-  useEffect(() => {
-    if (ticket) {
-      // Apply a high screen brightness configuration when displaying the QR code
-      // Note: Mocked because no screen brightness library could be introduced per constraints.
-      console.log('Setting screen brightness to maximum');
-      
-      generateDynamicPayload();
-      timerRef.current = setInterval(() => {
-        generateDynamicPayload();
-      }, 15000);
-
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-        console.log('Restoring screen brightness');
-      };
-    }
-  }, [ticket, generateDynamicPayload]);
-
-  if (loading) {
-    return <ActivityIndicator style={styles.loader} />;
-  }
-
-  if (!ticket) {
-    return <Text style={styles.error}>Ticket not found.</Text>;
-  }
-
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{ticket.eventName}</Text>
-      <Text style={styles.detail}>Date: {ticket.date}</Text>
-      <Text style={styles.detail}>Venue: {ticket.venue}</Text>
-      <Text style={styles.detail}>Seat: {ticket.seat}</Text>
-      
-      <View style={styles.qrContainer}>
-        {/* Placeholder for visual QR Code, as a library could not be introduced per constraints */}
-        <Text style={styles.qrPlaceholder}>[QR Code Placeholder]</Text>
-        <Text style={styles.payload}>{qrPayload}</Text>
-      </View>
-    </View>
   );
 }
 
@@ -360,6 +549,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.darkBackground,
+  },
+  lookupState: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  lookupText: {
+    color: Colors.secondaryText,
+    marginTop: 12,
+  },
+  lookupError: {
+    color: Colors.secondaryText,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
   },
   content: {
     padding: 16,
@@ -486,12 +690,54 @@ const styles = StyleSheet.create({
   cancelButton: {
     backgroundColor: '#2C2C2E',
   },
-  container: { flex: 1, padding: 20, alignItems: 'center', backgroundColor: '#fff' },
-  loader: { flex: 1, justifyContent: 'center' },
-  error: { marginTop: 20, fontSize: 16, color: 'red' },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
-  detail: { fontSize: 16, marginBottom: 5 },
-  qrContainer: { marginTop: 30, padding: 20, borderWidth: 1, borderColor: '#ccc', alignItems: 'center', width: '100%' },
-  qrPlaceholder: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
-  payload: { fontSize: 10, color: '#666', textAlign: 'center', marginTop: 10 }
+  // ── QR / biometric gate section ──────────────────────────────────────────
+  qrSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primaryText,
+    marginBottom: 12,
+  },
+  loadingBox: {
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    color: Colors.secondaryText,
+    marginTop: 8,
+    fontSize: 13,
+  },
+  errorBox: {
+    backgroundColor: '#FF3B3022',
+    padding: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FF3B3055',
+    marginBottom: 12,
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  retryButtonText: {
+    color: Colors.primaryYellow,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  hideButton: {
+    marginTop: 12,
+    alignSelf: 'center',
+  },
+  hideButtonText: {
+    color: Colors.secondaryText,
+    fontSize: 13,
+    textDecorationLine: 'underline',
+  },
 });

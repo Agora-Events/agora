@@ -12,6 +12,13 @@ use tracing::Instrument;
 
 use crate::config::request_id::REQUEST_ID_HEADER;
 
+tokio::task_local! {
+    /// The current request's `x-request-id`, readable from anywhere in the
+    /// request-handling task — including error-to-response conversion, where
+    /// there is no direct access to the original request.
+    pub static REQUEST_ID: String;
+}
+
 /// Axum middleware that injects `request_id` into the tracing span.
 ///
 /// Must be applied **after** [`SetRequestIdLayer`] so the header is already
@@ -25,7 +32,9 @@ pub async fn trace_request_id(request: Request, next: Next) -> Response {
         .to_owned();
 
     let span = tracing::info_span!("request", request_id = %request_id);
-    next.run(request).instrument(span).await
+    REQUEST_ID
+        .scope(request_id, next.run(request).instrument(span))
+        .await
 }
 
 /// Axum middleware that copies `x-request-id` from the request headers to the

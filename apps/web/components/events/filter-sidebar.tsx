@@ -45,12 +45,21 @@ export type FilterState = {
   minPrice: string;
   /** Maximum price filter value */
   maxPrice: string;
+  /** Whether to show only free events */
+  freeOnly: boolean;
 };
 
-/**
- * Props for FilterSidebar component
- * @interface FilterSidebarProps
- */
+export function getActiveFilterCount(filters: FilterState): number {
+  return (
+    filters.categories.length +
+    filters.locations.length +
+    (filters.date && filters.date !== "Any time" ? 1 : 0) +
+    (filters.minPrice ? 1 : 0) +
+    (filters.maxPrice ? 1 : 0) +
+    (filters.freeOnly ? 1 : 0)
+  );
+}
+
 interface FilterSidebarProps {
   /** Whether the sidebar is open or closed */
   isOpen: boolean;
@@ -114,7 +123,8 @@ export function FilterSidebar({
   filters,
   onFiltersChange,
 }: FilterSidebarProps) {
-  const sidebarRef = useFocusTrap<HTMLElement>(isOpen);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const activeFilterCount = getActiveFilterCount(filters);
 
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
@@ -166,6 +176,7 @@ export function FilterSidebar({
       locations: [],
       minPrice: "",
       maxPrice: "",
+      freeOnly: false,
     };
     setLocalFilters(defaultFilters);
     onFiltersChange(defaultFilters);
@@ -221,16 +232,24 @@ export function FilterSidebar({
                   alt=""
                   aria-hidden="true"
                 />
-                <h2 className="font-bold text-[20px]/6 text-black">Filters</h2>
+                <h2 className="font-bold text-[20px]/6 text-black">
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="ml-2 inline-flex min-w-6 h-6 items-center justify-center rounded-full bg-black px-1.5 text-xs text-white">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </h2>
               </div>
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="text-[13px] font-medium text-black/50 hover:text-black transition-colors underline underline-offset-2"
-                >
-                  Clear Filter
-                </button>
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={handleReset}
+                    className="text-[13px] font-medium text-black/50 hover:text-black transition-colors underline underline-offset-2"
+                  >
+                    Clear Filter
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onClose}
@@ -368,6 +387,16 @@ export function FilterSidebar({
                   </div>
                 </div>
               </section>
+
+              <Divider />
+
+              {/* ─ Free events only ─ */}
+              <section>
+                <FreeOnlyToggle
+                  active={localFilters.freeOnly}
+                  onClick={() => setLocalFilters({ ...localFilters, freeOnly: !localFilters.freeOnly })}
+                />
+              </section>
             </div>
 
             {/* ── Footer CTA ── */}
@@ -384,6 +413,37 @@ export function FilterSidebar({
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+interface FreeOnlyToggleProps {
+  active: boolean;
+  onClick: () => void;
+}
+
+function FreeOnlyToggle({ active, onClick }: FreeOnlyToggleProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`
+        flex items-center gap-2.5 px-3 py-2 rounded-xl border transition-all
+        ${
+          active
+            ? "bg-accent text-black border-black shadow-[-3px_3px_0_rgba(0,0,0,1)]"
+            : "bg-white text-black border-black/20 hover:border-black/50"
+        }
+      `}
+    >
+      <input
+        type="checkbox"
+        checked={active}
+        onChange={onClick}
+        className="w-5 h-5 accent-black cursor-pointer"
+        aria-label="Free events only"
+      />
+      <span className="font-medium text-[15px]">Free events only</span>
+    </button>
   );
 }
 

@@ -37,8 +37,10 @@ export default function OrganizerStakingScreen() {
   const {
     config,
     configLoading,
+    configError,
     stakingState,
     stateLoading,
+    stateError,
     history,
     historyLoading,
     usdcBalance,
@@ -144,6 +146,9 @@ export default function OrganizerStakingScreen() {
                 styles.badge,
                 isVerified ? styles.badgeVerified : styles.badgeUnverified,
               ]}
+              accessible={true}
+              accessibilityRole="text"
+              accessibilityLabel={`Staking status: ${stateLoading ? 'Loading' : stakingState?.status || 'Unverified'}`}
             >
               <Text
                 style={[
@@ -157,6 +162,11 @@ export default function OrganizerStakingScreen() {
           </View>
 
           <View style={styles.metricsGrid}>
+            {stateError && (
+              <Text style={styles.configDescription} accessibilityRole="alert">
+                {stateError}
+              </Text>
+            )}
             <View style={styles.metricBox}>
               <Text style={styles.metricLabel}>Staked Collateral</Text>
               <Text style={styles.metricValue}>
@@ -182,7 +192,11 @@ export default function OrganizerStakingScreen() {
           <Text style={styles.cardTitle}>Contract Configuration</Text>
           <Text style={styles.configDescription}>Fetched from event_registry contract</Text>
           {configLoading ? (
-            <ActivityIndicator color={Colors.primaryYellow} style={{ marginVertical: 10 }} />
+            <ActivityIndicator color={Colors.primaryYellow} style={{ marginVertical: 10 }} accessible={false} />
+          ) : configError ? (
+            <Text style={styles.configDescription} accessibilityRole="alert">
+              {configError}
+            </Text>
           ) : (
             <View style={styles.configContainer}>
               <View style={styles.configRow}>
@@ -208,6 +222,8 @@ export default function OrganizerStakingScreen() {
               styles.feedbackBox,
               feedbackMessage.type === 'success' ? styles.feedbackSuccess : styles.feedbackError,
             ]}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
           >
             <Text
               style={[
@@ -231,6 +247,8 @@ export default function OrganizerStakingScreen() {
             keyboardType="numeric"
             value={stakeAmount}
             onChangeText={setStakeAmount}
+            accessibilityLabel="Stake Amount in USDC"
+            accessibilityHint="Enter the amount of USDC collateral you want to stake"
             error={
               isBalanceInsufficient
                 ? `Insufficient balance (${usdcBalance} USDC available)`
@@ -242,6 +260,16 @@ export default function OrganizerStakingScreen() {
             onPress={onStakePress}
             disabled={isStakeDisabled}
             loading={isSubmitting}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isSubmitting
+                ? 'Processing stake'
+                : parsedAmount > 0
+                ? `Stake ${parsedAmount} USDC`
+                : 'Stake USDC'
+            }
+            accessibilityHint="Locks up specified USDC collateral"
+            accessibilityState={{ disabled: isStakeDisabled }}
             style={styles.actionBtn}
           />
         </View>
@@ -255,6 +283,10 @@ export default function OrganizerStakingScreen() {
                 variant="outline"
                 onPress={onUnstakePress}
                 disabled={isSubmitting || (stakingState?.stakedAmount ?? 0) <= 0}
+                accessibilityRole="button"
+                accessibilityLabel="Unstake Collateral"
+                accessibilityHint="Unlocks and withdraws your staked USDC collateral"
+                accessibilityState={{ disabled: isSubmitting || (stakingState?.stakedAmount ?? 0) <= 0 }}
                 style={styles.actionBtn}
               />
             </View>
@@ -264,6 +296,14 @@ export default function OrganizerStakingScreen() {
                 variant="secondary"
                 onPress={onClaimPress}
                 disabled={isSubmitting || (stakingState?.pendingRewards ?? 0) <= 0}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  (stakingState?.pendingRewards ?? 0) > 0
+                    ? `Claim ${stakingState?.pendingRewards} USDC Rewards`
+                    : 'Claim Rewards'
+                }
+                accessibilityHint="Claims accumulated staking rewards to your wallet"
+                accessibilityState={{ disabled: isSubmitting || (stakingState?.pendingRewards ?? 0) <= 0 }}
                 style={styles.actionBtn}
               />
             </View>
@@ -274,9 +314,9 @@ export default function OrganizerStakingScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Transaction History</Text>
           {historyLoading ? (
-            <ActivityIndicator color={Colors.primaryYellow} style={{ marginVertical: 12 }} />
+            <ActivityIndicator color={Colors.primaryYellow} style={{ marginVertical: 12 }} accessible={false} />
           ) : history.length === 0 ? (
-            <Text style={styles.emptyHistoryText}>No staking transactions yet.</Text>
+            <Text style={styles.emptyHistoryText}>Transaction history is not available yet.</Text>
           ) : (
             history.map((item: StakingTransaction) => (
               <View key={item.id} style={styles.txRow}>
@@ -286,7 +326,12 @@ export default function OrganizerStakingScreen() {
                 </View>
                 <View style={styles.txRight}>
                   <Text style={styles.txAmount}>{item.amount} USDC</Text>
-                  <Pressable onPress={() => openExplorer(item.txHash)}>
+                  <Pressable
+                    onPress={() => openExplorer(item.txHash)}
+                    accessibilityRole="link"
+                    accessibilityLabel={`View transaction ${item.txHash} on Stellar block explorer`}
+                    accessibilityHint="Opens transaction in the Stellar block explorer in external browser"
+                  >
                     <Text style={styles.txHashLink} numberOfLines={1} ellipsizeMode="middle">
                       {item.txHash.substring(0, 10)}... 🔗
                     </Text>

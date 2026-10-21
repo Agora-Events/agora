@@ -9,6 +9,7 @@ This project uses a Rust `cargo` workspace, not Scarb. Build, test, and package 
 - `Cargo.toml`: workspace definition for the Soroban contracts
 - `contracts/event_registry`: event lifecycle, organizer controls, inventory, loyalty, staking, and governance
 - `contracts/ticket_payment`: ticket purchases, escrow, refunds, settlement, transfers, auctions, and payment-side governance
+- [`contracts/pro_subscription`](./contracts/pro_subscription/README.md): monthly Pro subscription management for organizers (subscribe, renew, cancel, admin controls)
 - `scripts/deploy_devnet.sh`: deploys or upgrades both contracts on Stellar testnet/devnet-style environments
 - `scripts/generate_coverage.sh`: generates coverage artifacts for the `ticket-payment` crate
 
@@ -133,6 +134,7 @@ cargo test
 ```bash
 cargo test -p event-registry
 cargo test -p ticket-payment
+cargo test -p pro-subscription
 ```
 
 ### Generate coverage for `ticket-payment`
@@ -180,6 +182,46 @@ Upgrade existing deployments:
 ```bash
 ./scripts/deploy_devnet.sh --upgrade
 ```
+
+## Verifying Contracts on Stellar Expert Explorer
+
+After deploying contracts to Stellar testnet (via `scripts/deploy-testnet.sh` or `contract/scripts/deploy_devnet.sh`), the deployment scripts automatically output contract addresses along with their direct block explorer verification URLs:
+
+```text
+https://stellar.expert/explorer/testnet/contract/{contract_id}
+```
+
+### Quick Verification & CLI Helper
+
+You can inspect deployed contracts or generate Stellar Expert explorer links using `contract/scripts/deploy.ts`:
+
+```bash
+# Print explorer links for all deployed contracts configured in .env files
+pnpm contracts:explorer
+
+# Quick link for a specific contract ID
+npx tsx contract/scripts/deploy.ts <CONTRACT_ID>
+
+# Print step-by-step verification instructions for a contract
+npx tsx contract/scripts/deploy.ts --verify <CONTRACT_ID>
+```
+
+### Verification and Interaction Steps
+
+1. **Navigate to the Contract Page**:
+   Open `https://stellar.expert/explorer/testnet/contract/{contract_id}`.
+
+2. **WASM Bytecode Verification**:
+   In the **Contract Info** tab, compare the displayed WASM Hash against the hash generated during your build (`cargo build --target wasm32-unknown-unknown --release`).
+
+3. **Inspect Contract Interface & Spec**:
+   Under the **Contract Spec** section, verify all exported functions (e.g., `initialize`, `register_event`, `purchase_ticket`) and their parameter types match your contract definitions.
+
+4. **Examine Storage Entries**:
+   View persistent and instance ledger entries under the **Storage** tab to confirm contract configuration and initialization state.
+
+5. **Interact with the Contract**:
+   Use the **Invocations** tab and connect a Freighter wallet configured for Stellar Testnet to simulate and execute read or write transactions directly from the browser.
 
 ## Storage Model
 

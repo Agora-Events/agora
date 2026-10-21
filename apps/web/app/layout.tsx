@@ -5,10 +5,14 @@
 //   toast.info("Loading...")
 // Toaster is globally mounted below — no per-page setup needed.
 
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
-import { Toaster } from "sonner";
+import { cookies } from "next/headers";
+import { NextIntlClientProvider } from "next-intl";
 import "./globals.css";
+
+const SUPPORTED_LOCALES = ["en", "es", "fr"] as const;
+type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 const inter = Inter({
   variable: "--font-inter",
@@ -39,25 +43,23 @@ export const metadata: Metadata = {
   },
 };
 
-import { Suspense } from "react";
-import LoadingBar from "@/components/ui/loading-bar";
-import { ThemeProvider } from "@/components/providers/theme-context";
-
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const savedLocale = cookieStore.get("NEXT_LOCALE")?.value;
+  const locale: Locale =
+    SUPPORTED_LOCALES.find((supportedLocale) => supportedLocale === savedLocale) ??
+    "en";
+
   return (
-    <html lang="en" dir="ltr">
+    <html lang={locale}>
       <body className={`${inter.variable} antialiased`}>
-        <Suspense fallback={null}>
-          <LoadingBar />
-        </Suspense>
-        <Toaster position="bottom-right" richColors />
-        <ThemeProvider>
+        <NextIntlClientProvider locale={locale}>
           {children}
-        </ThemeProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

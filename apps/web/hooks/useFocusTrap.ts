@@ -66,8 +66,30 @@ export function useFocusTrap<T extends HTMLElement>(
     return () => {
       cancelAnimationFrame(frameId);
       document.removeEventListener("keydown", handleKeyDown);
-      // Restore focus to the original trigger element when the modal unmounts
-      (triggerRef.current as HTMLElement | null)?.focus();
+
+      // Restore focus to the trigger element only if it is still in the DOM.
+      // If it was removed while the modal was open (e.g. the item was deleted),
+      // fall back to the nearest landmark we can reliably find: the page's main
+      // heading, the <main> element, or <body> as a last resort — this keeps
+      // focus at a sensible location rather than silently dropping it on <body>.
+      const trigger = triggerRef.current as HTMLElement | null;
+      if (trigger && document.body.contains(trigger)) {
+        trigger.focus();
+      } else {
+        const fallback =
+          (document.querySelector<HTMLElement>("h1")) ??
+          (document.querySelector<HTMLElement>("main")) ??
+          document.body;
+        // <body> is not focusable by default; give it a transient tabIndex so
+        // .focus() succeeds, then remove it so normal tab order is unaffected.
+        if (fallback === document.body && document.body.tabIndex < 0) {
+          document.body.tabIndex = -1;
+          document.body.focus();
+          document.body.removeAttribute("tabindex");
+        } else {
+          fallback.focus();
+        }
+      }
     };
   }, [active, onClose]);
 

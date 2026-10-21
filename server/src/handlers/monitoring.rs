@@ -47,10 +47,8 @@ fn is_authorized(headers: &HeaderMap) -> bool {
 /// without a valid credential are rejected with 401.
 pub async fn get_monitoring(State(pool): State<PgPool>, headers: HeaderMap) -> Response {
     if !is_authorized(&headers) {
-        return AppError::AuthError(
-            "A valid monitoring credential is required".to_string(),
-        )
-        .into_response();
+        return AppError::AuthError("A valid monitoring credential is required".to_string())
+            .into_response();
     }
 
     let db_pool_size = pool.size();

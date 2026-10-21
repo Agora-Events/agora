@@ -69,7 +69,14 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     });
   }
 
-  // buy_pass
+  // buy_pass. passId's presence was already validated above, but that
+  // check is on the compound `action === "buy_pass" && !passId` condition,
+  // which TypeScript can't use to narrow `passId` alone by itself — assert
+  // it again here so the type checker can see it's defined.
+  if (!passId) {
+    throwApiError("passId is required for buy_pass action", 400);
+  }
+
   return NextResponse.json({
     success: true,
     pass: {

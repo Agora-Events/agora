@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import useSWR from "swr";
+import {
+  tierMetadataCache,
+  eventTiersCacheKey,
+  invalidateEventCache,
+} from "@/lib/stellar/contract-cache";
 
 /**
  * Ticket availability data returned from API
@@ -36,6 +41,20 @@ interface UseTicketAvailabilityOptions {
 }
 
 const fetcher = async (url: string): Promise<TicketAvailabilityData> => {
+  // ── Cache layer ────────────────────────────────────────────────────────────
+  // Extract the eventId from the URL pattern `/api/events/{eventId}/availability`
+  // and check the in-memory cache before hitting the network.
+  const eventIdMatch = url.match(/\/api\/events\/([^/]+)\/availability/);
+  const eventId = eventIdMatch?.[1];
+  const cacheKey = eventId ? eventTiersCacheKey(eventId) : null;
+
+  if (cacheKey) {
+    const cached = tierMetadataCache.get(cacheKey) as TicketAvailabilityData | undefined;
+    if (cached) {
+      return cached;
+    }
+  }
+
   const response = await fetch(url, {
     credentials: "include",
   });
@@ -45,7 +64,14 @@ const fetcher = async (url: string): Promise<TicketAvailabilityData> => {
     throw error;
   }
 
-  return response.json();
+  const data: TicketAvailabilityData = await response.json();
+
+  // Populate cache so repeated modal opens within the TTL window skip the RPC call.
+  if (cacheKey) {
+    tierMetadataCache.set(cacheKey, data);
+  }
+
+  return data;
 };
 
 /**
@@ -163,6 +189,18 @@ export function useTicketAvailability(
   // Use SSE data if available, otherwise use SWR data
   const availabilityData = useSSE ? sseData : data;
 
+  /**
+   * Invalidates the in-memory contract cache for this event and triggers a
+   * fresh SWR re-fetch. Call this immediately after a successful ticket
+   * purchase to ensure inventory reflects the latest on-chain state.
+   */
+  const invalidateCache = useCallback(() => {
+    invalidateEventCache(eventId);
+    if (!useSSE) {
+      mutate(undefined, { revalidate: true });
+    }
+  }, [eventId, useSSE, mutate]);
+
   return {
     /**
      * Current ticket availability data
@@ -186,6 +224,11 @@ export function useTicketAvailability(
       }
       mutate();
     },
+    /**
+     * Invalidates the local contract metadata cache for this event and
+     * forces a fresh fetch. Use after a completed purchase transaction.
+     */
+    invalidateCache,
     /**
      * Whether using Server-Sent Events for real-time updates
      */

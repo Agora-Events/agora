@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/providers/theme-context";
 import { BaseNav, type NavItem } from "./base-nav";
+import { NetworkSwitcher } from "@/components/layout/network-switcher";
 
 const GUEST_NAV_ITEMS: NavItem[] = [
   {
@@ -94,6 +95,8 @@ export function GuestNav({ pathname }: { pathname: string }) {
       ctaSlot={guestCta}
       endSlot={
         <>
+          {/* Testnet/Mainnet switcher — Issue #1541 */}
+          <NetworkSwitcher />
           {themeToggle}
         </>
       }
