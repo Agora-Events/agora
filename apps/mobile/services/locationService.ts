@@ -27,7 +27,7 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 // ---------------------------------------------------------------------------
 // Task names

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
 export interface GateMetrics {
   gate_id: string;

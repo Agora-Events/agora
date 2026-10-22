@@ -80,7 +80,7 @@ export default function OrganizerDashboard() {
   useEffect(() => {
     if (!selectedEventId || !user?.walletAddress) return;
 
-    const wsUrl = `${process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8080'}/api/v1/ws/organizer?token=${user.authToken}`;
+    const wsUrl = `${process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:3001'}/api/v1/ws/organizer?token=${user.authToken}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {

@@ -38,7 +38,7 @@ export interface UseDiscoverEventsResult {
 }
 
 const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8080";
+  process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001";
 
 async function fetchDiscoverEvents(signal: AbortSignal): Promise<DiscoverEvent[]> {
   const res = await fetch(`${API_URL}/api/events/discover`, { signal });

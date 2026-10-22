@@ -16,7 +16,7 @@
 
 import { sha256Hex } from '@/utils/sha256';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 

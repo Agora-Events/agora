@@ -1,3 +1,13 @@
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn(async () => null),
+    setItem: jest.fn(async () => {}),
+    removeItem: jest.fn(async () => {}),
+    clear: jest.fn(async () => {}),
+  },
+}));
+
 import { organizerApi } from '../organizerApi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -247,7 +257,7 @@ describe('getEventGates', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe(`http://localhost:8080/api/v1/events/${baseEventId}/gates`);
+    expect(url).toBe(`http://localhost:3001/api/v1/events/${baseEventId}/gates`);
     expect(init.method).toBe('GET');
     expect(init.headers.Authorization).toBe(`Bearer ${mockToken}`);
     expect(result).toEqual(mockResponse);
@@ -263,7 +273,7 @@ describe('getEventGates', () => {
     await organizerApi.getEventGates(baseEventId);
 
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toMatch(/^http:\/\/localhost:8080\/api\/v1/);
+    expect(url).toMatch(/^http:\/\/localhost:3001\/api\/v1/);
 
     // Restore
     process.env.EXPO_PUBLIC_API_URL = originalEnv;
@@ -297,7 +307,7 @@ describe('getStaffAuthorizations', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe(`http://localhost:8080/api/v1/organizer/${baseEventId}/staff`);
+    expect(url).toBe(`http://localhost:3001/api/v1/organizer/${baseEventId}/staff`);
     expect(result).toEqual(mockResponse);
   });
 
@@ -340,7 +350,7 @@ describe('scanTicket', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe(`http://localhost:8080/api/v1/tickets/${baseTicketId}/scan`);
+    expect(url).toBe(`http://localhost:3001/api/v1/tickets/${baseTicketId}/scan`);
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toMatchObject(baseScanRequest);
     expect(init.headers.Authorization).toBe(`Bearer ${mockToken}`);
@@ -416,7 +426,7 @@ describe('revokeStaffAuthorization', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe(`http://localhost:8080/api/v1/organizer/${baseEventId}/staff/revoke`);
+    expect(url).toBe(`http://localhost:3001/api/v1/organizer/${baseEventId}/staff/revoke`);
     expect(JSON.parse(init.body)).toMatchObject({ staff_wallet: baseStaffWallet });
     expect(result).toEqual(mockResponse);
   });

@@ -10,7 +10,7 @@
 
 import { useAuthStore } from '@/hooks/useAuth';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 const RECORD_PAYMENT_TIMEOUT_MS = 15_000;
 const RECORD_PAYMENT_MAX_RETRIES = 2;

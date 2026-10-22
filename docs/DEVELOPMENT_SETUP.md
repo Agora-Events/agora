@@ -410,7 +410,7 @@ The mobile app reads `EXPO_PUBLIC_API_URL` to reach the backend. Create a `.env`
 
 ```bash
 # apps/mobile/.env
-EXPO_PUBLIC_API_URL=http://localhost:8080
+EXPO_PUBLIC_API_URL=http://localhost:3001
 ```
 
 Adjust the value depending on how you run the app:

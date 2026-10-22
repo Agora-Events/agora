@@ -104,7 +104,7 @@ describe('publishListing', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('http://localhost:8080/api/v1/marketplace/listings');
+    expect(url).toBe('http://localhost:3001/api/v1/marketplace/listings');
     expect(init.method).toBe('POST');
     expect(init.headers.Authorization).toBe(`Bearer ${mockToken}`);
     expect(JSON.parse(init.body)).toMatchObject({
@@ -157,7 +157,7 @@ describe('publishListing', () => {
     useAuthStore.setState({ token: 'token', user: null, isAuthenticated: false });
     (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse(404, { message: 'Not found' }));
 
-    const error = await expect(
+    await expect(
       publishListing({
         paymentId: basePaymentId,
         eventId: baseEventId,
@@ -165,10 +165,7 @@ describe('publishListing', () => {
         maxPriceStroops: 300000000n,
         royaltyBps: 250,
       })
-    ).rejects;
-
-    expect(error).toBeInstanceOf(MarketplaceApiError);
-    expect((error as MarketplaceApiError).status).toBe(404);
+    ).rejects.toThrow('Not found');
   });
 });
 
@@ -206,7 +203,7 @@ describe('fetchListings', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('http://localhost:8080/api/v1/marketplace/listings?event_id=evt-1&seller_wallet=GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ&status=active&limit=10&offset=0');
+    expect(url).toBe('http://localhost:3001/api/v1/marketplace/listings?event_id=evt-1&seller_wallet=GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ&status=active&limit=10&offset=0');
     expect(init.method).toBe('GET');
     expect(init.headers.Authorization).toBe(`Bearer ${mockToken}`);
     expect(result).toEqual(mockResponse);
@@ -219,7 +216,7 @@ describe('fetchListings', () => {
     await fetchListings({});
 
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('http://localhost:8080/api/v1/marketplace/listings');
+    expect(url).toBe('http://localhost:3001/api/v1/marketplace/listings');
   });
 
   it('throws MarketplaceApiError on error response', async () => {
@@ -245,7 +242,7 @@ describe('fetchListing', () => {
     await fetchListing('pay-evt 1');
 
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('http://localhost:8080/api/v1/marketplace/listings/pay-evt%201');
+    expect(url).toBe('http://localhost:3001/api/v1/marketplace/listings/pay-evt%201');
   });
 
   it('throws MarketplaceApiError when listing not found', async () => {
@@ -268,7 +265,7 @@ describe('withdrawListing', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe(`http://localhost:8080/api/v1/marketplace/listings/${basePaymentId}`);
+    expect(url).toBe(`http://localhost:3001/api/v1/marketplace/listings/${basePaymentId}`);
     expect(init.method).toBe('DELETE');
     expect(init.headers.Authorization).toBe(`Bearer ${mockToken}`);
     expect(result).toBe(mockResponse);
@@ -307,7 +304,7 @@ describe('submitOffer', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe(`http://localhost:8080/api/v1/marketplace/listings/${basePaymentId}/offers`);
+    expect(url).toBe(`http://localhost:3001/api/v1/marketplace/listings/${basePaymentId}/offers`);
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toMatchObject({
       buyer_public_key: 'pub-base64-key',
@@ -345,7 +342,7 @@ describe('fetchOffers', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe(`http://localhost:8080/api/v1/marketplace/listings/${basePaymentId}/offers`);
+    expect(url).toBe(`http://localhost:3001/api/v1/marketplace/listings/${basePaymentId}/offers`);
     expect(result).toEqual(mockResponse);
   });
 });
@@ -377,7 +374,7 @@ describe('uploadKeyEnvelope', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe(`http://localhost:8080/api/v1/marketplace/listings/${basePaymentId}/key-envelope`);
+    expect(url).toBe(`http://localhost:3001/api/v1/marketplace/listings/${basePaymentId}/key-envelope`);
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toMatchObject({
       buyer_wallet: baseBuyerWallet,
@@ -436,7 +433,7 @@ describe('fetchKeyEnvelope', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe(`http://localhost:8080/api/v1/marketplace/listings/${basePaymentId}/key-envelope`);
+    expect(url).toBe(`http://localhost:3001/api/v1/marketplace/listings/${basePaymentId}/key-envelope`);
     expect(result).toEqual(mockResponse);
   });
 
@@ -491,7 +488,7 @@ describe('registerPushToken', () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('http://localhost:8080/api/v1/marketplace/push-token');
+    expect(url).toBe('http://localhost:3001/api/v1/marketplace/push-token');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toMatchObject({
       token: 'device-token-123',

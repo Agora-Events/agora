@@ -22,7 +22,7 @@ export const FALLBACK_TICKETS: AttendeeTicket[] = [
 ];
 
 export const TICKETS_STORAGE_KEY = 'agora.attendee.tickets.cache';
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
 export class NetworkError extends Error {
   constructor(message = 'Network error. Please check your connection.') {

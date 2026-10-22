@@ -50,7 +50,7 @@ Before getting started, make sure you have installed:
    ```
    Set your backend API endpoint in `apps/mobile/.env`:
    ```ini
-   EXPO_PUBLIC_API_URL=http://localhost:8080
+   EXPO_PUBLIC_API_URL=http://localhost:3001
    ```
 
 ---
@@ -61,9 +61,9 @@ The mobile app communicates with the Agora backend server. When running locally,
 
 | Target Platform | `EXPO_PUBLIC_API_URL` Value | Notes |
 |---|---|---|
-| **iOS Simulator** | `http://localhost:8080` | Shares localhost directly with macOS host |
-| **Android Emulator** | `http://10.0.2.2:8080` | `10.0.2.2` maps to the host machine's loopback interface |
-| **Physical Device (Expo Go)** | `http://<YOUR_LAN_IP>:8080` (e.g. `http://192.168.1.150:8080`) | Device and development computer must be connected to the same Wi-Fi network |
+| **iOS Simulator** | `http://localhost:3001` | Shares localhost directly with macOS host |
+| **Android Emulator** | `http://10.0.2.2:3001` | `10.0.2.2` maps to the host machine's loopback interface |
+| **Physical Device (Expo Go)** | `http://<YOUR_LAN_IP>:3001` (e.g. `http://192.168.1.150:3001`) | Device and development computer must be connected to the same Wi-Fi network |
 
 To start the backend server locally (from repository root):
 ```bash
@@ -155,8 +155,8 @@ pnpm start -- --port 8082
 
 ### Network Request Failures on Physical Device
 1. Confirm your computer and phone are connected to the exact same Wi-Fi network.
-2. Check firewall settings to ensure incoming connections on your backend port (e.g. 8080) are permitted.
-3. Test your computer's LAN IP in your phone's browser: `http://<YOUR_IP>:8080/health`.
+2. Check firewall settings to ensure incoming connections on your backend port (e.g. 3001) are permitted.
+3. Test your computer's LAN IP in your phone's browser: `http://<YOUR_IP>:3001/health`.
 
 ---
 

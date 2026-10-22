@@ -28,7 +28,7 @@ const MAX_GOSSIP_HOPS = 6;
 /** How often we sweep for new peers and retry a server flush, in ms. */
 const GOSSIP_INTERVAL_MS = 8000;
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 const FLUSH_TIMEOUT_MS = 15_000;
 
 export type CheckInResult = 'approved' | 'denied';

@@ -27,7 +27,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { locationService, VenueGeofence } from '@/services/locationService';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 // ---------------------------------------------------------------------------
 // Types
