@@ -83,7 +83,7 @@ pub fn vote_on_dispute(
         return Err(EventRegistryError::DisputeNotOpen);
     }
 
-    if env.ledger().timestamp() > dispute.closes_at {
+    if env.ledger().timestamp() >= dispute.closes_at {
         return Err(EventRegistryError::ProposalExpired);
     }
 
