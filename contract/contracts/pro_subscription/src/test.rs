@@ -741,7 +741,8 @@ fn test_issue_876_subscribe_success() {
     let sub = client.get_subscription(&organizer).unwrap();
     assert_eq!(sub.tier, SubscriptionTier::Pro);
     assert!(sub.is_active);
-    assert_eq!(sub.amount_paid, total_cost);
+    // 3-month subscriptions receive a 5% multi-month discount
+    assert_eq!(sub.amount_paid, total_cost * 9_500 / 10_000);
     assert_eq!(
         sub.expires_at,
         env.ledger().timestamp() + SECONDS_PER_MONTH * (months as u64)
