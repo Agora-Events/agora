@@ -237,6 +237,33 @@ impl TicketPaymentContract {
         get_discount_code(&env, &event_id, &code)
     }
 
+    /// Sets the maximum number of tickets a single wallet may purchase for an event.
+    /// A value of 0 disables the limit. Only callable by the event organizer.
+    pub fn set_max_tickets_per_wallet(
+        env: Env,
+        event_id: String,
+        max_tickets_per_wallet: u32,
+    ) -> Result<(), TicketPaymentError> {
+        let event_registry_addr = get_event_registry(&env);
+        let registry_client = event_registry::Client::new(&env, &event_registry_addr);
+        let event_info = registry_client
+            .try_get_event(&event_id)
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten()
+            .ok_or(TicketPaymentError::EventNotFound)?;
+
+        event_info.organizer_address.require_auth();
+
+        crate::storage::set_max_tickets_per_wallet(&env, event_id, max_tickets_per_wallet);
+        Ok(())
+    }
+
+    /// Returns the per-wallet ticket limit for an event (0 means no limit).
+    pub fn get_max_tickets_per_wallet(env: Env, event_id: String) -> u32 {
+        crate::storage::get_max_tickets_per_wallet(&env, event_id)
+    }
+
     /// Upgrades the contract WASM to a new hash. Only callable by the admin.
     ///
     /// After the upgrade, the function performs post-upgrade state verification
@@ -640,6 +667,26 @@ impl TicketPaymentContract {
         // Block sales if the event has been locally cancelled for refunds
         if crate::storage::is_event_cancelled_for_refund(&env, &event_id) {
             return Err(TicketPaymentError::EventCancelled);
+        }
+
+        // Enforce the organizer's optional per-wallet purchase limit
+        let max_tickets_per_wallet =
+            crate::storage::get_max_tickets_per_wallet(&env, event_id.clone());
+        if max_tickets_per_wallet > 0 {
+            let wallet_count =
+                crate::storage::get_wallet_ticket_count(&env, event_id.clone(), &buyer_address);
+            let new_wallet_count = wallet_count
+                .checked_add(quantity)
+                .ok_or(TicketPaymentError::ArithmeticError)?;
+            if new_wallet_count > max_tickets_per_wallet {
+                return Err(TicketPaymentError::WalletLimitExceeded);
+            }
+            crate::storage::set_wallet_ticket_count(
+                &env,
+                event_id.clone(),
+                &buyer_address,
+                new_wallet_count,
+            );
         }
 
         let tier = event_info

@@ -14,7 +14,10 @@ use crate::{
         remove_from_pro_members_list, set_admin, set_initialized, set_payment_token,
         set_platform_wallet, set_pro_monthly_price, set_subscription,
     },
-    types::{Subscription, SubscriptionTier, SECONDS_PER_MONTH},
+    types::{
+        Subscription, SubscriptionTier, DISCOUNT_BPS_12_MONTHS, DISCOUNT_BPS_3_MONTHS,
+        DISCOUNT_BPS_6_MONTHS, MAX_BPS, SECONDS_PER_MONTH,
+    },
     validation::validate_address,
 };
 
@@ -22,6 +25,28 @@ fn require_admin(env: &Env) -> Result<Address, ProSubscriptionError> {
     let admin = get_admin(env).ok_or(ProSubscriptionError::NotInitialized)?;
     admin.require_auth();
     Ok(admin)
+}
+
+/// Returns the total price for `months` of Pro, applying the multi-month discount tier.
+fn calculate_subscription_price(
+    monthly_price: i128,
+    months: u32,
+) -> Result<i128, ProSubscriptionError> {
+    let discount_bps = if months >= 12 {
+        DISCOUNT_BPS_12_MONTHS
+    } else if months >= 6 {
+        DISCOUNT_BPS_6_MONTHS
+    } else if months >= 3 {
+        DISCOUNT_BPS_3_MONTHS
+    } else {
+        0
+    };
+
+    monthly_price
+        .checked_mul(months as i128)
+        .and_then(|v| v.checked_mul((MAX_BPS - discount_bps) as i128))
+        .and_then(|v| v.checked_div(MAX_BPS as i128))
+        .ok_or(ProSubscriptionError::ArithmeticError)
 }
 
 fn get_subscription_with_expiration(env: &Env, organizer: &Address) -> Option<Subscription> {
@@ -125,9 +150,7 @@ impl ProSubscriptionContract {
         }
 
         let monthly_price = get_pro_monthly_price(&env);
-        let total_amount = monthly_price
-            .checked_mul(months as i128)
-            .ok_or(ProSubscriptionError::ArithmeticError)?;
+        let total_amount = calculate_subscription_price(monthly_price, months)?;
 
         let payment_token = get_payment_token(&env).ok_or(ProSubscriptionError::NotInitialized)?;
         let platform_wallet =
@@ -198,9 +221,7 @@ impl ProSubscriptionContract {
             get_subscription(&env, &organizer).ok_or(ProSubscriptionError::SubscriptionNotFound)?;
 
         let monthly_price = get_pro_monthly_price(&env);
-        let total_amount = monthly_price
-            .checked_mul(months as i128)
-            .ok_or(ProSubscriptionError::ArithmeticError)?;
+        let total_amount = calculate_subscription_price(monthly_price, months)?;
 
         let payment_token = get_payment_token(&env).ok_or(ProSubscriptionError::NotInitialized)?;
         let platform_wallet =
