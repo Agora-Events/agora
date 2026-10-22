@@ -6,22 +6,25 @@ use crate::storage::{
     get_event_balance, get_event_payments, get_event_registry, get_highest_bid, get_oracle_address,
     get_partial_refund_index, get_partial_refund_percentage, get_payment, get_platform_wallet,
     get_poaps_by_attendee, get_pro_subscription_contract, get_proposal, get_slippage_bps,
-    get_total_fees_collected_by_token, get_total_governors, get_transfer_fee, get_usdc_token,
-    get_withdrawal_cap, has_price_switched, increment_proposal_count, is_auction_closed,
-    is_discount_hash_used, is_discount_hash_valid, is_governor, is_initialized, is_paused,
-    is_poap_minted as is_poap_minted_storage, is_token_whitelisted, mark_discount_hash_used,
-    mark_poap_minted, remove_payment_from_buyer_index, remove_token_from_whitelist, set_admin,
-    set_auction_closed, set_bulk_refund_index, set_discount_code, set_event_registry, set_governor,
-    set_highest_bid, set_initialized, set_is_paused, set_oracle_address, set_partial_refund_index,
-    set_partial_refund_percentage, set_platform_wallet, set_price_switched, set_proposal,
-    set_slippage_bps, set_total_governors, set_transfer_fee, set_usdc_token, set_withdrawal_cap,
-    store_payment, store_validation_hash, subtract_from_active_escrow_by_token,
-    subtract_from_active_escrow_total, subtract_from_total_fees_collected_by_token,
-    update_event_balance, verify_secret,
+    get_ticket_payment_id, get_total_fees_collected_by_token, get_total_governors, get_transfer_fee,
+    get_usdc_token, get_validation_hash, get_withdrawal_cap, has_price_switched,
+    increment_proposal_count,
+    is_auction_closed, is_discount_hash_used, is_discount_hash_valid, is_governor, is_initialized,
+    is_paused, is_poap_minted as is_poap_minted_storage, is_token_whitelisted,
+    mark_discount_hash_used, mark_poap_minted, next_ticket_id, remove_payment_from_buyer_index,
+    remove_token_from_whitelist, set_admin, set_auction_closed, set_bulk_refund_index,
+    set_discount_code, set_event_registry, set_governor, set_highest_bid, set_initialized,
+    set_is_paused, set_oracle_address, set_partial_refund_index, set_partial_refund_percentage,
+    set_platform_wallet, set_price_switched, set_proposal, set_slippage_bps,
+    set_ticket_payment_id, set_total_governors, set_transfer_fee, set_usdc_token,
+    set_withdrawal_cap, store_payment, store_validation_hash,
+    subtract_from_active_escrow_by_token, subtract_from_active_escrow_total,
+    subtract_from_total_fees_collected_by_token, update_event_balance, verify_secret,
 };
 use crate::types::{
-    DataKey, DiscountData, HighestBid, ParameterChange, ParameterProposal, Payment, PaymentStatus,
-    ProposalStatus, PurchaseOptions, MAX_BPS, TRANSFER_FEE_BPS,
+    BulkCheckInResult, BulkCheckInStatus, DataKey, DiscountData, HighestBid, ParameterChange,
+    ParameterProposal, Payment, PaymentStatus, ProposalStatus, PurchaseOptions, MAX_BPS,
+    TRANSFER_FEE_BPS,
 };
 use crate::{
     error::TicketPaymentError,
@@ -70,10 +73,6 @@ fn event_accepts_token(
     } else {
         event_info.accepted_tokens.contains(token_address)
     }
-}
-
-fn get_ticket_payment_id(_env: &Env, _ticket_id: u64) -> Option<String> {
-    None
 }
 
 fn get_scheduled_price(
@@ -958,6 +957,11 @@ impl TicketPaymentContract {
 
             store_payment(&env, payment);
             store_validation_hash(&env, &sub_payment_id, &validation_hash);
+
+            // Assign the numeric ticket id used by request_refund and
+            // bulk_check_in_tickets to this payment record.
+            let ticket_id = next_ticket_id(&env);
+            set_ticket_payment_id(&env, ticket_id, &sub_payment_id);
         }
 
         // 8. Emit payment event
@@ -1514,7 +1518,71 @@ impl TicketPaymentContract {
         Ok(())
     }
 
-    /// Mints a non-transferable POAP NFT for a successfully scanned/checked-in ticket.
+    /// Validates a batch of tickets for check-in in a single call.
+    ///
+    /// `ticket_ids[i]` is the numeric ticket id and `validation_hashes[i]` is the
+    /// SHA-256 validation hash presented for that ticket. This is a read-only
+    /// helper: it never mutates state, so gate software can pre-validate a whole
+    /// batch cheaply before submitting individual `check_in` calls (one ledger
+    /// round-trip instead of N).
+    ///
+    /// The batch is bounded by [`MAX_BATCH_SIZE`]. An empty batch is rejected
+    /// with [`TicketPaymentError::EmptyBatch`], an oversized batch with
+    /// [`TicketPaymentError::BatchTooLarge`], and mismatched vector lengths with
+    /// [`TicketPaymentError::InvalidAmount`] (before any lookup). Each entry is
+    /// reported independently via [`BulkCheckInStatus`] so one bad ticket does
+    /// not mask the rest of the batch.
+    pub fn bulk_check_in_tickets(
+        env: Env,
+        ticket_ids: Vec<u64>,
+        validation_hashes: Vec<BytesN<32>>,
+    ) -> Result<Vec<BulkCheckInResult>, TicketPaymentError> {
+        if !is_initialized(&env) {
+            panic!("Contract not initialized");
+        }
+        if is_paused(&env) {
+            return Err(TicketPaymentError::ContractPaused);
+        }
+
+        // ── Batch-size guard ─────────────────────────────────────────────
+        if ticket_ids.is_empty() {
+            return Err(TicketPaymentError::EmptyBatch);
+        }
+        if ticket_ids.len() > MAX_BATCH_SIZE {
+            return Err(TicketPaymentError::BatchTooLarge);
+        }
+        if ticket_ids.len() != validation_hashes.len() {
+            return Err(TicketPaymentError::InvalidAmount);
+        }
+
+        let mut results: Vec<BulkCheckInResult> = Vec::new(&env);
+
+        for i in 0..ticket_ids.len() {
+            let ticket_id = ticket_ids.get(i).unwrap();
+            let provided_hash = validation_hashes.get(i).unwrap();
+
+            let status = match get_ticket_payment_id(&env, ticket_id) {
+                None => BulkCheckInStatus::NotFound,
+                Some(payment_id) => match get_payment(&env, payment_id.clone()) {
+                    None => BulkCheckInStatus::NotFound,
+                    Some(payment) => match payment.status {
+                        PaymentStatus::CheckedIn => BulkCheckInStatus::AlreadyCheckedIn,
+                        PaymentStatus::Confirmed => match get_validation_hash(&env, &payment_id) {
+                            Some(stored) if stored == provided_hash => BulkCheckInStatus::Valid,
+                            _ => BulkCheckInStatus::InvalidSecret,
+                        },
+                        _ => BulkCheckInStatus::InvalidStatus,
+                    },
+                },
+            };
+
+            results.push_back(BulkCheckInResult { ticket_id, status });
+        }
+
+        Ok(results)
+    }
+
+
     /// Prevents duplicate minting.
     pub fn mint_poap(env: Env, payment_id: String) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {

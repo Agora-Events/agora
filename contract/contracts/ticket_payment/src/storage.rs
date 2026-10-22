@@ -7,7 +7,7 @@ use crate::{
         ParameterProposal, Payment, PaymentStatus,
     },
 };
-use crate::keys::WalletLimitKey;
+use crate::keys::{TicketKey, WalletLimitKey};
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
@@ -905,6 +905,33 @@ pub fn store_validation_hash(env: &Env, payment_id: &String, hash: &BytesN<32>) 
     env.storage()
         .persistent()
         .set(&DataKey::ValidationHash(payment_id.clone()), hash);
+}
+
+/// Records the numeric ticket id -> payment_id association.
+pub fn set_ticket_payment_id(env: &Env, ticket_id: u64, payment_id: &String) {
+    env.storage()
+        .persistent()
+        .set(&TicketKey::TicketId(ticket_id), payment_id);
+}
+
+/// Resolves the payment_id associated with a numeric ticket id, if any.
+pub fn get_ticket_payment_id(env: &Env, ticket_id: u64) -> Option<String> {
+    env.storage()
+        .persistent()
+        .get(&TicketKey::TicketId(ticket_id))
+}
+
+/// Returns the next numeric ticket id and increments the sequence counter.
+pub fn next_ticket_id(env: &Env) -> u64 {
+    let next: u64 = env
+        .storage()
+        .persistent()
+        .get(&TicketKey::TicketIdCounter)
+        .unwrap_or(0);
+    env.storage()
+        .persistent()
+        .set(&TicketKey::TicketIdCounter, &(next + 1));
+    next
 }
 
 /// Retrieves the stored validation hash for a payment.
