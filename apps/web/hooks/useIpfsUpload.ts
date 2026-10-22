@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -33,9 +33,7 @@ export interface UseIpfsUploadReturn {
   /** Validates a given file against size, type, and dimension rules. */
   validateImage: (file: File) => Promise<string | null>;
   /** Event or file handler for file inputs. */
-  handleImageChange: (
-    e: React.ChangeEvent<HTMLInputElement> | File,
-  ) => Promise<boolean>;
+  handleImageChange: (e: React.ChangeEvent<HTMLInputElement> | File) => Promise<boolean>;
   /** Removes the selected file and revokes the preview URL. */
   handleRemoveImage: () => void;
   /** Clears the preview and error without affecting other state. */
@@ -43,9 +41,7 @@ export interface UseIpfsUploadReturn {
   /** Sets an error message directly. */
   setImageError: (err: string | null) => void;
   /** Uploads the selected (or provided) image to IPFS via API or simulated gateway. */
-  uploadToIpfs: (
-    fileToUpload?: File,
-  ) => Promise<{ cid: string; url: string } | null>;
+  uploadToIpfs: (fileToUpload?: File) => Promise<{ cid: string; url: string } | null>;
   /** Resets all hook state to initial values. */
   reset: () => void;
 }
@@ -58,9 +54,7 @@ const DEFAULT_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
  *
  * Refactored as part of Issue #1580.
  */
-export function useIpfsUpload(
-  options: UseIpfsUploadOptions = {},
-): UseIpfsUploadReturn {
+export function useIpfsUpload(options: UseIpfsUploadOptions = {}): UseIpfsUploadReturn {
   const {
     maxSizeMB = 5,
     minWidth = 600,
@@ -79,7 +73,9 @@ export function useIpfsUpload(
 
   // Keep preview URL ref for clean unmount revocation
   const previewRef = useRef<string | null>(null);
-  previewRef.current = imagePreview;
+  useEffect(() => {
+    previewRef.current = imagePreview;
+  }, [imagePreview]);
 
   useEffect(() => {
     return () => {
@@ -133,7 +129,7 @@ export function useIpfsUpload(
           URL.revokeObjectURL(objectUrl);
           if (img.width < minWidth || img.height < minHeight) {
             resolve(
-              `Image dimensions are ${img.width}×${img.height}. Minimum required is ${minWidth}×${minHeight} pixels.`,
+              `Image dimensions are ${img.width}Ã—${img.height}. Minimum required is ${minWidth}Ã—${minHeight} pixels.`
             );
           } else {
             resolve(null);
@@ -148,15 +144,12 @@ export function useIpfsUpload(
         img.src = objectUrl;
       });
     },
-    [allowedTypes, maxHeightConstraint(minHeight), maxWidthConstraint(minWidth), maxSizeMB],
+    [allowedTypes, minHeight, minWidth, maxSizeMB]
   );
 
   const handleImageChange = useCallback(
-    async (
-      input: React.ChangeEvent<HTMLInputElement> | File,
-    ): Promise<boolean> => {
-      const selectedFile =
-        input instanceof File ? input : input.target.files?.[0];
+    async (input: React.ChangeEvent<HTMLInputElement> | File): Promise<boolean> => {
+      const selectedFile = input instanceof File ? input : input.target.files?.[0];
       if (!selectedFile) return false;
 
       // Revoke previous preview URL to prevent leaks
@@ -179,13 +172,11 @@ export function useIpfsUpload(
       setFile(selectedFile);
       return true;
     },
-    [imagePreview, onError, validateImage],
+    [imagePreview, onError, validateImage]
   );
 
   const uploadToIpfs = useCallback(
-    async (
-      fileToUpload?: File,
-    ): Promise<{ cid: string; url: string } | null> => {
+    async (fileToUpload?: File): Promise<{ cid: string; url: string } | null> => {
       const targetFile = fileToUpload || file;
       if (!targetFile) {
         setImageError("No file selected for IPFS upload.");
@@ -223,8 +214,7 @@ export function useIpfsUpload(
         onSuccess?.(uploadedCid, uploadedUrl);
         return { cid: uploadedCid, url: uploadedUrl };
       } catch (err) {
-        const errorMsg =
-          err instanceof Error ? err.message : "Failed to upload image to IPFS.";
+        const errorMsg = err instanceof Error ? err.message : "Failed to upload image to IPFS.";
         setImageError(errorMsg);
         onError?.(errorMsg);
         return null;
@@ -232,7 +222,7 @@ export function useIpfsUpload(
         setIsUploading(false);
       }
     },
-    [file, onError, onSuccess],
+    [file, onError, onSuccess]
   );
 
   const reset = useCallback(() => {

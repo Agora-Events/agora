@@ -1,11 +1,11 @@
-"use client";
+﻿"use client";
 
 /**
- * Toast — Issue #1542
+ * Toast â€” Issue #1542
  *
  * Animated toast notification for the transaction lifecycle.
  *
- * - Slides in from the bottom-right corner (translateY(100%) → 0).
+ * - Slides in from the bottom-right corner (translateY(100%) â†’ 0).
  * - Slides out smoothly on dismiss (fade + translate).
  * - Shows a subtle spinning indicator while `status === "pending"`.
  * - Honors `prefers-reduced-motion` by disabling the slide animations.
@@ -36,10 +36,10 @@ export interface ToastProps {
 const EXIT_MS = 300;
 
 const STATUS_STYLES: Record<ToastStatus, { border: string; label: string; icon: string }> = {
-  pending: { border: "border-blue-400", label: "Pending", icon: "◌" },
-  success: { border: "border-green-500", label: "Success", icon: "✓" },
-  error: { border: "border-red-500", label: "Failed", icon: "✕" },
-  info: { border: "border-zinc-400", label: "Info", icon: "ℹ" },
+  pending: { border: "border-blue-400", label: "Pending", icon: "â—Œ" },
+  success: { border: "border-green-500", label: "Success", icon: "âœ“" },
+  error: { border: "border-red-500", label: "Failed", icon: "âœ•" },
+  info: { border: "border-zinc-400", label: "Info", icon: "â„¹" },
 };
 
 const TOAST_STYLES = `
@@ -92,7 +92,9 @@ export function Toast({
 }: ToastProps) {
   const [exiting, setExiting] = useState(false);
   const dismissRef = useRef(onDismiss);
-  dismissRef.current = onDismiss;
+  useEffect(() => {
+    dismissRef.current = onDismiss;
+  });
 
   const startExit = useCallback(() => setExiting(true), []);
 
@@ -135,7 +137,7 @@ export function Toast({
           onClick={startExit}
           className="rounded p-1 text-zinc-400 transition-colors hover:text-zinc-100"
         >
-          ✕
+          âœ•
         </button>
       </div>
     </>

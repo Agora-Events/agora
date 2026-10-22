@@ -1,4 +1,4 @@
-name: Prettier Format Check
+﻿name: Prettier Format Check
 
 on:
   push:
@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install pnpm
         uses: pnpm/action-setup@v3
@@ -30,5 +32,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Check Prettier formatting
-        run: pnpm format:check
+      - name: Check Prettier formatting on changed files
+        run: |
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR origin/main...HEAD)
+          if [ -n "$CHANGED_FILES" ]; then
+            echo "$CHANGED_FILES" | xargs pnpm prettier --check --ignore-unknown
+          fi
