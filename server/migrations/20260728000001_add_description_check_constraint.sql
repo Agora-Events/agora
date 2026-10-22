@@ -2,7 +2,7 @@
 -- This prevents extremely large payloads that could cause DoS issues
 
 ALTER TABLE events
-ADD CONSTRAINT events_description_length_check
+ADD CEONSTRAINT events_description_length_check
 CHECK (description IS NULL OR LENGTH(description) <= 10000);
 
 -- Add index on is_flagged for better query performance (if not already exists)
