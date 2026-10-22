@@ -54,13 +54,13 @@ All backend API calls are stubbed with `cy.intercept()` — no live database req
 
 Visual snapshot tests guard the **Neubrutalist design system** (hard borders, specific drop-shadow offsets, accent colour tokens) against accidental CSS regressions.
 
-Four core components are tested in both **light** and **dark** mode, producing **8 base snapshots**:
+Five component and state variations across four core components are tested in both **light** and **dark** mode projects (`chromium-light` and `chromium-dark`), producing **10 base snapshots**:
 
-| Component | Light snapshot | Dark snapshot |
-|---|---|---|
-| `Button` | `button-light.png` | `button-dark.png` |
-| `EventCard` | `event-card-light.png` | `event-card-dark.png` |
-| `RegistrationBox` | `registration-box-light.png` | `registration-box-dark.png` |
+| Component                | Light snapshot                    | Dark snapshot                    |
+| ------------------------ | --------------------------------- | -------------------------------- |
+| `Button`                 | `button-light.png`                | `button-dark.png`                |
+| `EventCard`              | `event-card-light.png`            | `event-card-dark.png`            |
+| `RegistrationBox`        | `registration-box-light.png`      | `registration-box-dark.png`      |
 | `TicketModal` (purchase) | `ticket-modal-purchase-light.png` | `ticket-modal-purchase-dark.png` |
 | `TicketModal` (waitlist) | `ticket-modal-waitlist-light.png` | `ticket-modal-waitlist-dark.png` |
 
@@ -121,7 +121,7 @@ The `Neubrutalist design tokens – runtime assertion` test group will also fail
 
 ### Fixture page
 
-The fixture page (`/apps/web/app/__visual_fixtures__/page.tsx`) renders all four components in isolation using static props — no authentication, no API calls, no routing dependencies. It is never linked from the public app and is excluded from the sitemap.
+The fixture page (`/apps/web/app/__visual_fixtures__/page.tsx`, accessible at `/visual-fixtures`) renders the component and modal state fixtures (Button, EventCard, RegistrationBox, and TicketModal purchase/waitlist) in isolation using static props — no authentication, no API calls, no routing dependencies. It is never linked from the public app and is excluded from the sitemap.
 
 ---
 
