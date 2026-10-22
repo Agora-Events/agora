@@ -14,16 +14,16 @@ This API follows RESTful conventions and returns JSON responses with a standardi
 
 ### Mandatory Headers
 
-| Header | Description | Example |
-|--------|-------------|---------|
-| `X-Request-ID` | Unique identifier for request tracking | `550e8400-e29b-41d4-a716-446655440000` |
-| `Content-Type` | Media type of the request body | `application/json` |
+| Header          | Description                              | Example                                          |
+| --------------- | ---------------------------------------- | ------------------------------------------------ |
+| `X-Request-ID`  | Unique identifier for request tracking   | `550e8400-e29b-41d4-a716-446655440000`           |
+| `Content-Type`  | Media type of the request body           | `application/json`                               |
 | `Authorization` | Bearer token for authenticated endpoints | `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
 
 ### Optional Headers
 
-| Header | Description | Example |
-|--------|-------------|---------|
+| Header   | Description              | Example            |
+| -------- | ------------------------ | ------------------ |
 | `Accept` | Expected response format | `application/json` |
 
 ## Response Format
@@ -74,27 +74,27 @@ on it rather than string-matching `message`.
 Every status code below can be returned by the API. `code` is the value of the
 JSON body's `code` field for that status.
 
-| HTTP Status | `code` | Cause |
-|---|---|---|
-| 400 | `VALIDATION_FAILED` | Request body or query parameters failed validation |
-| 401 | `UNAUTHORIZED` | Missing or invalid authentication credentials |
-| 403 | `FORBIDDEN` | Authenticated caller is not allowed to perform this action |
-| 404 | `NOT_FOUND` | The requested resource does not exist |
-| 409 | `CONFLICT` | The request conflicts with the current resource state (e.g. duplicate, unique/foreign-key violation) |
-| 422 | `VALIDATION_FAILED` | Request body was well-formed but semantically invalid |
-| 429 | `RATE_LIMITED` | The caller exceeded the allowed request rate |
-| 500 | `INTERNAL_ERROR` | Unexpected internal failure |
-| 503 | `SERVICE_UNAVAILABLE` | A database or downstream service is temporarily unavailable (502 and 504 map to the same code) |
+| HTTP Status | `code`                | Cause                                                                                                |
+| ----------- | --------------------- | ---------------------------------------------------------------------------------------------------- |
+| 400         | `VALIDATION_FAILED`   | Request body or query parameters failed validation                                                   |
+| 401         | `UNAUTHORIZED`        | Missing or invalid authentication credentials                                                        |
+| 403         | `FORBIDDEN`           | Authenticated caller is not allowed to perform this action                                           |
+| 404         | `NOT_FOUND`           | The requested resource does not exist                                                                |
+| 409         | `CONFLICT`            | The request conflicts with the current resource state (e.g. duplicate, unique/foreign-key violation) |
+| 422         | `VALIDATION_FAILED`   | Request body was well-formed but semantically invalid                                                |
+| 429         | `RATE_LIMITED`        | The caller exceeded the allowed request rate                                                         |
+| 500         | `INTERNAL_ERROR`      | Unexpected internal failure                                                                          |
+| 503         | `SERVICE_UNAVAILABLE` | A database or downstream service is temporarily unavailable (502 and 504 map to the same code)       |
 
 ### Rate Limit Headers
 
 Every response — allowed or rejected — includes:
 
-| Header | Meaning |
-|---|---|
-| `X-RateLimit-Limit` | Maximum requests allowed in the current window |
-| `X-RateLimit-Remaining` | Requests remaining in the current window |
-| `X-RateLimit-Reset` | Unix timestamp (seconds) when the window refreshes |
+| Header                  | Meaning                                            |
+| ----------------------- | -------------------------------------------------- |
+| `X-RateLimit-Limit`     | Maximum requests allowed in the current window     |
+| `X-RateLimit-Remaining` | Requests remaining in the current window           |
+| `X-RateLimit-Reset`     | Unix timestamp (seconds) when the window refreshes |
 
 A `429` response additionally includes `Retry-After`, the number of seconds
 (an integer ≥ 1) until the caller may retry.
@@ -131,6 +131,7 @@ if (!res.ok) {
 Combined health check for API and Database connectivity.
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -143,6 +144,7 @@ Combined health check for API and Database connectivity.
 ```
 
 **Error Response (503):**
+
 ```json
 {
   "success": false,
@@ -158,6 +160,7 @@ Combined health check for API and Database connectivity.
 Database connectivity check.
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -175,6 +178,7 @@ Database connectivity check.
 Soroban RPC connectivity check.
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -189,6 +193,7 @@ Soroban RPC connectivity check.
 ```
 
 **Error Response (503):**
+
 ```json
 {
   "success": false,
@@ -204,6 +209,7 @@ Soroban RPC connectivity check.
 Readiness check for both API and Database.
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -223,6 +229,7 @@ Readiness check for both API and Database.
 Returns a validation error for testing error handling.
 
 **Response (400):**
+
 ```json
 {
   "success": false,
@@ -238,6 +245,7 @@ Returns a validation error for testing error handling.
 Returns an empty success response for testing success handling.
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -251,9 +259,11 @@ Returns an empty success response for testing success handling.
 Returns a not found error for testing 404 handling.
 
 **Path Parameters:**
+
 - `id` (string): Resource identifier
 
 **Response (404):**
+
 ```json
 {
   "success": false,
@@ -264,11 +274,97 @@ Returns a not found error for testing 404 handling.
 }
 ```
 
+### Events
+
+The backend registers full event management and listing operations under `/api/v1/events`. Comprehensive request/response schemas, filter parameters, and pagination details are maintained in [`server/openapi.yaml`](../server/openapi.yaml).
+
+#### GET /api/v1/events
+
+Returns a cursor-paginated list of upcoming events.
+
+- **Query Parameters:**
+  - `limit` (integer, default 20, max 100): Page size.
+  - `cursor` (string, optional): Next-page cursor.
+  - `count` (boolean, default true): When false, skips `COUNT(*)` to optimize response times.
+  - `sort` (string, optional): Allow-listed sort (`starts_at_asc`, `starts_at_desc`, `price_asc`, `price_desc`, `popularity_desc`).
+  - Filters: `organizer_id`, `organizer_wallet`, `location`, `search`, `start_after`, `start_before`, `start_date`, `end_date`, `min_tickets_available`, `is_free`, `is_featured`, `followers_only`, `sort_by`, `sort_order`.
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [],
+    "pagination": {
+      "next_cursor": "eyJpZCI6...",
+      "has_more": true
+    },
+    "meta": {
+      "total": 42,
+      "page_size": 20
+    }
+  },
+  "message": "Events retrieved successfully"
+}
+```
+
+#### POST /api/v1/events
+
+Creates a new event. Requires `Authorization: Bearer <token>` from a registered organizer.
+
+#### GET /api/v1/events/:id
+
+Fetches a single event by UUID.
+
+- **Path Parameters:**
+  - `id` (UUID): Event unique identifier.
+- **Query Parameters:**
+  - `include_tiers` (boolean, default false): Include ticket tier pricing array.
+  - `lang` (string, optional): Explicit language tag for translated title/description.
+
+#### Other Implemented Event Routes
+
+- `GET /api/v1/events/map` - Find events near geographical coordinates.
+- `GET /api/v1/events/count` - Get aggregate event counts by status.
+- `GET /api/v1/events/search` - Full-text keyword event search.
+- `GET /api/v1/events/:id/attendees` - List event attendees (paginated).
+- `GET /api/v1/events/:id/attendees/count` - Attendee count and ticket supply.
+- `GET /api/v1/events/:id/social-proof` - Real-time purchase signals and rating summary.
+- `POST /api/v1/events/:id/rate` - Submit attendee event rating and review.
+
+### Authentication & Profile
+
+#### POST /api/v1/auth/nonce
+
+Generates a one-time challenge nonce for wallet authentication.
+
+#### POST /api/v1/auth/verify
+
+Validates a signed challenge and returns a JWT access token.
+
+#### POST /api/v1/auth/logout
+
+Logs out the current session and revokes the active token.
+
+#### GET /api/v1/profile
+
+Retrieves the authenticated organizer's profile.
+
+#### PUT /api/v1/profile
+
+Updates the authenticated organizer's profile details.
+
+#### GET /api/v1/profile/:address
+
+Retrieves an organizer's public profile by their Stellar wallet address.
+
 ### POST /tickets/:id/scan
 
 Validates a signed attendee ticket QR payload and checks the corresponding ticket into the event.
 
 **Request Body:**
+
 ```json
 {
   "payload": {
@@ -288,6 +384,7 @@ Validates a signed attendee ticket QR payload and checks the corresponding ticke
 ```
 
 **Response (200):**
+
 ```json
 {
   "success": true,
@@ -304,6 +401,7 @@ Validates a signed attendee ticket QR payload and checks the corresponding ticke
 ```
 
 **Errors:**
+
 - `400` — invalid payload or expired QR
 - `403` — wallet address does not match ticket ownership
 - `404` — ticket or QR payload not found
@@ -311,21 +409,22 @@ Validates a signed attendee ticket QR payload and checks the corresponding ticke
 
 ## Error Codes Reference
 
-| Error Code | HTTP Status | Description |
-|------------|-------------|-------------|
-| `VALIDATION_ERROR` | 400 | Request data failed validation |
-| `AUTH_ERROR` | 401 | Authentication failed or missing |
-| `FORBIDDEN` | 403 | Insufficient permissions |
-| `NOT_FOUND` | 404 | Resource not found |
-| `DATABASE_ERROR` | 500 | Database operation failed |
-| `EXTERNAL_SERVICE_ERROR` | 503 | External service unavailable |
-| `INTERNAL_SERVER_ERROR` | 500 | Unexpected server error |
+| Error Code               | HTTP Status | Description                      |
+| ------------------------ | ----------- | -------------------------------- |
+| `VALIDATION_ERROR`       | 400         | Request data failed validation   |
+| `AUTH_ERROR`             | 401         | Authentication failed or missing |
+| `FORBIDDEN`              | 403         | Insufficient permissions         |
+| `NOT_FOUND`              | 404         | Resource not found               |
+| `DATABASE_ERROR`         | 500         | Database operation failed        |
+| `EXTERNAL_SERVICE_ERROR` | 503         | External service unavailable     |
+| `INTERNAL_SERVER_ERROR`  | 500         | Unexpected server error          |
 
 ## Request Examples
 
 ### cURL Examples
 
 #### Health Check
+
 ```bash
 curl -X GET \
   http://localhost:3000/api/v1/health \
@@ -334,6 +433,7 @@ curl -X GET \
 ```
 
 #### Validation Error Example
+
 ```bash
 curl -X GET \
   http://localhost:3000/api/v1/examples/validation-error \
@@ -342,6 +442,7 @@ curl -X GET \
 ```
 
 #### Not Found Example
+
 ```bash
 curl -X GET \
   http://localhost:3000/api/v1/examples/not-found/123 \
@@ -355,7 +456,13 @@ Currently, no rate limiting is implemented. All endpoints are available without 
 
 ## Authentication
 
-Authentication is not yet implemented for the current endpoints. Future endpoints will require Bearer token authentication via the `Authorization` header.
+Authentication is implemented using a challenge-response signature flow with Stellar ed25519 wallets:
+
+1. `POST /api/v1/auth/nonce` generates a cryptographically secure, short-lived nonce.
+2. The client signs the challenge payload with their Stellar wallet key.
+3. `POST /api/v1/auth/verify` verifies the signature against the public key and issues a JWT access token.
+4. Authenticated endpoints require the token in the `Authorization: Bearer <token>` header.
+5. `POST /api/v1/auth/logout` invalidates the active session.
 
 ## Versioning
 
@@ -363,21 +470,17 @@ The API is versioned using URL path versioning. The current version is `v1`. All
 
 ## Future Endpoints
 
-The following endpoints are planned for future implementation:
-
-### Authentication & Users
-- `POST /auth/register` - User registration
-- `POST /auth/login` - User login
-- `POST /auth/logout` - User logout
-- `GET /users/profile` - Get user profile
-- `PUT /users/profile` - Update user profile
+The following operations are planned for upcoming milestones and are not yet registered in `server/src/routes`:
 
 ### Events
-- `GET /events` - List events
-- `POST /events` - Create event
-- `GET /events/:id` - Get event details
-- `PUT /events/:id` - Update event
-- `DELETE /events/:id` - Delete event
+
+- `PUT /api/v1/events/:id` - Update existing event details and metadata
+- `DELETE /api/v1/events/:id` - Cancel or delete an event
+
+### Organization & Team Management
+
+- `POST /api/v1/organizations` - Multi-member organization creation
+- `POST /api/v1/organizations/:id/members` - Team member invitations and role management
 
 ## Development Notes
 
