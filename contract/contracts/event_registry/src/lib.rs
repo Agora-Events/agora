@@ -1122,6 +1122,12 @@ impl EventRegistry {
 
         validate_tier_price(&tier)?;
 
+        if !event_info.tiers.contains_key(tier_id.clone())
+            && event_info.tiers.len() >= MAX_TIERS_PER_EVENT
+        {
+            return Err(EventRegistryError::TooManyTiers);
+        }
+
         if event_info.max_supply > 0 {
             let mut total_tier_limit: i128 = 0;
             for existing_tier in event_info.tiers.values() {
