@@ -25,12 +25,12 @@ paths:
       summary: Liveness check
       description: Returns 200 when the API process is up.
       responses:
-        '200':
+        "200":
           description: API process is up
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponse'
+                $ref: "#/components/schemas/ApiResponse"
 
   /api/v1/health/blockchain:
     get:
@@ -38,36 +38,36 @@ paths:
       summary: Blockchain connectivity check
       description: Verifies the Soroban RPC endpoint is reachable.
       responses:
-        '200':
+        "200":
           description: Soroban RPC endpoint is reachable
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponse'
+                $ref: "#/components/schemas/ApiResponse"
 
   /api/v1/health/db:
     get:
       tags: [Health]
       summary: Database connectivity check
       responses:
-        '200':
+        "200":
           description: Database connection is working
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponse'
+                $ref: "#/components/schemas/ApiResponse"
 
   /api/v1/health/redis:
     get:
       tags: [Health]
       summary: Redis connectivity check
       responses:
-        '200':
+        "200":
           description: Redis connection is working
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponse'
+                $ref: "#/components/schemas/ApiResponse"
 
   /api/v1/health/ready:
     get:
@@ -75,12 +75,12 @@ paths:
       summary: Readiness check
       description: Returns 200 once the service is ready to serve requests.
       responses:
-        '200':
+        "200":
           description: Service is ready
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponse'
+                $ref: "#/components/schemas/ApiResponse"
 
   /api/v1/events:
     get:
@@ -126,6 +126,7 @@ paths:
           required: false
           description: |
             Ordering. Allow-listed values only; never interpolated into SQL.
+            Takes precedence over `sort_by` and `sort_order` when provided.
           schema:
             type: string
             enum:
@@ -135,19 +136,126 @@ paths:
               - price_desc
               - popularity_desc
             default: starts_at_asc
+        - name: organizer_id
+          in: query
+          required: false
+          description: Filter events by organizer UUID.
+          schema:
+            type: string
+            format: uuid
+        - name: organizer_wallet
+          in: query
+          required: false
+          description: Filter events by organizer Stellar public key wallet address.
+          schema:
+            type: string
+        - name: location
+          in: query
+          required: false
+          description: Filter events by location (case-insensitive partial match).
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          description: Search term matched against event title and description (case-insensitive).
+          schema:
+            type: string
+        - name: start_after
+          in: query
+          required: false
+          description: Filter events starting on or after this timestamp (ISO 8601 / RFC 3339).
+          schema:
+            type: string
+            format: date-time
+        - name: start_before
+          in: query
+          required: false
+          description: Filter events starting on or before this timestamp (ISO 8601 / RFC 3339).
+          schema:
+            type: string
+            format: date-time
+        - name: start_date
+          in: query
+          required: false
+          description: |
+            Filter events starting on or after this date (YYYY-MM-DD, evaluated at midnight UTC).
+            Takes precedence over `start_after` when both are supplied.
+          schema:
+            type: string
+            format: date
+            example: "2026-11-01"
+        - name: end_date
+          in: query
+          required: false
+          description: |
+            Filter events starting on or before this date (YYYY-MM-DD, evaluated at midnight UTC).
+            Takes precedence over `start_before` when both are supplied.
+          schema:
+            type: string
+            format: date
+            example: "2026-12-31"
+        - name: min_tickets_available
+          in: query
+          required: false
+          description: Filter events with at least N tickets remaining (total_tickets - minted_tickets >= N).
+          schema:
+            type: integer
+            minimum: 0
+        - name: is_free
+          in: query
+          required: false
+          description: Filter free events (`true` for free events with ticket price = 0, `false` for paid events).
+          schema:
+            type: boolean
+        - name: is_featured
+          in: query
+          required: false
+          description: Filter events by whether they are featured (`true` or `false`).
+          schema:
+            type: boolean
+        - name: followers_only
+          in: query
+          required: false
+          description: Filter to return only followers-only events (`true`).
+          schema:
+            type: boolean
+        - name: sort_by
+          in: query
+          required: false
+          description: |
+            Field to sort by when `sort` is omitted. Supported fields: start_time, created_at, popularity, count_of_ratings.
+          schema:
+            type: string
+            enum:
+              - start_time
+              - created_at
+              - popularity
+              - count_of_ratings
+            default: start_time
+        - name: sort_order
+          in: query
+          required: false
+          description: Sort direction when `sort` is omitted (`asc` or `desc`).
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: asc
       responses:
-        '200':
+        "200":
           description: Paginated list of upcoming events
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EventListResponse'
-        '400':
+                $ref: "#/components/schemas/EventListResponse"
+        "400":
           description: Invalid query parameter (for example an unrecognised `sort` value)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/events/map:
     get:
@@ -192,41 +300,41 @@ paths:
             type: integer
             default: 50
       responses:
-        '200':
+        "200":
           description: List of nearby events ordered by distance
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/ApiResponse'
+                  - $ref: "#/components/schemas/ApiResponse"
                   - type: object
                     properties:
                       data:
                         type: array
                         items:
-                          $ref: '#/components/schemas/MapEvent'
-        '400':
+                          $ref: "#/components/schemas/MapEvent"
+        "400":
           description: Invalid coordinates (out of range) or radius/limit out of bounds
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/events/{id}:
     get:
       tags: [Events]
       summary: Get a single event by id
       parameters:
-        - $ref: '#/components/parameters/EventId'
+        - $ref: "#/components/parameters/EventId"
       responses:
-        '200':
+        "200":
           description: The event
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponse'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/ApiResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/events/{id}/social-proof:
     get:
@@ -240,19 +348,19 @@ paths:
         Flagged or non-existent events return 404.
       operationId: getEventSocialProof
       parameters:
-        - $ref: '#/components/parameters/EventId'
+        - $ref: "#/components/parameters/EventId"
       responses:
-        '200':
+        "200":
           description: Social proof signals for the event
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/ApiResponse'
+                  - $ref: "#/components/schemas/ApiResponse"
                   - type: object
                     properties:
                       data:
-                        $ref: '#/components/schemas/EventSocialProof'
+                        $ref: "#/components/schemas/EventSocialProof"
               example:
                 success: true
                 message: Social proof retrieved successfully
@@ -261,29 +369,29 @@ paths:
                   average_rating: 4.5
                   waitlist_count: 8
                   tickets_remaining: 43
-        '404':
-          $ref: '#/components/responses/NotFound'
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/events/{id}/attendees/count:
     get:
       tags: [Events]
       summary: Get attendee count for an event
       parameters:
-        - $ref: '#/components/parameters/EventId'
+        - $ref: "#/components/parameters/EventId"
       responses:
-        '200':
+        "200":
           description: Attendee count and total ticket supply
           content:
             application/json:
               schema:
                 allOf:
-                  - $ref: '#/components/schemas/ApiResponse'
+                  - $ref: "#/components/schemas/ApiResponse"
                   - type: object
                     properties:
                       data:
-                        $ref: '#/components/schemas/AttendeeCount'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                        $ref: "#/components/schemas/AttendeeCount"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/events/{id}/share-link:
     get:
@@ -293,16 +401,16 @@ paths:
         Returns a canonical share URL for an event along with the event's
         title and a truncated description (max 160 characters).
       parameters:
-        - $ref: '#/components/parameters/EventId'
+        - $ref: "#/components/parameters/EventId"
       responses:
-        '200':
+        "200":
           description: Share link details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponse'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/ApiResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
 components:
   parameters:
@@ -321,7 +429,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
     ApiResponse:
@@ -393,20 +501,20 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Event'
+            $ref: "#/components/schemas/Event"
         pagination:
-          $ref: '#/components/schemas/CursorPagination'
+          $ref: "#/components/schemas/CursorPagination"
         meta:
-          $ref: '#/components/schemas/ListMeta'
+          $ref: "#/components/schemas/ListMeta"
       required: [items, pagination, meta]
 
     EventListResponse:
       allOf:
-        - $ref: '#/components/schemas/ApiResponse'
+        - $ref: "#/components/schemas/ApiResponse"
         - type: object
           properties:
             data:
-              $ref: '#/components/schemas/EventListData'
+              $ref: "#/components/schemas/EventListData"
 
     EventSocialProof:
       type: object
@@ -438,7 +546,7 @@ components:
       type: object
       description: An event with computed distance from the query coordinate.
       allOf:
-        - $ref: '#/components/schemas/Event'
+        - $ref: "#/components/schemas/Event"
         - type: object
           properties:
             distance_km:
