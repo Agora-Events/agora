@@ -14,7 +14,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 pub use crate::models::webhook::{
-    CreateWebhookRequest, WebhookEndpoint,
+    CreateWebhookRequest, WebhookDeliveryFailure, WebhookEndpoint,
 };
 use crate::models::webhook::{
     validate_create_webhook, MAX_WEBHOOK_ENDPOINTS_PER_ORGANIZER,
@@ -200,111 +200,90 @@ pub async fn delete_webhook(
     }
 }
 
-/// Response payload for `POST /api/v1/webhooks/:id/test` (Issue #1604).
-#[derive(Debug, Serialize, Deserialize, ToSchema, PartialEq)]
-pub struct TestWebhookResponse {
-    pub endpoint_id: Uuid,
-    pub url: String,
-    pub event: String,
-    pub status_code: Option<u16>,
-    pub latency_ms: u64,
-    pub success: bool,
-    pub error: Option<String>,
+/// Query parameters for `GET /api/v1/webhooks/failures`.
+#[derive(Debug, Deserialize, Default, IntoParams, ToSchema)]
+pub struct ListWebhookFailuresParams {
+    /// Filter failures by endpoint id.
+    pub endpoint_id: Option<Uuid>,
+    /// Filter failures by organiser id.
+    pub organizer_id: Option<Uuid>,
 }
 
-/// Test a registered webhook endpoint by sending a signed Ping event payload.
+/// List webhook delivery failures from Dead-Letter Queue (DLQ).
 ///
 /// # Endpoint
-/// POST `/api/v1/webhooks/:id/test`
-pub async fn test_webhook(
+/// GET `/api/v1/webhooks/failures`
+#[utoipa::path(
+    get,
+    path = "/webhooks/failures",
+    params(ListWebhookFailuresParams),
+    responses(
+        (status = 200, description = "Webhook DLQ failures retrieved", body = Vec<WebhookDeliveryFailure>),
+    ),
+    tag = "Webhooks"
+)]
+pub async fn list_webhook_failures(
     State(state): State<WebhookState>,
-    Path(endpoint_id): Path<Uuid>,
+    Query(params): Query<ListWebhookFailuresParams>,
 ) -> Response {
-    // 1. Fetch endpoint by id
-    let endpoint = match sqlx::query_as::<_, WebhookEndpoint>(
-        "SELECT * FROM webhook_endpoints WHERE id = $1",
-    )
-    .bind(endpoint_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(ep)) => ep,
-        Ok(None) => {
-            return AppError::NotFound(format!("Webhook endpoint '{}' not found", endpoint_id))
-                .into_response();
-        }
-        Err(e) => return AppError::DatabaseError(e).into_response(),
+    let result = if let Some(endpoint_id) = params.endpoint_id {
+        sqlx::query_as::<_, WebhookDeliveryFailure>(
+            "SELECT * FROM webhook_delivery_failures WHERE endpoint_id = $1 ORDER BY failed_at DESC",
+        )
+        .bind(endpoint_id)
+        .fetch_all(&state.pool)
+        .await
+    } else if let Some(organizer_id) = params.organizer_id {
+        sqlx::query_as::<_, WebhookDeliveryFailure>(
+            r#"
+            SELECT f.* FROM webhook_delivery_failures f
+            JOIN webhook_endpoints e ON f.endpoint_id = e.id
+            WHERE e.organizer_id = $1
+            ORDER BY f.failed_at DESC
+            "#,
+        )
+        .bind(organizer_id)
+        .fetch_all(&state.pool)
+        .await
+    } else {
+        sqlx::query_as::<_, WebhookDeliveryFailure>(
+            "SELECT * FROM webhook_delivery_failures ORDER BY failed_at DESC LIMIT 100",
+        )
+        .fetch_all(&state.pool)
+        .await
     };
 
-    if !endpoint.is_active {
-        return AppError::ValidationError("Cannot test an inactive webhook endpoint".to_string())
-            .into_response();
+    match result {
+        Ok(failures) => success(failures, "Webhook failures retrieved").into_response(),
+        Err(e) => AppError::DatabaseError(e).into_response(),
     }
+}
 
-    // 2. Build test Ping payload
-    let ping_payload = serde_json::json!({
-        "id": Uuid::new_v4(),
-        "event": "Ping",
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "data": {
-            "endpoint_id": endpoint.id,
-            "message": "Agora webhook connectivity test ping",
+/// Retry a permanently failed webhook delivery from the Dead-Letter Queue (DLQ).
+///
+/// # Endpoint
+/// POST `/api/v1/webhooks/failures/:id/retry`
+#[utoipa::path(
+    post,
+    path = "/webhooks/failures/{id}/retry",
+    params(("id" = Uuid, Path, description = "Webhook failure identifier")),
+    responses(
+        (status = 200, description = "Webhook redelivered successfully", body = WebhookDeliveryFailure),
+        (status = 404, description = "Failure record or endpoint not found"),
+        (status = 502, description = "Webhook redelivery attempt failed"),
+    ),
+    tag = "Webhooks"
+)]
+pub async fn retry_webhook_failure(
+    State(state): State<WebhookState>,
+    Path(failure_id): Path<Uuid>,
+) -> Response {
+    match crate::services::webhook_dispatcher::retry_failed_delivery(&state.pool, failure_id).await {
+        Ok(failure) => success(failure, "Webhook redelivered successfully").into_response(),
+        Err((status, msg)) => {
+            crate::utils::error::ApiError::new(status, msg).into_response()
         }
-    });
-
-    let body = serde_json::to_vec(&ping_payload).unwrap_or_else(|_| b"{}".to_vec());
-    let signature = crate::services::webhook_dispatcher::sign_payload(&endpoint.secret, &body);
-
-    // 3. Dispatch HTTP POST to the target URL with timing and timeout
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-
-    let start = std::time::Instant::now();
-    let dispatch_result = client
-        .post(&endpoint.url)
-        .header("Content-Type", "application/json")
-        .header("X-Agora-Signature", &signature)
-        .header("X-Agora-Event", "Ping")
-        .body(body)
-        .send()
-        .await;
-    let latency_ms = start.elapsed().as_millis() as u64;
-
-    let response = match dispatch_result {
-        Ok(res) => {
-            let status = res.status();
-            let status_u16 = status.as_u16();
-            let is_success = status.is_success();
-            let error_msg = if !is_success {
-                Some(format!("Target server returned HTTP {}", status_u16))
-            } else {
-                None
-            };
-
-            TestWebhookResponse {
-                endpoint_id: endpoint.id,
-                url: endpoint.url,
-                event: "Ping".to_string(),
-                status_code: Some(status_u16),
-                latency_ms,
-                success: is_success,
-                error: error_msg,
-            }
-        }
-        Err(err) => TestWebhookResponse {
-            endpoint_id: endpoint.id,
-            url: endpoint.url,
-            event: "Ping".to_string(),
-            status_code: None,
-            latency_ms,
-            success: false,
-            error: Some(err.to_string()),
-        },
-    };
-
-    success(response, "Webhook test executed").into_response()
+    }
 }
 
 #[cfg(test)]

@@ -124,6 +124,8 @@ use utoipa::OpenApi;
         crate::handlers::webhooks::create_webhook,
         crate::handlers::webhooks::list_webhooks,
         crate::handlers::webhooks::delete_webhook,
+        crate::handlers::webhooks::list_webhook_failures,
+        crate::handlers::webhooks::retry_webhook_failure,
         crate::handlers::affiliates::register_affiliate,
     ),
     components(
@@ -137,7 +139,9 @@ use utoipa::OpenApi;
             crate::handlers::webhooks::CreateWebhookRequest,
             crate::handlers::webhooks::CreateWebhookResponse,
             crate::handlers::webhooks::ListWebhooksParams,
+            crate::handlers::webhooks::ListWebhookFailuresParams,
             crate::models::webhook::WebhookEndpoint,
+            crate::models::webhook::WebhookDeliveryFailure,
             crate::handlers::affiliates::AffiliateResponse,
             crate::utils::error::ApiError
         )
@@ -395,13 +399,18 @@ pub async fn create_routes(
         .route_layer(middleware::from_fn_with_state(pool.clone(), audit_layer))
         .with_state(zk_state);
 
-    // Outgoing webhook endpoints for organisers (Issue #1339, #1604)
+    // Outgoing webhook endpoints for organisers (Issue #1339, #1626)
     let webhook_state = crate::handlers::webhooks::WebhookState { pool: pool.clone() };
     let webhook_routes = Router::new()
         .route(
             "/",
             post(crate::handlers::webhooks::create_webhook)
                 .get(crate::handlers::webhooks::list_webhooks),
+        )
+        .route("/failures", get(crate::handlers::webhooks::list_webhook_failures))
+        .route(
+            "/failures/:id/retry",
+            post(crate::handlers::webhooks::retry_webhook_failure),
         )
         .route("/:id", delete(crate::handlers::webhooks::delete_webhook))
         .route("/:id/test", post(crate::handlers::webhooks::test_webhook))
@@ -606,10 +615,18 @@ pub async fn create_routes(
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         .layer(RateLimitLayer::from_env());
 
+    // Image uploads with 5MB limit and multipart/form-data support (Issue #1625)
+    let upload_routes = Router::new()
+        .route("/upload/image", post(crate::handlers::upload::upload_image))
+        .layer(axum::Extension(config.clone()))
+        .layer(RequestBodyLimitLayer::new(5 * 1024 * 1024))
+        .layer(RateLimitLayer::from_env());
+
     let api_routes = Router::new()
         .merge(sensitive_routes)
         .merge(general_routes)
         .merge(public_api_routes)
+        .merge(upload_routes)
         .merge(
             utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
                 .url("/openapi.json", ApiDoc::openapi()),
@@ -701,6 +718,8 @@ mod tests {
             .route("/api/v1/examples/empty-success", get(|| async { "ok" }))
             .route("/api/v1/examples/not-found/:id", get(|| async { "ok" }))
             .route("/api/v1/upload/image", post(|| async { "ok" }))
+            .route("/api/v1/webhooks/failures", get(|| async { "ok" }))
+            .route("/api/v1/webhooks/failures/:id/retry", post(|| async { "ok" }))
     }
 
     async fn get_status(router: Router, path: &str) -> StatusCode {
@@ -799,6 +818,15 @@ mod tests {
             .unwrap();
         let status = router.oneshot(req).await.unwrap().status();
         assert_ne!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_webhook_failures_route_exists_under_api_v1() {
+        let router = test_router();
+        assert_ne!(
+            get_status(router, "/api/v1/webhooks/failures").await,
+            StatusCode::NOT_FOUND
+        );
     }
 
     #[tokio::test]

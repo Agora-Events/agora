@@ -19,6 +19,7 @@ pub mod recommendations;
 pub mod soroban_listener;
 pub mod sync;
 pub mod tickets;
+pub mod upload;
 pub mod waiting_room;
 pub mod webhooks;
 pub mod ws;

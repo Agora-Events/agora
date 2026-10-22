@@ -102,3 +102,19 @@ pub fn validate_create_webhook(req: &CreateWebhookRequest) -> Result<Vec<String>
     }
     Ok(events)
 }
+
+/// A permanently failed webhook delivery preserved in the Dead-Letter Queue (DLQ).
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct WebhookDeliveryFailure {
+    pub id: Uuid,
+    pub endpoint_id: Uuid,
+    pub event: String,
+    pub payload: serde_json::Value,
+    pub attempts: i32,
+    pub last_status_code: Option<i32>,
+    pub last_error: Option<String>,
+    pub failed_at: DateTime<Utc>,
+    pub retried_at: Option<DateTime<Utc>>,
+    pub retry_status: Option<String>,
+}
+
