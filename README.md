@@ -53,26 +53,56 @@ The backend is built using **Rust** and the **Axum** web framework, following a 
 
 This separation of concerns allows the backend to scale independently, supports clean testing, and keeps business logic isolated from routing and infrastructure code.
 
-
 ## Getting Started
 
-1. **Clone the repository**:
+### 1. Clone the repository
 
-   ```bash
-   git clone https://github.com/your-username/agora.git
-   cd agora
-   ```
+```bash
+git clone https://github.com/Agora-Events/agora.git
+cd agora
+```
 
-2. **Install dependencies**:
+### 2. Install dependencies
 
-   ```bash
-   pnpm install
-   ```
+Install workspace dependencies from the repository root:
 
-3. **Run the development server**:
-   ```bash
-   pnpm dev
-   ```
+```bash
+pnpm install
+```
+
+### 3. Run the development server
+
+Start the Next.js web application from the repository root:
+
+```bash
+pnpm dev
+# or explicitly target the web workspace:
+pnpm --filter web dev
+```
+
+Alternatively, navigate into the web application directory:
+
+```bash
+cd apps/web
+pnpm dev
+```
+
+The frontend will be available at [http://localhost:3000](http://localhost:3000).
+
+### 4. Full-Stack Setup (Docker)
+
+To run the complete local stack (PostgreSQL, Redis, Stellar RPC, Axum backend, and Next.js frontend) with a single command:
+
+```bash
+make up
+# or directly:
+docker compose up --build
+```
+
+- **Frontend:** [http://localhost:3000](http://localhost:3000)
+- **Backend API:** [http://localhost:3001](http://localhost:3001)
+
+For detailed instructions on environment variables, database migrations (`sqlx migrate run`), backend manual runs, and Soroban smart contract testing, refer to the [Development Setup Guide](docs/DEVELOPMENT_SETUP.md).
 
 ## Design Resources
 
@@ -83,10 +113,15 @@ This separation of concerns allows the backend to scale independently, supports 
 We welcome contributions from the community! To contribute:
 
 1. **Fork the Project**.
-2. **Create your Feature Branch** (`git checkout -b feature/AmazingFeature`).
-3. **Commit your Changes** (`git commit -m 'Add some AmazingFeature'`).
-4. **Push to the Branch** (`git push origin feature/AmazingFeature`).
-5. **Open a Pull Request**.
+2. **Clone your fork**:
+   ```bash
+   git clone https://github.com/<your-username>/agora.git
+   cd agora
+   ```
+3. **Create your Feature Branch** (`git checkout -b feature/AmazingFeature`).
+4. **Commit your Changes** (`git commit -m 'Add some AmazingFeature'`).
+5. **Push to the Branch** (`git push origin feature/AmazingFeature`).
+6. **Open a Pull Request**.
 
 Please ensure your code follows the existing style guidelines (see [Frontend Guidelines](apps/web/README.md) for web) and passes all linting checks (`pnpm lint`).
 
@@ -103,4 +138,5 @@ Distributed under the MIT License. See [`LICENSE.md`](LICENSE.md) for more infor
 ## Handsoff notes
 
 <!-- handsoff-issue-1397 -->
+
 - #1397: [FRONTEND] Remove debug console.log from create-event form submit
