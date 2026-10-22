@@ -20,7 +20,8 @@ use crate::events::{
 };
 use crate::types::{
     BlacklistAuditEntry, EventCapacity, EventInfo, EventReceipt, EventRegistrationArgs,
-    EventStatus, GuestProfile, MultiSigConfig, OrganizerStake, PaymentInfo, TicketTier,
+    EventStatus, GuestProfile, MultiSigConfig, OrganizerStake, PaymentInfo, StakingConfig,
+    TicketTier,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
@@ -41,6 +42,9 @@ use crate::error::EventRegistryError;
 
 /// Maximum number of ticket tiers allowed per event during registration.
 const MAX_TIERS_PER_EVENT: u32 = 20;
+
+/// Maximum number of events that can be queried in a single batch call.
+const MAX_BATCH_SIZE: u32 = 50;
 
 #[contract]
 pub struct EventRegistry;
@@ -676,13 +680,42 @@ impl EventRegistry {
         })
     }
 
-    /// Retrieves a batch of events by their IDs (max 50).
+    /// Retrieves a batch of events by their IDs (max MAX_BATCH_SIZE).
+    ///
+    /// This function provides efficient batch retrieval of event information
+    /// for marketplace discovery and event listing features. It allows querying
+    /// multiple events in a single RPC call, reducing latency and preventing
+    /// RPC throttling that would occur with individual event queries.
+    ///
+    /// # Arguments
+    /// * `event_ids` - A vector of event IDs to retrieve. The length must not
+    ///   exceed `MAX_BATCH_SIZE` (currently 50).
+    ///
+    /// # Returns
+    /// Returns a vector of optional `EventInfo` objects in the same order as
+    /// the input IDs. If an event doesn't exist, its corresponding position
+    /// will be `None`.
+    ///
+    /// # Errors
+    /// Returns `EventRegistryError::BatchSizeExceeded` if the input vector
+    /// exceeds `MAX_BATCH_SIZE`.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let event_ids: Vec<String> = vec!["event1".to_string(), "event2".to_string()];
+    /// let events = event_registry::get_events_batch(env, event_ids)?;
+    /// for event in events {
+    ///     if let Some(event_info) = event {
+    ///         println!("Event: {}", event_info.name);
+    ///     }
+    /// }
+    /// ```
     pub fn get_events_batch(
         env: Env,
         event_ids: Vec<String>,
     ) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
-        if event_ids.len() > 50 {
-            return Err(EventRegistryError::TooManyTiers);
+        if event_ids.len() > MAX_BATCH_SIZE as usize {
+            return Err(EventRegistryError::BatchSizeExceeded);
         }
         let mut results = Vec::new(&env);
         for id in event_ids.into_iter() {
@@ -1088,6 +1121,12 @@ impl EventRegistry {
         event_info.organizer_address.require_auth();
 
         validate_tier_price(&tier)?;
+
+        if !event_info.tiers.contains_key(tier_id.clone())
+            && event_info.tiers.len() >= MAX_TIERS_PER_EVENT
+        {
+            return Err(EventRegistryError::TooManyTiers);
+        }
 
         if event_info.max_supply > 0 {
             let mut total_tier_limit: i128 = 0;
@@ -1521,6 +1560,14 @@ impl EventRegistry {
         );
 
         Ok(())
+    }
+
+    /// Returns the configured staking token and minimum stake amount.
+    pub fn get_staking_config(env: Env) -> StakingConfig {
+        StakingConfig {
+            token: storage::get_staking_token(&env),
+            min_amount: storage::get_min_stake_amount(&env),
+        }
     }
 
     /// Allows an organizer to stake collateral tokens to unlock Verified status.

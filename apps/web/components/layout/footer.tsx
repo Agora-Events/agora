@@ -2,21 +2,28 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
-import { LanguageSwitcher } from "./language-switcher";
+import { useRouter } from "next/navigation";
+import { useLocale } from "next-intl";
 
-/**
- * SOLUTION FOR ISSUE #448:
- * 1. Replaced all placeholder "#" hrefs with functional internal and external routes.
- * 2. Added `hover:bg-white/5` and `transition-all` to create a professional hover "pill" effect.
- * 3. Integrated `mailto:hello@agora.com` for the contact link.
- * 4. Ensured mobile responsiveness via existing `flex-col md:flex-row` logic.
- * 5. Translated all strings (and added the language switcher) in Issue #1343.
- * 6. Added a copyright line with the current year in Issue #1399.
- */
+const LOCALES = [
+  { code: "en", label: "English" },
+  { code: "es", label: "Español" },
+  { code: "fr", label: "Français" },
+] as const;
+
+type Locale = (typeof LOCALES)[number]["code"];
+const LOCALE_COOKIE = "NEXT_LOCALE";
 
 export function Footer() {
-  const t = useTranslations("footer");
+  const router = useRouter();
+  const activeLocale = useLocale();
+  const locale =
+    LOCALES.find(({ code }) => code === activeLocale)?.code ?? "en";
+
+  const handleLocaleChange = (nextLocale: Locale) => {
+    document.cookie = `${LOCALE_COOKIE}=${nextLocale}; path=/; max-age=31536000; samesite=lax`;
+    router.refresh();
+  };
 
   return (
     <footer className="w-full bg-ink pt-20 pb-12 relative overflow-hidden text-white select-none">
@@ -136,6 +143,29 @@ export function Footer() {
               </div>
               <span className="text-sm">{t("stellar")}</span>
             </Link>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="footer-locale" className="text-sm font-medium text-gray-300">
+              Language
+            </label>
+            <select
+              id="footer-locale"
+              value={locale}
+              onChange={(event) => {
+                const selectedLocale = LOCALES.find(
+                  ({ code }) => code === event.target.value,
+                )?.code;
+                if (selectedLocale) handleLocaleChange(selectedLocale);
+              }}
+              className="rounded-lg border border-white/30 bg-[#060606] px-3 py-2 text-sm text-white outline-none focus:border-white"
+            >
+              {LOCALES.map(({ code, label }) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>

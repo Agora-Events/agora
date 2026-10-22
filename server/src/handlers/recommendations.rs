@@ -241,11 +241,7 @@ pub async fn get_recommended_events(
     let based_on_categories: Vec<String> = user_categories.into_iter().map(|(_, n)| n).collect();
     Ok((
         StatusCode::OK,
-        Json(RecommendationsResponse {
-            events,
-            personalised,
-            based_on_categories,
-        }),
+        Json(build_recommendations_response(events, &user_categories)),
     ))
 }
 

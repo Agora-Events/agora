@@ -181,22 +181,23 @@ pub async fn request_nonce(
     }
 }
 
-/// Validates that a string is a valid Stellar public key address.
+/// Validates that a string is a valid Stellar public key or contract address.
 ///
 /// A valid Stellar address:
-/// - Starts with 'G'
+/// - Starts with 'G' (public key) or 'C' (contract / passkey smart wallet)
 /// - Is 56 characters long
 /// - Contains only valid base32 characters
 fn validate_stellar_address(address: &str) -> Result<(), String> {
     // Check basic format
-    if !address.starts_with('G') || address.len() != 56 {
-        return Err("Address must start with G and be 56 characters long".to_string());
+    if (!address.starts_with('G') && !address.starts_with('C')) || address.len() != 56 {
+        return Err("Address must start with G or C and be 56 characters long".to_string());
     }
 
     // Try to decode as Stellar strkey
     match Strkey::from_string(address) {
         Ok(Strkey::PublicKeyEd25519(_)) => Ok(()),
-        _ => Err("Invalid Stellar public key format".to_string()),
+        Ok(Strkey::Contract(_)) => Ok(()),
+        _ => Err("Invalid Stellar address format".to_string()),
     }
 }
 
@@ -362,6 +363,40 @@ pub async fn verify_signature(
     response
 }
 
+/// `POST /api/v1/auth/refresh`
+///
+/// Renews an active JWT session (Issue #1607). Validates the existing unexpired
+/// token and returns a fresh JWT with a reset 24-hour expiry window.
+pub async fn refresh_token(
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let address = match extract_auth(&headers) {
+        Ok(addr) => addr,
+        Err(e) => return e.into_response(),
+    };
+
+    let new_token = match issue_jwt(&address) {
+        Ok(t) => t,
+        Err(e) => return e.into_response(),
+    };
+
+    let mut response = success(
+        TokenResponse {
+            token: new_token,
+        },
+        "Token refreshed successfully",
+    )
+    .into_response();
+
+    let csrf_token = AuthService::generate_csrf_token();
+    let cookie = format!("XSRF-TOKEN={}; Path=/; HttpOnly; SameSite=Lax", csrf_token);
+    if let Ok(val) = cookie.parse() {
+        response.headers_mut().insert(axum::http::header::SET_COOKIE, val);
+    }
+
+    response
+}
+
 /// `POST /api/v1/auth/logout`
 ///
 /// Stateless logout — instructs the client to discard the token.
@@ -448,8 +483,18 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_stellar_address_invalid_not_starting_with_g() {
-        let address = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYMY";
+    fn test_validate_stellar_address_contract_valid() {
+        let strkey_contract = Strkey::Contract(stellar_strkey::Contract([1u8; 32]));
+        let address = format!("{}", strkey_contract);
+        assert!(address.starts_with('C'));
+        assert_eq!(address.len(), 56);
+        assert!(validate_stellar_address(&address).is_ok());
+    }
+
+    #[test]
+    fn test_validate_stellar_address_invalid_prefix() {
+        // Starts with 'S' (secret key) - should be rejected
+        let address = "SBG7W22374ZCGCCKCQY6W7W26TYSK7B2N4N43QY3G6T4AAMB4Y4Y6XYZ";
         let result = validate_stellar_address(address);
         assert!(result.is_err());
     }
@@ -473,5 +518,21 @@ mod tests {
         let address = "";
         let result = validate_stellar_address(address);
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_valid() {
+        ensure_test_jwt_secret();
+        let address = "GBZXN7PIRZGNMHGA72XZTOFGDPTGCLNQUTUZ22DCFPPYGBSRBPHOTWDY";
+        let initial_token = issue_jwt(address).unwrap();
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {initial_token}").parse().unwrap(),
+        );
+
+        let response = refresh_token(headers).await;
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
     }
 }

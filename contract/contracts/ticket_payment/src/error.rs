@@ -133,6 +133,8 @@ pub enum TicketPaymentError {
     BatchTooLarge = 66,
     /// Returned when a payment ID has already been processed.
     PaymentAlreadyExists = 67,
+    /// Returned when a purchase would exceed the event's per-wallet ticket limit.
+    WalletLimitExceeded = 68,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -216,6 +218,7 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             65 => TicketPaymentError::EmptyBatch,
             66 => TicketPaymentError::BatchTooLarge,
             67 => TicketPaymentError::PaymentAlreadyExists,
+            68 => TicketPaymentError::WalletLimitExceeded,
             _ => TicketPaymentError::ArithmeticError,
         }
     }

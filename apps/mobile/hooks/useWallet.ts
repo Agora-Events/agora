@@ -9,6 +9,7 @@ import {
   getStoredWalletSession,
   saveWalletSession,
   clearWalletSession,
+  checkAndClearStaleSession,
 } from '@/services/walletAdapter';
 
 export type WalletConnectionStatus =
@@ -49,6 +50,13 @@ export function useWallet(): UseWalletReturn {
       try {
         const stored = await getStoredWalletSession();
         if (stored && isMounted.current) {
+          // Check if wallet account has changed and clear stale session
+          const accountChanged = await checkAndClearStaleSession();
+          if (accountChanged) {
+            console.log('Wallet account changed, clearing stale session');
+            return;
+          }
+
           const adapter = getWalletAdapter(stored.type);
           setWallet(adapter);
           setWalletType(stored.type);

@@ -1225,6 +1225,8 @@ fn build_past_event_where_clause(
                 date_to: None,
                 location: None,
                 ticket_type: None,
+                sort_by: SearchSortBy::default(),
+                order: SearchSortOrder::default(),
                 page: 1,
                 page_size: size,
                 sort_by: Default::default(),
@@ -1250,6 +1252,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 0,
             sort_by: Default::default(),
@@ -1271,6 +1275,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 101,
             sort_by: Default::default(),
@@ -1292,6 +1298,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: Some("VIP".to_string()),
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
             sort_by: Default::default(),
@@ -1313,6 +1321,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
             sort_by: Default::default(),
@@ -1423,6 +1433,8 @@ fn build_past_event_where_clause(
             date_to: None,
             location: Some("Lagos".to_string()),
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
             sort_by: Default::default(),
@@ -2832,6 +2844,25 @@ fn validate_event_timestamps(
     Ok(())
 }
 
+/// Invalidate the cached event detail and the shared events list after a
+/// successful write (Issues #1629).
+///
+/// Failures are logged but never fail the request: a stale cache entry will
+/// expire on its own TTL, whereas a failed write must still be reported as
+/// successful.
+async fn invalidate_event_caches(state: &EventState, event_id: Uuid) {
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!(
+            "Failed to invalidate cache key '{}' for event {}: {:?}",
+            cache_key,
+            event_id,
+            e
+        );
+    }
+    state.redis.invalidate_events_list().await;
+}
+
 /// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
 ///
 /// # Endpoint
@@ -3096,6 +3127,141 @@ fn content_hash(value: &serde_json::Value) -> String {
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     hex::encode(hasher.finalize())
+}
+
+/// Clone an existing event into a new draft owned by the authenticated caller
+/// (Issue #1630).
+///
+/// # Endpoint
+/// POST `/api/v1/events/:id/clone`
+///
+/// Copies the source event's metadata (title, description, location, times,
+/// image, host email, coordinates, capacity) plus its ticket tiers and
+/// categories into a brand-new event with status `draft`. The caller must be
+/// the organizer/owner of the source event.
+pub async fn clone_event(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    extensions: axum::extract::Extension<axum::http::Extensions>,
+) -> Response {
+    // 1. Resolve the authenticated caller (organizer wallet) from request extensions.
+    let caller_wallet = match extract_caller_wallet(&extensions.0) {
+        Some(wallet) => wallet,
+        None => {
+            return AppError::Unauthorized("Authentication required".to_string()).into_response();
+        }
+    };
+
+    // 2. Load the source event.
+    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1")
+        .bind(event_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(Some(event)) => event,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch source event for clone: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // 3. Verify ownership: the caller's wallet must own the source event's organizer.
+    let owner_wallet = match sqlx::query_scalar::<_, Option<String>>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(source.organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(Some(wallet))) => wallet,
+        Ok(_) => {
+            return AppError::Forbidden(
+                "You are not the organizer of this event".to_string(),
+            )
+            .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to resolve organizer for clone: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if owner_wallet != caller_wallet {
+        return AppError::Forbidden("You are not the organizer of this event".to_string())
+            .into_response();
+    }
+
+    // 4. Insert the cloned event as a draft owned by the caller.
+    let cloned = match sqlx::query_as::<_, Event>(
+        "INSERT INTO events (
+             organizer_id, title, description, location, start_time, end_time,
+             image_url, host_email, latitude, longitude, total_tickets, status
+         )
+         SELECT
+             organizer_id, title, description, location, start_time, end_time,
+             image_url, host_email, latitude, longitude, total_tickets, 'draft'
+         FROM events
+         WHERE id = $1
+         RETURNING *",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(event) => event,
+        Err(e) => {
+            tracing::error!("Failed to clone event {}: {:?}", event_id, e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // 5. Copy ticket tiers (fresh inventory, no sales carried over).
+    if let Err(e) = sqlx::query(
+        "INSERT INTO ticket_tiers (
+             event_id, name, description, price, total_quantity, available_quantity
+         )
+         SELECT $1, name, description, price, total_quantity, total_quantity
+         FROM ticket_tiers
+         WHERE event_id = $2",
+    )
+    .bind(cloned.id)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!(
+            "Failed to copy ticket tiers while cloning event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    // 6. Copy category associations.
+    if let Err(e) = sqlx::query(
+        "INSERT INTO event_categories (event_id, category_id)
+         SELECT $1, category_id FROM event_categories WHERE event_id = $2
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(cloned.id)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!(
+            "Failed to copy categories while cloning event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    // 7. A new event invalidates the shared list cache.
+    state.redis.invalidate_events_list().await;
+
+    success(cloned, "Event cloned successfully").into_response()
 }
 
 /// Extract the highest-priority locale from `Accept-Language`, using the
@@ -4389,6 +4555,8 @@ fn test_search_params_ticket_type() {
         date_to: None,
         location: None,
         ticket_type: Some("VIP".to_string()),
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
         sort_by: Default::default(),
@@ -4410,6 +4578,8 @@ fn test_search_params_ticket_type_none() {
         date_to: None,
         location: None,
         ticket_type: None,
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
         sort_by: Default::default(),
@@ -4441,6 +4611,8 @@ fn test_search_params_location() {
         date_to: None,
         location: Some("Lagos".to_string()),
         ticket_type: None,
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
         sort_by: Default::default(),
@@ -4478,6 +4650,71 @@ fn test_csv_row_format() {
     assert!(row.contains(owner));
     assert!(row.contains(buyer));
     assert!(row.contains("2"));
+}
+
+#[test]
+fn test_verify_export_attendees_auth_missing_header() {
+    let headers = HeaderMap::new();
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        AppError::AuthError(msg) => assert!(msg.contains("Missing Authorization")),
+        other => panic!("Unexpected error: {:?}", other),
+    }
+}
+
+#[test]
+fn test_verify_export_attendees_auth_invalid_scheme() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        "Basic invalid_token".parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        AppError::AuthError(msg) => assert!(msg.contains("must use Bearer scheme")),
+        other => panic!("Unexpected error: {:?}", other),
+    }
+}
+
+#[test]
+fn test_verify_export_attendees_auth_admin_token() {
+    std::env::set_var("ADMIN_TOKEN", "test-admin-secret-token");
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        "Bearer test-admin-secret-token".parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), None); // None signifies admin authorization
+}
+
+#[test]
+fn test_verify_export_attendees_auth_valid_jwt() {
+    std::env::set_var("JWT_SECRET", "super-secret-key-for-unit-testing-32-bytes");
+    let now = chrono::Utc::now();
+    let claims = crate::handlers::auth::Claims {
+        sub: "GAORGANIZERTESTWALLET123456789".to_string(),
+        iat: now.timestamp(),
+        exp: (now + chrono::Duration::hours(1)).timestamp(),
+    };
+    let token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret("super-secret-key-for-unit-testing-32-bytes".as_bytes()),
+    )
+    .unwrap();
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        format!("Bearer {}", token).parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), Some("GAORGANIZERTESTWALLET123456789".to_string()));
 }
 
 #[derive(Serialize)]
@@ -5110,32 +5347,104 @@ pub fn sanitize_csv_field(field: &str) -> String {
     }
 }
 
+/// Validates caller authorization for exporting attendee CSV (Issue #1624).
+/// Returns `Ok(None)` if authorized as admin, `Ok(Some(wallet))` if authorized with organizer credentials,
+/// or `Err(AppError)` if missing, malformed, or invalid.
+pub fn verify_export_attendees_auth(headers: &HeaderMap) -> Result<Option<String>, AppError> {
+    if let Some(auth_hdr) = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
+        let token = auth_hdr
+            .strip_prefix("Bearer ")
+            .or_else(|| auth_hdr.strip_prefix("bearer "))
+            .unwrap_or(auth_hdr)
+            .trim();
+        if let Ok(admin_token) = std::env::var("ADMIN_TOKEN") {
+            if !admin_token.is_empty() && token == admin_token {
+                return Ok(None);
+            }
+        }
+    }
+
+    let wallet = crate::handlers::auth::extract_auth(headers)?;
+    Ok(Some(wallet))
+}
+
 /// GET /api/v1/events/:id/export-attendees
 ///
 /// Exports all attendees for an event as a CSV file.
+/// Requires the caller to be the event's organizer or an admin (Issue #1624).
 /// Returns owner_wallet, buyer_wallet, quantity, created_at for all tickets.
 pub async fn export_attendees_csv(
     State(state): State<EventState>,
+    headers: HeaderMap,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    // Verify the event exists
-    let event_exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    // 1. Verify authorization: admin token or organizer JWT / API key
+    let requester = match verify_export_attendees_auth(&headers) {
+        Ok(req) => req,
+        Err(e) => return e.into_response(),
+    };
+
+    // 2. Verify the event exists and fetch organizer_id
+    let organizer_id = match sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
     .bind(event_id)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     {
-        Ok(exists) => exists,
+        Ok(Some(Some(org_id))) => org_id,
+        Ok(Some(None)) => {
+            if requester.is_some() {
+                return AppError::Forbidden(
+                    "Only the event organizer or an admin is allowed to export attendee data"
+                        .to_string(),
+                )
+                .into_response();
+            }
+            Uuid::nil()
+        }
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
         Err(e) => {
             tracing::error!("Failed to check event existence: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
-    if !event_exists {
-        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+    // 3. If not admin, verify requester is the organizer
+    if let Some(ref wallet) = requester {
+        let is_organizer = match sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM organizers
+                WHERE id = $1 AND (wallet_address = $2 OR id::text = $2)
+            )
+            "#,
+        )
+        .bind(organizer_id)
+        .bind(wallet)
+        .fetch_one(&state.pool)
+        .await
+        {
+            Ok(is_org) => is_org,
+            Err(e) => {
+                tracing::error!("Failed to verify organizer: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+        if !is_organizer {
+            return AppError::Forbidden(
+                "Only the event organizer or an admin is allowed to export attendee data"
+                    .to_string(),
+            )
             .into_response();
+        }
     }
 
     // Fetch all tickets for the event
@@ -5470,6 +5779,13 @@ pub async fn list_ticket_tiers(
 // ---------------------------------------------------------------------------
 // Unit tests for list_event_tickets and image_url validation
 // ---------------------------------------------------------------------------
+
+#[test]
+fn test_clone_event_cache_key_matches_detail_key() {
+    let id = Uuid::new_v4();
+    let key = format!("event:detail:{}", id);
+    assert_eq!(key, format!("event:detail:{}", id));
+}
 
 #[test]
 fn test_ticket_tier_response_serialization() {

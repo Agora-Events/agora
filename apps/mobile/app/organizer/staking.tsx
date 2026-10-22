@@ -37,8 +37,10 @@ export default function OrganizerStakingScreen() {
   const {
     config,
     configLoading,
+    configError,
     stakingState,
     stateLoading,
+    stateError,
     history,
     historyLoading,
     usdcBalance,
@@ -160,6 +162,11 @@ export default function OrganizerStakingScreen() {
           </View>
 
           <View style={styles.metricsGrid}>
+            {stateError && (
+              <Text style={styles.configDescription} accessibilityRole="alert">
+                {stateError}
+              </Text>
+            )}
             <View style={styles.metricBox}>
               <Text style={styles.metricLabel}>Staked Collateral</Text>
               <Text style={styles.metricValue}>
@@ -186,6 +193,10 @@ export default function OrganizerStakingScreen() {
           <Text style={styles.configDescription}>Fetched from event_registry contract</Text>
           {configLoading ? (
             <ActivityIndicator color={Colors.primaryYellow} style={{ marginVertical: 10 }} accessible={false} />
+          ) : configError ? (
+            <Text style={styles.configDescription} accessibilityRole="alert">
+              {configError}
+            </Text>
           ) : (
             <View style={styles.configContainer}>
               <View style={styles.configRow}>
@@ -305,7 +316,7 @@ export default function OrganizerStakingScreen() {
           {historyLoading ? (
             <ActivityIndicator color={Colors.primaryYellow} style={{ marginVertical: 12 }} accessible={false} />
           ) : history.length === 0 ? (
-            <Text style={styles.emptyHistoryText}>No staking transactions yet.</Text>
+            <Text style={styles.emptyHistoryText}>Transaction history is not available yet.</Text>
           ) : (
             history.map((item: StakingTransaction) => (
               <View key={item.id} style={styles.txRow}>

@@ -338,4 +338,22 @@ mod tests {
         };
         assert!(validate_create_webhook(&req).is_err());
     }
+
+    #[test]
+    fn test_webhook_response_serialization() {
+        let resp = TestWebhookResponse {
+            endpoint_id: Uuid::nil(),
+            url: "https://example.com/webhook".to_string(),
+            event: "Ping".to_string(),
+            status_code: Some(200),
+            latency_ms: 45,
+            success: true,
+            error: None,
+        };
+        let json = serde_json::to_value(&resp).expect("serializes");
+        assert_eq!(json["event"], "Ping");
+        assert_eq!(json["status_code"], 200);
+        assert_eq!(json["latency_ms"], 45);
+        assert_eq!(json["success"], true);
+    }
 }
