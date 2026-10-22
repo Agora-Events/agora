@@ -64,8 +64,11 @@ export function SellTicketModal({
         walletConnected = false;
       }
 
-      if (!userAddress) {
-        userAddress = "GSELLERWALLETADDRESS1234567890";
+      if (!walletConnected || !userAddress) {
+        const msg = "Please connect your Freighter wallet to list this ticket for resale.";
+        setError(msg);
+        toast.error(msg);
+        return;
       }
 
       // 2. Generate Resale Smart Contract Transaction XDR
