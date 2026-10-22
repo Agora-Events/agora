@@ -11,6 +11,8 @@
 5. [Environment Variables](#5-environment-variables)
 6. [Verify Your Setup](#6-verify-your-setup)
 7. [Testnet Contract IDs & Token Issuers](#7-testnet-contract-ids--token-issuers)
+   - [7.1 Active Testnet Reference Deployments & Network Assets](#71-active-testnet-reference-deployments--network-assets)
+   - [7.2 Deploying Your Own Contracts or Obtaining Fresh IDs](#72-deploying-your-own-contracts-or-obtaining-fresh-ids)
 8. [Common Issues](#8-common-issues)
 
 ---
@@ -122,24 +124,24 @@ cp apps/web/.env.example apps/web/.env.local
 
 ### Required Stellar / Soroban Variables
 
-| Variable | Description | Testnet Value |
-|---|---|---|
-| `NEXT_PUBLIC_STELLAR_NETWORK` | Network identifier consumed by client-side helpers. | `TESTNET` |
-| `NEXT_PUBLIC_SOROBAN_RPC_URL` | Soroban RPC endpoint for contract queries. | `https://soroban-testnet.stellar.org` |
-| `NEXT_PUBLIC_TICKET_CONTRACT_ID` | Deployed `ticket_payment` contract address. | See [§7](#7-testnet-contract-ids--token-issuers) |
-| `NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID` | Same as above — used by the Card Onramp component. | See [§7](#7-testnet-contract-ids--token-issuers) |
-| `STELLAR_CONTRACT_ADDRESS` | Server-side contract address for the `mintTicket` util. | See [§7](#7-testnet-contract-ids--token-issuers) |
-| `STELLAR_RPC_URL` | Server-side Soroban RPC URL. | `https://soroban-testnet.stellar.org` |
-| `STELLAR_NETWORK_PASSPHRASE` | Network passphrase for signing transactions. | `Test SDF Network ; September 2015` |
-| `STELLAR_SOURCE_SECRET` | **Server-only.** Secret key of the fee-paying source account. | A funded Testnet `S...` key |
+| Variable                                 | Description                                                   | Testnet Value                                    |
+| ---------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------ |
+| `NEXT_PUBLIC_STELLAR_NETWORK`            | Network identifier consumed by client-side helpers.           | `TESTNET`                                        |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL`            | Soroban RPC endpoint for contract queries.                    | `https://soroban-testnet.stellar.org`            |
+| `NEXT_PUBLIC_TICKET_CONTRACT_ID`         | Deployed `ticket_payment` contract address.                   | See [§7](#7-testnet-contract-ids--token-issuers) |
+| `NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID` | Same as above — used by the Card Onramp component.            | See [§7](#7-testnet-contract-ids--token-issuers) |
+| `STELLAR_CONTRACT_ADDRESS`               | Server-side contract address for the `mintTicket` util.       | See [§7](#7-testnet-contract-ids--token-issuers) |
+| `STELLAR_RPC_URL`                        | Server-side Soroban RPC URL.                                  | `https://soroban-testnet.stellar.org`            |
+| `STELLAR_NETWORK_PASSPHRASE`             | Network passphrase for signing transactions.                  | `Test SDF Network ; September 2015`              |
+| `STELLAR_SOURCE_SECRET`                  | **Server-only.** Secret key of the fee-paying source account. | A funded Testnet `S...` key                      |
 
 ### Auth Variables (also required for full-stack dev)
 
-| Variable | Description |
-|---|---|
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `JWT_SECRET` | Long random string for session token signing |
+| Variable               | Description                                  |
+| ---------------------- | -------------------------------------------- |
+| `GOOGLE_CLIENT_ID`     | Google OAuth client ID                       |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret                   |
+| `JWT_SECRET`           | Long random string for session token signing |
 
 > **Security note:** `STELLAR_SOURCE_SECRET` is server-only. Never prefix it with `NEXT_PUBLIC_` and never commit it to version control.
 
@@ -149,13 +151,17 @@ cp apps/web/.env.example apps/web/.env.local
 # Stellar / Soroban
 NEXT_PUBLIC_STELLAR_NETWORK=TESTNET
 NEXT_PUBLIC_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
-NEXT_PUBLIC_TICKET_CONTRACT_ID=CCMOCKCONTRACTADDRESS1234567890
-NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID=CCMOCKCONTRACTADDRESS1234567890
 
-STELLAR_CONTRACT_ADDRESS=CCMOCKCONTRACTADDRESS1234567890
+# Maintained Testnet contract ID for ticket_payment (valid 56-character Soroban contract address)
+# If deploying your own contract instance, replace this with the ID returned by `stellar contract deploy`
+NEXT_PUBLIC_TICKET_CONTRACT_ID=CBQHNAXSI55GX2GN6D67GK7BHVPSLJUGZQEU7WJ5LKR5PNUCGLIMAO4K
+NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID=CBQHNAXSI55GX2GN6D67GK7BHVPSLJUGZQEU7WJ5LKR5PNUCGLIMAO4K
+
+# Server-side contract address (matches ticket_payment contract)
+STELLAR_CONTRACT_ADDRESS=CBQHNAXSI55GX2GN6D67GK7BHVPSLJUGZQEU7WJ5LKR5PNUCGLIMAO4K
 STELLAR_RPC_URL=https://soroban-testnet.stellar.org
 STELLAR_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
-STELLAR_SOURCE_SECRET=S... # your funded Testnet keypair
+STELLAR_SOURCE_SECRET=S... # your funded Testnet keypair (starts with S, 56 chars)
 
 # Auth (generate JWT secret with: openssl rand -base64 32)
 JWT_SECRET=change-me-to-a-long-random-string
@@ -190,39 +196,77 @@ pnpm dev
 
 ## 7. Testnet Contract IDs & Token Issuers
 
-> **Note:** Contract IDs below are reference values for the Agora Testnet deployment. Check `contract/.env.devnet` or ask a maintainer for the currently active addresses if these are stale.
+The sections below distinguish between **usable network values** (canonical tokens and active reference contracts on Stellar Testnet) and contracts you may deploy locally.
 
-| Name | Address |
-|---|---|
-| `ticket_payment` contract | `CCMOCKCONTRACTADDRESS1234567890` |
-| `event_registry` contract | `CCMOCKREGISTRYADDRESS1234567890` |
-| `pro_subscription` contract | `CCMOCKSUBSCRIPTIONADDRESS1234` |
-| **USDC issuer (Testnet)** | `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` |
-| **USDC issuer (Mainnet)** | `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` |
+### 7.1 Active Testnet Reference Deployments & Network Assets
+
+| Asset / Contract              | Type             | Address / Contract ID                                      | Status                                    |
+| ----------------------------- | ---------------- | ---------------------------------------------------------- | ----------------------------------------- |
+| `ticket_payment` contract     | Soroban Contract | `CBQHNAXSI55GX2GN6D67GK7BHVPSLJUGZQEU7WJ5LKR5PNUCGLIMAO4K` | **Active Reference** (Testnet)            |
+| USDC token contract (SAC)     | Soroban SAC ID   | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` | **Usable Network Value** (Testnet SAC)    |
+| Native XLM contract (SAC)     | Soroban SAC ID   | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` | **Usable Network Value** (Testnet SAC)    |
+| USDC Classic Issuer (Testnet) | Classic Account  | `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` | **Usable Network Value** (Circle Testnet) |
+| USDC Classic Issuer (Mainnet) | Classic Account  | `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` | Mainnet Reference Only                    |
+
+> **Note on mock placeholders:** Do not use legacy placeholder mock strings (such as `CCMOCK...`) because Soroban client simulation and transaction builders require valid 56-character strkeys. If you need dedicated contract instances for testing, follow the deployment instructions below.
+
+### 7.2 Deploying Your Own Contracts or Obtaining Fresh IDs
+
+If you need to deploy fresh instances or test local contract modifications:
+
+1. **Build the WASM binaries:**
+
+   ```bash
+   cd contract
+   cargo build --target wasm32-unknown-unknown --release
+   ```
+
+2. **Deploy via Stellar CLI:**
+
+   ```bash
+   # Deploy ticket_payment
+   stellar contract deploy \
+     --wasm target/wasm32-unknown-unknown/release/ticket_payment.wasm \
+     --source <YOUR_TESTNET_SECRET_KEY> \
+     --network testnet
+
+   # Deploy event_registry
+   stellar contract deploy \
+     --wasm target/wasm32-unknown-unknown/release/event_registry.wasm \
+     --source <YOUR_TESTNET_SECRET_KEY> \
+     --network testnet
+   ```
+
+3. **Or run the automated deployment script:**
+   Configure `contract/.env.devnet` from `contract/.env.devnet.example`, then execute:
+   ```bash
+   ./contract/scripts/deploy_devnet.sh
+   ```
+   Copy the emitted contract IDs into your `apps/web/.env.local`.
 
 ### Useful Testnet Links
 
-| Resource | URL |
-|---|---|
-| Stellar Expert (Testnet explorer) | <https://stellar.expert/explorer/testnet> |
-| Friendbot faucet | <https://friendbot.stellar.org> |
-| Stellar Laboratory | <https://laboratory.stellar.org/#?network=test> |
-| Soroban RPC status | <https://soroban-testnet.stellar.org> |
+| Resource                          | URL                                             |
+| --------------------------------- | ----------------------------------------------- |
+| Stellar Expert (Testnet explorer) | <https://stellar.expert/explorer/testnet>       |
+| Friendbot faucet                  | <https://friendbot.stellar.org>                 |
+| Stellar Laboratory                | <https://laboratory.stellar.org/#?network=test> |
+| Soroban RPC status                | <https://soroban-testnet.stellar.org>           |
 
 ---
 
 ## 8. Common Issues
 
-| Symptom | Likely Cause | Fix |
-|---|---|---|
-| `TicketModal` shows "Add USDC Trustline" button | Account has no USDC trustline | Click the button and approve in Freighter, or follow §4 |
-| Freighter popup shows "Wrong Network" | Freighter is on Mainnet | Switch to Testnet in Freighter settings |
-| `Account not found` error in trustline helper | Account not yet funded | Run Friendbot (§3) |
-| `op_no_trust` error during purchase | Trustline missing | Add trustline (§4) |
-| `op_underfunded` error during purchase | Insufficient USDC balance | Fund USDC via a Testnet faucet or direct transfer |
-| Transaction explorer link shows wrong network | `NEXT_PUBLIC_STELLAR_NETWORK` is unset | Set it to `TESTNET` in `.env.local` |
-| Repeated RPC calls on every modal open | Cache not warming | Ensure `useTicketAvailability` is called with a stable `eventId`; cache TTL is 30 s |
+| Symptom                                         | Likely Cause                           | Fix                                                                                 |
+| ----------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------- |
+| `TicketModal` shows "Add USDC Trustline" button | Account has no USDC trustline          | Click the button and approve in Freighter, or follow §4                             |
+| Freighter popup shows "Wrong Network"           | Freighter is on Mainnet                | Switch to Testnet in Freighter settings                                             |
+| `Account not found` error in trustline helper   | Account not yet funded                 | Run Friendbot (§3)                                                                  |
+| `op_no_trust` error during purchase             | Trustline missing                      | Add trustline (§4)                                                                  |
+| `op_underfunded` error during purchase          | Insufficient USDC balance              | Fund USDC via a Testnet faucet or direct transfer                                   |
+| Transaction explorer link shows wrong network   | `NEXT_PUBLIC_STELLAR_NETWORK` is unset | Set it to `TESTNET` in `.env.local`                                                 |
+| Repeated RPC calls on every modal open          | Cache not warming                      | Ensure `useTicketAvailability` is called with a stable `eventId`; cache TTL is 30 s |
 
 ---
 
-*This guide covers Testnet only. For Mainnet deployment, see [DEPLOYMENT.md](../../apps/web/DEPLOYMENT.md).*
+_This guide covers Testnet only. For Mainnet deployment, see [DEPLOYMENT.md](../../apps/web/DEPLOYMENT.md)._
