@@ -108,6 +108,7 @@ export interface EventLocationMapProps {
   title?: string;
   price?: string | number;
   imageUrl?: string;
+  onTileError?: () => void;
 }
 
 export default function EventLocationMap({
@@ -116,6 +117,7 @@ export default function EventLocationMap({
   title,
   price,
   imageUrl,
+  onTileError,
 }: EventLocationMapProps) {
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [isFallback, setIsFallback] = useState(false);
@@ -255,6 +257,7 @@ export default function EventLocationMap({
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          eventHandlers={onTileError ? { tileerror: onTileError } : undefined}
         />
         {/* Only place a precise marker when we have real coordinates */}
         {!isFallback && (

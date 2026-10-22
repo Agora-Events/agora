@@ -13,11 +13,13 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import ProfileHeader from '@/components/ProfileHeader';
 import { useAuth } from '@/hooks/useAuth';
+import { useCurrencyPreference } from '@/hooks/useCurrencyPreference';
 import { StellarWalletManager, StellarBalances } from '@/services/stellar';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout, updateWalletAddress } = useAuth();
+  const { currency } = useCurrencyPreference();
   const [secretInput, setSecretInput] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [balances, setBalances] = useState<StellarBalances | null>(null);
@@ -178,6 +180,13 @@ export default function ProfileScreen() {
             title="Organizer Staking Dashboard"
             onPress={() => router.push('/organizer/staking')}
             variant="primary"
+            style={styles.actionButton}
+          />
+
+          <Button
+            title={`Display Currency: ${currency}`}
+            onPress={() => router.push('/settings')}
+            variant="outline"
             style={styles.actionButton}
           />
 

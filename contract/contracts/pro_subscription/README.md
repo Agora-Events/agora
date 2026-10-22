@@ -39,8 +39,8 @@ bricking the contract by pointing critical addresses at itself.
 | --- | --- | --- |
 | `initialize(admin, platform_wallet, payment_token, pro_monthly_price)` | Anyone (once) | Sets up the contract. Fails if already initialized, if any address equals the contract address, or if `pro_monthly_price <= 0`. |
 | `version()` | Anyone | Returns the crate version compiled into the contract. |
-| `subscribe_pro(organizer, months)` | Organizer | Charges `pro_monthly_price * months` from `organizer` to the platform wallet and creates/activates a Pro subscription. Fails if `months == 0`, if the organizer already has an active subscription, or on arithmetic overflow. |
-| `renew_subscription(organizer, months)` | Organizer | Charges for `months` more and extends the subscription — from the current expiry if still active, or from now if expired. Fails if no subscription exists yet. |
+| `subscribe_pro(organizer, months)` | Organizer | Charges `pro_monthly_price * months` (minus the multi-month discount: 5% for 3+ months, 10% for 6+, 20% for 12+) from `organizer` to the platform wallet and creates/activates a Pro subscription. Fails if `months == 0`, if the organizer already has an active subscription, or on arithmetic overflow. |
+| `renew_subscription(organizer, months)` | Organizer | Charges for `months` more (same multi-month discount as `subscribe_pro`) and extends the subscription — from the current expiry if still active, or from now if expired. Fails if no subscription exists yet. |
 | `cancel_subscription(organizer)` | Admin | Marks the subscription inactive, removes the organizer from the Pro members list, and decrements the Pro subscriber count. |
 | `is_pro_member(organizer)` | Anyone | Returns `true` only if a subscription exists, is active, and has not expired. |
 | `get_subscription(organizer)` | Anyone | Returns the full `Subscription` record, or `None` if the organizer never subscribed. |

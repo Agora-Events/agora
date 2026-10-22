@@ -3,6 +3,18 @@ use soroban_sdk::{contracttype, Address};
 /// Number of seconds in a 30-day subscription month.
 pub const SECONDS_PER_MONTH: u64 = 30 * 24 * 60 * 60; // 30 days
 
+/// Basis points denominator used for multi-month discounts.
+pub const MAX_BPS: u32 = 10_000;
+
+/// Discount (in basis points) applied to subscriptions of 3 to 5 months.
+pub const DISCOUNT_BPS_3_MONTHS: u32 = 500; // 5%
+
+/// Discount (in basis points) applied to subscriptions of 6 to 11 months.
+pub const DISCOUNT_BPS_6_MONTHS: u32 = 1_000; // 10%
+
+/// Discount (in basis points) applied to subscriptions of 12 months or more.
+pub const DISCOUNT_BPS_12_MONTHS: u32 = 2_000; // 20%
+
 /// Subscription plan tiers
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

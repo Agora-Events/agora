@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { useIpfsUpload } from "@/hooks/useIpfsUpload";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import Image from "next/image";
 
 const CREATE_EVENT_DRAFT_KEY = "agora:draft:create-event";
@@ -67,6 +69,7 @@ const initialFormState: EventFormData = {
  * @returns React component that renders a form for creating events
  */
 export default function CreateEventForm() {
+  const router = useRouter();
   const [formData, setFormData] = useState<EventFormData>(initialFormState);
   const [locationMode, setLocationMode] = useState<"Virtual" | "Physical">(
     "Physical",
@@ -76,14 +79,17 @@ export default function CreateEventForm() {
   const {
     imagePreview,
     imageError,
+    isUploading,
     handleImageChange: handleIpfsImageChange,
     handleRemoveImage: handleIpfsRemoveImage,
     clearImagePreview,
+    uploadToIpfs,
   } = useIpfsUpload();
   const [descriptionLength, setDescriptionLength] = useState(0);
   // Issue #1575: drives the animated spinner on the submit button while the
   // event is being created, instead of just disabling it with no feedback.
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const lastPersistedAt = useRef(0);
   const persistTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDraft = useRef<EventFormData | null>(null);
@@ -275,27 +281,75 @@ export default function CreateEventForm() {
     if (isSubmitting) return;
 
     setIsSubmitting(true);
+    setSubmitError("");
     try {
-      console.log("Submitting Event Data:", formData);
-      // NOTE: there is no real "create event" API call wired up yet in this
-      // form — submission is simulated so the loading state has something
-      // to represent. Replace this with the actual event-creation request
-      // when that endpoint lands; isSubmitting/finally handling below
-      // should keep working unchanged.
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      const startAt = new Date(`${formData.startDate}T${formData.startTime || "00:00"}:00`);
+      if (Number.isNaN(startAt.getTime())) {
+        throw new Error("Enter a valid event start date and time.");
+      }
+      if (!formData.location.trim()) {
+        throw new Error("Add an event location before creating the event.");
+      }
+
+      let imageUrl: string | undefined;
+      if (formData.coverImage) {
+        const upload = await uploadToIpfs(formData.coverImage);
+        if (!upload?.cid) {
+          throw new Error("The cover image could not be uploaded to IPFS.");
+        }
+        imageUrl = upload.url;
+      }
+
+      let endTime: string | undefined;
+      if (formData.endDate) {
+        const endAt = new Date(`${formData.endDate}T${formData.endTime || "23:59"}:00`);
+        if (Number.isNaN(endAt.getTime()) || endAt <= startAt) {
+          throw new Error("The event end must be later than its start.");
+        }
+        endTime = endAt.toISOString();
+      }
+
+      const response = await fetch("/api/v1/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          title: formData.title.trim(),
+          description: formData.description.trim() || null,
+          location: formData.location.trim(),
+          start_time: startAt.toISOString(),
+          end_time: endTime ?? null,
+          image_url: imageUrl ?? null,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.message || `Event creation failed (${response.status}).`);
+      }
+
+      const createdEvent = result.data ?? result;
+      if (typeof createdEvent.id !== "string") {
+        throw new Error("The event was created but no event ID was returned.");
+      }
 
       cancelPendingDraft();
       clearStoredDraft();
       resetDirtyState();
-      clearImagePreview();
+      handleIpfsRemoveImage();
       setDescriptionLength(0);
+      toast.success("Event created successfully.");
+      router.push(`/events/${createdEvent.id}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Event creation failed.";
+      setSubmitError(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const isSubmitDisabled =
-    isSubmitting || !formData.title.trim() || !formData.startDate.trim();
+    isSubmitting || isUploading || !formData.title.trim() || !formData.startDate.trim();
 
   // Common Neubrutalist class for form controls
   const neubrutalistInputClass =
@@ -424,6 +478,7 @@ export default function CreateEventForm() {
           endDate={formData.endDate}
           endTime={formData.endTime}
           onFieldChange={handleChange}
+          minDate={new Date().toISOString().split("T")[0]}
         />
 
         <div className="bg-base-alt rounded-xl p-4 shadow-sm w-full sm:w-auto min-w-[140px] flex items-center justify-between gap-4 border border-black shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]">
@@ -662,6 +717,11 @@ export default function CreateEventForm() {
       </div>
 
       {/* Action Buttons */}
+      {submitError && (
+        <p role="alert" className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {submitError}
+        </p>
+      )}
       <div className="flex flex-col sm:flex-row justify-end items-center gap-4 mt-6 mb-8">
         <Button
           variant="secondary"
@@ -682,7 +742,7 @@ export default function CreateEventForm() {
               : ""
           }`}
         >
-          {isSubmitting ? "Creating Event" : "Create Event"}{" "}
+          {isUploading ? "Uploading Image" : isSubmitting ? "Creating Event" : "Create Event"}{" "}
           <span className="ml-1 text-lg">↗</span>
         </Button>
       </div>

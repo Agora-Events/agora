@@ -3,84 +3,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { BaseNav, type NavItem } from "./base-nav";
-import { useStellarNetwork } from "@/hooks/useStellarNetwork";
-import { NetworkSwitcher } from "@/components/layout/network-switcher";
-
-const USER_NAV_ITEMS: NavItem[] = [
-  {
-    href: "/",
-    icon: "/icons/home.svg",
-    text: "Home",
-    isActive: (p) => p === "/",
-  },
-  {
-    href: "/discover",
-    icon: "/icons/earth-yellow.svg",
-    text: "Discover Events",
-    isActive: (p) => p === "/discover" || p.startsWith("/events"),
-  },
-  {
-    href: "/wallet",
-    icon: "/icons/ticket.svg",
-    text: "My Wallet",
-    isActive: (p) => p === "/wallet",
-  },
-  {
-    href: "/organizers",
-    icon: "/icons/user-group.svg",
-    text: "Organizers",
-    isActive: (p) => p === "/organizers",
-  },
-  {
-    href: "/stellar",
-    icon: "/icons/stellar-xlm-logo 1.svg",
-    text: "Stellar Ecosystem",
-    isActive: (p) => p === "/stellar",
-  },
-];
-
-
-
-const userCta = (
-  <Link href="/create-event">
-    <Button
-      backgroundColor="bg-white"
-      textColor="text-black"
-      shadowColor="rgba(0,0,0,1)"
-    >
-      <span>Create Your Event</span>
-      <Image
-        src="/icons/arrow-up-right-01.svg"
-        alt="Arrow"
-        width={24}
-        height={24}
-        className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-      />
-    </Button>
-  </Link>
-);
-
-/**
- * Network status pill — Issue #1491
- *
- * Displays a small badge next to the wallet avatar reflecting whether the
- * connected Freighter wallet is on the correct network.  Clicking it when
- * on the wrong network fires requestNetworkSwitch().
- *
- * Only visible when NEXT_PUBLIC_STELLAR_NETWORK === "TESTNET".
- */
-function NetworkPill() {
-  const { isCorrectNetwork, currentNetwork, isLoading, requestNetworkSwitch } =
-    useStellarNetwork();
-
-  if (process.env.NEXT_PUBLIC_STELLAR_NETWORK !== "TESTNET") return null;
-  if (isLoading) return null;
-
-  const label = isCorrectNetwork ? "Testnet" : "Wrong Network";
-  const title = isCorrectNetwork
-    ? `Connected to Stellar Testnet (${currentNetwork ?? ""})`
-    : `Wallet is on "${currentNetwork ?? "unknown"}" — click to switch`;
+import { NotificationDropdown } from "@/components/notifications/NotificationDropdown";
+import { NavLink } from "./nav-link";
 
   return (
     <button
@@ -114,9 +38,8 @@ function UserEndSlot() {
       {/* Network status pill — only visible on testnet builds */}
       <NetworkPill />
 
-      <NotificationDropdown />
-
-      <Link href="/profile">
+      <div className="hidden md:flex items-center gap-4 lg:gap-[29px]">
+        <NotificationDropdown />
         <Button
           backgroundColor="bg-white"
           className="relative w-[55.22px] h-[53px] px-0! py-0"

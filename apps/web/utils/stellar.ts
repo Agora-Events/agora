@@ -10,14 +10,17 @@
  */
 
 import {
+  Asset,
   Contract,
   Keypair,
+  Transaction,
   TransactionBuilder,
   nativeToScVal,
 } from "@stellar/stellar-sdk";
 
 import {
   getSorobanRpcServer,
+  createSorobanRpcServer,
   STELLAR_NETWORK_PASSPHRASE,
 } from "@/lib/stellar/client";
 
@@ -209,4 +212,95 @@ export async function listTicketForResale(
   resalePrice: number,
 ) {
   return buildUnsignedResaleTicketTx(ticketId, seller, resalePrice);
+}
+
+/** Sign, submit, and wait for an atomic USDC allowance + resale purchase. */
+export async function purchaseResaleTicketWithFreighter(
+  paymentId: string,
+  maxPriceStroops: string,
+): Promise<string> {
+  if (!paymentId || !/^\d+$/.test(maxPriceStroops)) {
+    throw new Error("Invalid resale purchase details.");
+  }
+
+  const freighter = await import("@stellar/freighter-api");
+  const connection = await freighter.isConnected();
+  const isConnected =
+    typeof connection === "boolean" ? connection : Boolean(connection?.isConnected);
+  if (!isConnected) {
+    throw new Error("Connect Freighter to purchase this resale ticket.");
+  }
+
+  const access = await freighter.requestAccess();
+  const buyer = typeof access === "string" ? access : access?.address || "";
+  if (!buyer) {
+    throw new Error("Freighter did not provide an active wallet address.");
+  }
+
+  const { getStellarConfig, getUsdcIssuer } = await import("@/lib/stellar/config");
+  const config = getStellarConfig();
+  const server = createSorobanRpcServer(config.rpcUrl);
+  const contractAddress = config.ticketContractId;
+  const usdcContractAddress = new Asset("USDC", getUsdcIssuer()).contractId(
+    config.networkPassphrase,
+  );
+  const price = BigInt(maxPriceStroops);
+  const latestLedger = await server.getLatestLedger();
+  const sourceAccount = await server.getAccount(buyer);
+  const tx = new TransactionBuilder(sourceAccount, {
+    fee: "100",
+    networkPassphrase: config.networkPassphrase,
+  })
+    .addOperation(
+      new Contract(usdcContractAddress).call(
+        "approve",
+        nativeToScVal(buyer, { type: "address" }),
+        nativeToScVal(contractAddress, { type: "address" }),
+        nativeToScVal(price, { type: "i128" }),
+        nativeToScVal(latestLedger.sequence + 100_000, { type: "u32" }),
+      ),
+    )
+    .addOperation(
+      new Contract(contractAddress).call(
+        "purchase_resale_ticket",
+        nativeToScVal(paymentId, { type: "string" }),
+        nativeToScVal(buyer, { type: "address" }),
+        nativeToScVal(price, { type: "i128" }),
+      ),
+    )
+    .setTimeout(60)
+    .build();
+
+  const prepared = await server.prepareTransaction(tx);
+  const signed = await freighter.signTransaction(prepared.toXDR(), {
+    networkPassphrase: config.networkPassphrase,
+  });
+  const signedXdr =
+    typeof signed === "string"
+      ? signed
+      : (signed as { signedTxXdr: string }).signedTxXdr;
+  if (!signedXdr) {
+    throw new Error("Freighter did not return a signed transaction.");
+  }
+
+  const submitted = await server.sendTransaction(
+    new Transaction(signedXdr, config.networkPassphrase),
+  );
+  if (submitted.status === "ERROR") {
+    throw new Error("The resale transaction was rejected by Stellar.");
+  }
+  if (!submitted.hash) {
+    throw new Error("Stellar did not return a transaction hash.");
+  }
+
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const result = await server.getTransaction(submitted.hash);
+    if (result.status === "SUCCESS") return submitted.hash;
+    if (result.status === "FAILED") {
+      throw new Error("The resale transaction failed on Stellar.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error("Transaction submitted but confirmation is taking longer than expected.");
 }

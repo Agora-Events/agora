@@ -2,18 +2,19 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { TicketModal } from "./TicketModal";
 import { Button } from "@/components/ui/button";
 import { TicketAvailabilityDisplay } from "./ticket-availability-display";
+import { useTicketAvailability } from "@/hooks/useTicketAvailability";
 import { parsePriceValue } from "@/lib/validation";
 import { trackFunnelEvent } from "@/utils/funnel-analytics";
 import { EventCountdown } from "./event-countdown";
 
 interface RegistrationBoxProps {
   event: {
-    id: number;
+    id: string | number;
     title: string;
     price: string;
     location: string;
@@ -33,8 +34,21 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
   const [quantity, setQuantity] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const router = useRouter();
+  const { data: availability } = useTicketAvailability(event.id.toString(), {
+    pollInterval: 5000,
+  });
+  const isSoldOut = availability?.isSoldOut ?? false;
+  const maxQuantity = availability ? availability.availableTickets : Infinity;
+
+  // Keep the selected quantity within the remaining inventory
+  useEffect(() => {
+    if (!availability || isSoldOut) return;
+    setQuantity((q) => Math.max(1, Math.min(q, availability.availableTickets)));
+  }, [availability, isSoldOut]);
 
   const handleRegisterClick = () => {
+    if (isSoldOut) return;
+
     // In a real production environment, you would use the app's specific auth hook here.
     // For this ticket, we will check local storage as a standard fallback for authentication state.
     const isAuthenticated =
@@ -62,7 +76,9 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
             <button
               type="button"
               onClick={() => setQuantity(Math.max(1, quantity - 1))}
-              className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white border border-black/5 shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors text-2xl font-light text-black"
+              disabled={isSoldOut || quantity <= 1}
+              aria-label="Decrease quantity"
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white border border-black/5 shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors text-2xl font-light text-black disabled:opacity-40 disabled:cursor-not-allowed"
             >
               −
             </button>
@@ -73,8 +89,10 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
             </div>
             <button
               type="button"
-              onClick={() => setQuantity(quantity + 1)}
-              className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white border border-black/5 shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors text-2xl font-light text-black"
+              onClick={() => setQuantity(Math.min(maxQuantity, quantity + 1))}
+              disabled={isSoldOut || quantity >= maxQuantity}
+              aria-label="Increase quantity"
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white border border-black/5 shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors text-2xl font-light text-black disabled:opacity-40 disabled:cursor-not-allowed"
             >
               +
             </button>
@@ -105,9 +123,10 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
           <Button
             variant="primary"
             onClick={handleRegisterClick}
+            disabled={isSoldOut}
             className="h-14 sm:h-16 px-8 sm:px-10 rounded-full text-[18px] sm:text-[22px]"
           >
-            {!isFree && (
+            {!isFree && !isSoldOut && (
               <Image
                 src="/icons/dollar-circle.svg"
                 width={28}
@@ -115,14 +134,20 @@ export function RegistrationBox({ event, host }: RegistrationBoxProps) {
                 alt="dollar"
               />
             )}
-            {isFree ? t("register") : `$${(priceValue * quantity).toFixed(2)}`}
-            <Image
-              src="/icons/arrow-up-right-01.svg"
-              width={24}
-              height={24}
-              alt="arrow-up-right"
-              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-            />
+            {isSoldOut
+              ? "Sold Out"
+              : isFree
+                ? t("register")
+                : `$${(priceValue * quantity).toFixed(2)}`}
+            {!isSoldOut && (
+              <Image
+                src="/icons/arrow-up-right-01.svg"
+                width={24}
+                height={24}
+                alt="arrow-up-right"
+                className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+              />
+            )}
           </Button>
           <div className="flex items-center gap-3">
             <div className="relative w-11 h-11 sm:w-14 sm:h-14 rounded-full border-2 border-black overflow-hidden bg-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">

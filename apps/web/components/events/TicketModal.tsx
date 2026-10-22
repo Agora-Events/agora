@@ -23,7 +23,7 @@ interface TicketModalProps {
   isOpen: boolean;
   onClose: () => void;
   event: {
-    id: number;
+    id: string | number;
     title: string;
     price: string;
     location: string;

@@ -1,5 +1,15 @@
 use soroban_sdk::{contracttype, Address, Map, String, Vec};
 
+/// Platform-wide collateral staking configuration.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StakingConfig {
+    /// Token contract accepted for organizer collateral.
+    pub token: Option<Address>,
+    /// Minimum amount required for Verified status, in token base units.
+    pub min_amount: i128,
+}
+
 /// Role-based access control for event teams.
 /// Defines granular permissions for large events with multiple team members.
 #[contracttype]

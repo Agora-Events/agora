@@ -5,7 +5,7 @@ use crate::{
     events::{
         AdminUpdatedEvent, InitializationEvent, PriceUpdatedEvent, ProMemberAddedEvent,
         ProMemberRemovedEvent, ProSubscriptionEvent, SubscriptionCancelledEvent,
-        SubscriptionCreatedEvent, SubscriptionRenewedEvent,
+        SubscriptionCreatedEvent, SubscriptionExpiredEvent, SubscriptionRenewedEvent,
     },
     storage::{
         add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin, get_payment_token,
@@ -14,7 +14,10 @@ use crate::{
         remove_from_pro_members_list, set_admin, set_initialized, set_payment_token,
         set_platform_wallet, set_pro_monthly_price, set_subscription,
     },
-    types::{Subscription, SubscriptionTier, SECONDS_PER_MONTH},
+    types::{
+        Subscription, SubscriptionTier, DISCOUNT_BPS_12_MONTHS, DISCOUNT_BPS_3_MONTHS,
+        DISCOUNT_BPS_6_MONTHS, MAX_BPS, SECONDS_PER_MONTH,
+    },
     validation::validate_address,
 };
 
@@ -22,6 +25,50 @@ fn require_admin(env: &Env) -> Result<Address, ProSubscriptionError> {
     let admin = get_admin(env).ok_or(ProSubscriptionError::NotInitialized)?;
     admin.require_auth();
     Ok(admin)
+}
+
+/// Returns the total price for `months` of Pro, applying the multi-month discount tier.
+fn calculate_subscription_price(
+    monthly_price: i128,
+    months: u32,
+) -> Result<i128, ProSubscriptionError> {
+    let discount_bps = if months >= 12 {
+        DISCOUNT_BPS_12_MONTHS
+    } else if months >= 6 {
+        DISCOUNT_BPS_6_MONTHS
+    } else if months >= 3 {
+        DISCOUNT_BPS_3_MONTHS
+    } else {
+        0
+    };
+
+    monthly_price
+        .checked_mul(months as i128)
+        .and_then(|v| v.checked_mul((MAX_BPS - discount_bps) as i128))
+        .and_then(|v| v.checked_div(MAX_BPS as i128))
+        .ok_or(ProSubscriptionError::ArithmeticError)
+}
+
+fn get_subscription_with_expiration(env: &Env, organizer: &Address) -> Option<Subscription> {
+    let mut subscription = get_subscription(env, organizer)?;
+    if subscription.tier == SubscriptionTier::Pro
+        && subscription.is_active
+        && subscription.expires_at <= env.ledger().timestamp()
+    {
+        subscription.is_active = false;
+        set_subscription(env, &subscription);
+        remove_from_pro_members_list(env, organizer);
+        decrement_total_pro_subscriptions(env);
+        env.events().publish(
+            (ProSubscriptionEvent::SubscriptionExpired,),
+            SubscriptionExpiredEvent {
+                organizer: organizer.clone(),
+                expires_at: subscription.expires_at,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+    Some(subscription)
 }
 
 #[contract]
@@ -96,16 +143,14 @@ impl ProSubscriptionContract {
         }
 
         // Check if already has an active subscription
-        if let Some(existing) = get_subscription(&env, &organizer) {
+        if let Some(existing) = get_subscription_with_expiration(&env, &organizer) {
             if existing.is_active && existing.expires_at > env.ledger().timestamp() {
                 return Err(ProSubscriptionError::SubscriptionAlreadyActive);
             }
         }
 
         let monthly_price = get_pro_monthly_price(&env);
-        let total_amount = monthly_price
-            .checked_mul(months as i128)
-            .ok_or(ProSubscriptionError::ArithmeticError)?;
+        let total_amount = calculate_subscription_price(monthly_price, months)?;
 
         let payment_token = get_payment_token(&env).ok_or(ProSubscriptionError::NotInitialized)?;
         let platform_wallet =
@@ -176,9 +221,7 @@ impl ProSubscriptionContract {
             get_subscription(&env, &organizer).ok_or(ProSubscriptionError::SubscriptionNotFound)?;
 
         let monthly_price = get_pro_monthly_price(&env);
-        let total_amount = monthly_price
-            .checked_mul(months as i128)
-            .ok_or(ProSubscriptionError::ArithmeticError)?;
+        let total_amount = calculate_subscription_price(monthly_price, months)?;
 
         let payment_token = get_payment_token(&env).ok_or(ProSubscriptionError::NotInitialized)?;
         let platform_wallet =
@@ -238,8 +281,12 @@ impl ProSubscriptionContract {
     pub fn cancel_subscription(env: Env, organizer: Address) -> Result<(), ProSubscriptionError> {
         let admin = require_admin(&env)?;
 
-        let mut subscription =
-            get_subscription(&env, &organizer).ok_or(ProSubscriptionError::SubscriptionNotFound)?;
+        let Some(mut subscription) = get_subscription_with_expiration(&env, &organizer) else {
+            return Err(ProSubscriptionError::SubscriptionNotFound);
+        };
+        if !subscription.is_active {
+            return Ok(());
+        }
 
         subscription.is_active = false;
         set_subscription(&env, &subscription);
@@ -266,9 +313,54 @@ impl ProSubscriptionContract {
         Ok(())
     }
 
+    /// Cancel the caller's own active Pro subscription.
+    pub fn cancel_my_subscription(
+        env: Env,
+        organizer: Address,
+    ) -> Result<(), ProSubscriptionError> {
+        if !is_initialized(&env) {
+            return Err(ProSubscriptionError::NotInitialized);
+        }
+        organizer.require_auth();
+
+        let Some(mut subscription) = get_subscription_with_expiration(&env, &organizer) else {
+            return Err(ProSubscriptionError::SubscriptionNotFound);
+        };
+        if !subscription.is_active {
+            return Ok(());
+        }
+        if subscription.tier != SubscriptionTier::Pro {
+            return Err(ProSubscriptionError::SubscriptionNotFound);
+        }
+
+        subscription.is_active = false;
+        set_subscription(&env, &subscription);
+        remove_from_pro_members_list(&env, &organizer);
+        decrement_total_pro_subscriptions(&env);
+
+        let timestamp = env.ledger().timestamp();
+        env.events().publish(
+            (ProSubscriptionEvent::ProMemberRemoved,),
+            ProMemberRemovedEvent {
+                organizer: organizer.clone(),
+                timestamp,
+            },
+        );
+        env.events().publish(
+            (ProSubscriptionEvent::SubscriptionCancelled,),
+            SubscriptionCancelledEvent {
+                organizer: organizer.clone(),
+                cancelled_by: organizer,
+                timestamp,
+            },
+        );
+
+        Ok(())
+    }
+
     /// Check if an organizer is a pro member with an active, non-expired subscription
     pub fn is_pro_member(env: Env, organizer: Address) -> bool {
-        if let Some(subscription) = get_subscription(&env, &organizer) {
+        if let Some(subscription) = get_subscription_with_expiration(&env, &organizer) {
             subscription.is_active && subscription.expires_at > env.ledger().timestamp()
         } else {
             false
@@ -277,12 +369,12 @@ impl ProSubscriptionContract {
 
     /// Get subscription details for an organizer
     pub fn get_subscription(env: Env, organizer: Address) -> Option<Subscription> {
-        get_subscription(&env, &organizer)
+        get_subscription_with_expiration(&env, &organizer)
     }
 
     /// Get subscription expiry timestamp for an organizer
     pub fn get_subscription_expiry(env: Env, organizer: Address) -> Option<u64> {
-        get_subscription(&env, &organizer).map(|s| s.expires_at)
+        get_subscription_with_expiration(&env, &organizer).map(|s| s.expires_at)
     }
 
     /// Get all active pro members

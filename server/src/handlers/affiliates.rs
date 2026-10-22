@@ -12,6 +12,7 @@ use axum::{
 use rand::Rng;
 use serde::Serialize;
 use sqlx::PgPool;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::handlers::auth::extract_auth;
@@ -43,7 +44,7 @@ fn generate_referral_code() -> String {
         .collect()
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AffiliateResponse {
     pub id: Uuid,
     pub event_id: Uuid,
@@ -75,6 +76,18 @@ impl AffiliateResponse {
 /// existing code back with `already_registered: true`, rather than a second
 /// registration or an error. Re-issuing a new code would silently invalidate
 /// links the affiliate has already shared.
+#[utoipa::path(
+    post,
+    path = "/events/{event_id}/affiliates",
+    params(("event_id" = String, Path, description = "Event identifier")),
+    responses(
+        (status = 200, description = "Affiliate registration created or returned", body = AffiliateResponse),
+        (status = 400, description = "Invalid event identifier"),
+        (status = 401, description = "Authentication required"),
+        (status = 404, description = "Event not found"),
+    ),
+    tag = "Affiliates"
+)]
 pub async fn register_affiliate(
     State(state): State<AffiliateState>,
     headers: HeaderMap,

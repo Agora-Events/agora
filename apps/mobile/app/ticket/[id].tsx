@@ -42,13 +42,34 @@ import { Keypair, Networks, TransactionBuilder, Horizon } from '@stellar/stellar
 import { StellarWalletManager } from '@/services/stellar';
 import { useBiometricAuth } from '@/hooks/useBiometricAuth';
 import { getTicketSecret } from '@/services/ticketVault';
+import { getTicket, type TicketDetails } from '@/services/paymentsApi';
 import { deriveTicketKeyPair } from '@/lib/crypto';
 import DynamicQrView from '@/components/ticket/DynamicQrView';
 
-export default function TicketDetailsScreen() {
-  const { id } = useLocalSearchParams();
+function formatTicketDate(value: string | null): string {
+  if (!value) return 'Date unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? 'Date unavailable'
+    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
-  const [ticketStatus, setTicketStatus] = useState<'Active' | 'Transferred' | 'Listed'>('Active');
+function formatTicketStatus(status: string): string {
+  if (status.toLowerCase() === 'unused' || status.toLowerCase() === 'active') {
+    return 'Active';
+  }
+  return status ? status[0].toUpperCase() + status.slice(1).toLowerCase() : 'Unknown';
+}
+
+export default function TicketDetailsScreen() {
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const ticketId = typeof id === 'string' ? id : undefined;
+
+  const [ticketStatus, setTicketStatus] = useState('Active');
+  const [ticket, setTicket] = useState<TicketDetails | null>(null);
+  const [ticketLoading, setTicketLoading] = useState(true);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   // Modals state
   const [isTransferModalOpen, setTransferModalOpen] = useState(false);
@@ -69,6 +90,43 @@ export default function TicketDetailsScreen() {
 
   const biometric = useBiometricAuth();
 
+  useEffect(() => {
+    let isCurrent = true;
+    setTicket(null);
+    setTicketError(null);
+    setTicketLoading(true);
+    setTicketStatus('Active');
+    setVaultSecretKey(null);
+
+    if (!ticketId) {
+      setTicketError('No ticket was specified.');
+      setTicketLoading(false);
+      return () => {
+        isCurrent = false;
+      };
+    }
+
+    getTicket(ticketId)
+      .then((result) => {
+        if (!isCurrent) return;
+        setTicket(result);
+        setTicketStatus(formatTicketStatus(result.status));
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent) return;
+        setTicketError(
+          error instanceof Error ? error.message : 'Failed to load your ticket.'
+        );
+      })
+      .finally(() => {
+        if (isCurrent) setTicketLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [ticketId, loadAttempt]);
+
   // Clear the in-memory key when the screen unmounts to minimise the window
   // during which the key is resident in JS heap.
   useEffect(() => {
@@ -77,19 +135,6 @@ export default function TicketDetailsScreen() {
     };
   }, []);
 
-  // MOCK Ticket Details (consistent with `tickets.tsx` style)
-  // TODO: Replace with real ticket lookup once the ticket store is wired up.
-  const ticket = {
-    id: id || 'T-1004',
-    eventTitle: 'Stellar Meridian 2026',
-    date: 'Oct 15, 2026',
-    seat: 'General Admission',
-    txHash: '0x3f...b82d',
-    // paymentId corresponds to the payment ID used when the ticket was purchased.
-    // In production this comes from the ticket store / on-chain lookup.
-    paymentId: String(id || 'T-1004'),
-  };
-
   /**
    * Gate: authenticate with biometrics, then read the vault.
    *
@@ -97,6 +142,7 @@ export default function TicketDetailsScreen() {
    * on mount — we require explicit user intent before prompting biometrics.
    */
   const handleShowQr = useCallback(async () => {
+    if (!ticket) return;
     if (biometric.state === 'unavailable') {
       // Already shown the banner — no point prompting again.
       return;
@@ -137,7 +183,7 @@ export default function TicketDetailsScreen() {
     } finally {
       setVaultLoading(false);
     }
-  }, [biometric, ticket.paymentId]);
+  }, [biometric, ticket]);
 
   /** Hide the QR and clear the in-memory key. */
   const handleHideQr = useCallback(() => {
@@ -235,6 +281,30 @@ export default function TicketDetailsScreen() {
     }
   };
 
+  if (ticketLoading) {
+    return (
+      <View style={[styles.container, styles.lookupState]}>
+        <ActivityIndicator size="large" color={Colors.primaryYellow} />
+        <Text style={styles.lookupText}>Loading ticket…</Text>
+      </View>
+    );
+  }
+
+  if (ticketError || !ticket) {
+    return (
+      <View style={[styles.container, styles.lookupState]}>
+        <Text style={styles.lookupError}>{ticketError ?? 'Ticket not found.'}</Text>
+        {ticketId && (
+          <Button
+            title="Try Again"
+            onPress={() => setLoadAttempt((attempt) => attempt + 1)}
+            style={styles.actionButton}
+          />
+        )}
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.header}>Ticket Details</Text>
@@ -251,20 +321,22 @@ export default function TicketDetailsScreen() {
             {ticketStatus}
           </Text>
         </View>
-        <Text style={styles.eventTitle}>{ticket.eventTitle}</Text>
+        <Text style={styles.eventTitle}>
+          {ticket.eventTitle ?? 'Event details unavailable'}
+        </Text>
         <View style={styles.detailsRow}>
           <View>
             <Text style={styles.label}>Date</Text>
-            <Text style={styles.value}>{ticket.date}</Text>
+            <Text style={styles.value}>{formatTicketDate(ticket.eventStartTime)}</Text>
           </View>
           <View>
             <Text style={styles.label}>Section/Seat</Text>
-            <Text style={styles.value}>{ticket.seat}</Text>
+            <Text style={styles.value}>{ticket.ticketTierName ?? 'Ticket tier unavailable'}</Text>
           </View>
         </View>
         <View style={styles.txContainer}>
           <Text style={styles.txLabel}>Transaction Hash</Text>
-          <Text style={styles.txValue}>{ticket.txHash}</Text>
+          <Text style={styles.txValue}>Unavailable</Text>
         </View>
       </View>
 
@@ -478,6 +550,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.darkBackground,
   },
+  lookupState: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  lookupText: {
+    color: Colors.secondaryText,
+    marginTop: 12,
+  },
+  lookupError: {
+    color: Colors.secondaryText,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
   content: {
     padding: 16,
   },
@@ -654,4 +741,3 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 });
-
