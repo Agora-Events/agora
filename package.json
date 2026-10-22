@@ -8,7 +8,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "contracts:explorer": "tsx contract/scripts/deploy.ts"
+    "contracts:explorer": "tsx contract/scripts/deploy.ts",
+    "cy:run": "cypress run",
+    "cy:open": "cypress open"
   },
   "keywords": [],
   "author": "",
