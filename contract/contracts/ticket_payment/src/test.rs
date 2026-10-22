@@ -2,7 +2,10 @@ use super::contract::{
     event_registry, price_oracle, TicketPaymentContract, TicketPaymentContractClient,
 };
 use super::storage::*;
-use super::types::{DataKey, ParameterChange, Payment, PaymentStatus, MAX_BPS, TRANSFER_FEE_BPS};
+use super::types::{
+    BulkCheckInStatus, DataKey, ParameterChange, Payment, PaymentStatus, MAX_BPS,
+    TRANSFER_FEE_BPS,
+};
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, Events, Ledger},
@@ -11012,4 +11015,223 @@ fn test_process_payment_self_affiliate_rejected() {
         result,
         Err(Ok(TicketPaymentError::SelfReferralNotAllowed.into()))
     );
+}
+
+// ── Issue #1611 – bulk check-in validation helper ────────────────────────────
+
+/// Registers a payment and its numeric ticket id + validation hash directly in
+/// contract storage. Returns the numeric ticket id assigned.
+fn insert_ticket_with_hash(
+    env: &Env,
+    client_address: &Address,
+    payment_id: &String,
+    buyer: &Address,
+    ticket_id: u64,
+    hash: &BytesN<32>,
+) {
+    insert_confirmed_payment(env, client_address, payment_id, buyer, "event_1");
+    env.as_contract(client_address, || {
+        set_ticket_payment_id(env, ticket_id, payment_id);
+        store_validation_hash(env, payment_id, hash);
+    });
+}
+
+/// Test that a valid batch returns a Valid status for each entry.
+#[test]
+fn test_bulk_check_in_valid_batch() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let (_, hash) = test_secret(&env);
+
+    let mut ticket_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    let mut hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&env);
+
+    for i in 0..3u64 {
+        let pid = match i {
+            0 => String::from_str(&env, "bulk_valid_a"),
+            1 => String::from_str(&env, "bulk_valid_b"),
+            _ => String::from_str(&env, "bulk_valid_c"),
+        };
+        insert_ticket_with_hash(&env, &client.address, &pid, &buyer, i, &hash);
+        ticket_ids.push_back(i);
+        hashes.push_back(hash.clone());
+    }
+
+    let results = client.bulk_check_in_tickets(&ticket_ids, &hashes);
+    assert_eq!(results.len(), 3);
+    for i in 0..results.len() {
+        let r = results.get(i).unwrap();
+        assert_eq!(r.status, BulkCheckInStatus::Valid);
+    }
+}
+
+/// Test that an empty batch is rejected.
+#[test]
+fn test_bulk_check_in_empty_batch_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let ticket_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    let hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&env);
+
+    let result = client.try_bulk_check_in_tickets(&ticket_ids, &hashes);
+    assert_eq!(result, Err(Ok(TicketPaymentError::EmptyBatch)));
+}
+
+/// Test that a batch larger than MAX_BATCH_SIZE is rejected.
+#[test]
+fn test_bulk_check_in_batch_too_large_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let mut ticket_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    let mut hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&env);
+    let (_, hash) = test_secret(&env);
+
+    for i in 0..51u64 {
+        ticket_ids.push_back(i);
+        hashes.push_back(hash.clone());
+    }
+
+    let result = client.try_bulk_check_in_tickets(&ticket_ids, &hashes);
+    assert_eq!(result, Err(Ok(TicketPaymentError::BatchTooLarge)));
+}
+
+/// Test that mismatched vector lengths are rejected before any lookup.
+#[test]
+fn test_bulk_check_in_length_mismatch_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let mut ticket_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ticket_ids.push_back(0);
+    ticket_ids.push_back(1);
+
+    let mut hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&env);
+    let (_, hash) = test_secret(&env);
+    hashes.push_back(hash.clone());
+
+    let result = client.try_bulk_check_in_tickets(&ticket_ids, &hashes);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAmount)));
+}
+
+/// Test that an unknown ticket id yields NotFound without masking valid entries.
+#[test]
+fn test_bulk_check_in_mixed_statuses() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let (_, hash) = test_secret(&env);
+    let (_, wrong_hash) = {
+        let s = Bytes::from_slice(&env, b"other_secret");
+        let h: BytesN<32> = env.crypto().sha256(&s).into();
+        (s, h)
+    };
+
+    let pid_valid = String::from_str(&env, "bulk_mixed_valid");
+    let pid_wrong = String::from_str(&env, "bulk_mixed_wrong");
+
+    insert_ticket_with_hash(&env, &client.address, &pid_valid, &buyer, 10, &hash);
+    insert_ticket_with_hash(&env, &client.address, &pid_wrong, &buyer, 11, &hash);
+
+    let mut ticket_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ticket_ids.push_back(10); // valid
+    ticket_ids.push_back(11); // wrong hash
+    ticket_ids.push_back(999); // not found
+
+    let mut hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&env);
+    hashes.push_back(hash.clone());
+    hashes.push_back(wrong_hash);
+    hashes.push_back(hash.clone());
+
+    let results = client.bulk_check_in_tickets(&ticket_ids, &hashes);
+    assert_eq!(results.len(), 3);
+    assert_eq!(results.get(0).unwrap().status, BulkCheckInStatus::Valid);
+    assert_eq!(results.get(1).unwrap().status, BulkCheckInStatus::InvalidSecret);
+    assert_eq!(results.get(2).unwrap().status, BulkCheckInStatus::NotFound);
+}
+
+/// Test that an already-checked-in ticket reports AlreadyCheckedIn.
+#[test]
+fn test_bulk_check_in_already_checked_in() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let (_, hash) = test_secret(&env);
+    let pid = String::from_str(&env, "bulk_checked_in");
+
+    insert_ticket_with_hash(&env, &client.address, &pid, &buyer, 20, &hash);
+
+    env.as_contract(&client.address, || {
+        let mut payment = get_payment(&env, pid.clone()).unwrap();
+        payment.status = PaymentStatus::CheckedIn;
+        store_payment(&env, payment);
+    });
+
+    let mut ticket_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ticket_ids.push_back(20);
+    let mut hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&env);
+    hashes.push_back(hash.clone());
+
+    let results = client.bulk_check_in_tickets(&ticket_ids, &hashes);
+    assert_eq!(results.get(0).unwrap().status, BulkCheckInStatus::AlreadyCheckedIn);
+}
+
+/// Test that a refunded ticket reports InvalidStatus.
+#[test]
+fn test_bulk_check_in_refunded_ticket_invalid_status() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+
+    let buyer = Address::generate(&env);
+    let (_, hash) = test_secret(&env);
+    let pid = String::from_str(&env, "bulk_refunded");
+
+    insert_ticket_with_hash(&env, &client.address, &pid, &buyer, 30, &hash);
+
+    env.as_contract(&client.address, || {
+        let mut payment = get_payment(&env, pid.clone()).unwrap();
+        payment.status = PaymentStatus::Refunded;
+        store_payment(&env, payment);
+    });
+
+    let mut ticket_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ticket_ids.push_back(30);
+    let mut hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&env);
+    hashes.push_back(hash.clone());
+
+    let results = client.bulk_check_in_tickets(&ticket_ids, &hashes);
+    assert_eq!(results.get(0).unwrap().status, BulkCheckInStatus::InvalidStatus);
+}
+
+/// Test that a puased contract rejects the batch.
+#[test]
+fn test_bulk_check_in_paused_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _usdc_id, _, _) = setup_test(&env);
+
+    client.set_pause(&true);
+
+    let mut ticket_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ticket_ids.push_back(0);
+    let mut hashes: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&env);
+    let (_, hash) = test_secret(&env);
+    hashes.push_back(hash.clone());
+
+    let result = client.try_bulk_check_in_tickets(&ticket_ids, &hashes);
+    assert_eq!(result, Err(Ok(TicketPaymentError::ContractPaused)));
+
+    let _ = admin;
 }

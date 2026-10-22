@@ -98,3 +98,15 @@ pub enum WalletLimitKey {
     /// Tickets bought so far by a wallet: (event_id, buyer) -> u32 (Persistent)
     WalletTicketCount(String, Address),
 }
+
+/// Storage keys for the numeric ticket-id index.
+///
+/// Kept as a separate enum from `DataKey` to avoid exceeding the XDR symbol
+/// count limit on the main key enum.
+#[contracttype]
+pub enum TicketKey {
+    /// Numeric ticket id -> payment_id mapping (Persistent)
+    TicketId(u64),
+    /// Monotonically increasing counter for numeric ticket ids (Persistent)
+    TicketIdCounter,
+}

@@ -9,7 +9,9 @@ pub const MAX_BPS: u32 = 10000;
 pub use crate::keys::DataKey;
 
 // Re-export payment-specific types from the dedicated payment_types module.
-pub use crate::payment_types::{DiscountData, HighestBid, PurchaseOptions};
+pub use crate::payment_types::{
+    BulkCheckInResult, BulkCheckInStatus, DiscountData, HighestBid, PurchaseOptions,
+};
 
 // Re-export governance-related types from the dedicated governance module.
 pub use crate::governance::{ParameterChange, ParameterProposal, ProposalStatus};
