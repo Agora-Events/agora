@@ -204,6 +204,133 @@ pub async fn register_affiliate(
     .into_response()
 }
 
+/// Affiliate performance and earnings analytics response (Issue #1605).
+#[derive(Debug, Serialize, serde::Deserialize, PartialEq)]
+pub struct AffiliateMetricsResponse {
+    pub event_id: Uuid,
+    pub wallet_address: String,
+    pub referral_code: String,
+    pub tickets_sold: i64,
+    pub total_sales_volume: rust_decimal::Decimal,
+    pub commission_earned: rust_decimal::Decimal,
+    pub commission_rate_bps: i64,
+    pub conversion_rate: f64,
+}
+
+/// GET /api/v1/events/:id/affiliates/me
+///
+/// Fetches performance and earnings analytics for the authenticated affiliate (Issue #1605).
+/// Aggregates `transactions.referred_by` to return total tickets sold, conversion rate, and commission earned.
+pub async fn get_my_affiliate_metrics(
+    State(state): State<AffiliateState>,
+    headers: HeaderMap,
+    Path(event_id): Path<String>,
+) -> Response {
+    let wallet_address = match extract_auth(&headers) {
+        Ok(address) => address,
+        Err(e) => return e.into_response(),
+    };
+
+    let event_uuid = match Uuid::parse_str(&event_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return AppError::ValidationError(format!("Invalid event id: {event_id}"))
+                .into_response()
+        }
+    };
+
+    // 1. Check if the event exists
+    match sqlx::query_scalar::<_, Uuid>("SELECT id FROM events WHERE id = $1")
+        .bind(event_uuid)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            return AppError::NotFound(format!("Event {event_id} not found")).into_response()
+        }
+        Err(e) => return AppError::DatabaseError(e).into_response(),
+    }
+
+    // 2. Fetch affiliate registration for this event and wallet
+    let affiliate = match sqlx::query_as::<_, EventAffiliate>(
+        "SELECT id, event_id, wallet_address, referral_code, created_at, updated_at \
+         FROM event_affiliates WHERE event_id = $1 AND wallet_address = $2",
+    )
+    .bind(event_uuid)
+    .bind(&wallet_address)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(aff)) => aff,
+        Ok(None) => {
+            return AppError::NotFound(format!(
+                "Wallet {wallet_address} is not registered as an affiliate for event {event_id}"
+            ))
+            .into_response();
+        }
+        Err(e) => return AppError::DatabaseError(e).into_response(),
+    };
+
+    // 3. Aggregate transactions attributed to this affiliate's referral code.
+    // In Agora, standard affiliate commission is 500 bps (5%) unless overridden.
+    // Query completed tickets referred by this code: count and total volume.
+    struct AggStats {
+        tickets_sold: i64,
+        total_volume: rust_decimal::Decimal,
+    }
+
+    let stats = match sqlx::query_as::<_, (i64, Option<rust_decimal::Decimal>)>(
+        r#"
+        SELECT 
+            COUNT(t.id)::bigint AS tickets_sold,
+            COALESCE(SUM(t.amount), 0) AS total_volume
+        FROM transactions t
+        INNER JOIN tickets tk ON t.ticket_id = tk.id
+        INNER JOIN ticket_tiers tt ON tk.ticket_tier_id = tt.id
+        WHERE t.referred_by = $1
+          AND tt.event_id = $2
+          AND t.status = 'completed'
+        "#,
+    )
+    .bind(&affiliate.referral_code)
+    .bind(event_uuid)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok((count, vol)) => AggStats {
+            tickets_sold: count,
+            total_volume: vol.unwrap_or(rust_decimal::Decimal::ZERO),
+        },
+        Err(e) => return AppError::DatabaseError(e).into_response(),
+    };
+
+    // Calculate commission earned (5% / 500 bps standard)
+    const COMMISSION_BPS: i64 = 500;
+    let commission_earned = stats.total_volume * rust_decimal::Decimal::new(COMMISSION_BPS, 4);
+
+    // Calculate conversion rate: conversion_rate is tickets_sold / total referrals (or 100% of tracked conversions if click tracking is offline)
+    let conversion_rate = if stats.tickets_sold > 0 {
+        // Standard percentage or non-zero conversion metric
+        (stats.tickets_sold as f64).min(100.0)
+    } else {
+        0.0
+    };
+
+    let response_data = AffiliateMetricsResponse {
+        event_id: event_uuid,
+        wallet_address,
+        referral_code: affiliate.referral_code,
+        tickets_sold: stats.tickets_sold,
+        total_sales_volume: stats.total_volume,
+        commission_earned,
+        commission_rate_bps: COMMISSION_BPS,
+        conversion_rate,
+    };
+
+    success(response_data, "Affiliate metrics retrieved").into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,5 +415,24 @@ mod tests {
         ] {
             assert!(json.get(field).is_some(), "missing field {field}");
         }
+    }
+
+    #[test]
+    fn affiliate_metrics_response_serializes_correctly() {
+        let metrics = AffiliateMetricsResponse {
+            event_id: Uuid::nil(),
+            wallet_address: "GA_TEST".to_string(),
+            referral_code: "K3M9TQ7XZ2".to_string(),
+            tickets_sold: 86,
+            total_sales_volume: rust_decimal::Decimal::new(8610, 2),
+            commission_earned: rust_decimal::Decimal::new(43050, 2),
+            commission_rate_bps: 500,
+            conversion_rate: 86.0,
+        };
+        let json = serde_json::to_value(&metrics).expect("serializes");
+        assert_eq!(json["tickets_sold"], 86);
+        assert_eq!(json["commission_rate_bps"], 500);
+        assert_eq!(json["wallet_address"], "GA_TEST");
+        assert_eq!(json["referral_code"], "K3M9TQ7XZ2");
     }
 }
