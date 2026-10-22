@@ -7,6 +7,7 @@ use crate::{
         ParameterProposal, Payment, PaymentStatus,
     },
 };
+use crate::keys::WalletLimitKey;
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
@@ -328,6 +329,32 @@ pub fn get_transfer_fee(env: &Env, event_id: String) -> Option<u32> {
     env.storage()
         .persistent()
         .get(&DataKey::TransferFee(event_id))
+}
+
+pub fn set_max_tickets_per_wallet(env: &Env, event_id: String, max: u32) {
+    env.storage()
+        .persistent()
+        .set(&WalletLimitKey::MaxTicketsPerWallet(event_id), &max);
+}
+
+pub fn get_max_tickets_per_wallet(env: &Env, event_id: String) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&WalletLimitKey::MaxTicketsPerWallet(event_id))
+        .unwrap_or(0)
+}
+
+pub fn get_wallet_ticket_count(env: &Env, event_id: String, buyer: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&WalletLimitKey::WalletTicketCount(event_id, buyer.clone()))
+        .unwrap_or(0)
+}
+
+pub fn set_wallet_ticket_count(env: &Env, event_id: String, buyer: &Address, count: u32) {
+    env.storage()
+        .persistent()
+        .set(&WalletLimitKey::WalletTicketCount(event_id, buyer.clone()), &count);
 }
 
 pub fn add_payment_to_event_index(env: &Env, event_id: String, payment_id: String) {
