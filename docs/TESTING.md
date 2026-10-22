@@ -31,17 +31,46 @@ Coverage threshold: **80 %** on all included component files.
 
 ## End-to-End Tests (Cypress)
 
-Cypress specs live in `cypress/integration/` at the repo root.
+Cypress specs live in `cypress/integration/` at the repo root and are configured via `cypress.config.ts`.
+
+### Prerequisites
+
+Start the web application first in a separate terminal (the default `baseUrl` configured in `cypress.config.ts` is `http://localhost:3000`):
 
 ```bash
-# Start the app first (separate terminal)
 pnpm --filter web dev
+```
 
+> **Note**: If your local frontend runs on a different port, override the base URL by appending `--config baseUrl=http://localhost:<PORT>` or exporting `CYPRESS_BASE_URL`.
+
+### Running Specs
+
+You can run Cypress using the root package scripts or directly with `pnpm exec`:
+
+#### Option A: Package Scripts (Recommended)
+
+```bash
 # Run all Cypress specs headlessly
 pnpm cy:run
 
-# Open the interactive Cypress runner
+# Open the interactive Cypress GUI runner
 pnpm cy:open
+
+# Run a specific spec headlessly
+pnpm cy:run --spec "cypress/integration/create_event.spec.ts"
+```
+
+#### Option B: Executable CLI Commands
+
+```bash
+# Run all specs headlessly
+pnpm exec cypress run
+
+# Open interactive runner
+pnpm exec cypress open
+
+# Run in a specific browser
+pnpm exec cypress run --browser chrome
 ```
 
 All backend API calls are stubbed with `cy.intercept()` — no live database required.
@@ -56,11 +85,11 @@ Visual snapshot tests guard the **Neubrutalist design system** (hard borders, sp
 
 Four core components are tested in both **light** and **dark** mode, producing **8 base snapshots**:
 
-| Component | Light snapshot | Dark snapshot |
-|---|---|---|
-| `Button` | `button-light.png` | `button-dark.png` |
-| `EventCard` | `event-card-light.png` | `event-card-dark.png` |
-| `RegistrationBox` | `registration-box-light.png` | `registration-box-dark.png` |
+| Component                | Light snapshot                    | Dark snapshot                    |
+| ------------------------ | --------------------------------- | -------------------------------- |
+| `Button`                 | `button-light.png`                | `button-dark.png`                |
+| `EventCard`              | `event-card-light.png`            | `event-card-dark.png`            |
+| `RegistrationBox`        | `registration-box-light.png`      | `registration-box-dark.png`      |
 | `TicketModal` (purchase) | `ticket-modal-purchase-light.png` | `ticket-modal-purchase-dark.png` |
 | `TicketModal` (waitlist) | `ticket-modal-waitlist-light.png` | `ticket-modal-waitlist-dark.png` |
 
