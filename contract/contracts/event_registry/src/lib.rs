@@ -739,7 +739,7 @@ impl EventRegistry {
         env: Env,
         event_ids: Vec<String>,
     ) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
-        if event_ids.len() > MAX_BATCH_SIZE as usize {
+        if event_ids.len() > MAX_BATCH_SIZE {
             return Err(EventRegistryError::BatchSizeExceeded);
         }
         let mut results = Vec::new(&env);
