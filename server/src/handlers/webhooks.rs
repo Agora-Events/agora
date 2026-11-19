@@ -14,7 +14,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 pub use crate::models::webhook::{
-    CreateWebhookRequest, WebhookDeliveryFailure, WebhookEndpoint,
+    CreateWebhookRequest, WebhookDeliveryFailure, WebhookEndpoint, WebhookEndpointView,
 };
 use crate::models::webhook::{
     validate_create_webhook, MAX_WEBHOOK_ENDPOINTS_PER_ORGANIZER,
@@ -38,7 +38,10 @@ pub struct ListWebhooksParams {
 /// Response envelope for a newly created webhook endpoint.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CreateWebhookResponse {
-    pub endpoint: WebhookEndpoint,
+    /// Registered webhook endpoint (secret not included in this field).
+    pub endpoint: WebhookEndpointView,
+    /// Secret for signing webhook deliveries. **This value cannot be retrieved later.**
+    pub secret: String,
     /// Registered endpoints remaining for this organiser.
     pub remaining_slots: usize,
 }
@@ -124,7 +127,16 @@ pub async fn create_webhook(
 
     success(
         CreateWebhookResponse {
-            endpoint,
+            endpoint: WebhookEndpointView {
+                id: endpoint.id,
+                organizer_id: endpoint.organizer_id,
+                url: endpoint.url,
+                events: endpoint.events.clone(),
+                is_active: endpoint.is_active,
+                created_at: endpoint.created_at,
+                updated_at: endpoint.updated_at,
+            },
+            secret: endpoint.secret,
             remaining_slots: remaining,
         },
         "Webhook endpoint created",
@@ -141,7 +153,7 @@ pub async fn create_webhook(
     path = "/webhooks",
     params(ListWebhooksParams),
     responses(
-        (status = 200, description = "Organizer webhook endpoints", body = Vec<WebhookEndpoint>),
+        (status = 200, description = "Organizer webhook endpoints", body = Vec<WebhookEndpointView>),
         (status = 400, description = "organizer_id is required"),
     ),
     tag = "Webhooks"
@@ -154,7 +166,7 @@ pub async fn list_webhooks(
         return AppError::ValidationError("organizer_id is required".to_string()).into_response();
     };
 
-    match sqlx::query_as::<_, WebhookEndpoint>(
+    match sqlx::query_as::<_, WebhookEndpointView>(
         "SELECT * FROM webhook_endpoints WHERE organizer_id = $1 ORDER BY created_at DESC",
     )
     .bind(organizer_id)
@@ -355,5 +367,40 @@ mod tests {
         assert_eq!(json["status_code"], 200);
         assert_eq!(json["latency_ms"], 45);
         assert_eq!(json["success"], true);
+    }
+
+    #[test]
+    fn list_webhooks_response_has_no_secret() {
+        let view = WebhookEndpointView {
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            url: "https://example.com/hook".to_string(),
+            events: vec!["PaymentProcessed".to_string()],
+            is_active: true,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let json = serde_json::to_value(&view).expect("serializes");
+        assert!(!json.object().unwrap().contains_key("secret"));
+    }
+
+    #[test]
+    fn create_webhook_response_includes_secret() {
+        let secret = "whsec_test123";
+        let resp = CreateWebhookResponse {
+            endpoint: WebhookEndpointView {
+                id: Uuid::new_v4(),
+                organizer_id: Uuid::new_v4(),
+                url: "https://example.com/hook".to_string(),
+                events: vec!["PaymentProcessed".to_string()],
+                is_active: true,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            },
+            secret: secret.to_string(),
+            remaining_slots: 4,
+        };
+        let json = serde_json::to_value(&resp).expect("serializes");
+        assert_eq!(json["secret"], secret);
     }
 }
