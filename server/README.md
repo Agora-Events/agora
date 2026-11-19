@@ -47,6 +47,7 @@ Required variables:
 | | `RUST_LOG` | No | `info` | The logging level. | `debug` |
 | | `BASE_URL` | No | `https://agora.events` | The base URL of the API. | `http://localhost:8080` |
 | **Database** | `DATABASE_URL` **[SECRET]** | Yes | - | PostgreSQL connection string. | `postgres://user:pass@localhost/db` |
+| **Notifications** | `SMTP_HOST` | Production | `stub` outside production | SMTP relay hostname; required in production. | `smtp.example.com` |
 | | `SLOW_QUERY_THRESHOLD_MS` | Yes | - | Execution time threshold for logging slow DB queries. | `500` |
 | | `DB_MAX_CONNECTIONS` | No | `10` | Maximum connections in the PostgreSQL pool. | `25` |
 | | `DB_MIN_CONNECTIONS` | No | `1` | Minimum idle connections kept in the pool. | `2` |
