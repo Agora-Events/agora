@@ -24,7 +24,20 @@ pub struct WebhookEndpoint {
     pub id: Uuid,
     pub organizer_id: Uuid,
     pub url: String,
+    #[serde(skip_serializing)]
     pub secret: String,
+    pub events: Vec<String>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A view of WebhookEndpoint without the secret, for safe listing/response serialization.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct WebhookEndpointView {
+    pub id: Uuid,
+    pub organizer_id: Uuid,
+    pub url: String,
     pub events: Vec<String>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
