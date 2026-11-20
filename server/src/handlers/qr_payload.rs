@@ -602,19 +602,29 @@ pub async fn scan_ticket(
 /// Returns success if the QR code was marked as used
 pub async fn mark_qr_used(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     axum::extract::Path(qr_id): axum::extract::Path<String>,
 ) -> Response {
-    // Check if QR exists and is not already used
-    let record = match sqlx::query_as::<_, (bool, DateTime<Utc>)>(
+    let requester = match crate::handlers::auth::extract_auth(&headers) {
+        Ok(wallet) => wallet,
+        Err(error) => return error.into_response(),
+    };
+
+    let record = match sqlx::query_as::<_, (bool, DateTime<Utc>, Option<Uuid>)>(
         r#"
-        SELECT is_used, expires_at FROM qr_payloads WHERE id = $1
+        SELECT qr.is_used, qr.expires_at,
+               COALESCE(ticket.event_id, tier.event_id, qr.event_id)
+        FROM qr_payloads qr
+        LEFT JOIN tickets ticket ON ticket.id = qr.ticket_id
+        LEFT JOIN ticket_tiers tier ON tier.id = ticket.ticket_tier_id
+        WHERE qr.id = $1
         "#,
     )
     .bind(&qr_id)
     .fetch_optional(&pool)
     .await
     {
-        Ok(Some((is_used, expires_at))) => (is_used, expires_at),
+        Ok(Some(record)) => record,
         Ok(None) => {
             return AppError::NotFound(format!("QR payload with id '{}' not found", qr_id))
                 .into_response();
@@ -623,6 +633,45 @@ pub async fn mark_qr_used(
             return AppError::DatabaseError(e).into_response();
         }
     };
+
+    let event_id = match record.2 {
+        Some(event_id) => event_id,
+        None => {
+            return AppError::Forbidden("QR payload is not associated with an event".to_string())
+                .into_response();
+        }
+    };
+
+    let is_authorized = match sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM events e
+            JOIN organizers o ON o.id = e.organizer_id
+            WHERE e.id = $1
+              AND (o.wallet_address = $2 OR o.id::text = $2)
+        ) OR EXISTS (
+            SELECT 1
+            FROM event_scanners
+            WHERE event_id = $1 AND wallet_address = $2
+        )
+        "#,
+    )
+    .bind(event_id)
+    .bind(&requester)
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(is_authorized) => is_authorized,
+        Err(error) => return AppError::DatabaseError(error).into_response(),
+    };
+
+    if !is_authorized {
+        return AppError::Forbidden(
+            "You are not authorized to scan QR codes for this event".to_string(),
+        )
+        .into_response();
+    }
 
     if record.0 {
         return AppError::ValidationError("QR code has already been used".to_string())
@@ -854,9 +903,46 @@ pub struct QrPayloadListItem {
 /// Deletes the QR payload with the given ID.
 pub async fn delete_qr_payload(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     axum::extract::Path(qr_id): axum::extract::Path<Uuid>,
 ) -> Response {
+    let requester = match crate::handlers::auth::extract_auth(&headers) {
+        Ok(wallet) => wallet,
+        Err(error) => return error.into_response(),
+    };
+
     let id_str = qr_id.to_string();
+    let record = match sqlx::query_as::<_, (Option<String>, Option<String>)>(
+        r#"
+        SELECT ticket.owner_wallet, organizer.wallet_address
+        FROM qr_payloads qr
+        LEFT JOIN tickets ticket ON ticket.id = qr.ticket_id
+        LEFT JOIN ticket_tiers tier ON tier.id = ticket.ticket_tier_id
+        LEFT JOIN events event
+            ON event.id = COALESCE(ticket.event_id, tier.event_id, qr.event_id)
+        LEFT JOIN organizers organizer ON organizer.id = event.organizer_id
+        WHERE qr.id = $1
+        "#,
+    )
+    .bind(&id_str)
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(Some(record)) => record,
+        Ok(None) => {
+            return AppError::NotFound(format!("QR payload with id '{}' not found", qr_id))
+                .into_response();
+        }
+        Err(error) => return AppError::DatabaseError(error).into_response(),
+    };
+
+    let is_ticket_owner = record.0.as_deref() == Some(requester.as_str());
+    let is_event_organizer = record.1.as_deref() == Some(requester.as_str());
+    if !is_ticket_owner && !is_event_organizer {
+        return AppError::Forbidden("You are not authorized to delete this QR payload".to_string())
+            .into_response();
+    }
+
     match sqlx::query_scalar::<_, String>("DELETE FROM qr_payloads WHERE id = $1 RETURNING id")
         .bind(&id_str)
         .fetch_optional(&pool)
@@ -870,6 +956,119 @@ pub async fn delete_qr_payload(
             tracing::error!("Failed to delete QR payload: {:?}", e);
             AppError::DatabaseError(e).into_response()
         }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EventScannerRequest {
+    pub wallet_address: String,
+}
+
+async fn require_event_organizer(
+    pool: &PgPool,
+    event_id: Uuid,
+    requester: &str,
+) -> Result<(), AppError> {
+    let is_organizer = match sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT COALESCE(
+            o.wallet_address = $2 OR o.id::text = $2,
+            FALSE
+        )
+        FROM events e
+        JOIN organizers o ON o.id = e.organizer_id
+        WHERE e.id = $1
+        "#,
+    )
+    .bind(event_id)
+    .bind(requester)
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(Some(is_organizer)) => is_organizer,
+        Ok(None) => {
+            return Err(AppError::NotFound(format!(
+                "Event '{}' not found",
+                event_id
+            )));
+        }
+        Err(error) => return Err(AppError::DatabaseError(error)),
+    };
+
+    if !is_organizer {
+        return Err(AppError::Forbidden(
+            "Only the event organizer can manage scanners".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Authorize a wallet to scan tickets for an event.
+///
+/// POST `/api/v1/events/:id/qr-scanners`
+pub async fn add_event_scanner(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(event_id): Path<Uuid>,
+    Json(request): Json<EventScannerRequest>,
+) -> Response {
+    let requester = match crate::handlers::auth::extract_auth(&headers) {
+        Ok(wallet) => wallet,
+        Err(error) => return error.into_response(),
+    };
+
+    let wallet_address = request.wallet_address.trim();
+    if wallet_address.is_empty() {
+        return AppError::ValidationError("wallet_address is required".to_string()).into_response();
+    }
+
+    if let Err(error) = require_event_organizer(&pool, event_id, &requester).await {
+        return error.into_response();
+    }
+
+    match sqlx::query(
+        r#"
+        INSERT INTO event_scanners (event_id, wallet_address, created_by)
+        SELECT id, $2, organizer_id FROM events WHERE id = $1
+        ON CONFLICT (event_id, wallet_address) DO NOTHING
+        "#,
+    )
+    .bind(event_id)
+    .bind(wallet_address)
+    .execute(&pool)
+    .await
+    {
+        Ok(_) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Err(error) => AppError::DatabaseError(error).into_response(),
+    }
+}
+
+/// Revoke a wallet's scanner authorization for an event.
+///
+/// DELETE `/api/v1/events/:id/qr-scanners/:wallet_address`
+pub async fn remove_event_scanner(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path((event_id, wallet_address)): Path<(Uuid, String)>,
+) -> Response {
+    let requester = match crate::handlers::auth::extract_auth(&headers) {
+        Ok(wallet) => wallet,
+        Err(error) => return error.into_response(),
+    };
+
+    if let Err(error) = require_event_organizer(&pool, event_id, &requester).await {
+        return error.into_response();
+    }
+
+    match sqlx::query("DELETE FROM event_scanners WHERE event_id = $1 AND wallet_address = $2")
+        .bind(event_id)
+        .bind(wallet_address)
+        .execute(&pool)
+        .await
+    {
+        Ok(_) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Err(error) => AppError::DatabaseError(error).into_response(),
     }
 }
 
@@ -1017,6 +1216,27 @@ mod tests {
             .unwrap();
 
         let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_mark_qr_used_requires_authentication() {
+        let pool = PgPool::connect_lazy("postgresql://localhost/test").expect("test pool");
+        let response = mark_qr_used(
+            State(pool),
+            HeaderMap::new(),
+            Path(Uuid::new_v4().to_string()),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_delete_qr_payload_requires_authentication() {
+        let pool = PgPool::connect_lazy("postgresql://localhost/test").expect("test pool");
+        let response = delete_qr_payload(State(pool), HeaderMap::new(), Path(Uuid::new_v4())).await;
+
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
