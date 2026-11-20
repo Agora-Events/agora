@@ -27,7 +27,8 @@ use crate::handlers::auth::extract_auth;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::{OrganizerProfile, UpsertProfileRequest};
 use crate::utils::cursor_pagination::{
-    decode_cursor, encode_cursor, CursorParams, CursorResponse, EventCursor,
+    decode_cursor, encode_cursor, CursorParams, CursorResponse, EventCursor, ValidatedCursorParams,
+    WalletTicketCursor,
 };
 use crate::utils::error::AppError;
 use crate::utils::pagination::{PaginatedResponse, PaginationParams};
@@ -1194,6 +1195,43 @@ mod tests {
 // Wallet Ticket Aggregation (#1122)
 // ---------------------------------------------------------------------------
 
+/// Default page size for `GET /api/v1/profile/tickets` (Issue #1809).
+const DEFAULT_WALLET_TICKET_LIMIT: u32 = 50;
+
+fn default_wallet_ticket_limit() -> u32 {
+    DEFAULT_WALLET_TICKET_LIMIT
+}
+
+/// Query parameters for `GET /api/v1/profile/tickets` (Issue #1809).
+/// Upcoming and past sections are paginated independently with a shared limit.
+#[derive(Debug, Deserialize)]
+pub struct WalletTicketParams {
+    #[serde(default = "default_wallet_ticket_limit")]
+    pub limit: u32,
+    /// Value of `data.next_cursor.upcoming` from the previous response.
+    pub upcoming_cursor: Option<String>,
+    /// Value of `data.next_cursor.past` from the previous response.
+    pub past_cursor: Option<String>,
+}
+
+impl WalletTicketParams {
+    fn validated(&self) -> ValidatedCursorParams {
+        CursorParams {
+            limit: self.limit,
+            cursor: None,
+            count: false,
+        }
+        .validate()
+    }
+}
+
+/// Opaque next-page cursors for each section; `null` means no more pages.
+#[derive(Debug, Serialize)]
+pub struct WalletTicketNextCursors {
+    pub upcoming: Option<String>,
+    pub past: Option<String>,
+}
+
 /// A single ticket enriched with its event details, returned by
 /// `GET /api/v1/profile/tickets`.
 #[derive(Debug, Clone, Serialize, FromRow)]
@@ -1225,6 +1263,116 @@ pub struct WalletTicket {
 pub struct WalletTicketsResponse {
     pub upcoming: Vec<WalletTicket>,
     pub past: Vec<WalletTicket>,
+    /// Opaque cursors for the next page of each section (Issue #1809).
+    pub next_cursor: WalletTicketNextCursors,
+}
+
+fn decode_ticket_cursor(cursor: Option<&str>) -> Result<Option<WalletTicketCursor>, AppError> {
+    match cursor {
+        Some(raw) => decode_cursor::<WalletTicketCursor>(raw)
+            .map(Some)
+            .map_err(|e| AppError::ValidationError(format!("Invalid cursor: {e}"))),
+        None => Ok(None),
+    }
+}
+
+/// Remove the look-ahead row and encode it as the next-page cursor.
+fn take_next_cursor(
+    items: &mut Vec<WalletTicket>,
+    params: &ValidatedCursorParams,
+) -> Result<Option<String>, AppError> {
+    if items.len() <= params.page_size() {
+        return Ok(None);
+    }
+    let last = items.pop().expect("len > page_size guarantees an item");
+    encode_cursor(&WalletTicketCursor {
+        event_start_time: last.event_start_time,
+        id: last.id,
+    })
+    .map(Some)
+    .map_err(|e| {
+        tracing::error!("Failed to encode wallet ticket cursor: {:?}", e);
+        AppError::InternalServerError("Failed to encode cursor".to_string())
+    })
+}
+
+/// Fetch one keyset-paginated section. `$1` wallet, `$2` query limit, `$3` now,
+/// `$4` cursor start time, `$5` cursor ticket id.
+async fn fetch_wallet_ticket_page(
+    pool: &PgPool,
+    address: &str,
+    now: DateTime<Utc>,
+    params: &ValidatedCursorParams,
+    cursor: Option<WalletTicketCursor>,
+    upcoming: bool,
+) -> Result<(Vec<WalletTicket>, Option<String>), AppError> {
+    let select = r#"
+        SELECT
+            t.id,
+            t.stellar_id,
+            t.status,
+            t.ticket_tier_id,
+            tt.name        AS ticket_tier_name,
+            tt.price       AS ticket_price,
+            t.event_id,
+            e.title        AS event_title,
+            e.location     AS event_location,
+            e.start_time   AS event_start_time,
+            e.image_url    AS event_image_url,
+            t.created_at
+        FROM tickets t
+        LEFT JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
+        LEFT JOIN events        e  ON e.id  = t.event_id
+        WHERE (t.owner_wallet = $1 OR t.buyer_wallet = $1)
+    "#;
+
+    let (section_where, cursor_where, order_by) = if upcoming {
+        (
+            "AND (e.start_time >= $3 OR e.start_time IS NULL)",
+            if cursor.is_some() {
+                "AND (
+                    ($4::timestamptz IS NULL AND e.start_time IS NULL AND t.id > $5)
+                    OR ($4::timestamptz IS NOT NULL AND (
+                        e.start_time > $4
+                        OR (e.start_time = $4 AND t.id > $5)
+                    ))
+                 )"
+            } else {
+                ""
+            },
+            "ORDER BY e.start_time ASC NULLS LAST, t.id ASC",
+        )
+    } else {
+        (
+            "AND e.start_time < $3",
+            if cursor.is_some() {
+                "AND (e.start_time < $4 OR (e.start_time = $4 AND t.id < $5))"
+            } else {
+                ""
+            },
+            "ORDER BY e.start_time DESC, t.id DESC",
+        )
+    };
+
+    let sql = format!("{select}\n{section_where}\n{cursor_where}\n{order_by}\nLIMIT $2");
+    let mut query = sqlx::query_as::<_, WalletTicket>(&sql)
+        .bind(address)
+        .bind(params.query_limit())
+        .bind(now);
+    if let Some(ref c) = cursor {
+        query = query.bind(c.event_start_time).bind(c.id);
+    }
+
+    let mut items = match query.fetch_all(pool).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch wallet tickets for {address}: {:?}", e);
+            return Err(AppError::DatabaseError(e));
+        }
+    };
+
+    let next_cursor = take_next_cursor(&mut items, params)?;
+    Ok((items, next_cursor))
 }
 
 /// `GET /api/v1/profile/tickets`
@@ -1242,61 +1390,127 @@ pub struct WalletTicketsResponse {
 ///   "past":     [ { "id": "...", "status": "used",   "event_title": "...", ... } ]
 /// }
 /// ```
-pub async fn get_wallet_tickets(State(state): State<ProfileState>, headers: HeaderMap) -> Response {
+pub async fn get_wallet_tickets(
+    State(state): State<ProfileState>,
+    headers: HeaderMap,
+    Query(params): Query<WalletTicketParams>,
+) -> Response {
     let address = match extract_auth(&headers) {
         Ok(a) => a,
         Err(e) => return e.into_response(),
     };
 
-    // Single query: fetch all tickets for this wallet address joined with their
-    // event and ticket-tier information. We bring back everything in one round
-    // trip and split on the application side.
-    let tickets = match sqlx::query_as::<_, WalletTicket>(
-        r#"
-        SELECT
-            t.id,
-            t.stellar_id,
-            t.status,
-            t.ticket_tier_id,
-            tt.name        AS ticket_tier_name,
-            tt.price       AS ticket_price,
-            t.event_id,
-            e.title        AS event_title,
-            e.location     AS event_location,
-            e.start_time   AS event_start_time,
-            e.image_url    AS event_image_url,
-            t.created_at
-        FROM tickets t
-        LEFT JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
-        LEFT JOIN events        e  ON e.id  = t.event_id
-        WHERE
-            t.owner_wallet = $1
-            OR t.buyer_wallet = $1
-        ORDER BY e.start_time ASC NULLS LAST
-        "#,
-    )
-    .bind(&address)
-    .fetch_all(&state.pool)
-    .await
-    {
-        Ok(rows) => rows,
-        Err(e) => {
-            tracing::error!("Failed to fetch wallet tickets for {address}: {:?}", e);
-            return AppError::DatabaseError(e).into_response();
-        }
-    };
-
+    let validated = params.validated();
     let now = Utc::now();
 
-    let (upcoming, mut past): (Vec<WalletTicket>, Vec<WalletTicket>) =
-        tickets.into_iter().partition(|t| {
-            t.event_start_time.map(|start| start >= now).unwrap_or(true) // tickets without an event date are treated as upcoming
-        });
+    let upcoming_cursor = match decode_ticket_cursor(params.upcoming_cursor.as_deref()) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+    let past_cursor = match decode_ticket_cursor(params.past_cursor.as_deref()) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
 
-    // Upcoming: soonest first (already ordered by query).
-    // Past: most-recent first — reverse the chronological order.
-    past.sort_by_key(|b| std::cmp::Reverse(b.event_start_time));
+    let (upcoming, upcoming_next) = match fetch_wallet_ticket_page(
+        &state.pool,
+        &address,
+        now,
+        &validated,
+        upcoming_cursor,
+        true,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
 
-    let response = WalletTicketsResponse { upcoming, past };
+    let (past, past_next) = match fetch_wallet_ticket_page(
+        &state.pool,
+        &address,
+        now,
+        &validated,
+        past_cursor,
+        false,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+
+    let response = WalletTicketsResponse {
+        upcoming,
+        past,
+        next_cursor: WalletTicketNextCursors {
+            upcoming: upcoming_next,
+            past: past_next,
+        },
+    };
     success(response, "Wallet tickets retrieved successfully").into_response()
+}
+
+#[cfg(test)]
+mod wallet_ticket_pagination_tests {
+    use super::*;
+
+    #[test]
+    fn test_wallet_ticket_params_default_limit_and_max() {
+        let params: WalletTicketParams = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(params.limit, DEFAULT_WALLET_TICKET_LIMIT);
+        assert!(params.upcoming_cursor.is_none());
+        assert!(params.past_cursor.is_none());
+        let validated = params.validated();
+        assert_eq!(validated.page_size(), 50);
+        assert_eq!(validated.query_limit(), 51);
+
+        let over: WalletTicketParams =
+            serde_json::from_value(serde_json::json!({ "limit": 500 })).unwrap();
+        let validated = over.validated();
+        assert_eq!(validated.page_size(), 100);
+        assert_eq!(validated.query_limit(), 101);
+    }
+
+    #[test]
+    fn test_wallet_ticket_cursor_can_be_followed() {
+        let params = CursorParams {
+            limit: 2,
+            cursor: None,
+            count: false,
+        }
+        .validate();
+        let now = Utc::now();
+        let make_ticket = |id: Uuid, start: Option<DateTime<Utc>>| WalletTicket {
+            id,
+            stellar_id: None,
+            status: "active".to_string(),
+            ticket_tier_id: None,
+            ticket_tier_name: None,
+            ticket_price: None,
+            event_id: None,
+            event_title: None,
+            event_location: None,
+            event_start_time: start,
+            event_image_url: None,
+            created_at: now,
+        };
+
+        let last_id = Uuid::new_v4();
+        let last_start = Some(now + chrono::Duration::seconds(2));
+        let mut rows = vec![
+            make_ticket(Uuid::new_v4(), Some(now)),
+            make_ticket(Uuid::new_v4(), Some(now + chrono::Duration::seconds(1))),
+            make_ticket(last_id, last_start),
+        ];
+        let cursor = take_next_cursor(&mut rows, &params).unwrap().unwrap();
+        assert_eq!(rows.len(), 2, "look-ahead row must be removed");
+        let decoded = decode_ticket_cursor(Some(&cursor)).unwrap().unwrap();
+        assert_eq!(decoded.id, last_id);
+        assert_eq!(decoded.event_start_time, last_start);
+
+        let mut exact = vec![make_ticket(Uuid::new_v4(), Some(now)), make_ticket(Uuid::new_v4(), None)];
+        assert!(take_next_cursor(&mut exact, &params).unwrap().is_none());
+        assert_eq!(exact.len(), 2);
+    }
 }

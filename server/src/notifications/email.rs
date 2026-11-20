@@ -61,14 +61,22 @@ impl SmtpEmailProvider {
     }
 
     /// Initialize provider from standard environment variables:
-    /// - `SMTP_HOST` (required, or defaults to `"stub"`)
+    /// - `SMTP_HOST` (required in production; defaults to `"stub"` otherwise)
     /// - `SMTP_PORT` (default `587`)
     /// - `SMTP_FROM` / `SMTP_FROM_ADDRESS` (default `"noreply@agora.events"`)
     /// - `SMTP_USER` / `SMTP_USERNAME` (optional)
     /// - `SMTP_PASS` / `SMTP_PASSWORD` (optional)
     /// - `SMTP_USE_TLS` (default `true`, set `"false"` or `"0"` to disable)
     pub fn from_env() -> Self {
-        let host = env::var("SMTP_HOST").unwrap_or_else(|_| "stub".to_string());
+        let host = env::var("SMTP_HOST").unwrap_or_else(|_| {
+            if env::var("RUST_ENV")
+                .is_ok_and(|environment| environment.eq_ignore_ascii_case("production"))
+            {
+                String::new()
+            } else {
+                "stub".to_string()
+            }
+        });
         let port = env::var("SMTP_PORT")
             .ok()
             .and_then(|p| p.parse::<u16>().ok())
@@ -105,8 +113,14 @@ impl NotificationProvider for SmtpEmailProvider {
     }
 
     async fn send(&self, notification: &Notification) -> Result<(), NotificationError> {
-        // If host is configured as "stub" or empty, log and return early (useful for testing/dev)
-        if self.host == "stub" || self.host.is_empty() {
+        if self.host.is_empty() {
+            return Err(NotificationError::ConfigError(
+                "SMTP_HOST is required in production".to_string(),
+            ));
+        }
+
+        // An explicitly configured stub host is useful for testing and development.
+        if self.host == "stub" {
             tracing::debug!(
                 host = %self.host,
                 from = %self.from_address,
@@ -214,6 +228,31 @@ mod tests {
 
         let res = provider.send(&notification).await;
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_smtp_provider_missing_host_in_production_is_config_error() {
+        temp_env::async_with_vars(
+            [
+                ("RUST_ENV", Some("production")),
+                ("SMTP_HOST", None::<&str>),
+            ],
+            async {
+                let provider = SmtpEmailProvider::from_env();
+                let notification = Notification {
+                    recipient: "user@example.com".to_string(),
+                    subject: "Welcome".to_string(),
+                    body: "Hello from Agora!".to_string(),
+                };
+
+                assert!(matches!(
+                    provider.send(&notification).await,
+                    Err(NotificationError::ConfigError(message))
+                        if message.contains("SMTP_HOST")
+                ));
+            },
+        )
+        .await;
     }
 
     #[tokio::test]

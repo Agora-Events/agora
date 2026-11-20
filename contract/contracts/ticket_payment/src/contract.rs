@@ -33,7 +33,7 @@ use crate::{
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
         PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
         PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
-        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
+        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent, WithdrawalCapUpdatedEvent,
     },
 };
 use soroban_sdk::{
@@ -1782,10 +1782,23 @@ impl TicketPaymentContract {
         require_admin(&env)?;
 
         if amount < 0 {
-            return Err(TicketPaymentError::ArithmeticError);
+            return Err(TicketPaymentError::InvalidAmount);
         }
 
-        set_withdrawal_cap(&env, token, amount);
+        let old_cap = get_withdrawal_cap(&env, token.clone());
+        set_withdrawal_cap(&env, token.clone(), amount);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::WithdrawalCapUpdated,),
+            WithdrawalCapUpdatedEvent {
+                token,
+                old_cap,
+                new_cap: amount,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
         Ok(())
     }
 
@@ -1952,7 +1965,7 @@ impl TicketPaymentContract {
         bps: u32, // Changed from i128 amount to u32 basis points
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
-            panic!("Contract not initialized");
+            return Err(TicketPaymentError::NotInitialized);
         }
 
         let event_registry_addr = get_event_registry(&env);
@@ -1984,7 +1997,7 @@ impl TicketPaymentContract {
         rate_bps: u32,
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
-            panic!("Contract not initialized");
+            return Err(TicketPaymentError::NotInitialized);
         }
 
         if rate_bps > MAX_BPS {

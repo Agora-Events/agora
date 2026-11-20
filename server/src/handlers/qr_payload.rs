@@ -11,7 +11,8 @@
 //! Uses Ed25519 digital signatures for payload signing and verification.
 
 use axum::{
-    extract::Path, extract::Query, extract::State, response::IntoResponse, response::Response, Json,
+    extract::Path, extract::Query, extract::State, http::HeaderMap, response::IntoResponse,
+    response::Response, Json,
 };
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Duration, Utc};
@@ -652,6 +653,9 @@ pub async fn mark_qr_used(
 /// Query parameters for filtering QR payloads
 #[derive(Debug, Deserialize)]
 pub struct QrPayloadFilters {
+    /// Filter by event; required for organizers and optional for admins.
+    pub event_id: Option<Uuid>,
+
     /// Filter by QR type
     pub qr_type: Option<String>,
 
@@ -662,6 +666,18 @@ pub struct QrPayloadFilters {
     pub expired: Option<bool>,
 }
 
+fn authorize_qr_event_listing(
+    requester_wallet: Option<&str>,
+    is_event_organizer: bool,
+) -> Result<(), AppError> {
+    match (requester_wallet, is_event_organizer) {
+        (None, _) | (Some(_), true) => Ok(()),
+        (Some(_), false) => Err(AppError::Forbidden(
+            "Only the event organizer or an admin may list QR payloads".to_string(),
+        )),
+    }
+}
+
 /// List QR payloads with pagination and filters
 ///
 /// # Endpoint
@@ -670,6 +686,7 @@ pub struct QrPayloadFilters {
 /// # Query Parameters
 /// - `page` (optional): Page number (default: 1)
 /// - `page_size` (optional): Items per page (default: 20, max: 100)
+/// - `event_id` (required for organizers): Event whose QR payloads to list
 /// - `qr_type` (optional): Filter by QR type
 /// - `is_used` (optional): Filter by usage status
 /// - `expired` (optional): Filter expired QR codes
@@ -678,14 +695,65 @@ pub struct QrPayloadFilters {
 /// Returns a paginated list of QR payloads
 pub async fn list_qr_payloads(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<QrPayloadFilters>,
 ) -> Response {
+    let requester = match crate::handlers::events::verify_export_attendees_auth(&headers) {
+        Ok(requester) => requester,
+        Err(error) => return error.into_response(),
+    };
+
+    if let Some(wallet) = requester.as_deref() {
+        let event_id = match filters.event_id {
+            Some(event_id) => event_id,
+            None => {
+                return AppError::ValidationError(
+                    "event_id is required when listing QR payloads".to_string(),
+                )
+                .into_response();
+            }
+        };
+        let is_organizer = match sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM events e
+                JOIN organizers o ON o.id = e.organizer_id
+                WHERE e.id = $1 AND (o.wallet_address = $2 OR o.id::text = $2)
+            )
+            "#,
+        )
+        .bind(event_id)
+        .bind(wallet)
+        .fetch_one(&pool)
+        .await
+        {
+            Ok(is_organizer) => is_organizer,
+            Err(error) => {
+                tracing::error!("Failed to verify event organizer for QR listing: {:?}", error);
+                return AppError::DatabaseError(error).into_response();
+            }
+        };
+
+        if let Err(error) = authorize_qr_event_listing(Some(wallet), is_organizer) {
+            return error.into_response();
+        }
+    }
+
     let validated_pagination = pagination.validate();
 
     // Build WHERE clause
     let mut where_clauses = Vec::new();
     let mut param_count = 0;
+
+    if requester.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("event_id = ${}", param_count));
+    } else if filters.event_id.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("event_id = ${}", param_count));
+    }
 
     if filters.qr_type.is_some() {
         param_count += 1;
@@ -715,6 +783,9 @@ pub async fn list_qr_payloads(
     let count_query = format!("SELECT COUNT(*) FROM qr_payloads {}", where_clause);
     let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
 
+    if let Some(event_id) = filters.event_id.filter(|_| param_count > 0) {
+        count_query_builder = count_query_builder.bind(event_id);
+    }
     if let Some(ref qr_type) = filters.qr_type {
         count_query_builder = count_query_builder.bind(qr_type);
     }
@@ -740,6 +811,9 @@ pub async fn list_qr_payloads(
 
     let mut items_query_builder = sqlx::query_as::<_, QrPayloadListItem>(&items_query);
 
+    if let Some(event_id) = filters.event_id.filter(|_| param_count > 0) {
+        items_query_builder = items_query_builder.bind(event_id);
+    }
     if let Some(ref qr_type) = filters.qr_type {
         items_query_builder = items_query_builder.bind(qr_type);
     }
@@ -886,6 +960,12 @@ pub async fn list_event_qr_codes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        Router,
+    };
+    use tower::ServiceExt;
 
     #[test]
     fn test_qr_payload_serialization() {
@@ -923,6 +1003,34 @@ mod tests {
         let uuid_str = test_uuid.to_string();
         let parsed = Uuid::parse_str(&uuid_str).unwrap();
         assert_eq!(test_uuid, parsed);
+    }
+
+    #[tokio::test]
+    async fn test_anonymous_qr_listing_returns_401() {
+        let pool = PgPool::connect_lazy("postgresql://localhost/test").expect("test pool");
+        let router = Router::new()
+            .route("/list", axum::routing::get(list_qr_payloads))
+            .with_state(pool);
+        let request = Request::builder()
+            .uri("/list?page=1&page_size=20")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_qr_listing_rejects_another_events_organizer() {
+        assert!(matches!(
+            authorize_qr_event_listing(Some("organizer-a"), false),
+            Err(AppError::Forbidden(_))
+        ));
+    }
+
+    #[test]
+    fn test_qr_listing_allows_event_organizer() {
+        assert!(authorize_qr_event_listing(Some("organizer-a"), true).is_ok());
     }
 
     #[test]

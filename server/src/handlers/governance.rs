@@ -15,6 +15,9 @@ use axum::{
     http::HeaderMap,
     Json,
 };
+use crate::utils::cursor_pagination::{
+    decode_cursor, encode_cursor, CursorResponse, DisputeVoteCursor, ValidatedCursorParams,
+};
 use chrono::Utc;
 use serde::Deserialize;
 use sqlx::PgPool;
@@ -52,6 +55,12 @@ pub struct OpenDisputeRequest {
 pub struct CastVoteRequest {
     pub voter_id: Uuid,
     pub vote: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DisputeVotesParams {
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -332,15 +341,77 @@ pub async fn resolve_dispute(
 pub async fn get_dispute_votes(
     State(state): State<GovernanceState>,
     Path(dispute_id): Path<Uuid>,
-) -> Result<Json<Vec<MediationVote>>, AppError> {
-    let votes = sqlx::query_as::<_, MediationVote>(
-        "SELECT * FROM mediation_votes WHERE dispute_id = $1 ORDER BY voted_at DESC",
-    )
-    .bind(dispute_id)
-    .fetch_all(&state.pool)
-    .await?;
+    Query(params): Query<DisputeVotesParams>,
+) -> Result<Json<CursorResponse<MediationVote>>, AppError> {
+    let limit = params.limit.unwrap_or(50).clamp(1, 200);
 
-    Ok(Json(votes))
+    let cursor = match &params.cursor {
+        Some(c) => Some(
+            decode_cursor::<DisputeVoteCursor>(c)
+                .map_err(|e| AppError::ValidationError(format!("Invalid cursor: {e}")))?,
+        ),
+        None => None,
+    };
+
+    let votes = if let Some(ref cur) = cursor {
+        sqlx::query_as::<_, MediationVote>(
+            r#"
+            SELECT * FROM mediation_votes
+            WHERE dispute_id = $1
+              AND (voted_at, id) < ($2, $3)
+            ORDER BY voted_at DESC, id DESC
+            LIMIT $4
+            "#,
+        )
+        .bind(dispute_id)
+        .bind(cur.voted_at)
+        .bind(cur.id)
+        .bind((limit + 1) as i64)
+        .fetch_all(&state.pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, MediationVote>(
+            r#"
+            SELECT * FROM mediation_votes
+            WHERE dispute_id = $1
+            ORDER BY voted_at DESC, id DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(dispute_id)
+        .bind((limit + 1) as i64)
+        .fetch_all(&state.pool)
+        .await?
+    };
+
+    let has_more = votes.len() as u32 > limit;
+    let mut items = votes;
+    if has_more {
+        items.truncate(limit as usize);
+    }
+
+    let next_cursor = if has_more {
+        items.last().and_then(|v| {
+            encode_cursor(&DisputeVoteCursor {
+                voted_at: v.voted_at,
+                id: v.id,
+            })
+            .ok()
+        })
+    } else {
+        None
+    };
+
+    let response = CursorResponse::new(
+        items,
+        &ValidatedCursorParams {
+            limit,
+            cursor: params.cursor,
+            include_count: false,
+        },
+        next_cursor,
+    );
+    Ok(Json(response))
 }
 
 #[cfg(test)]
@@ -451,3 +522,30 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
+
+
+    #[test]
+    fn test_dispute_votes_limit_clamped_to_200() {
+        // endpoint-specific defaults/clamps: default 50, max 200
+        let default_limit = None::<u32>.unwrap_or(50).clamp(1, 200);
+        assert_eq!(default_limit, 50);
+        let clamped_high = Some(500u32).unwrap_or(50).clamp(1, 200);
+        assert_eq!(clamped_high, 200);
+        let clamped_low = Some(0u32).unwrap_or(50).clamp(1, 200);
+        assert_eq!(clamped_low, 1);
+    }
+
+    #[test]
+    fn test_dispute_vote_cursor_roundtrip_for_traversal() {
+        use crate::utils::cursor_pagination::{decode_cursor, encode_cursor, DisputeVoteCursor};
+        use chrono::Utc;
+        use uuid::Uuid;
+        let cursor = DisputeVoteCursor {
+            voted_at: Utc::now(),
+            id: Uuid::new_v4(),
+        };
+        let encoded = encode_cursor(&cursor).unwrap();
+        let decoded: DisputeVoteCursor = decode_cursor(&encoded).unwrap();
+        assert_eq!(decoded.voted_at, cursor.voted_at);
+        assert_eq!(decoded.id, cursor.id);
+    }

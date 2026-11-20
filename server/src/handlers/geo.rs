@@ -60,6 +60,7 @@ const MAX_LIMIT: i64 = 200;
 /// Geofence alert perimeter — mirrors the mobile 150 m perimeter.
 const GEOFENCE_RADIUS_M: f64 = 150.0;
 const WORKER_INTERVAL_SECS: u64 = 30;
+const GEOFENCE_BATCH_SIZE: i64 = 500;
 
 // ---------------------------------------------------------------------------
 // Response DTOs
@@ -311,93 +312,111 @@ async fn process_geofence_batch(
     pool: &PgPool,
     notifications: &NotificationService,
 ) -> Result<(), AppError> {
-    // Load un-notified registrations for events starting within 24 h.
-    let registrations: Vec<GeofenceRow> = sqlx::query_as::<_, GeofenceRow>(
-        r#"
-        SELECT
-            g.id,
-            g.wallet_address,
-            g.push_token,
-            g.event_id,
-            g.venue_lat,
-            g.venue_lng,
-            g.notified
-        FROM geo_geofences g
-        JOIN events e ON e.id = g.event_id
-        WHERE
-            g.notified = false
-            AND e.start_date BETWEEN NOW() AND NOW() + INTERVAL '24 hours'
-        "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(AppError::from)?;
-
-    for reg in &registrations {
-        // Fetch the most-recently reported device location.
-        let location: Option<(f64, f64)> = sqlx::query_as(
+    let mut checked = 0;
+    loop {
+        let registrations: Vec<GeofenceRow> = sqlx::query_as::<_, GeofenceRow>(
             r#"
-            SELECT latitude, longitude
-            FROM user_locations
-            WHERE wallet_address = $1
-            ORDER BY recorded_at DESC
-            LIMIT 1
+            SELECT
+                g.id,
+                g.wallet_address,
+                g.push_token,
+                g.event_id,
+                g.venue_lat,
+                g.venue_lng,
+                g.notified
+            FROM geo_geofences g
+            JOIN events e ON e.id = g.event_id
+            WHERE
+                g.notified = false
+                AND e.start_date BETWEEN NOW() AND NOW() + INTERVAL '24 hours'
+            ORDER BY g.id
+            LIMIT $1
             "#,
         )
-        .bind(&reg.wallet_address)
-        .fetch_optional(pool)
+        .bind(GEOFENCE_BATCH_SIZE)
+        .fetch_all(pool)
         .await
         .map_err(AppError::from)?;
 
-        let (user_lat, user_lng) = match location {
-            Some(pair) => pair,
-            None => continue,
-        };
-
-        if haversine_m(user_lat, user_lng, reg.venue_lat, reg.venue_lng) > GEOFENCE_RADIUS_M {
-            continue;
+        let batch_size = registrations.len();
+        if batch_size == 0 {
+            break;
         }
 
-        let event_title: Option<String> =
-            sqlx::query_scalar("SELECT title FROM events WHERE id = $1")
-                .bind(reg.event_id)
-                .fetch_optional(pool)
-                .await
-                .map_err(AppError::from)?;
+        let ids: Vec<Uuid> = registrations.iter().map(|reg| reg.id).collect();
+        for reg in &registrations {
+            // Fetch the most-recently reported device location.
+            let location: Option<(f64, f64)> = sqlx::query_as(
+                r#"
+                SELECT latitude, longitude
+                FROM user_locations
+                WHERE wallet_address = $1
+                ORDER BY recorded_at DESC
+                LIMIT 1
+                "#,
+            )
+            .bind(&reg.wallet_address)
+            .fetch_optional(pool)
+            .await
+            .map_err(AppError::from)?;
 
-        let title = event_title.unwrap_or_else(|| "your event".into());
+            let (user_lat, user_lng) = match location {
+                Some(pair) => pair,
+                None => continue,
+            };
 
-        let notification = Notification {
-            recipient: reg.push_token.clone(),
-            subject: "You're near the venue! 🎟️".into(),
-            body: format!(
-                "{title} is starting soon and you're close by. Show your ticket at the gate."
-            ),
-        };
-
-        match notifications.send(&notification).await {
-            Ok(_) => {
-                tracing::info!(
-                    geofence_id = %reg.id,
-                    wallet      = %reg.wallet_address,
-                    event_id    = %reg.event_id,
-                    "Geofence proximity alert dispatched"
-                );
-                let _ = sqlx::query(
-                    "UPDATE geo_geofences SET notified = true, updated_at = NOW() WHERE id = $1",
-                )
-                .bind(reg.id)
-                .execute(pool)
-                .await;
+            if haversine_m(user_lat, user_lng, reg.venue_lat, reg.venue_lng) > GEOFENCE_RADIUS_M {
+                continue;
             }
-            Err(e) => {
-                tracing::warn!(geofence_id = %reg.id, error = %e, "Failed to dispatch geofence alert");
+
+            let event_title: Option<String> =
+                sqlx::query_scalar("SELECT title FROM events WHERE id = $1")
+                    .bind(reg.event_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(AppError::from)?;
+
+            let title = event_title.unwrap_or_else(|| "your event".into());
+
+            let notification = Notification {
+                recipient: reg.push_token.clone(),
+                subject: "You're near the venue! 🎟️".into(),
+                body: format!(
+                    "{title} is starting soon and you're close by. Show your ticket at the gate."
+                ),
+            };
+
+            match notifications.send(&notification).await {
+                Ok(_) => {
+                    tracing::info!(
+                        geofence_id = %reg.id,
+                        wallet      = %reg.wallet_address,
+                        event_id    = %reg.event_id,
+                        "Geofence proximity alert dispatched"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(geofence_id = %reg.id, error = %e, "Failed to dispatch geofence alert");
+                }
             }
+        }
+
+        sqlx::query(
+            "UPDATE geo_geofences SET notified = true, updated_at = NOW() WHERE id = ANY($1)",
+        )
+        .bind(&ids)
+        .execute(pool)
+        .await
+        .map_err(AppError::from)?;
+
+        checked += batch_size;
+        if batch_size < GEOFENCE_BATCH_SIZE as usize {
+            break;
         }
     }
 
     tracing::debug!(
-        checked = registrations.len(),
+        checked,
         ts = %Utc::now(),
         "Geofence worker iteration complete"
     );
@@ -452,6 +471,26 @@ mod tests {
     };
     use tower::ServiceExt;
 
+    struct RecordingProvider(Arc<std::sync::Mutex<Vec<String>>>);
+
+    #[async_trait::async_trait]
+    impl crate::notifications::NotificationProvider for RecordingProvider {
+        fn name(&self) -> &'static str {
+            "recording"
+        }
+
+        async fn send(
+            &self,
+            notification: &Notification,
+        ) -> Result<(), crate::notifications::NotificationError> {
+            self.0
+                .lock()
+                .expect("notification record lock")
+                .push(notification.recipient.clone());
+            Ok(())
+        }
+    }
+
     fn test_state() -> GeoState {
         GeoState {
             pool: PgPool::connect_lazy("postgresql://localhost/test")
@@ -471,6 +510,103 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         router.oneshot(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn test_geofence_worker_processes_multiple_batches_once() {
+        let Ok(database_url) = std::env::var("TEST_DATABASE_URL") else {
+            eprintln!("Skipping PostgreSQL-backed geofence test: TEST_DATABASE_URL is unset");
+            return;
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&database_url)
+            .await
+            .expect("connect test database");
+
+        for statement in [
+            r#"CREATE TEMP TABLE events (
+                id UUID PRIMARY KEY,
+                title TEXT NOT NULL,
+                start_date TIMESTAMPTZ NOT NULL
+            )"#,
+            r#"CREATE TEMP TABLE geo_geofences (
+                id UUID PRIMARY KEY,
+                wallet_address TEXT NOT NULL,
+                push_token TEXT NOT NULL,
+                event_id UUID NOT NULL,
+                venue_lat DOUBLE PRECISION NOT NULL,
+                venue_lng DOUBLE PRECISION NOT NULL,
+                notified BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )"#,
+            r#"CREATE TEMP TABLE user_locations (
+                wallet_address TEXT PRIMARY KEY,
+                latitude DOUBLE PRECISION NOT NULL,
+                longitude DOUBLE PRECISION NOT NULL,
+                recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )"#,
+        ] {
+            sqlx::query(statement)
+                .execute(&pool)
+                .await
+                .expect("create temporary geofence table");
+        }
+
+        let event_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO events (id, title, start_date) \
+             VALUES ($1, 'Batch test', NOW() + INTERVAL '1 hour')",
+        )
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .expect("insert test event");
+
+        let registration_count = GEOFENCE_BATCH_SIZE as usize + 3;
+        for index in 0..registration_count {
+            let wallet = format!("wallet-{index}");
+            sqlx::query(
+                "INSERT INTO user_locations (wallet_address, latitude, longitude) \
+                 VALUES ($1, 0, 0)",
+            )
+            .bind(&wallet)
+            .execute(&pool)
+            .await
+            .expect("insert test location");
+            sqlx::query(
+                "INSERT INTO geo_geofences \
+                 (id, wallet_address, push_token, event_id, venue_lat, venue_lng) \
+                 VALUES ($1, $2, $3, $4, 0, 0)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(wallet)
+            .bind(format!("push-{index}"))
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .expect("insert test geofence");
+        }
+
+        let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut notifications = NotificationService::new();
+        notifications.register(RecordingProvider(sent.clone()));
+        process_geofence_batch(&pool, &notifications)
+            .await
+            .expect("process geofence batches");
+
+        let notified = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM geo_geofences WHERE notified = TRUE",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count notified geofences");
+        assert_eq!(notified, registration_count as i64);
+
+        let recipients = sent.lock().expect("notification record lock");
+        assert_eq!(recipients.len(), registration_count);
+        let unique_recipients: std::collections::HashSet<_> = recipients.iter().collect();
+        assert_eq!(unique_recipients.len(), registration_count);
     }
 
     #[tokio::test]
