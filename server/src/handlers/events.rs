@@ -17,6 +17,7 @@ use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Row};
+use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -24,6 +25,7 @@ use crate::cache::{RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL};
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
+use crate::notifications::NotificationService;
 use crate::utils::cursor_pagination::{
     decode_cursor, encode_cursor, AttendeeCursor, CursorParams, CursorResponse, EventCursor,
     PastEventCursor,
@@ -151,6 +153,7 @@ pub struct EventState {
     pub pool: PgPool,
     pub redis: RedisCache,
     pub base_url: String,
+    pub notifications: Arc<NotificationService>,
 }
 
 /// Event detail response that includes the organizer's public profile (Issue #486).
@@ -2719,6 +2722,12 @@ pub struct CreateEventRequest {
     /// Optional localised title/description variants (Issue #1344).
     #[serde(default)]
     pub translations: Option<Vec<EventTranslationInput>>,
+    /// Private events are not broadcast to followers (Issue #1798).
+    #[serde(default, alias = "private")]
+    pub is_private: Option<bool>,
+    /// The web form sends `visibility: "Private"` for private events.
+    #[serde(default)]
+    pub visibility: Option<String>,
 }
 
 const MAX_IMAGE_URL_LEN: usize = 2048;
@@ -3023,20 +3032,42 @@ pub async fn create_event(
     // New events invalidate the shared list cache.
     state.redis.invalidate_events_list().await;
 
-    // Notify followers of the organiser (Issue #1346) – fire-and-forget
-    if let Ok(Some(Some(wallet))) = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT wallet_address FROM organizers WHERE id = $1",
-    )
-    .bind(event.organizer_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        let pool = state.pool.clone();
-        let eid = event.id;
-        let w = wallet.clone();
-        tokio::spawn(async move {
-            crate::handlers::follows::notify_followers_on_new_event(&pool, &w, eid).await;
-        });
+    // Notify followers (Issue #1798) – fire-and-forget. Private events are not
+    // broadcast, and notification failures are logged but never fail creation.
+    let is_private = payload.is_private.unwrap_or(false)
+        || payload
+            .visibility
+            .as_deref()
+            .is_some_and(|v| v.eq_ignore_ascii_case("private"));
+    if !is_private {
+        match sqlx::query_scalar::<_, Option<String>>(
+            "SELECT wallet_address FROM organizers WHERE id = $1",
+        )
+        .bind(event.organizer_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(Some(Some(wallet))) => {
+                let pool = state.pool.clone();
+                let notifications = state.notifications.clone();
+                let eid = event.id;
+                tokio::spawn(async move {
+                    crate::handlers::follows::notify_followers_on_new_event(
+                        &pool,
+                        notifications.as_ref(),
+                        &wallet,
+                        eid,
+                    )
+                    .await;
+                });
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!(
+                "Failed to load organizer wallet for follower notification on event {}: {:?}",
+                event.id,
+                e
+            ),
+        }
     }
 
     // Fire outgoing webhooks (Issue #1339) – EventCreated

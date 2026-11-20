@@ -181,6 +181,14 @@ pub async fn create_routes(
 ) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
 
+    // Shared notification service, used by event creation as well as the
+    // marketplace and geofence workers below.
+    let mut notification_service = crate::notifications::NotificationService::new();
+    notification_service.register(crate::notifications::push::ExpoPushProvider::new(
+        reqwest::Client::new(),
+    ));
+    let notifications = std::sync::Arc::new(notification_service);
+
     // Virtual waiting room (Issue #1187): queue engine + background admission
     // worker. Admission rate / PoW difficulty / grant TTL are env-tunable.
     let waiting_room_config = WaitingRoomConfig::from_env();
@@ -196,6 +204,7 @@ pub async fn create_routes(
         pool: pool.clone(),
         redis: redis.clone(),
         base_url: config.base_url.clone(),
+        notifications: notifications.clone(),
     };
 
     let rates_state = RatesState::new(redis.clone(), reqwest::Client::new());
@@ -472,11 +481,6 @@ pub async fn create_routes(
     // Secondary ticket market (Issue #1184). The key-envelope endpoints relay
     // seller-sealed ticket secrets; see `handlers::marketplace` for the trust
     // model. Push delivery is the first consumer of `NotificationService`.
-    let mut notification_service = crate::notifications::NotificationService::new();
-    notification_service.register(crate::notifications::push::ExpoPushProvider::new(
-        reqwest::Client::new(),
-    ));
-    let notifications = std::sync::Arc::new(notification_service);
     let marketplace_state = MarketplaceState {
         pool: pool.clone(),
         notifications: notifications.clone(),
