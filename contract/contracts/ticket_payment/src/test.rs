@@ -11013,3 +11013,91 @@ fn test_process_payment_self_affiliate_rejected() {
         Err(Ok(TicketPaymentError::SelfReferralNotAllowed.into()))
     );
 }
+
+
+#[test]
+fn test_set_transfer_fee_uninitialized_returns_not_initialized() {
+    let env = Env::default();
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let event_id = String::from_str(&env, "event_1");
+    let result = client.try_set_transfer_fee(&event_id, &100u32);
+    assert_eq!(result, Err(Ok(TicketPaymentError::NotInitialized)));
+}
+
+#[test]
+fn test_set_affiliate_rate_uninitialized_returns_not_initialized() {
+    let env = Env::default();
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let event_id = String::from_str(&env, "event_1");
+    let affiliate = Address::generate(&env);
+    let result = client.try_set_affiliate_rate(&event_id, &affiliate, &100u32);
+    assert_eq!(result, Err(Ok(TicketPaymentError::NotInitialized)));
+}
+
+
+#[test]
+fn test_set_withdrawal_cap_negative_amount_returns_invalid_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _settled) = setup_withdrawal_cap_test(&env);
+    let result = client.try_set_withdrawal_cap(&usdc_id, &-1i128);
+    assert_eq!(result, Err(Ok(TicketPaymentError::InvalidAmount)));
+}
+
+#[test]
+fn test_set_withdrawal_cap_emits_withdrawal_cap_updated_event() {
+    use crate::events::{AgoraEvent, WithdrawalCapUpdatedEvent};
+    use soroban_sdk::IntoVal;
+
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, usdc_id, _platform_wallet, _settled) = setup_withdrawal_cap_test(&env);
+
+    // initial set from 0 -> 100
+    client.set_withdrawal_cap(&usdc_id, &100i128);
+    let events = env.events().all();
+    let mut found = false;
+    for e in events.iter() {
+        if e.1.len() != 1 {
+            continue;
+        }
+        let topic: Result<AgoraEvent, _> = e.1.get(0).unwrap().clone().try_into_val(&env);
+        if topic == Ok(AgoraEvent::WithdrawalCapUpdated) {
+            let payload: WithdrawalCapUpdatedEvent = e.2.clone().into_val(&env);
+            assert_eq!(payload.token, usdc_id);
+            assert_eq!(payload.old_cap, 0);
+            assert_eq!(payload.new_cap, 100);
+            assert_eq!(payload.timestamp, env.ledger().timestamp());
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "WithdrawalCapUpdated event not found");
+
+    // update 100 -> 250
+    client.set_withdrawal_cap(&usdc_id, &250i128);
+    let events = env.events().all();
+    let mut found_update = false;
+    for e in events.iter() {
+        if e.1.len() != 1 {
+            continue;
+        }
+        let topic: Result<AgoraEvent, _> = e.1.get(0).unwrap().clone().try_into_val(&env);
+        if topic == Ok(AgoraEvent::WithdrawalCapUpdated) {
+            let payload: WithdrawalCapUpdatedEvent = e.2.clone().into_val(&env);
+            if payload.new_cap == 250 {
+                assert_eq!(payload.old_cap, 100);
+                assert_eq!(payload.token, usdc_id);
+                found_update = true;
+                break;
+            }
+        }
+    }
+    assert!(found_update, "updated WithdrawalCapUpdated event not found");
+}

@@ -105,12 +105,19 @@ export default function OrganizerDashboard() {
   useEffect(() => {
     if (!selectedEventId || !user?.walletAddress) return;
 
-    const wsUrl = `${process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8080'}/api/v1/ws/organizer?token=${user.authToken}`;
-    const ws = new WebSocket(wsUrl);
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
+    const defaultWsUrl = /localhost|127\.0\.0\.1/.test(apiUrl)
+      ? 'ws://localhost:8080'
+      : apiUrl.replace(/\/api\/v1.*$/, '').replace(/^http/, 'ws');
+    const wsBaseUrl = (process.env.EXPO_PUBLIC_WS_URL || defaultWsUrl).replace(/\/$/, '');
+    const wsUrl = `${wsBaseUrl}/api/v1/ws/organizer`;
+    const ws = new WebSocket(wsUrl, undefined, {
+      headers: { Authorization: `Bearer ${user.authToken}` },
+    });
 
     ws.onopen = () => {
       setWsConnected(true);
-      console.log('Organizer WebSocket connected');
+      if (__DEV__) console.log('Organizer WebSocket connected');
     };
 
     ws.onmessage = (event) => {
@@ -149,7 +156,7 @@ export default function OrganizerDashboard() {
 
     ws.onclose = () => {
       setWsConnected(false);
-      console.log('Organizer WebSocket disconnected');
+      if (__DEV__) console.log('Organizer WebSocket disconnected');
     };
 
     return () => {

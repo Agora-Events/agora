@@ -27,7 +27,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { locationService, VenueGeofence } from '@/services/locationService';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+import { apiUrl } from '@/constants/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -110,7 +110,7 @@ async function registerGeofenceOnServer(
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), 15_000);
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/geo/geofences`, {
+    const res = await fetch(apiUrl('/geo/geofences'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
