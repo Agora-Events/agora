@@ -203,6 +203,15 @@ pub struct AttendeeCursor {
     pub id: uuid::Uuid,
 }
 
+
+/// Cursor structure for dispute vote listings ordered by (voted_at DESC, id DESC).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DisputeVoteCursor {
+    pub voted_at: chrono::DateTime<chrono::Utc>,
+    pub id: uuid::Uuid,
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
