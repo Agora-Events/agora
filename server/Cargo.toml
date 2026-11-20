@@ -7,6 +7,9 @@ edition = "2021"
 # Web framework
 axum = { version = "0.7", features = ["ws", "multipart"] }
 
+# URL parsing for webhook SSRF prevention (Issue #1801)
+url = "2.5"
+
 # Async runtime
 tokio = { version = "1.37", features = ["full"] }
 tokio-util = { version = "0.7", features = ["rt"] }
