@@ -4103,11 +4103,24 @@ pub async fn flag_event(
 }
 
 /// Revenue summary response for an event
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct EventRevenueResponse {
     pub total_revenue_usd: f64,
     pub tickets_sold: i64,
     pub average_ticket_price: f64,
+}
+
+/// Build the revenue summary from an event's aggregate ticket figures.
+fn build_event_revenue_summary(total_revenue: f64, tickets_sold: i64) -> EventRevenueResponse {
+    EventRevenueResponse {
+        total_revenue_usd: total_revenue,
+        tickets_sold,
+        average_ticket_price: if tickets_sold > 0 {
+            total_revenue / tickets_sold as f64
+        } else {
+            0.0
+        },
+    }
 }
 
 /// Share link response for an event
@@ -4344,30 +4357,77 @@ pub async fn get_attendee_count(
 /// GET /api/v1/events/:id/revenue
 ///
 /// Returns revenue statistics for an event: total revenue, tickets sold,
-/// and average ticket price. Returns zeros for events with no tickets sold.
+/// and average ticket price. Requires the caller to be the event's organizer
+/// or an admin. Returns zeros for events with no tickets sold.
 /// Returns 404 for non-existent events.
+#[utoipa::path(
+    get,
+    path = "/events/{id}/revenue",
+    params(
+        ("id" = Uuid, Path, description = "Event ID"),
+    ),
+    responses(
+        (status = 200, description = "Event revenue statistics", body = EventRevenueResponse),
+        (status = 401, description = "Authentication required"),
+        (status = 403, description = "Only the organizer or an admin may view revenue"),
+        (status = 404, description = "Event not found"),
+    ),
+    tag = "Events"
+)]
 pub async fn get_event_revenue(
     State(state): State<EventState>,
+    headers: HeaderMap,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    // 404 if event doesn't exist
-    let exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    // Admin token maps to None; organizer JWT/API key maps to a wallet.
+    let requester = match verify_export_attendees_auth(&headers) {
+        Ok(req) => req,
+        Err(e) => return e.into_response(),
+    };
+
+    // 404 if event doesn't exist; also fetch its organizer for authorization.
+    let organizer_id = match sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
     .bind(event_id)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     {
-        Ok(v) => v,
+        Ok(Some(org_id)) => org_id.unwrap_or_else(Uuid::nil),
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
         Err(e) => {
             tracing::error!("Failed to check event existence: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
-    if !exists {
-        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
-            .into_response();
+    if let Some(ref wallet) = requester {
+        let is_organizer = match sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM organizers
+                WHERE id = $1 AND (wallet_address = $2 OR id::text = $2)
+            )
+            "#,
+        )
+        .bind(organizer_id)
+        .bind(wallet)
+        .fetch_one(&state.pool)
+        .await
+        {
+            Ok(is_org) => is_org,
+            Err(e) => {
+                tracing::error!("Failed to verify organizer: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+        if let Err(e) = require_event_organizer(is_organizer) {
+            return e.into_response();
+        }
     }
 
     let row = match sqlx::query(
@@ -4393,21 +4453,23 @@ pub async fn get_event_revenue(
 
     let total_revenue: f64 = row.try_get::<f64, _>("total_revenue").unwrap_or(0.0);
     let tickets_sold: i64 = row.try_get::<i64, _>("tickets_sold").unwrap_or(0);
-    let average_ticket_price = if tickets_sold > 0 {
-        total_revenue / tickets_sold as f64
-    } else {
-        0.0
-    };
 
     success(
-        EventRevenueResponse {
-            total_revenue_usd: total_revenue,
-            tickets_sold,
-            average_ticket_price,
-        },
+        build_event_revenue_summary(total_revenue, tickets_sold),
         "Revenue stats retrieved",
     )
     .into_response()
+}
+
+/// Convert an organizer authorization check into an API error.
+fn require_event_organizer(is_organizer: bool) -> Result<(), AppError> {
+    if is_organizer {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "Only the event organizer or an admin is allowed to view revenue data".to_string(),
+        ))
+    }
 }
 
 #[test]
@@ -6231,5 +6293,38 @@ mod search_cache_tests {
             featured_events_limit(&UpcomingParams { limit: Some(100) }),
             20
         );
+    }
+
+    #[test]
+    fn test_get_event_revenue_requires_auth() {
+        let err = verify_export_attendees_auth(&HeaderMap::new()).unwrap_err();
+        assert_eq!(err.status_code(), axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_get_event_revenue_rejects_non_organizer() {
+        let err = require_event_organizer(false).unwrap_err();
+        assert_eq!(err.status_code(), axum::http::StatusCode::FORBIDDEN);
+        assert!(require_event_organizer(true).is_ok());
+    }
+
+    #[test]
+    fn test_get_event_revenue_returns_values_for_organizer() {
+        let summary = build_event_revenue_summary(125.0, 5);
+        assert_eq!(summary.total_revenue_usd, 125.0);
+        assert_eq!(summary.tickets_sold, 5);
+        assert_eq!(summary.average_ticket_price, 25.0);
+        let response = success(summary, "Revenue stats retrieved").into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[test]
+    fn test_get_event_revenue_returns_zeros_without_tickets() {
+        let summary = build_event_revenue_summary(0.0, 0);
+        assert_eq!(summary.total_revenue_usd, 0.0);
+        assert_eq!(summary.tickets_sold, 0);
+        assert_eq!(summary.average_ticket_price, 0.0);
+        let response = success(summary, "Revenue stats retrieved").into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
     }
 }

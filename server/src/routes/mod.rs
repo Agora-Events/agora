@@ -54,11 +54,12 @@ use crate::handlers::{
     events::{
         clone_event, create_event, export_attendees_csv, flag_event, get_attendee_count,
         get_checkin_stats, get_event,
-        get_event_counts, get_event_organizer, get_event_share_link, get_event_social_proof,
-        get_events_map, get_ratings_summary, list_event_attendees, list_event_ratings,
-        list_event_tickets, list_events, list_events_by_category, list_featured_events,
-        list_past_events, list_similar_events, list_ticket_tiers, list_upcoming_events,
-        search_events, set_event_featured, submit_event_rating, toggle_event_flag, EventState,
+        get_event_counts, get_event_organizer, get_event_revenue, get_event_share_link,
+        get_event_social_proof, get_events_map, get_ratings_summary, list_event_attendees,
+        list_event_ratings, list_event_tickets, list_events, list_events_by_category,
+        list_featured_events, list_past_events, list_similar_events, list_ticket_tiers,
+        list_upcoming_events, search_events, set_event_featured, submit_event_rating,
+        toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     governance::{
@@ -121,6 +122,7 @@ use utoipa::OpenApi;
         crate::handlers::events::search_events,
         crate::handlers::events::list_upcoming_events,
         crate::handlers::events::list_featured_events,
+        crate::handlers::events::get_event_revenue,
         crate::handlers::tickets::get_ticket_pdf,
         crate::handlers::webhooks::create_webhook,
         crate::handlers::webhooks::list_webhooks,
@@ -137,6 +139,7 @@ use utoipa::OpenApi;
             crate::handlers::events::SearchParams,
             crate::handlers::events::GetEventParams,
             crate::handlers::events::UpcomingParams,
+            crate::handlers::events::EventRevenueResponse,
             crate::handlers::webhooks::CreateWebhookRequest,
             crate::handlers::webhooks::CreateWebhookResponse,
             crate::handlers::webhooks::ListWebhooksParams,
@@ -435,6 +438,7 @@ pub async fn create_routes(
         .route("/:id/ratings", get(list_event_ratings))
         .route("/:id/ratings/summary", get(get_ratings_summary))
         .route("/:id/organizer", get(get_event_organizer))
+        .route("/:id/revenue", get(get_event_revenue))
         .route("/:id/export-attendees", get(export_attendees_csv))
         .route("/:id/share-link", get(get_event_share_link))
         .route("/:id/social-proof", get(get_event_social_proof))
