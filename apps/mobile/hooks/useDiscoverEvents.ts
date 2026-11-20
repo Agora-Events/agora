@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { apiUrl } from "../constants/api";
 import mockEvents from "../constants/mockEvents.json";
 import {
   filterEvents,
@@ -37,11 +38,9 @@ export interface UseDiscoverEventsResult {
   refetch: () => Promise<void>;
 }
 
-const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8080";
 
 async function fetchDiscoverEvents(signal: AbortSignal): Promise<DiscoverEvent[]> {
-  const res = await fetch(`${API_URL}/api/events/discover`, { signal });
+  const res = await fetch(apiUrl('/events/discover'), { signal });
   if (!res.ok) throw new Error(`Discover request failed (${res.status})`);
   const body = await res.json();
   // Accept either a bare array or an envelope, so the hook does not break the
