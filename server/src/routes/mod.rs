@@ -116,6 +116,7 @@ use utoipa::OpenApi;
 #[openapi(
     paths(
         crate::handlers::health::health_check,
+        crate::handlers::leaderboard::get_leaderboard,
         crate::handlers::events::list_events,
         crate::handlers::events::get_event,
         crate::handlers::events::search_events,
@@ -155,6 +156,22 @@ use utoipa::OpenApi;
     )
 )]
 pub struct ApiDoc;
+
+/// Public, non-sensitive endpoints under the general rate limit.
+fn general_routes(pool: PgPool) -> Router {
+    Router::new()
+        .route("/examples/validation-error", get(example_validation_error))
+        .route("/examples/empty-success", get(example_empty_success))
+        .route("/examples/not-found/:id", get(example_not_found))
+        .route("/indexer/health", get(indexer_health))
+        .route("/version", get(version))
+        .route(
+            "/leaderboard",
+            get(crate::handlers::leaderboard::get_leaderboard),
+        )
+        .with_state(pool)
+        .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW))
+}
 
 pub async fn create_routes(
     pool: PgPool,
@@ -543,14 +560,7 @@ pub async fn create_routes(
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
 
     // General endpoints — relaxed rate limit
-    let general_routes = Router::new()
-        .route("/examples/validation-error", get(example_validation_error))
-        .route("/examples/empty-success", get(example_empty_success))
-        .route("/examples/not-found/:id", get(example_not_found))
-        .route("/indexer/health", get(indexer_health))
-        .route("/version", get(version))
-        .with_state(pool.clone())
-        .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
+    let general_routes = general_routes(pool.clone());
 
     // Public API routes with tower-governor rate limiting
     let rates_route = Router::new()
@@ -725,6 +735,22 @@ mod tests {
     async fn get_status(router: Router, path: &str) -> StatusCode {
         let req = Request::builder().uri(path).body(Body::empty()).unwrap();
         router.oneshot(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn test_leaderboard_route_is_registered() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(250))
+            .connect_lazy("postgres://agora:agora@127.0.0.1:1/agora")
+            .expect("lazy pool should be constructible");
+        let router = Router::new().nest("/api/v1", general_routes(pool));
+
+        // The database is unreachable, so the handler may fail internally, but
+        // the route itself must be registered rather than returning 404.
+        assert_ne!(
+            get_status(router, "/api/v1/leaderboard").await,
+            StatusCode::NOT_FOUND
+        );
     }
 
     #[tokio::test]
