@@ -29,7 +29,7 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+import { apiUrl } from '@/constants/api';
 
 // ---------------------------------------------------------------------------
 // Task names
@@ -285,7 +285,7 @@ async function reportLocationToServer(latitude: number, longitude: number): Prom
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), 10_000);
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/geo/location`, {
+    const res = await fetch(apiUrl('/geo/location'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ latitude, longitude }),

@@ -9,8 +9,7 @@
  */
 
 import { useAuthStore } from '@/hooks/useAuth';
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+import { apiUrl } from '@/constants/api';
 
 const RECORD_PAYMENT_TIMEOUT_MS = 15_000;
 const RECORD_PAYMENT_MAX_RETRIES = 2;
@@ -107,7 +106,7 @@ export async function getTicket(id: string): Promise<TicketDetails> {
 
   try {
     const token = useAuthStore.getState().token;
-    const response = await fetch(`${API_BASE_URL}/api/v1/profile/tickets`, {
+    const response = await fetch(apiUrl('/profile/tickets'), {
       headers: {
         ...(token ? { Authorization: `****** } : {}),
       },
@@ -169,7 +168,11 @@ async function postTicketPayment(
 
   try {
     const token = useAuthStore.getState().token;
-    const response = await fetch(`${API_BASE_URL}/api/payments/ticket`, {
+    // Note: pre-existing/unrelated to issue #1789 — there is no backend route
+    // registered for this path yet (server/src/routes/mod.rs has no
+    // `/payments` nest), so this call 404s either way. Using `apiUrl()` here
+    // just keeps the path convention consistent with the rest of the app.
+    const response = await fetch(apiUrl('/payments/ticket'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

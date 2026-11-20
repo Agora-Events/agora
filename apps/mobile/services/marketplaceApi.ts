@@ -22,7 +22,7 @@
 import { useAuthStore } from '@/hooks/useAuth';
 import type { KeyEnvelope } from './resaleCrypto';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+import { apiUrl } from '@/constants/api';
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export class MarketplaceApiError extends Error {
@@ -105,7 +105,7 @@ async function request<T>(
 
   try {
     const token = useAuthStore.getState().token;
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace${path}`, {
+    const response = await fetch(apiUrl(`/marketplace${path}`), {
       method: init.method,
       headers: {
         'Content-Type': 'application/json',

@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+import { apiUrl } from '@/constants/api';
 
 export interface GateMetrics {
   gate_id: string;
@@ -106,7 +105,7 @@ class OrganizerApiService {
     expiresInMinutes: number = 480
   ): Promise<DelegationQRCode> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/delegation`, {
+    const response = await fetch(apiUrl('/organizer/delegation'), {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -132,7 +131,7 @@ class OrganizerApiService {
     permissions: string[];
   }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/delegation/verify`, {
+    const response = await fetch(apiUrl('/organizer/delegation/verify'), {
       method: 'POST',
       headers,
       body: JSON.stringify({ code }),
@@ -148,7 +147,7 @@ class OrganizerApiService {
   // Create door ticket with instant payment
   async createDoorTicket(request: DoorTicketRequest): Promise<DoorTicketResponse> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/door-ticket`, {
+    const response = await fetch(apiUrl('/organizer/door-ticket'), {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
@@ -164,7 +163,7 @@ class OrganizerApiService {
   // Send broadcast alert to checked-in attendees
   async sendBroadcastAlert(alert: BroadcastAlert): Promise<{ success: boolean; message?: string; error?: string }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/broadcast`, {
+    const response = await fetch(apiUrl('/organizer/broadcast'), {
       method: 'POST',
       headers,
       body: JSON.stringify(alert),
@@ -180,7 +179,7 @@ class OrganizerApiService {
   // Get event gates configuration
   async getEventGates(eventId: string): Promise<GateMetrics[]> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/events/${eventId}/gates`, {
+    const response = await fetch(apiUrl(`/events/${eventId}/gates`), {
       method: 'GET',
       headers,
     });
@@ -195,7 +194,7 @@ class OrganizerApiService {
   // Get active staff authorizations for an event
   async getStaffAuthorizations(eventId: string): Promise<StaffAuthEvent[]> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/${eventId}/staff`, {
+    const response = await fetch(apiUrl(`/organizer/${eventId}/staff`), {
       method: 'GET',
       headers,
     });
@@ -216,7 +215,7 @@ class OrganizerApiService {
     request: TicketScanRequest
   ): Promise<{ status: number; result: TicketScanResponse | null; message: string }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/tickets/${ticketId}/scan`, {
+    const response = await fetch(apiUrl(`/tickets/${ticketId}/scan`), {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
@@ -239,7 +238,7 @@ class OrganizerApiService {
   // Revoke staff authorization
   async revokeStaffAuthorization(eventId: string, staffWallet: string): Promise<{ success: boolean }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/${eventId}/staff/revoke`, {
+    const response = await fetch(apiUrl(`/organizer/${eventId}/staff/revoke`), {
       method: 'POST',
       headers,
       body: JSON.stringify({ staff_wallet: staffWallet }),
