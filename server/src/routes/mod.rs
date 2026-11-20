@@ -83,8 +83,9 @@ use crate::handlers::{
         upsert_profile, ProfileState,
     },
     qr_payload::{
-        delete_qr_payload, generate_attendee_qr, generate_qr_payload, list_event_qr_codes,
-        list_qr_payloads, mark_qr_used, scan_ticket, verify_qr_payload,
+        add_event_scanner, delete_qr_payload, generate_attendee_qr, generate_qr_payload,
+        list_event_qr_codes, list_qr_payloads, mark_qr_used, remove_event_scanner, scan_ticket,
+        verify_qr_payload,
     },
     rates::{circuit_breaker_status, get_rates, RatesState},
     waiting_room::{
@@ -491,6 +492,11 @@ pub async fn create_routes(
     // QR-code routes scoped to an event (uses bare PgPool state)
     let event_qr_routes = Router::new()
         .route("/:id/qr-codes", get(list_event_qr_codes))
+        .route("/:id/qr-scanners", post(add_event_scanner))
+        .route(
+            "/:id/qr-scanners/:wallet_address",
+            delete(remove_event_scanner),
+        )
         .with_state(pool.clone());
 
     // Ticket scan routes for organiser verification
