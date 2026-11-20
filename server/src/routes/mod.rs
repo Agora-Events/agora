@@ -543,14 +543,24 @@ pub async fn create_routes(
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
 
     // General endpoints — relaxed rate limit
-    let general_routes = Router::new()
-        .route("/examples/validation-error", get(example_validation_error))
-        .route("/examples/empty-success", get(example_empty_success))
-        .route("/examples/not-found/:id", get(example_not_found))
-        .route("/indexer/health", get(indexer_health))
-        .route("/version", get(version))
-        .with_state(pool.clone())
-        .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW));
+    // Example routes are only mounted in non-production environments to
+    // avoid exposing error envelope format in production and reduce attack surface.
+    let general_routes = if config.is_production() {
+        Router::new()
+            .route("/indexer/health", get(indexer_health))
+            .route("/version", get(version))
+            .with_state(pool.clone())
+            .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW))
+    } else {
+        Router::new()
+            .route("/examples/validation-error", get(example_validation_error))
+            .route("/examples/empty-success", get(example_empty_success))
+            .route("/examples/not-found/:id", get(example_not_found))
+            .route("/indexer/health", get(indexer_health))
+            .route("/version", get(version))
+            .with_state(pool.clone())
+            .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW))
+    };
 
     // Public API routes with tower-governor rate limiting
     let rates_route = Router::new()
