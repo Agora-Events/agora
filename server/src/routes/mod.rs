@@ -56,9 +56,9 @@ use crate::handlers::{
         get_checkin_stats, get_event,
         get_event_counts, get_event_organizer, get_event_share_link, get_event_social_proof,
         get_events_map, get_ratings_summary, list_event_attendees, list_event_ratings,
-        list_event_tickets, list_events, list_events_by_category, list_past_events,
-        list_similar_events, list_ticket_tiers, list_upcoming_events, search_events,
-        set_event_featured, submit_event_rating, toggle_event_flag, EventState,
+        list_event_tickets, list_events, list_events_by_category, list_featured_events,
+        list_past_events, list_similar_events, list_ticket_tiers, list_upcoming_events,
+        search_events, set_event_featured, submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     governance::{
@@ -120,6 +120,7 @@ use utoipa::OpenApi;
         crate::handlers::events::get_event,
         crate::handlers::events::search_events,
         crate::handlers::events::list_upcoming_events,
+        crate::handlers::events::list_featured_events,
         crate::handlers::tickets::get_ticket_pdf,
         crate::handlers::webhooks::create_webhook,
         crate::handlers::webhooks::list_webhooks,
@@ -423,6 +424,7 @@ pub async fn create_routes(
         .route("/count", get(get_event_counts))
         .route("/past", get(list_past_events))
         .route("/upcoming", get(list_upcoming_events))
+        .route("/featured", get(list_featured_events))
         .route("/search", get(search_events))
         .route("/:id", get(get_event))
         .route("/:id/clone", post(clone_event))

@@ -2251,11 +2251,62 @@ fn apply_pagination_headers(
     }
 }
 
+/// Clamp the featured-events `limit` query parameter to the supported range.
+fn featured_events_limit(params: &UpcomingParams) -> i64 {
+    params.limit.unwrap_or(6).clamp(1, 20) as i64
+}
+
+/// Defensive in-memory filter matching the featured-events SQL predicates.
+fn filter_featured_upcoming_events(events: Vec<Event>) -> Vec<Event> {
+    let now = Utc::now();
+    events
+        .into_iter()
+        .filter(|event| {
+            event.is_featured
+                && !event.is_flagged
+                && event.end_time.is_some_and(|end_time| end_time > now)
+        })
+        .collect()
+}
+
 /// GET `/api/v1/events/featured`
 ///
-/// Placeholder route registered for the featured-events migration; full handler pending.
-pub async fn list_featured_events(State(_state): State<EventState>) -> Response {
-    AppError::NotFound("Featured events are not yet available".to_string()).into_response()
+/// Returns upcoming, unflagged featured events ordered by start time, with a
+/// clamped `limit` query parameter (default 6, range 1–20).
+#[utoipa::path(
+    get,
+    path = "/events/featured",
+    params(
+        UpcomingParams,
+    ),
+    responses(
+        (status = 200, description = "List of featured upcoming events", body = Vec<Event>),
+    ),
+    tag = "Events"
+)]
+pub async fn list_featured_events(
+    State(state): State<EventState>,
+    Query(params): Query<UpcomingParams>,
+) -> Response {
+    let limit = featured_events_limit(&params);
+
+    let mut events = match sqlx::query_as::<_, Event>(
+        "SELECT * FROM events WHERE is_featured = TRUE AND end_time > NOW() AND is_flagged = FALSE ORDER BY start_time ASC LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(events) => events,
+        Err(e) => {
+            tracing::error!("Failed to fetch featured events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    events = filter_featured_upcoming_events(events);
+    populate_is_free(&mut events, &state.pool).await;
+    success(events, "Featured events retrieved successfully").into_response()
 }
 
 /// Query parameters for `GET /api/v1/events/upcoming`.
@@ -6124,6 +6175,61 @@ mod search_cache_tests {
         assert_eq!(
             sanitize_csv_field("GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
             "GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
+    }
+
+    fn featured_test_event(featured: bool, end_time: Option<DateTime<Utc>>) -> Event {
+        Event {
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            title: "Featured test event".to_string(),
+            description: None,
+            location: "Lagos".to_string(),
+            start_time: Utc::now(),
+            end_time,
+            is_flagged: false,
+            is_featured: featured,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            image_url: None,
+            latitude: None,
+            longitude: None,
+            is_free: false,
+            minted_tickets: 0,
+            total_tickets: 0,
+            is_free_populated: false,
+            min_ticket_price: 0.0,
+        }
+    }
+
+    #[test]
+    fn test_featured_events_empty_result() {
+        assert!(filter_featured_upcoming_events(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn test_featured_events_excludes_past_events() {
+        let future = featured_test_event(true, Some(Utc::now() + chrono::Duration::days(1)));
+        let past = featured_test_event(true, Some(Utc::now() - chrono::Duration::days(1)));
+        let not_featured = featured_test_event(false, Some(Utc::now() + chrono::Duration::days(1)));
+
+        let filtered = filter_featured_upcoming_events(vec![future, past, not_featured]);
+        assert_eq!(filtered.len(), 1);
+        assert!(filtered[0].is_featured);
+    }
+
+    #[test]
+    fn test_featured_events_limit_clamping() {
+        assert_eq!(featured_events_limit(&UpcomingParams { limit: None }), 6);
+        assert_eq!(
+            featured_events_limit(&UpcomingParams { limit: Some(0) }),
+            1
+        );
+        assert_eq!(
+            featured_events_limit(&UpcomingParams { limit: Some(100) }),
+            20
         );
     }
 }
