@@ -108,7 +108,7 @@ export async function getTicket(id: string): Promise<TicketDetails> {
     const token = useAuthStore.getState().token;
     const response = await fetch(apiUrl('/profile/tickets'), {
       headers: {
-        ...(token ? { Authorization: `****** } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       signal: controller.signal,
     });

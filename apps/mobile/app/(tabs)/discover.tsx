@@ -28,17 +28,41 @@ const EventCardSkeleton: React.FC = () => {
     return () => animation.stop();
   }, [opacity]);
 
+/**
+ * Event discovery screen (issue #1004).
+ *
+ * List and map render from the same filtered array, so a category tap refines
+ * both in the same frame — the acceptance criterion — rather than relying on
+ * two code paths applying the same filter consistently.
+ *
+ * This is the canonical `/discover` screen. It lives under the `(tabs)` group
+ * because that's what `(tabs)/_layout.tsx` registers as the Discover tab and
+ * what `router.replace('/(tabs)/discover')` targets; the previous top-level
+ * `app/discover.tsx` resolved to the same `/discover` URL (route groups don't
+ * add a path segment) and has been removed to resolve the conflict (#1787).
+ */
+
+type ViewMode = "list" | "map";
+
+function EventRow({ event }: { event: DiscoverEvent }) {
   return (
-    <View style={styles.skeletonCard}>
-      <Animated.View style={[styles.skeletonImage, { opacity }]} />
-      <View style={styles.skeletonDetails}>
-        <Animated.View style={[styles.skeletonTitle, { opacity }]} />
-        <Animated.View style={[styles.skeletonMeta, { opacity }]} />
-        <Animated.View style={[styles.skeletonMeta, { opacity }]} />
-        <View style={styles.skeletonFooter}>
-          <Animated.View style={[styles.skeletonPrice, { opacity }]} />
-          <Animated.View style={[styles.skeletonButton, { opacity }]} />
-        </View>
+    <View style={styles.row}>
+      {event.imageUrl ? (
+        <Image source={{ uri: event.imageUrl }} style={styles.thumb} />
+      ) : (
+        <View style={[styles.thumb, styles.thumbPlaceholder]} />
+      )}
+      <View style={styles.rowBody}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {event.title}
+        </Text>
+        <Text style={styles.rowMeta} numberOfLines={1}>
+          {event.category}
+          {event.venue ? ` · ${event.venue}` : ""}
+        </Text>
+        <Text style={styles.rowMeta}>
+          {new Date(event.startsAt).toLocaleDateString()}
+        </Text>
       </View>
     </View>
   );

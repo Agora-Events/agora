@@ -56,6 +56,15 @@ pub struct LeaderboardEntry {
 /// Ties in `tickets_sold` are broken by `organizer_id` so that the ordering
 /// — and therefore pagination — is deterministic across requests, even when
 /// multiple organizers share the same score.
+#[utoipa::path(
+    get,
+    path = "/leaderboard",
+    responses(
+        (status = 200, description = "Organizer leaderboard retrieved"),
+        (status = 500, description = "Database error")
+    ),
+    tag = "Events"
+)]
 pub async fn get_leaderboard(
     State(pool): State<PgPool>,
     Query(pagination): Query<PaginationParams>,

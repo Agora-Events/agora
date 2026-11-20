@@ -17,6 +17,7 @@ use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Row};
+use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -24,6 +25,7 @@ use crate::cache::{RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL};
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
+use crate::notifications::NotificationService;
 use crate::utils::cursor_pagination::{
     decode_cursor, encode_cursor, AttendeeCursor, CursorParams, CursorResponse, EventCursor,
     PastEventCursor,
@@ -151,6 +153,7 @@ pub struct EventState {
     pub pool: PgPool,
     pub redis: RedisCache,
     pub base_url: String,
+    pub notifications: Arc<NotificationService>,
 }
 
 /// Event detail response that includes the organizer's public profile (Issue #486).
@@ -2251,11 +2254,62 @@ fn apply_pagination_headers(
     }
 }
 
+/// Clamp the featured-events `limit` query parameter to the supported range.
+fn featured_events_limit(params: &UpcomingParams) -> i64 {
+    params.limit.unwrap_or(6).clamp(1, 20) as i64
+}
+
+/// Defensive in-memory filter matching the featured-events SQL predicates.
+fn filter_featured_upcoming_events(events: Vec<Event>) -> Vec<Event> {
+    let now = Utc::now();
+    events
+        .into_iter()
+        .filter(|event| {
+            event.is_featured
+                && !event.is_flagged
+                && event.end_time.is_some_and(|end_time| end_time > now)
+        })
+        .collect()
+}
+
 /// GET `/api/v1/events/featured`
 ///
-/// Placeholder route registered for the featured-events migration; full handler pending.
-pub async fn list_featured_events(State(_state): State<EventState>) -> Response {
-    AppError::NotFound("Featured events are not yet available".to_string()).into_response()
+/// Returns upcoming, unflagged featured events ordered by start time, with a
+/// clamped `limit` query parameter (default 6, range 1–20).
+#[utoipa::path(
+    get,
+    path = "/events/featured",
+    params(
+        UpcomingParams,
+    ),
+    responses(
+        (status = 200, description = "List of featured upcoming events", body = Vec<Event>),
+    ),
+    tag = "Events"
+)]
+pub async fn list_featured_events(
+    State(state): State<EventState>,
+    Query(params): Query<UpcomingParams>,
+) -> Response {
+    let limit = featured_events_limit(&params);
+
+    let mut events = match sqlx::query_as::<_, Event>(
+        "SELECT * FROM events WHERE is_featured = TRUE AND end_time > NOW() AND is_flagged = FALSE ORDER BY start_time ASC LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(events) => events,
+        Err(e) => {
+            tracing::error!("Failed to fetch featured events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    events = filter_featured_upcoming_events(events);
+    populate_is_free(&mut events, &state.pool).await;
+    success(events, "Featured events retrieved successfully").into_response()
 }
 
 /// Query parameters for `GET /api/v1/events/upcoming`.
@@ -2719,6 +2773,12 @@ pub struct CreateEventRequest {
     /// Optional localised title/description variants (Issue #1344).
     #[serde(default)]
     pub translations: Option<Vec<EventTranslationInput>>,
+    /// Private events are not broadcast to followers (Issue #1798).
+    #[serde(default, alias = "private")]
+    pub is_private: Option<bool>,
+    /// The web form sends `visibility: "Private"` for private events.
+    #[serde(default)]
+    pub visibility: Option<String>,
 }
 
 const MAX_IMAGE_URL_LEN: usize = 2048;
@@ -3023,20 +3083,42 @@ pub async fn create_event(
     // New events invalidate the shared list cache.
     state.redis.invalidate_events_list().await;
 
-    // Notify followers of the organiser (Issue #1346) – fire-and-forget
-    if let Ok(Some(Some(wallet))) = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT wallet_address FROM organizers WHERE id = $1",
-    )
-    .bind(event.organizer_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        let pool = state.pool.clone();
-        let eid = event.id;
-        let w = wallet.clone();
-        tokio::spawn(async move {
-            crate::handlers::follows::notify_followers_on_new_event(&pool, &w, eid).await;
-        });
+    // Notify followers (Issue #1798) – fire-and-forget. Private events are not
+    // broadcast, and notification failures are logged but never fail creation.
+    let is_private = payload.is_private.unwrap_or(false)
+        || payload
+            .visibility
+            .as_deref()
+            .is_some_and(|v| v.eq_ignore_ascii_case("private"));
+    if !is_private {
+        match sqlx::query_scalar::<_, Option<String>>(
+            "SELECT wallet_address FROM organizers WHERE id = $1",
+        )
+        .bind(event.organizer_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(Some(Some(wallet))) => {
+                let pool = state.pool.clone();
+                let notifications = state.notifications.clone();
+                let eid = event.id;
+                tokio::spawn(async move {
+                    crate::handlers::follows::notify_followers_on_new_event(
+                        &pool,
+                        notifications.as_ref(),
+                        &wallet,
+                        eid,
+                    )
+                    .await;
+                });
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!(
+                "Failed to load organizer wallet for follower notification on event {}: {:?}",
+                event.id,
+                e
+            ),
+        }
     }
 
     // Fire outgoing webhooks (Issue #1339) – EventCreated
@@ -4052,11 +4134,24 @@ pub async fn flag_event(
 }
 
 /// Revenue summary response for an event
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct EventRevenueResponse {
     pub total_revenue_usd: f64,
     pub tickets_sold: i64,
     pub average_ticket_price: f64,
+}
+
+/// Build the revenue summary from an event's aggregate ticket figures.
+fn build_event_revenue_summary(total_revenue: f64, tickets_sold: i64) -> EventRevenueResponse {
+    EventRevenueResponse {
+        total_revenue_usd: total_revenue,
+        tickets_sold,
+        average_ticket_price: if tickets_sold > 0 {
+            total_revenue / tickets_sold as f64
+        } else {
+            0.0
+        },
+    }
 }
 
 /// Share link response for an event
@@ -4293,30 +4388,77 @@ pub async fn get_attendee_count(
 /// GET /api/v1/events/:id/revenue
 ///
 /// Returns revenue statistics for an event: total revenue, tickets sold,
-/// and average ticket price. Returns zeros for events with no tickets sold.
+/// and average ticket price. Requires the caller to be the event's organizer
+/// or an admin. Returns zeros for events with no tickets sold.
 /// Returns 404 for non-existent events.
+#[utoipa::path(
+    get,
+    path = "/events/{id}/revenue",
+    params(
+        ("id" = Uuid, Path, description = "Event ID"),
+    ),
+    responses(
+        (status = 200, description = "Event revenue statistics", body = EventRevenueResponse),
+        (status = 401, description = "Authentication required"),
+        (status = 403, description = "Only the organizer or an admin may view revenue"),
+        (status = 404, description = "Event not found"),
+    ),
+    tag = "Events"
+)]
 pub async fn get_event_revenue(
     State(state): State<EventState>,
+    headers: HeaderMap,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    // 404 if event doesn't exist
-    let exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    // Admin token maps to None; organizer JWT/API key maps to a wallet.
+    let requester = match verify_export_attendees_auth(&headers) {
+        Ok(req) => req,
+        Err(e) => return e.into_response(),
+    };
+
+    // 404 if event doesn't exist; also fetch its organizer for authorization.
+    let organizer_id = match sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
     .bind(event_id)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     {
-        Ok(v) => v,
+        Ok(Some(org_id)) => org_id.unwrap_or_else(Uuid::nil),
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
         Err(e) => {
             tracing::error!("Failed to check event existence: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
-    if !exists {
-        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
-            .into_response();
+    if let Some(ref wallet) = requester {
+        let is_organizer = match sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM organizers
+                WHERE id = $1 AND (wallet_address = $2 OR id::text = $2)
+            )
+            "#,
+        )
+        .bind(organizer_id)
+        .bind(wallet)
+        .fetch_one(&state.pool)
+        .await
+        {
+            Ok(is_org) => is_org,
+            Err(e) => {
+                tracing::error!("Failed to verify organizer: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+        if let Err(e) = require_event_organizer(is_organizer) {
+            return e.into_response();
+        }
     }
 
     let row = match sqlx::query(
@@ -4342,21 +4484,23 @@ pub async fn get_event_revenue(
 
     let total_revenue: f64 = row.try_get::<f64, _>("total_revenue").unwrap_or(0.0);
     let tickets_sold: i64 = row.try_get::<i64, _>("tickets_sold").unwrap_or(0);
-    let average_ticket_price = if tickets_sold > 0 {
-        total_revenue / tickets_sold as f64
-    } else {
-        0.0
-    };
 
     success(
-        EventRevenueResponse {
-            total_revenue_usd: total_revenue,
-            tickets_sold,
-            average_ticket_price,
-        },
+        build_event_revenue_summary(total_revenue, tickets_sold),
         "Revenue stats retrieved",
     )
     .into_response()
+}
+
+/// Convert an organizer authorization check into an API error.
+fn require_event_organizer(is_organizer: bool) -> Result<(), AppError> {
+    if is_organizer {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "Only the event organizer or an admin is allowed to view revenue data".to_string(),
+        ))
+    }
 }
 
 #[test]
@@ -6125,5 +6269,93 @@ mod search_cache_tests {
             sanitize_csv_field("GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
             "GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         );
+    }
+
+    fn featured_test_event(featured: bool, end_time: Option<DateTime<Utc>>) -> Event {
+        Event {
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            title: "Featured test event".to_string(),
+            description: None,
+            location: "Lagos".to_string(),
+            start_time: Utc::now(),
+            end_time,
+            is_flagged: false,
+            is_featured: featured,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            image_url: None,
+            latitude: None,
+            longitude: None,
+            is_free: false,
+            minted_tickets: 0,
+            total_tickets: 0,
+            is_free_populated: false,
+            min_ticket_price: 0.0,
+        }
+    }
+
+    #[test]
+    fn test_featured_events_empty_result() {
+        assert!(filter_featured_upcoming_events(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn test_featured_events_excludes_past_events() {
+        let future = featured_test_event(true, Some(Utc::now() + chrono::Duration::days(1)));
+        let past = featured_test_event(true, Some(Utc::now() - chrono::Duration::days(1)));
+        let not_featured = featured_test_event(false, Some(Utc::now() + chrono::Duration::days(1)));
+
+        let filtered = filter_featured_upcoming_events(vec![future, past, not_featured]);
+        assert_eq!(filtered.len(), 1);
+        assert!(filtered[0].is_featured);
+    }
+
+    #[test]
+    fn test_featured_events_limit_clamping() {
+        assert_eq!(featured_events_limit(&UpcomingParams { limit: None }), 6);
+        assert_eq!(
+            featured_events_limit(&UpcomingParams { limit: Some(0) }),
+            1
+        );
+        assert_eq!(
+            featured_events_limit(&UpcomingParams { limit: Some(100) }),
+            20
+        );
+    }
+
+    #[test]
+    fn test_get_event_revenue_requires_auth() {
+        let err = verify_export_attendees_auth(&HeaderMap::new()).unwrap_err();
+        assert_eq!(err.status_code(), axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_get_event_revenue_rejects_non_organizer() {
+        let err = require_event_organizer(false).unwrap_err();
+        assert_eq!(err.status_code(), axum::http::StatusCode::FORBIDDEN);
+        assert!(require_event_organizer(true).is_ok());
+    }
+
+    #[test]
+    fn test_get_event_revenue_returns_values_for_organizer() {
+        let summary = build_event_revenue_summary(125.0, 5);
+        assert_eq!(summary.total_revenue_usd, 125.0);
+        assert_eq!(summary.tickets_sold, 5);
+        assert_eq!(summary.average_ticket_price, 25.0);
+        let response = success(summary, "Revenue stats retrieved").into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[test]
+    fn test_get_event_revenue_returns_zeros_without_tickets() {
+        let summary = build_event_revenue_summary(0.0, 0);
+        assert_eq!(summary.total_revenue_usd, 0.0);
+        assert_eq!(summary.tickets_sold, 0);
+        assert_eq!(summary.average_ticket_price, 0.0);
+        let response = success(summary, "Revenue stats retrieved").into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
     }
 }

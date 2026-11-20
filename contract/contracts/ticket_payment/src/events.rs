@@ -37,6 +37,7 @@ pub enum AgoraEvent {
     EscrowWithdrawalApproved,
     EscrowWithdrawalExecuted,
     MilestoneReleased,
+    WithdrawalCapUpdated,
 }
 
 #[contracttype]
@@ -334,5 +335,15 @@ pub struct EscrowWithdrawalExecutedEvent {
 pub struct EscrowDisputedEvent {
     pub event_id: String,
     pub opened_by: Address,
+    pub timestamp: u64,
+}
+
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawalCapUpdatedEvent {
+    pub token: Address,
+    pub old_cap: i128,
+    pub new_cap: i128,
     pub timestamp: u64,
 }
