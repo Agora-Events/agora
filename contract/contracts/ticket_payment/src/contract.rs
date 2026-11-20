@@ -1952,7 +1952,7 @@ impl TicketPaymentContract {
         bps: u32, // Changed from i128 amount to u32 basis points
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
-            panic!("Contract not initialized");
+            return Err(TicketPaymentError::NotInitialized);
         }
 
         let event_registry_addr = get_event_registry(&env);
@@ -1984,7 +1984,7 @@ impl TicketPaymentContract {
         rate_bps: u32,
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
-            panic!("Contract not initialized");
+            return Err(TicketPaymentError::NotInitialized);
         }
 
         if rate_bps > MAX_BPS {

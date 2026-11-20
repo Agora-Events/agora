@@ -11013,3 +11013,27 @@ fn test_process_payment_self_affiliate_rejected() {
         Err(Ok(TicketPaymentError::SelfReferralNotAllowed.into()))
     );
 }
+
+
+#[test]
+fn test_set_transfer_fee_uninitialized_returns_not_initialized() {
+    let env = Env::default();
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let event_id = String::from_str(&env, "event_1");
+    let result = client.try_set_transfer_fee(&event_id, &100u32);
+    assert_eq!(result, Err(Ok(TicketPaymentError::NotInitialized)));
+}
+
+#[test]
+fn test_set_affiliate_rate_uninitialized_returns_not_initialized() {
+    let env = Env::default();
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+
+    let event_id = String::from_str(&env, "event_1");
+    let affiliate = Address::generate(&env);
+    let result = client.try_set_affiliate_rate(&event_id, &affiliate, &100u32);
+    assert_eq!(result, Err(Ok(TicketPaymentError::NotInitialized)));
+}
