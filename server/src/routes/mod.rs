@@ -91,7 +91,10 @@ use crate::handlers::{
         join_queue, queue_status, queue_stream, request_challenge, WaitingRoomConfig,
         WaitingRoomState,
     },
-    ws::{ws_purchases_handler, PurchaseBroadcaster, PurchaseWsState},
+    ws::{
+        ws_organizer_handler, ws_purchases_handler, OrganizerBroadcaster, PurchaseBroadcaster,
+        PurchaseWsState,
+    },
     zk_checkin::{get_ring, register_commitment, seal_bucket, zk_checkin, ZkCheckinState},
 };
 use crate::metrics::{metrics_handler, track_metrics};
@@ -167,6 +170,7 @@ pub async fn create_routes(
     shutdown: CancellationToken,
 ) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
+    let organizer_broadcaster = OrganizerBroadcaster::new();
 
     // Virtual waiting room (Issue #1187): queue engine + background admission
     // worker. Admission rate / PoW difficulty / grant TTL are env-tunable.
@@ -346,13 +350,23 @@ pub async fn create_routes(
             )
             .merge(admin_category_routes);
 
-    // WebSocket sub-router for real-time purchase updates.
+    // WebSocket sub-router for real-time purchase and organizer telemetry updates.
+    // Each socket has a different state type, so build separate sub-routers and
+    // merge them after applying state.
     let ws_routes = Router::new()
-        .route("/purchases", get(ws_purchases_handler))
-        .with_state(PurchaseWsState {
-            pool: pool.clone(),
-            broadcaster,
-        });
+        .merge(
+            Router::new()
+                .route("/purchases", get(ws_purchases_handler))
+                .with_state(PurchaseWsState {
+                    pool: pool.clone(),
+                    broadcaster,
+                }),
+        )
+        .merge(
+            Router::new()
+                .route("/organizer", get(ws_organizer_handler))
+                .with_state(organizer_broadcaster),
+        );
 
     // Virtual waiting room routes (Issue #1187)
     let waiting_room_state = WaitingRoomState {
@@ -965,5 +979,24 @@ mod tests {
             "expected timeout status, got {}",
             resp.status()
         );
+    }
+
+    #[tokio::test]
+    async fn test_organizer_ws_upgrade_without_token_returns_401() {
+        let router = Router::new()
+            .route("/organizer", get(ws_organizer_handler))
+            .with_state(OrganizerBroadcaster::new());
+
+        let req = Request::builder()
+            .uri("/organizer")
+            .header("connection", "Upgrade")
+            .header("upgrade", "websocket")
+            .header("sec-websocket-version", "13")
+            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 }
