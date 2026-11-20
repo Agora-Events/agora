@@ -1,5 +1,36 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { apiUrl } from '@/constants/api';
+
+/**
+ * Backend status (tracked in #1791):
+ *
+ * The following endpoints are called below but are not yet implemented by
+ * `server/src/routes/mod.rs`. Calling them currently 404s; this file maps
+ * that 404 to `NotImplementedError` so the UI can render a "coming soon"
+ * state instead of a generic failure. Backend contributors: picking any of
+ * these up unblocks the matching organizer screen.
+ *
+ *   - POST /organizer/delegation
+ *   - POST /organizer/delegation/verify
+ *   - POST /organizer/door-ticket
+ *   - POST /organizer/broadcast
+ *   - GET  /events/:id/gates
+ *   - GET  /organizer/:eventId/staff
+ *   - POST /organizer/:eventId/staff/revoke
+ */
+
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+
+/**
+ * Thrown when the backend returns 404 for an organizer endpoint that is not
+ * yet implemented (see the list above). Screens should catch this
+ * specifically and render a "coming soon" state rather than an error toast.
+ */
+export class NotImplementedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotImplementedError';
+  }
+}
 
 export interface GateMetrics {
   gate_id: string;
@@ -116,6 +147,9 @@ class OrganizerApiService {
       }),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Staff delegation is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to generate delegation QR code');
     }
@@ -137,6 +171,9 @@ class OrganizerApiService {
       body: JSON.stringify({ code }),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Staff delegation is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to verify delegation QR code');
     }
@@ -153,6 +190,9 @@ class OrganizerApiService {
       body: JSON.stringify(request),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Door ticket sales are not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to create door ticket');
     }
@@ -169,6 +209,9 @@ class OrganizerApiService {
       body: JSON.stringify(alert),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Broadcast alerts are not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to send broadcast alert');
     }
@@ -184,6 +227,9 @@ class OrganizerApiService {
       headers,
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Gate congestion data is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to fetch event gates');
     }
@@ -199,6 +245,9 @@ class OrganizerApiService {
       headers,
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Staff delegation is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to fetch staff authorizations');
     }
@@ -244,6 +293,9 @@ class OrganizerApiService {
       body: JSON.stringify({ staff_wallet: staffWallet }),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Staff delegation is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to revoke staff authorization');
     }

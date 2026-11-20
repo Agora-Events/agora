@@ -1,4 +1,4 @@
-import { organizerApi } from '../organizerApi';
+import { organizerApi, NotImplementedError } from '../organizerApi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
@@ -428,5 +428,83 @@ describe('revokeStaffAuthorization', () => {
     await expect(
       organizerApi.revokeStaffAuthorization(baseEventId, baseStaffWallet)
     ).rejects.toThrow('Failed to revoke staff authorization');
+  });
+});
+
+describe('NotImplementedError mapping (#1791)', () => {
+  /**
+   * The seven organizer endpoints below are not implemented by the backend
+   * yet (server/src/routes/mod.rs). A 404 from any of them must surface as
+   * a `NotImplementedError`, not a generic `Error`, so screens can render a
+   * "coming soon" state.
+   */
+
+  beforeEach(() => {
+    jest.spyOn(AsyncStorage, 'getItem').mockResolvedValue('token');
+  });
+
+  it('generateDelegationQR throws NotImplementedError on 404', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }));
+
+    await expect(
+      organizerApi.generateDelegationQR(baseEventId, baseGateId, baseStaffWallet)
+    ).rejects.toBeInstanceOf(NotImplementedError);
+  });
+
+  it('verifyDelegationQR throws NotImplementedError on 404', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }));
+
+    await expect(organizerApi.verifyDelegationQR('qr-code')).rejects.toBeInstanceOf(
+      NotImplementedError
+    );
+  });
+
+  it('createDoorTicket throws NotImplementedError on 404', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }));
+
+    await expect(
+      organizerApi.createDoorTicket({
+        event_id: baseEventId,
+        ticket_tier_id: 'tier-ga',
+        quantity: 1,
+        payment_method: 'usdc',
+      })
+    ).rejects.toBeInstanceOf(NotImplementedError);
+  });
+
+  it('sendBroadcastAlert throws NotImplementedError on 404', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }));
+
+    await expect(
+      organizerApi.sendBroadcastAlert({
+        event_id: baseEventId,
+        message: 'test',
+        alert_type: 'info',
+      })
+    ).rejects.toBeInstanceOf(NotImplementedError);
+  });
+
+  it('getEventGates throws NotImplementedError on 404', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }));
+
+    await expect(organizerApi.getEventGates(baseEventId)).rejects.toBeInstanceOf(
+      NotImplementedError
+    );
+  });
+
+  it('getStaffAuthorizations throws NotImplementedError on 404', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }));
+
+    await expect(organizerApi.getStaffAuthorizations(baseEventId)).rejects.toBeInstanceOf(
+      NotImplementedError
+    );
+  });
+
+  it('revokeStaffAuthorization throws NotImplementedError on 404', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(jsonResponse(404, { error: 'not found' }));
+
+    await expect(
+      organizerApi.revokeStaffAuthorization(baseEventId, baseStaffWallet)
+    ).rejects.toBeInstanceOf(NotImplementedError);
   });
 });
