@@ -33,7 +33,7 @@ use crate::{
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
         PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
         PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
-        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
+        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent, WithdrawalCapUpdatedEvent,
     },
 };
 use soroban_sdk::{
@@ -1782,10 +1782,23 @@ impl TicketPaymentContract {
         require_admin(&env)?;
 
         if amount < 0 {
-            return Err(TicketPaymentError::ArithmeticError);
+            return Err(TicketPaymentError::InvalidAmount);
         }
 
-        set_withdrawal_cap(&env, token, amount);
+        let old_cap = get_withdrawal_cap(&env, token.clone());
+        set_withdrawal_cap(&env, token.clone(), amount);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::WithdrawalCapUpdated,),
+            WithdrawalCapUpdatedEvent {
+                token,
+                old_cap,
+                new_cap: amount,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
         Ok(())
     }
 
