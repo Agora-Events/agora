@@ -10,6 +10,7 @@ use sqlx::PgPool;
 
 use crate::handlers::auth::extract_auth;
 use crate::models::organizer_profile::OrganizerProfile;
+use crate::notifications::{Notification, NotificationService};
 use crate::utils::error::AppError;
 use crate::utils::pagination::PaginationParams;
 use crate::utils::response::success;
@@ -247,44 +248,94 @@ pub async fn list_following_events(
     success(resp, "Following events retrieved").into_response()
 }
 
-/// Notify followers when a followed organiser publishes a new event.
-/// Call this after event creation.
-pub async fn notify_followers_on_new_event(pool: &PgPool, organizer_address: &str, event_id: uuid::Uuid) {
-    let followers = match sqlx::query_scalar::<_, String>(
-        "SELECT follower_id FROM user_follows WHERE following_id = $1",
-    )
-    .bind(organizer_address)
-    .fetch_all(pool)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Failed to fetch followers for notification: {:?}", e);
-            return;
-        }
-    };
+/// Maximum followers loaded per keyset-paginated batch (Issue #1798).
+const FOLLOWER_NOTIFICATION_BATCH_SIZE: i64 = 500;
 
-    // Insert a notification row per follower (if notifications table exists, else log)
-    // We attempt to insert into a generic notifications table; if it doesn't exist, just log.
-    for follower in followers {
-        // Try to insert; ignore errors if table missing
-        let _ = sqlx::query(
-            r#"INSERT INTO notifications (recipient, title, body, metadata)
-               VALUES ($1, $2, $3, $4)"#,
+/// Notify followers when a followed organiser publishes a new event.
+///
+/// Followers are streamed in `follower_id` order in bounded batches so popular
+/// organizers do not require loading every follower into memory at once.
+pub async fn notify_followers_on_new_event(
+    pool: &PgPool,
+    notifications: &NotificationService,
+    organizer_address: &str,
+    event_id: uuid::Uuid,
+) {
+    let subject = "New event from followed organizer".to_string();
+    let body = format!("Organizer {organizer_address} published a new event {event_id}");
+    let mut last_follower_id: Option<String> = None;
+
+    loop {
+        let followers = match sqlx::query_scalar::<_, String>(
+            r#"SELECT follower_id FROM user_follows
+               WHERE following_id = $1
+                 AND ($2::TEXT IS NULL OR follower_id > $2)
+               ORDER BY follower_id ASC
+               LIMIT $3"#,
         )
-        .bind(&follower)
-        .bind("New event from followed organizer")
-        .bind(format!("Organizer {organizer_address} published a new event {event_id}"))
-        .bind(serde_json::json!({"event_id": event_id.to_string(), "organizer": organizer_address}))
-        .execute(pool)
-        .await;
-        tracing::info!("Notified follower {follower} of new event {event_id}");
+        .bind(organizer_address)
+        .bind(last_follower_id.as_deref())
+        .bind(FOLLOWER_NOTIFICATION_BATCH_SIZE)
+        .fetch_all(pool)
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("Failed to fetch followers for notification: {:?}", e);
+                return;
+            }
+        };
+
+        let batch_len = followers.len();
+        if batch_len == 0 {
+            break;
+        }
+
+        for follower in &followers {
+            let notification = Notification {
+                recipient: follower.clone(),
+                subject: subject.clone(),
+                body: body.clone(),
+            };
+            if let Err(e) = notifications.send(&notification).await {
+                tracing::warn!(
+                    "Failed to notify follower {follower} of new event {event_id}: {:?}",
+                    e
+                );
+            } else {
+                tracing::info!("Notified follower {follower} of new event {event_id}");
+            }
+        }
+
+        if batch_len < FOLLOWER_NOTIFICATION_BATCH_SIZE as usize {
+            break;
+        }
+        last_follower_id = followers.last().cloned();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::notifications::{NotificationError, NotificationProvider};
+    use std::sync::{Arc, Mutex};
+
+    struct RecordingProvider(Arc<Mutex<Vec<String>>>);
+
+    #[async_trait::async_trait]
+    impl NotificationProvider for RecordingProvider {
+        fn name(&self) -> &'static str {
+            "recording"
+        }
+
+        async fn send(&self, notification: &Notification) -> Result<(), NotificationError> {
+            self.0
+                .lock()
+                .expect("notification record lock")
+                .push(notification.recipient.clone());
+            Ok(())
+        }
+    }
 
     #[test]
     fn test_follow_count_response_serializes() {
@@ -295,5 +346,60 @@ mod tests {
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(json["followers_count"], 42);
         assert_eq!(json["organizer_id"], "GABC");
+    }
+
+    /// One notification per follower, including followers on a second batch.
+    #[tokio::test]
+    async fn notify_followers_sends_once_per_follower() {
+        let Ok(database_url) = std::env::var("TEST_DATABASE_URL") else {
+            eprintln!("Skipping PostgreSQL-backed follower notification test: TEST_DATABASE_URL is unset");
+            return;
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&database_url)
+            .await
+            .expect("connect test database");
+
+        sqlx::query(
+            "CREATE TEMP TABLE user_follows (
+                follower_id TEXT NOT NULL,
+                following_id TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (follower_id, following_id)
+             )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create temporary user_follows table");
+
+        let organizer = "GORGANIZER";
+        let follower_count = FOLLOWER_NOTIFICATION_BATCH_SIZE as usize + 3;
+        for i in 0..follower_count {
+            sqlx::query("INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $2)")
+                .bind(format!("GFOLLOWER-{i:04}"))
+                .bind(organizer)
+                .execute(&pool)
+                .await
+                .expect("insert follower");
+        }
+        sqlx::query("INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $2)")
+            .bind("GUNRELATED")
+            .bind("GOTHER-ORGANIZER")
+            .execute(&pool)
+            .await
+            .expect("insert unrelated follower");
+
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let mut service = NotificationService::new();
+        service.register(RecordingProvider(sent.clone()));
+
+        notify_followers_on_new_event(&pool, &service, organizer, uuid::Uuid::new_v4()).await;
+
+        let recipients = sent.lock().expect("notification record lock");
+        assert_eq!(recipients.len(), follower_count);
+        let unique: std::collections::HashSet<_> = recipients.iter().collect();
+        assert_eq!(unique.len(), follower_count);
+        assert!(recipients.iter().all(|r| r.starts_with("GFOLLOWER-")));
     }
 }

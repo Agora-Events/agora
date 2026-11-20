@@ -116,6 +116,7 @@ use utoipa::OpenApi;
 #[openapi(
     paths(
         crate::handlers::health::health_check,
+        crate::handlers::leaderboard::get_leaderboard,
         crate::handlers::events::list_events,
         crate::handlers::events::get_event,
         crate::handlers::events::search_events,
@@ -156,6 +157,22 @@ use utoipa::OpenApi;
 )]
 pub struct ApiDoc;
 
+/// Public, non-sensitive endpoints under the general rate limit.
+fn general_routes(pool: PgPool) -> Router {
+    Router::new()
+        .route("/examples/validation-error", get(example_validation_error))
+        .route("/examples/empty-success", get(example_empty_success))
+        .route("/examples/not-found/:id", get(example_not_found))
+        .route("/indexer/health", get(indexer_health))
+        .route("/version", get(version))
+        .route(
+            "/leaderboard",
+            get(crate::handlers::leaderboard::get_leaderboard),
+        )
+        .with_state(pool)
+        .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW))
+}
+
 pub async fn create_routes(
     pool: PgPool,
     config: Config,
@@ -163,6 +180,14 @@ pub async fn create_routes(
     shutdown: CancellationToken,
 ) -> Router {
     let broadcaster = PurchaseBroadcaster::new();
+
+    // Shared notification service, used by event creation as well as the
+    // marketplace and geofence workers below.
+    let mut notification_service = crate::notifications::NotificationService::new();
+    notification_service.register(crate::notifications::push::ExpoPushProvider::new(
+        reqwest::Client::new(),
+    ));
+    let notifications = std::sync::Arc::new(notification_service);
 
     // Virtual waiting room (Issue #1187): queue engine + background admission
     // worker. Admission rate / PoW difficulty / grant TTL are env-tunable.
@@ -179,6 +204,7 @@ pub async fn create_routes(
         pool: pool.clone(),
         redis: redis.clone(),
         base_url: config.base_url.clone(),
+        notifications: notifications.clone(),
     };
 
     let rates_state = RatesState::new(redis.clone(), reqwest::Client::new());
@@ -455,11 +481,6 @@ pub async fn create_routes(
     // Secondary ticket market (Issue #1184). The key-envelope endpoints relay
     // seller-sealed ticket secrets; see `handlers::marketplace` for the trust
     // model. Push delivery is the first consumer of `NotificationService`.
-    let mut notification_service = crate::notifications::NotificationService::new();
-    notification_service.register(crate::notifications::push::ExpoPushProvider::new(
-        reqwest::Client::new(),
-    ));
-    let notifications = std::sync::Arc::new(notification_service);
     let marketplace_state = MarketplaceState {
         pool: pool.clone(),
         notifications: notifications.clone(),
@@ -542,25 +563,8 @@ pub async fn create_routes(
         )
         .layer(RateLimitLayer::new(SENSITIVE_RATE_LIMIT, SENSITIVE_WINDOW));
 
-    // General endpoints — relaxed rate limit.
-    // Example error-envelope routes are only mounted outside production to
-    // reduce attack surface and keep them out of API discovery/scans (#1802).
-    let general_routes = if config.is_production() {
-        Router::new()
-            .route("/indexer/health", get(indexer_health))
-            .route("/version", get(version))
-            .with_state(pool.clone())
-            .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW))
-    } else {
-        Router::new()
-            .route("/examples/validation-error", get(example_validation_error))
-            .route("/examples/empty-success", get(example_empty_success))
-            .route("/examples/not-found/:id", get(example_not_found))
-            .route("/indexer/health", get(indexer_health))
-            .route("/version", get(version))
-            .with_state(pool.clone())
-            .layer(RateLimitLayer::new(GENERAL_RATE_LIMIT, GENERAL_WINDOW))
-    };
+    // General endpoints — relaxed rate limit
+    let general_routes = general_routes(pool.clone());
 
     // Public API routes with tower-governor rate limiting
     let rates_route = Router::new()
@@ -654,7 +658,17 @@ pub async fn create_routes(
                 .compress_when(DefaultPredicate::new().and(SizeAbove::new(1024))),
         )
         .merge(streaming_routes)
-        .layer(middleware::from_fn(crate::middleware::csrf::check_csrf));
+        .layer(middleware::from_fn(crate::middleware::csrf::check_csrf))
+        // Monitoring uses its own bearer-key auth, not the API-key/CSRF layers
+        // applied above. Merging after those layers keeps it exempt from them.
+        .merge(
+            Router::new()
+                .route(
+                    "/monitoring",
+                    get(crate::handlers::monitoring::get_monitoring),
+                )
+                .with_state(pool.clone()),
+        );
 
     // Deep linking routes
     let deep_link_routes = Router::new()
@@ -735,6 +749,22 @@ mod tests {
     async fn get_status(router: Router, path: &str) -> StatusCode {
         let req = Request::builder().uri(path).body(Body::empty()).unwrap();
         router.oneshot(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn test_leaderboard_route_is_registered() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(250))
+            .connect_lazy("postgres://agora:agora@127.0.0.1:1/agora")
+            .expect("lazy pool should be constructible");
+        let router = Router::new().nest("/api/v1", general_routes(pool));
+
+        // The database is unreachable, so the handler may fail internally, but
+        // the route itself must be registered rather than returning 404.
+        assert_ne!(
+            get_status(router, "/api/v1/leaderboard").await,
+            StatusCode::NOT_FOUND
+        );
     }
 
     #[tokio::test]
