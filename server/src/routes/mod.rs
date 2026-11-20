@@ -654,7 +654,17 @@ pub async fn create_routes(
                 .compress_when(DefaultPredicate::new().and(SizeAbove::new(1024))),
         )
         .merge(streaming_routes)
-        .layer(middleware::from_fn(crate::middleware::csrf::check_csrf));
+        .layer(middleware::from_fn(crate::middleware::csrf::check_csrf))
+        // Monitoring uses its own bearer-key auth, not the API-key/CSRF layers
+        // applied above. Merging after those layers keeps it exempt from them.
+        .merge(
+            Router::new()
+                .route(
+                    "/monitoring",
+                    get(crate::handlers::monitoring::get_monitoring),
+                )
+                .with_state(pool.clone()),
+        );
 
     // Deep linking routes
     let deep_link_routes = Router::new()
