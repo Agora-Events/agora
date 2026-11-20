@@ -17,8 +17,184 @@ tags:
     description: Service health and readiness probes
   - name: Events
     description: Event discovery and event-scoped resources
+  - name: Webhooks
+    description: Organizer-scoped webhook endpoint management
 
 paths:
+  /api/v1/webhooks:
+    get:
+      tags: [Webhooks]
+      summary: List the authenticated organizer's webhook endpoints
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The authenticated organizer's webhook endpoints
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/WebhookEndpoint'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Webhooks]
+      summary: Register a webhook endpoint for the authenticated organizer
+      description: Organizer ownership is derived from the bearer credential.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookRequest'
+      responses:
+        '200':
+          description: Webhook endpoint created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CreateWebhookResponse'
+        '400':
+          description: Invalid webhook configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/webhooks/{endpoint_id}:
+    delete:
+      tags: [Webhooks]
+      summary: Deactivate an owned webhook endpoint
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+      responses:
+        '200':
+          description: Webhook endpoint deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/webhooks/{endpoint_id}/test:
+    post:
+      tags: [Webhooks]
+      summary: Send a test event to an owned webhook endpoint
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+      responses:
+        '200':
+          description: Test delivery result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TestWebhookResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/webhooks/failures:
+    get:
+      tags: [Webhooks]
+      summary: List webhook delivery failures for the authenticated organizer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: endpoint_id
+          in: query
+          required: false
+          description: Filter failures by an endpoint owned by the authenticated organizer.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Organizer's webhook delivery failures
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/WebhookDeliveryFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The requested endpoint does not belong to the authenticated organizer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/webhooks/failures/{id}/retry:
+    post:
+      tags: [Webhooks]
+      summary: Retry an owned webhook delivery failure
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Webhook failure identifier
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Webhook redelivered successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookDeliveryFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          description: Webhook redelivery attempt failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/health:
     get:
       tags: [Health]
@@ -306,6 +482,14 @@ paths:
 
 components:
   parameters:
+    WebhookEndpointId:
+      name: endpoint_id
+      in: path
+      required: true
+      description: Webhook endpoint UUID
+      schema:
+        type: string
+        format: uuid
     EventId:
       name: id
       in: path
@@ -316,12 +500,24 @@ components:
         format: uuid
 
   responses:
+    Unauthorized:
+      description: Authentication is required or the credential is invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
     NotFound:
       description: The requested resource was not found
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT or organizer-scoped developer API key
 
   schemas:
     ApiResponse:
@@ -358,6 +554,120 @@ components:
           type: string
           description: Human-readable error message safe to show to end users.
       required: [code, message]
+
+    CreateWebhookRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTPS URL that receives signed webhook events.
+        secret:
+          type: string
+          description: Shared secret used to sign webhook payloads.
+        events:
+          type: array
+          items:
+            type: string
+          description: Event names to subscribe to.
+      required: [url, secret, events]
+
+    WebhookEndpoint:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizer_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        secret:
+          type: string
+        events:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, organizer_id, url, secret, events, is_active, created_at, updated_at]
+
+    CreateWebhookResponse:
+      type: object
+      properties:
+        endpoint:
+          $ref: '#/components/schemas/WebhookEndpoint'
+        remaining_slots:
+          type: integer
+          format: int64
+      required: [endpoint, remaining_slots]
+
+    TestWebhookResponse:
+      type: object
+      properties:
+        endpoint_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        event:
+          type: string
+        status_code:
+          type: integer
+          format: int32
+          nullable: true
+        latency_ms:
+          type: integer
+          format: int64
+        success:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+      required: [endpoint_id, url, event, status_code, latency_ms, success]
+
+    WebhookDeliveryFailure:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        endpoint_id:
+          type: string
+          format: uuid
+        event:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        attempts:
+          type: integer
+          format: int32
+        last_status_code:
+          type: integer
+          format: int32
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+        failed_at:
+          type: string
+          format: date-time
+        retried_at:
+          type: string
+          format: date-time
+          nullable: true
+        retry_status:
+          type: string
+          nullable: true
+      required: [id, endpoint_id, event, payload, attempts, failed_at]
 
     ListMeta:
       type: object

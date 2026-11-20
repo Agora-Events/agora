@@ -34,7 +34,6 @@ pub struct WebhookEndpoint {
 /// Request body for `POST /api/v1/webhooks`.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateWebhookRequest {
-    pub organizer_id: Uuid,
     /// HTTPS URL that will receive signed POST payloads.
     pub url: String,
     /// Shared secret used to generate the `X-Agora-Signature` HMAC.
@@ -117,4 +116,3 @@ pub struct WebhookDeliveryFailure {
     pub retried_at: Option<DateTime<Utc>>,
     pub retry_status: Option<String>,
 }
-

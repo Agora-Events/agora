@@ -265,11 +265,17 @@ async fn deliver_to_endpoint(
 pub async fn retry_failed_delivery(
     pool: &PgPool,
     failure_id: Uuid,
+    organizer_id: Uuid,
 ) -> Result<WebhookDeliveryFailure, (StatusCode, String)> {
     let failure = sqlx::query_as::<_, WebhookDeliveryFailure>(
-        "SELECT * FROM webhook_delivery_failures WHERE id = $1",
+        r#"
+        SELECT f.* FROM webhook_delivery_failures f
+        JOIN webhook_endpoints e ON e.id = f.endpoint_id
+        WHERE f.id = $1 AND e.organizer_id = $2
+        "#,
     )
     .bind(failure_id)
+    .bind(organizer_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -281,15 +287,16 @@ pub async fn retry_failed_delivery(
     })?;
 
     let endpoint = sqlx::query_as::<_, WebhookEndpoint>(
-        "SELECT * FROM webhook_endpoints WHERE id = $1",
+        "SELECT * FROM webhook_endpoints WHERE id = $1 AND organizer_id = $2",
     )
     .bind(failure.endpoint_id)
+    .bind(organizer_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .ok_or_else(|| {
         (
-            StatusCode::BAD_REQUEST,
+            StatusCode::NOT_FOUND,
             format!(
                 "Associated webhook endpoint '{}' not found",
                 failure.endpoint_id

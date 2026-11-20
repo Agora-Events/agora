@@ -110,7 +110,7 @@ const SENSITIVE_WINDOW: Duration = Duration::from_secs(60);
 const GENERAL_RATE_LIMIT: usize = 120;
 const GENERAL_WINDOW: Duration = Duration::from_secs(60);
 
-use utoipa::OpenApi;
+use utoipa::{Modify, OpenApi};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -124,6 +124,7 @@ use utoipa::OpenApi;
         crate::handlers::webhooks::create_webhook,
         crate::handlers::webhooks::list_webhooks,
         crate::handlers::webhooks::delete_webhook,
+        crate::handlers::webhooks::test_webhook,
         crate::handlers::webhooks::list_webhook_failures,
         crate::handlers::webhooks::retry_webhook_failure,
         crate::handlers::affiliates::register_affiliate,
@@ -138,14 +139,15 @@ use utoipa::OpenApi;
             crate::handlers::events::UpcomingParams,
             crate::handlers::webhooks::CreateWebhookRequest,
             crate::handlers::webhooks::CreateWebhookResponse,
-            crate::handlers::webhooks::ListWebhooksParams,
             crate::handlers::webhooks::ListWebhookFailuresParams,
+            crate::handlers::webhooks::TestWebhookResponse,
             crate::models::webhook::WebhookEndpoint,
             crate::models::webhook::WebhookDeliveryFailure,
             crate::handlers::affiliates::AffiliateResponse,
             crate::utils::error::ApiError
         )
     ),
+    modifiers(&BearerAuth),
     tags(
         (name = "Agora API", description = "Agora Events Platform API"),
         (name = "Events", description = "Event management endpoints"),
@@ -155,6 +157,24 @@ use utoipa::OpenApi;
     )
 )]
 pub struct ApiDoc;
+
+struct BearerAuth;
+
+impl Modify for BearerAuth {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi
+            .components
+            .get_or_insert_with(utoipa::openapi::Components::default);
+        components.add_security_scheme(
+            "bearer_auth",
+            utoipa::openapi::security::SecurityScheme::Http(
+                utoipa::openapi::security::HttpBuilder::new()
+                    .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
+                    .build(),
+            ),
+        );
+    }
+}
 
 pub async fn create_routes(
     pool: PgPool,
