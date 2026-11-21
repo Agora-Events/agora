@@ -126,7 +126,7 @@ export async function buildAddTrustlineXdr(publicKey: string): Promise<string> {
   const issuer = getUsdcIssuer();
   const usdcAsset = new Asset("USDC", issuer);
 
-  const tx = new TransactionBuilder(accountData as unknown as Parameters<typeof TransactionBuilder>[0], {
+  const tx = new TransactionBuilder(accountData as unknown as ConstructorParameters<typeof TransactionBuilder>[0], {
     fee: "100",
     networkPassphrase,
   })

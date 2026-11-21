@@ -1,10 +1,10 @@
-import posthog from 'posthog-js';
+import posthog, { type PostHog, type PostHogInterface } from 'posthog-js';
 
 // Initialize posthog only on the client side
 if (typeof window !== 'undefined') {
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY || 'dummy_key', {
     api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://app.posthog.com',
-    loaded: (posthog_instance) => {
+    loaded: (posthog_instance: PostHogInterface) => {
       if (process.env.NODE_ENV === 'development') {
         posthog_instance.debug();
       }
