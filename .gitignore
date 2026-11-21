@@ -36,3 +36,6 @@ pr-*.md
 
 # Session changelog (generated per-session, not part of the repo)
 CHANGES.md
+
+# Local changelog
+CHANGES.md
