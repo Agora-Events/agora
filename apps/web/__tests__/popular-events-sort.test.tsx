@@ -15,6 +15,17 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string) => {
+    const translations: Record<string, string> = {
+      sortEvents: "Sort events",
+      activeFilters: "Active filters",
+      anyTime: "Any time",
+    };
+    return translations[key] ?? key;
+  },
+}));
+
 const mockEvents: DiscoverEvent[] = [
   {
     id: "1",
@@ -125,7 +136,7 @@ describe("PopularEventsSection sort", () => {
 
   it("applies the chosen sort on top of the active category filter", async () => {
     render(
-      <PopularEventsSection activeCategory="Tech" onError={vi.fn()} />,
+      <PopularEventsSection category="Tech" onError={vi.fn()} />,
     );
 
     await waitFor(() => {
