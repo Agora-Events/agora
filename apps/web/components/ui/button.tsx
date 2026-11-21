@@ -7,7 +7,7 @@ import Image from "next/image";
  */
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /** Visual style variant of the button */
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "outline" | "ghost";
   /** Shadow color for the button's drop shadow effect */
   shadowColor?: string;
   /** Text color class or custom color */
@@ -35,6 +35,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
  */
 export function Button({
   className = "",
+  variant = "primary",
   shadowColor = "rgba(0,0,0,1)",
   textColor = "text-black",
   backgroundColor = "bg-white",
@@ -54,20 +55,58 @@ export function Button({
     ...style,
     backgroundColor: !isTailwindBg ? backgroundColor : undefined,
     color: !isTailwindText ? textColor : undefined,
-    boxShadow: `-4px 4px 0px 0px ${shadowColor}`,
   };
+
+  // Base classes + variant-specific classes
+  let variantClasses = "";
+  let shadowClass = "";
+
+  switch (variant) {
+    case "primary":
+      shadowClass = `-4px 4px 0px 0px ${shadowColor}`;
+      variantClasses = `
+        hover:-translate-x-[2px] hover:translate-y-[2px]
+        hover:shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]
+        active:-translate-x-[4px] active:translate-y-[4px] active:shadow-none
+      `;
+      break;
+    case "secondary":
+      shadowClass = `-4px 4px 0px 0px ${shadowColor}`;
+      variantClasses = `
+        hover:-translate-x-[2px] hover:translate-y-[2px]
+        hover:shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]
+        active:-translate-x-[4px] active:translate-y-[4px] active:shadow-none
+        bg-accent text-ink-soft hover:bg-accent-hover
+      `;
+      break;
+    case "outline":
+      shadowClass = `-4px 4px 0px 0px ${shadowColor}`;
+      variantClasses = `
+        hover:-translate-x-[2px] hover:translate-y-[2px]
+        hover:shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]
+        active:-translate-x-[4px] active:translate-y-[4px] active:shadow-none
+        bg-transparent text-black
+      `;
+      break;
+    case "ghost":
+      shadowClass = `-2px 2px 0px 0px ${shadowColor}`;
+      variantClasses = `
+        hover:-translate-x-[1px] hover:translate-y-[1px]
+        hover:shadow-[-1px_1px_0px_0px_rgba(0,0,0,1)]
+        active:-translate-x-[2px] active:translate-y-[2px] active:shadow-none
+        bg-transparent text-black hover:bg-black/10
+      `;
+      break;
+  }
 
   return (
     <button
       className={`
         relative group flex items-center justify-center gap-2 px-6 py-3 rounded-full border border-black
         font-semibold transition-all whitespace-nowrap
-        hover:-translate-x-[2px] hover:translate-y-[2px]
-        hover:shadow-[-2px_2px_0px_0px_rgba(0,0,0,1)]
-        active:-translate-x-[4px] active:translate-y-[4px] active:shadow-none
-        ${bgClass} ${textClass} ${className}
+        ${variantClasses} ${bgClass} ${textClass} ${className}
       `}
-      style={customStyle}
+      style={{ ...customStyle, boxShadow: shadowClass }}
       disabled={isLoading || disabled}
       aria-busy={isLoading}
       {...props}
