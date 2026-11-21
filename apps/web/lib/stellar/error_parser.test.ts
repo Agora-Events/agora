@@ -1,3 +1,4 @@
+import { describe, it, expect, vi } from "vitest";
 import {
   parseSorobanError,
   parseAndLogError,
@@ -42,7 +43,7 @@ describe("Soroban error_parser", () => {
   });
 
   it("parseAndLogError returns parsed error and logs to console", () => {
-    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const parsed = parseAndLogError("tx_insufficient_fee", "unit test");
     expect(parsed.userMessage).toContain("Insufficient testnet XLM for fee");
     expect(spy).toHaveBeenCalled();

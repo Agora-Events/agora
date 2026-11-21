@@ -39,7 +39,7 @@ export const STELLAR_NETWORK_PASSPHRASE: string =
  * - Additional request headers can be appended here if your RPC provider
  *   requires an API key.
  */
-const SERVER_OPTS: rpc.RpcServer.Options = {
+const SERVER_OPTS: rpc.Server.Options = {
   allowHttp: false,
   timeout: 30_000,
 };
