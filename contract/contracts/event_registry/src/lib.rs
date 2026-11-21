@@ -697,24 +697,49 @@ impl EventRegistry {
     /// will be `None`.
     ///
     /// # Errors
-    /// Returns `EventRegistryError::BatchSizeExceeded` if the input vector
-    /// exceeds `MAX_BATCH_SIZE`.
+    /// Returns `EventRegistryError::BatchSizeExceeded` (code 100) if the input
+    /// vector holds more than `MAX_BATCH_SIZE` (50) ids. Exactly 50 is
+    /// accepted. Split larger lookups into several calls of at most 50 ids.
     ///
     /// # Examples
+    /// Call it through the generated `EventRegistryClient`, using Soroban
+    /// types (`soroban_sdk::vec!` and `soroban_sdk::String`) rather than std
+    /// ones, since the contract is `#![no_std]`:
+    ///
     /// ```ignore
-    /// let event_ids: Vec<String> = vec!["event1".to_string(), "event2".to_string()];
-    /// let events = event_registry::get_events_batch(env, event_ids)?;
-    /// for event in events {
+    /// use soroban_sdk::{vec, Env, String};
+    ///
+    /// let client = EventRegistryClient::new(&env, &contract_id);
+    ///
+    /// let event_ids = vec![
+    ///     &env,
+    ///     String::from_str(&env, "event1"),
+    ///     String::from_str(&env, "event2"),
+    /// ];
+    ///
+    /// // Results line up with `event_ids`; unknown ids come back as `None`.
+    /// let events = client.get_events_batch(&event_ids);
+    /// for event in events.iter() {
     ///     if let Some(event_info) = event {
-    ///         println!("Event: {}", event_info.name);
+    ///         // e.g. read event_info.event_id, event_info.status, ...
     ///     }
     /// }
+    ///
+    /// // `try_` variant to handle the size limit instead of panicking:
+    /// match client.try_get_events_batch(&event_ids) {
+    ///     Ok(Ok(events)) => { /* use events */ }
+    ///     Err(Ok(EventRegistryError::BatchSizeExceeded)) => { /* > 50 ids */ }
+    ///     _ => { /* host or conversion error */ }
+    /// }
     /// ```
+    ///
+    /// The block is `ignore` because it needs a test `Env` and a registered
+    /// contract; `test_events_batch.rs` runs the same calls as real tests.
     pub fn get_events_batch(
         env: Env,
         event_ids: Vec<String>,
     ) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
-        if event_ids.len() > MAX_BATCH_SIZE as usize {
+        if event_ids.len() > MAX_BATCH_SIZE {
             return Err(EventRegistryError::BatchSizeExceeded);
         }
         let mut results = Vec::new(&env);
@@ -2670,3 +2695,6 @@ mod test_bridge;
 
 #[cfg(test)]
 mod test_event;
+
+#[cfg(test)]
+mod test_events_batch;

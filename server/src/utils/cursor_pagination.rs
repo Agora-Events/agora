@@ -207,6 +207,17 @@ pub struct FailureCursor {
     pub id: uuid::Uuid,
 }
 
+/// Cursor structure for wallet ticket listings (Issue #1809).
+///
+/// Upcoming: `(start_time ASC NULLS LAST, id ASC)`;
+/// past: `(start_time DESC, id DESC)`. `event_start_time` is `None` for
+/// tickets without an associated event and sorts last in upcoming results.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WalletTicketCursor {
+    pub event_start_time: Option<chrono::DateTime<chrono::Utc>>,
+    pub id: uuid::Uuid,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

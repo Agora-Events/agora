@@ -66,6 +66,7 @@ use crate::handlers::auth::extract_auth;
 use crate::notifications::{Notification, NotificationService};
 use crate::utils::error::AppError;
 use crate::utils::response::success;
+use crate::utils::cursor_pagination::{decode_cursor, encode_cursor};
 
 /// Basis-point denominator, mirroring the contract's `MAX_BPS`.
 const MAX_BPS: i64 = 10_000;
@@ -200,6 +201,21 @@ pub struct CreateOfferRequest {
     /// Base64 X25519 public key (32 raw bytes) the seller should seal to.
     pub buyer_public_key: String,
     pub offer_price_stroops: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListOffersQuery {
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+    /// Defaults to "pending". Pass "all" (or another status) to see others.
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OfferCursor {
+    pub offer_price_stroops: i64,
+    pub created_at: DateTime<Utc>,
+    pub id: uuid::Uuid,
 }
 
 #[derive(Debug, Deserialize)]
@@ -643,6 +659,7 @@ pub async fn list_offers(
     State(state): State<MarketplaceState>,
     headers: HeaderMap,
     Path(payment_id): Path<String>,
+    Query(params): Query<ListOffersQuery>,
 ) -> Response {
     let seller = match extract_auth(&headers) {
         Ok(a) => a,
@@ -653,19 +670,100 @@ pub async fn list_offers(
         return e.into_response();
     }
 
-    let offers = match sqlx::query_as::<_, ResaleOfferRow>(
-        r#"
-        SELECT id, payment_id, buyer_wallet, buyer_public_key,
-               offer_price_stroops, status, created_at
-        FROM resale_offers
-        WHERE payment_id = $1
-        ORDER BY offer_price_stroops DESC, created_at ASC
-        "#,
-    )
-    .bind(&payment_id)
-    .fetch_all(&state.pool)
-    .await
-    {
+    let limit = params.limit.unwrap_or(25).clamp(1, 100) as i64;
+    let status_filter = params.status.as_deref().unwrap_or("pending");
+
+    let cursor = match &params.cursor {
+        Some(c) => match decode_cursor::<OfferCursor>(c) {
+            Ok(cur) => Some(cur),
+            Err(e) => return AppError::ValidationError(format!("Invalid cursor: {e}")).into_response(),
+        },
+        None => None,
+    };
+
+    let offers = if let Some(cur) = cursor {
+        if status_filter == "all" {
+            sqlx::query_as::<_, ResaleOfferRow>(
+                r#"
+                SELECT id, payment_id, buyer_wallet, buyer_public_key,
+                       offer_price_stroops, status, created_at
+                FROM resale_offers
+                WHERE payment_id = $1
+                  AND (
+                    offer_price_stroops < $2
+                    OR (offer_price_stroops = $2 AND created_at > $3)
+                    OR (offer_price_stroops = $2 AND created_at = $3 AND id > $4)
+                  )
+                ORDER BY offer_price_stroops DESC, created_at ASC, id ASC
+                LIMIT $5
+                "#,
+            )
+            .bind(&payment_id)
+            .bind(cur.offer_price_stroops)
+            .bind(cur.created_at)
+            .bind(cur.id)
+            .bind(limit + 1)
+            .fetch_all(&state.pool)
+            .await
+        } else {
+            sqlx::query_as::<_, ResaleOfferRow>(
+                r#"
+                SELECT id, payment_id, buyer_wallet, buyer_public_key,
+                       offer_price_stroops, status, created_at
+                FROM resale_offers
+                WHERE payment_id = $1 AND status = $2
+                  AND (
+                    offer_price_stroops < $3
+                    OR (offer_price_stroops = $3 AND created_at > $4)
+                    OR (offer_price_stroops = $3 AND created_at = $4 AND id > $5)
+                  )
+                ORDER BY offer_price_stroops DESC, created_at ASC, id ASC
+                LIMIT $6
+                "#,
+            )
+            .bind(&payment_id)
+            .bind(status_filter)
+            .bind(cur.offer_price_stroops)
+            .bind(cur.created_at)
+            .bind(cur.id)
+            .bind(limit + 1)
+            .fetch_all(&state.pool)
+            .await
+        }
+    } else if status_filter == "all" {
+        sqlx::query_as::<_, ResaleOfferRow>(
+            r#"
+            SELECT id, payment_id, buyer_wallet, buyer_public_key,
+                   offer_price_stroops, status, created_at
+            FROM resale_offers
+            WHERE payment_id = $1
+            ORDER BY offer_price_stroops DESC, created_at ASC, id ASC
+            LIMIT $2
+            "#,
+        )
+        .bind(&payment_id)
+        .bind(limit + 1)
+        .fetch_all(&state.pool)
+        .await
+    } else {
+        sqlx::query_as::<_, ResaleOfferRow>(
+            r#"
+            SELECT id, payment_id, buyer_wallet, buyer_public_key,
+                   offer_price_stroops, status, created_at
+            FROM resale_offers
+            WHERE payment_id = $1 AND status = $2
+            ORDER BY offer_price_stroops DESC, created_at ASC, id ASC
+            LIMIT $3
+            "#,
+        )
+        .bind(&payment_id)
+        .bind(status_filter)
+        .bind(limit + 1)
+        .fetch_all(&state.pool)
+        .await
+    };
+
+    let offers = match offers {
         Ok(rows) => rows,
         Err(e) => {
             tracing::error!("Failed to list resale offers: {:?}", e);
@@ -673,7 +771,32 @@ pub async fn list_offers(
         }
     };
 
-    success(offers, "Resale offers retrieved").into_response()
+    let has_more = offers.len() as i64 > limit;
+    let mut items = offers;
+    if has_more {
+        items.truncate(limit as usize);
+    }
+    let next_cursor = if has_more {
+        items.last().and_then(|o| {
+            encode_cursor(&OfferCursor {
+                offer_price_stroops: o.offer_price_stroops,
+                created_at: o.created_at,
+                id: o.id,
+            })
+            .ok()
+        })
+    } else {
+        None
+    };
+
+    success(
+        serde_json::json!({
+            "items": items,
+            "next_cursor": next_cursor,
+        }),
+        "Resale offers retrieved",
+    )
+    .into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -1099,3 +1222,32 @@ mod tests {
         assert_eq!(view.headroom_stroops, 9);
     }
 }
+
+
+    #[test]
+    fn test_list_offers_limit_clamping() {
+        // endpoint: default 25, max 100
+        let default_limit = None::<u32>.unwrap_or(25).clamp(1, 100);
+        assert_eq!(default_limit, 25);
+        let clamped_high = Some(500u32).unwrap_or(25).clamp(1, 100);
+        assert_eq!(clamped_high, 100);
+        let clamped_low = Some(0u32).unwrap_or(25).clamp(1, 100);
+        assert_eq!(clamped_low, 1);
+    }
+
+    #[test]
+    fn test_list_offers_cursor_follows_price_ordering() {
+        let now = Utc::now();
+        let c1 = OfferCursor {
+            offer_price_stroops: 100,
+            created_at: now,
+            id: uuid::Uuid::new_v4(),
+        };
+        let encoded = encode_cursor(&c1).unwrap();
+        let decoded: OfferCursor = decode_cursor(&encoded).unwrap();
+        assert_eq!(decoded.offer_price_stroops, 100);
+        assert_eq!(decoded.created_at, c1.created_at);
+        assert_eq!(decoded.id, c1.id);
+        // cursor ordering key matches sort: price desc, created_at asc, id asc
+        assert!(decoded.offer_price_stroops == c1.offer_price_stroops);
+    }

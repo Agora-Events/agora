@@ -1,6 +1,36 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+/**
+ * Backend status (tracked in #1791):
+ *
+ * The following endpoints are called below but are not yet implemented by
+ * `server/src/routes/mod.rs`. Calling them currently 404s; this file maps
+ * that 404 to `NotImplementedError` so the UI can render a "coming soon"
+ * state instead of a generic failure. Backend contributors: picking any of
+ * these up unblocks the matching organizer screen.
+ *
+ *   - POST /organizer/delegation
+ *   - POST /organizer/delegation/verify
+ *   - POST /organizer/door-ticket
+ *   - POST /organizer/broadcast
+ *   - GET  /events/:id/gates
+ *   - GET  /organizer/:eventId/staff
+ *   - POST /organizer/:eventId/staff/revoke
+ */
+
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+
+/**
+ * Thrown when the backend returns 404 for an organizer endpoint that is not
+ * yet implemented (see the list above). Screens should catch this
+ * specifically and render a "coming soon" state rather than an error toast.
+ */
+export class NotImplementedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotImplementedError';
+  }
+}
 
 export interface GateMetrics {
   gate_id: string;
@@ -106,7 +136,7 @@ class OrganizerApiService {
     expiresInMinutes: number = 480
   ): Promise<DelegationQRCode> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/delegation`, {
+    const response = await fetch(apiUrl('/organizer/delegation'), {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -117,6 +147,9 @@ class OrganizerApiService {
       }),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Staff delegation is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to generate delegation QR code');
     }
@@ -132,12 +165,15 @@ class OrganizerApiService {
     permissions: string[];
   }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/delegation/verify`, {
+    const response = await fetch(apiUrl('/organizer/delegation/verify'), {
       method: 'POST',
       headers,
       body: JSON.stringify({ code }),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Staff delegation is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to verify delegation QR code');
     }
@@ -148,12 +184,15 @@ class OrganizerApiService {
   // Create door ticket with instant payment
   async createDoorTicket(request: DoorTicketRequest): Promise<DoorTicketResponse> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/door-ticket`, {
+    const response = await fetch(apiUrl('/organizer/door-ticket'), {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Door ticket sales are not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to create door ticket');
     }
@@ -164,12 +203,15 @@ class OrganizerApiService {
   // Send broadcast alert to checked-in attendees
   async sendBroadcastAlert(alert: BroadcastAlert): Promise<{ success: boolean; message?: string; error?: string }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/broadcast`, {
+    const response = await fetch(apiUrl('/organizer/broadcast'), {
       method: 'POST',
       headers,
       body: JSON.stringify(alert),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Broadcast alerts are not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to send broadcast alert');
     }
@@ -180,11 +222,14 @@ class OrganizerApiService {
   // Get event gates configuration
   async getEventGates(eventId: string): Promise<GateMetrics[]> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/events/${eventId}/gates`, {
+    const response = await fetch(apiUrl(`/events/${eventId}/gates`), {
       method: 'GET',
       headers,
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Gate congestion data is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to fetch event gates');
     }
@@ -195,11 +240,14 @@ class OrganizerApiService {
   // Get active staff authorizations for an event
   async getStaffAuthorizations(eventId: string): Promise<StaffAuthEvent[]> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/${eventId}/staff`, {
+    const response = await fetch(apiUrl(`/organizer/${eventId}/staff`), {
       method: 'GET',
       headers,
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Staff delegation is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to fetch staff authorizations');
     }
@@ -216,7 +264,7 @@ class OrganizerApiService {
     request: TicketScanRequest
   ): Promise<{ status: number; result: TicketScanResponse | null; message: string }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/tickets/${ticketId}/scan`, {
+    const response = await fetch(apiUrl(`/tickets/${ticketId}/scan`), {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
@@ -239,12 +287,15 @@ class OrganizerApiService {
   // Revoke staff authorization
   async revokeStaffAuthorization(eventId: string, staffWallet: string): Promise<{ success: boolean }> {
     const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE}/organizer/${eventId}/staff/revoke`, {
+    const response = await fetch(apiUrl(`/organizer/${eventId}/staff/revoke`), {
       method: 'POST',
       headers,
       body: JSON.stringify({ staff_wallet: staffWallet }),
     });
 
+    if (response.status === 404) {
+      throw new NotImplementedError('Staff delegation is not available yet.');
+    }
     if (!response.ok) {
       throw new Error('Failed to revoke staff authorization');
     }

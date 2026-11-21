@@ -18,7 +18,7 @@ import { ProgressBar } from './step-1-basics';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = 'https://api.agora.events'; // replaced at build-time via env
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
 // ─── Image Upload Helper ──────────────────────────────────────────────────────
 

@@ -10,6 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
 use crate::utils::error::AppError;
@@ -35,7 +36,21 @@ fn is_authorized(headers: &HeaderMap) -> bool {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
 
-    matches!(provided, Some(token) if token == expected)
+    match provided {
+        Some(token) => {
+            // Compare fixed-size SHA-256 digests with an XOR accumulator so the
+            // number of instructions does not depend on where the tokens differ.
+            let expected_digest = Sha256::digest(expected.as_bytes());
+            let provided_digest = Sha256::digest(token.as_bytes());
+            let mut difference = 0u8;
+            for (expected_byte, provided_byte) in expected_digest.iter().zip(provided_digest.iter())
+            {
+                difference |= expected_byte ^ provided_byte;
+            }
+            difference == 0
+        }
+        None => false,
+    }
 }
 
 /// Get internal monitoring metrics.
@@ -65,11 +80,77 @@ pub async fn get_monitoring(State(pool): State<PgPool>, headers: HeaderMap) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::HeaderValue;
+    use axum::{
+        body::Body,
+        http::{HeaderValue, Request, StatusCode},
+        Router,
+    };
     use std::sync::Mutex;
+    use tower::ServiceExt;
 
     // MONITORING_API_KEY is process-global env state; serialize these tests.
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn test_pool() -> PgPool {
+        sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://agora:agora@127.0.0.1:1/agora")
+            .expect("lazy pool should be constructible")
+    }
+
+    async fn monitoring_status(bearer_key: Option<&str>) -> StatusCode {
+        let mut builder = Request::builder().uri("/monitoring");
+        if let Some(key) = bearer_key {
+            builder = builder.header(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {key}")).unwrap(),
+            );
+        }
+        let router = Router::new()
+            .route("/monitoring", get(get_monitoring))
+            .with_state(test_pool());
+        router
+            .oneshot(builder.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status()
+    }
+
+    #[tokio::test]
+    async fn test_missing_key_returns_401() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("MONITORING_API_KEY", "secret-key");
+        assert_eq!(monitoring_status(None).await, StatusCode::UNAUTHORIZED);
+        std::env::remove_var("MONITORING_API_KEY");
+    }
+
+    #[tokio::test]
+    async fn test_wrong_key_returns_401() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("MONITORING_API_KEY", "secret-key");
+        assert_eq!(
+            monitoring_status(Some("wrong-key")).await,
+            StatusCode::UNAUTHORIZED
+        );
+        std::env::remove_var("MONITORING_API_KEY");
+    }
+
+    #[tokio::test]
+    async fn test_correct_key_returns_200() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("MONITORING_API_KEY", "secret-key");
+        assert_eq!(monitoring_status(Some("secret-key")).await, StatusCode::OK);
+        std::env::remove_var("MONITORING_API_KEY");
+    }
+
+    #[tokio::test]
+    async fn test_unset_key_returns_401() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::remove_var("MONITORING_API_KEY");
+        assert_eq!(
+            monitoring_status(Some("secret-key")).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
 
     #[test]
     fn test_rejects_missing_credential() {
