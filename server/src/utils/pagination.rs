@@ -5,6 +5,7 @@
 //! the current page, total items, and navigation links.
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// Default page size if not specified
 pub const DEFAULT_PAGE_SIZE: u32 = 20;
@@ -140,7 +141,7 @@ pub struct PaginationMeta {
 /// Compact metadata included on paginated list responses.
 ///
 /// Used by clients to render copy such as "Showing 12 of 340" and to size a pager.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ListMeta {
     /// Total matching rows. Omitted when the caller passed `?count=false`.
     #[serde(skip_serializing_if = "Option::is_none")]

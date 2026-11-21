@@ -19,6 +19,52 @@ tags:
     description: Event discovery and event-scoped resources
 
 paths:
+  /api/v1/webhooks/failures:
+    get:
+      tags: [Webhooks]
+      summary: List webhook delivery failures
+      parameters:
+        - name: endpoint_id
+          in: query
+          required: false
+          description: Filter by webhook endpoint ID.
+          schema:
+            type: string
+            format: uuid
+        - name: organizer_id
+          in: query
+          required: false
+          description: Filter by organizer ID.
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          description: Number of failures to return (default 50, maximum 200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from pagination.next_cursor on the previous page.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated webhook delivery failures
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookFailurePage'
   /api/v1/health:
     get:
       tags: [Health]
@@ -358,6 +404,71 @@ components:
           type: string
           description: Human-readable error message safe to show to end users.
       required: [code, message]
+
+    WebhookFailurePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookDeliveryFailure'
+        pagination:
+          type: object
+          properties:
+            page_size:
+              type: integer
+            has_more:
+              type: boolean
+            next_cursor:
+              type: string
+              nullable: true
+          required: [page_size, has_more]
+        meta:
+          type: object
+          properties:
+            page_size:
+              type: integer
+            has_more:
+              type: boolean
+            total:
+              type: integer
+              nullable: true
+          required: [page_size, has_more]
+      required: [items, pagination, meta]
+
+    WebhookDeliveryFailure:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        endpoint_id:
+          type: string
+          format: uuid
+        event:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        attempts:
+          type: integer
+        last_status_code:
+          type: integer
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+        failed_at:
+          type: string
+          format: date-time
+        retried_at:
+          type: string
+          format: date-time
+          nullable: true
+        retry_status:
+          type: string
+          nullable: true
+      required: [id, endpoint_id, event, payload, attempts, failed_at]
 
     ListMeta:
       type: object
