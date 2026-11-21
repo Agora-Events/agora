@@ -99,6 +99,7 @@ export function DatePicker({
   endDatePlaceholder = "Thu, 20 Feb",
   endTimePlaceholder = "09:00AM",
 
+  minDate,
   disabled = false,
   className = "",
 }: DatePickerProps) {
