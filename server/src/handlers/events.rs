@@ -3,19 +3,19 @@
 //! This module provides HTTP handlers for event-related operations including
 //! listing, creating, updating, and deleting events.
 
-use axum::{
-    extract::OriginalUri, extract::Path, extract::Query, extract::State,
-    response::IntoResponse, response::Response,
-};
-use axum::http::HeaderMap;
 use crate::models::event_translation::{
     validate_translations, EventTranslation, EventTranslationInput,
 };
-use sha2::{Digest, Sha256};
 use crate::utils::extract::ValidatedJson;
+use axum::http::HeaderMap;
+use axum::{
+    extract::OriginalUri, extract::Path, extract::Query, extract::State, response::IntoResponse,
+    response::Response,
+};
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
@@ -554,7 +554,7 @@ fn build_past_event_where_clause(
 }
 
 #[cfg(test)]
- mod tests {
+mod tests {
     use super::*;
 
     // ── Localised descriptions (Issue #1344) ─────────────────────────────
@@ -562,7 +562,10 @@ fn build_past_event_where_clause(
     #[test]
     fn best_locale_prefers_explicit_lang_query() {
         let mut headers = HeaderMap::new();
-        headers.insert(axum::http::header::ACCEPT_LANGUAGE, "fr;q=1.0".parse().unwrap());
+        headers.insert(
+            axum::http::header::ACCEPT_LANGUAGE,
+            "fr;q=1.0".parse().unwrap(),
+        );
         assert_eq!(best_locale(&headers, Some("es")), Some("es".to_string()));
     }
 
@@ -745,12 +748,8 @@ fn build_past_event_where_clause(
             created_at: DateTime::default(),
             updated_at: DateTime::default(),
         }];
-        let meta = build_localised_metadata(
-            Uuid::new_v4(),
-            "Title",
-            Some("Default"),
-            &translations,
-        );
+        let meta =
+            build_localised_metadata(Uuid::new_v4(), "Title", Some("Default"), &translations);
         assert_eq!(meta["defaultLocale"], "en");
         assert_eq!(meta["translations"][0]["locale"], "es");
     }
@@ -1229,8 +1228,6 @@ fn build_past_event_where_clause(
                 order: SearchSortOrder::default(),
                 page: 1,
                 page_size: size,
-                sort_by: Default::default(),
-                order: Default::default(),
             };
             assert!(
                 params.validate_page_size().is_ok(),
@@ -1256,8 +1253,6 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 0,
-            sort_by: Default::default(),
-            order: Default::default(),
         };
         let err = params.validate_page_size().unwrap_err();
         assert!(err.contains("page_size must be between 1 and 100"));
@@ -1279,8 +1274,6 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 101,
-            sort_by: Default::default(),
-            order: Default::default(),
         };
         let err = params.validate_page_size().unwrap_err();
         assert!(err.contains("page_size must be between 1 and 100"));
@@ -1302,8 +1295,6 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
-            sort_by: Default::default(),
-            order: Default::default(),
         };
 
         assert_eq!(params.ticket_type, Some("VIP".to_string()));
@@ -1325,8 +1316,6 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
-            sort_by: Default::default(),
-            order: Default::default(),
         };
 
         assert!(params.ticket_type.is_none());
@@ -1437,8 +1426,6 @@ fn build_past_event_where_clause(
             order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
-            sort_by: Default::default(),
-            order: Default::default(),
         };
         assert_eq!(params.location.as_deref(), Some("Lagos"));
     }
@@ -2850,7 +2837,7 @@ fn validate_event_timestamps(
 /// Failures are logged but never fail the request: a stale cache entry will
 /// expire on its own TTL, whereas a failed write must still be reported as
 /// successful.
-async fn invalidate_event_caches(state: &EventState, event_id: Uuid) {
+async fn invalidate_event_caches(state: &mut EventState, event_id: Uuid) {
     let cache_key = format!("event:detail:{}", event_id);
     if let Err(e) = state.redis.delete(&cache_key).await {
         tracing::warn!(
@@ -3142,14 +3129,12 @@ fn content_hash(value: &serde_json::Value) -> String {
 pub async fn clone_event(
     State(mut state): State<EventState>,
     Path(event_id): Path<Uuid>,
-    extensions: axum::extract::Extension<axum::http::Extensions>,
+    headers: axum::http::HeaderMap,
 ) -> Response {
     // 1. Resolve the authenticated caller (organizer wallet) from request extensions.
-    let caller_wallet = match extract_caller_wallet(&extensions.0) {
-        Some(wallet) => wallet,
-        None => {
-            return AppError::Unauthorized("Authentication required".to_string()).into_response();
-        }
+    let caller_wallet = match crate::handlers::auth::extract_auth(&headers) {
+        Ok(wallet) => wallet,
+        Err(error) => return error.into_response(),
     };
 
     // 2. Load the source event.
@@ -3179,10 +3164,8 @@ pub async fn clone_event(
     {
         Ok(Some(Some(wallet))) => wallet,
         Ok(_) => {
-            return AppError::Forbidden(
-                "You are not the organizer of this event".to_string(),
-            )
-            .into_response();
+            return AppError::Forbidden("You are not the organizer of this event".to_string())
+                .into_response();
         }
         Err(e) => {
             tracing::error!("Failed to resolve organizer for clone: {:?}", e);
@@ -4559,8 +4542,6 @@ fn test_search_params_ticket_type() {
         order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
-        sort_by: Default::default(),
-        order: Default::default(),
     };
 
     assert_eq!(params.ticket_type, Some("VIP".to_string()));
@@ -4582,8 +4563,6 @@ fn test_search_params_ticket_type_none() {
         order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
-        sort_by: Default::default(),
-        order: Default::default(),
     };
 
     assert!(params.ticket_type.is_none());
@@ -4615,8 +4594,6 @@ fn test_search_params_location() {
         order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
-        sort_by: Default::default(),
-        order: Default::default(),
     };
     assert_eq!(params.location.as_deref(), Some("Lagos"));
 }
@@ -4703,7 +4680,9 @@ fn test_verify_export_attendees_auth_valid_jwt() {
     let token = jsonwebtoken::encode(
         &jsonwebtoken::Header::default(),
         &claims,
-        &jsonwebtoken::EncodingKey::from_secret("super-secret-key-for-unit-testing-32-bytes".as_bytes()),
+        &jsonwebtoken::EncodingKey::from_secret(
+            "super-secret-key-for-unit-testing-32-bytes".as_bytes(),
+        ),
     )
     .unwrap();
 
@@ -4714,7 +4693,10 @@ fn test_verify_export_attendees_auth_valid_jwt() {
     );
     let res = verify_export_attendees_auth(&headers);
     assert!(res.is_ok());
-    assert_eq!(res.unwrap(), Some("GAORGANIZERTESTWALLET123456789".to_string()));
+    assert_eq!(
+        res.unwrap(),
+        Some("GAORGANIZERTESTWALLET123456789".to_string())
+    );
 }
 
 #[derive(Serialize)]

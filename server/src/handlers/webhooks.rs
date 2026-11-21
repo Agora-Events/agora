@@ -14,6 +14,10 @@ use sqlx::PgPool;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::utils::cursor_pagination::{
+    decode_cursor, encode_cursor, CursorResponse, FailureCursor, ValidatedCursorParams,
+};
+
 use crate::models::webhook::{validate_create_webhook, MAX_WEBHOOK_ENDPOINTS_PER_ORGANIZER};
 pub use crate::models::webhook::{CreateWebhookRequest, WebhookDeliveryFailure, WebhookEndpoint};
 use crate::utils::error::AppError;
@@ -239,6 +243,22 @@ pub async fn delete_webhook(
 pub struct ListWebhookFailuresParams {
     /// Filter failures by endpoint id.
     pub endpoint_id: Option<Uuid>,
+    /// Number of failures to return (default 50, maximum 200).
+    #[serde(default = "default_webhook_failure_limit")]
+    pub limit: u32,
+    /// Opaque cursor containing the failed_at and id of the previous page's last item.
+    pub cursor: Option<String>,
+}
+
+const DEFAULT_WEBHOOK_FAILURE_LIMIT: u32 = 50;
+const MAX_WEBHOOK_FAILURE_LIMIT: u32 = 200;
+
+fn default_webhook_failure_limit() -> u32 {
+    DEFAULT_WEBHOOK_FAILURE_LIMIT
+}
+
+fn webhook_failure_limit(limit: u32) -> u32 {
+    limit.clamp(1, MAX_WEBHOOK_FAILURE_LIMIT)
 }
 
 /// List webhook delivery failures from Dead-Letter Queue (DLQ).
@@ -250,7 +270,7 @@ pub struct ListWebhookFailuresParams {
     path = "/webhooks/failures",
     params(ListWebhookFailuresParams),
     responses(
-        (status = 200, description = "Webhook DLQ failures retrieved", body = Vec<WebhookDeliveryFailure>),
+        (status = 200, description = "Webhook DLQ failures retrieved", body = CursorResponse<WebhookDeliveryFailure>),
         (status = 404, description = "Webhook endpoint not found"),
         (status = 401, description = "Authentication required"),
     ),
@@ -265,6 +285,18 @@ pub async fn list_webhook_failures(
     let organizer_id = match authenticated_organizer_id(&state.pool, &headers).await {
         Ok(organizer_id) => organizer_id,
         Err(response) => return response,
+    };
+
+    let limit = webhook_failure_limit(params.limit);
+    let cursor = match params.cursor.as_deref() {
+        Some(cursor) => match decode_cursor::<FailureCursor>(cursor) {
+            Ok(cursor) => Some(cursor),
+            Err(error) => {
+                return AppError::ValidationError(format!("Invalid cursor: {error}"))
+                    .into_response()
+            }
+        },
+        None => None,
     };
 
     if let Some(endpoint_id) = params.endpoint_id {
@@ -286,35 +318,109 @@ pub async fn list_webhook_failures(
     }
 
     let result = if let Some(endpoint_id) = params.endpoint_id {
-        sqlx::query_as::<_, WebhookDeliveryFailure>(
-            r#"
-            SELECT f.* FROM webhook_delivery_failures f
-            JOIN webhook_endpoints e ON f.endpoint_id = e.id
-            WHERE e.id = $1 AND e.organizer_id = $2
-            ORDER BY f.failed_at DESC
-            "#,
-        )
-        .bind(endpoint_id)
-        .bind(organizer_id)
-        .fetch_all(&state.pool)
-        .await
+        match cursor.as_ref() {
+            Some(cursor) => {
+                sqlx::query_as::<_, WebhookDeliveryFailure>(
+                    r#"
+                    SELECT f.* FROM webhook_delivery_failures f
+                    JOIN webhook_endpoints e ON f.endpoint_id = e.id
+                    WHERE e.id = $1
+                      AND e.organizer_id = $2
+                      AND (f.failed_at < $3 OR (f.failed_at = $3 AND f.id < $4))
+                    ORDER BY f.failed_at DESC, f.id DESC
+                    LIMIT $5
+                    "#,
+                )
+                .bind(endpoint_id)
+                .bind(organizer_id)
+                .bind(cursor.failed_at)
+                .bind(cursor.id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&state.pool)
+                .await
+            }
+            None => {
+                sqlx::query_as::<_, WebhookDeliveryFailure>(
+                    r#"
+                    SELECT f.* FROM webhook_delivery_failures f
+                    JOIN webhook_endpoints e ON f.endpoint_id = e.id
+                    WHERE e.id = $1 AND e.organizer_id = $2
+                    ORDER BY f.failed_at DESC, f.id DESC
+                    LIMIT $3
+                    "#,
+                )
+                .bind(endpoint_id)
+                .bind(organizer_id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&state.pool)
+                .await
+            }
+        }
     } else {
-        sqlx::query_as::<_, WebhookDeliveryFailure>(
-            r#"
-            SELECT f.* FROM webhook_delivery_failures f
-            JOIN webhook_endpoints e ON f.endpoint_id = e.id
-            WHERE e.organizer_id = $1
-            ORDER BY f.failed_at DESC
-            LIMIT 100
-            "#,
-        )
-        .bind(organizer_id)
-        .fetch_all(&state.pool)
-        .await
+        match cursor.as_ref() {
+            Some(cursor) => {
+                sqlx::query_as::<_, WebhookDeliveryFailure>(
+                    r#"
+                    SELECT f.* FROM webhook_delivery_failures f
+                    JOIN webhook_endpoints e ON f.endpoint_id = e.id
+                    WHERE e.organizer_id = $1
+                      AND (f.failed_at < $2 OR (f.failed_at = $2 AND f.id < $3))
+                    ORDER BY f.failed_at DESC, f.id DESC
+                    LIMIT $4
+                    "#,
+                )
+                .bind(organizer_id)
+                .bind(cursor.failed_at)
+                .bind(cursor.id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&state.pool)
+                .await
+            }
+            None => {
+                sqlx::query_as::<_, WebhookDeliveryFailure>(
+                    r#"
+                    SELECT f.* FROM webhook_delivery_failures f
+                    JOIN webhook_endpoints e ON f.endpoint_id = e.id
+                    WHERE e.organizer_id = $1
+                    ORDER BY f.failed_at DESC, f.id DESC
+                    LIMIT $2
+                    "#,
+                )
+                .bind(organizer_id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&state.pool)
+                .await
+            }
+        }
     };
 
     match result {
-        Ok(failures) => success(failures, "Webhook failures retrieved").into_response(),
+        Ok(failures) => {
+            let mut failures = failures;
+            let has_more = failures.len() > limit as usize;
+            let next_cursor = if has_more {
+                failures.pop();
+                failures.last().and_then(|failure| {
+                    encode_cursor(&FailureCursor {
+                        failed_at: failure.failed_at,
+                        id: failure.id,
+                    })
+                    .ok()
+                })
+            } else {
+                None
+            };
+            let response = CursorResponse::new(
+                failures,
+                &ValidatedCursorParams {
+                    limit,
+                    cursor: None,
+                    include_count: false,
+                },
+                next_cursor,
+            );
+            success(response, "Webhook failures retrieved").into_response()
+        }
         Err(e) => AppError::DatabaseError(e).into_response(),
     }
 }
@@ -458,6 +564,36 @@ pub async fn test_webhook(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn webhook_failure_limit_clamps_to_accepted_range() {
+        assert_eq!(webhook_failure_limit(0), 1);
+        assert_eq!(webhook_failure_limit(50), 50);
+        assert_eq!(webhook_failure_limit(201), 200);
+    }
+
+    #[test]
+    fn webhook_failure_cursor_roundtrips_and_starts_second_page() {
+        let first_page_last_failed_at = chrono::Utc::now();
+        let first_page_last_id = Uuid::new_v4();
+        let cursor = encode_cursor(&FailureCursor {
+            failed_at: first_page_last_failed_at,
+            id: first_page_last_id,
+        })
+        .unwrap();
+
+        let decoded: FailureCursor = decode_cursor(&cursor).unwrap();
+        assert_eq!(decoded.failed_at, first_page_last_failed_at);
+        assert_eq!(decoded.id, first_page_last_id);
+
+        let second_page_rows = vec![FailureCursor {
+            failed_at: first_page_last_failed_at - chrono::Duration::seconds(1),
+            id: Uuid::new_v4(),
+        }];
+        assert!(second_page_rows
+            .iter()
+            .all(|row| row.failed_at < decoded.failed_at));
+    }
 
     #[test]
     fn validation_rejects_non_https_url() {

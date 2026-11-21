@@ -21,13 +21,52 @@ use axum::Router;
 use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
-use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 
 use agora_server::cache::RedisCache;
 use agora_server::config::request_id::REQUEST_ID_HEADER;
 use agora_server::config::Config;
 use agora_server::utils::logging::init_logging;
+
+#[cfg(unix)]
+async fn wait_for_shutdown_signal(shutdown_timeout: u64) {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+    let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
+
+    tokio::select! {
+        _ = sigterm.recv() => {
+            tracing::info!("Received SIGTERM, starting graceful shutdown");
+        }
+        _ = sigint.recv() => {
+            tracing::info!("Received SIGINT, starting graceful shutdown");
+        }
+        _ = tokio::time::sleep(Duration::from_secs(shutdown_timeout)) => {
+            tracing::warn!(
+                "Shutdown timeout of {shutdown_timeout}s elapsed, forcing shutdown"
+            );
+        }
+    }
+}
+
+#[cfg(windows)]
+async fn wait_for_shutdown_signal(shutdown_timeout: u64) {
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => {
+            if let Err(error) = result {
+                tracing::warn!("Failed to listen for Ctrl-C: {error}");
+            } else {
+                tracing::info!("Received Ctrl-C, starting graceful shutdown");
+            }
+        }
+        _ = tokio::time::sleep(Duration::from_secs(shutdown_timeout)) => {
+            tracing::warn!(
+                "Shutdown timeout of {shutdown_timeout}s elapsed, forcing shutdown"
+            );
+        }
+    }
+}
 
 /// Main application entry point.
 ///
@@ -70,7 +109,9 @@ async fn main() {
     let pool = PgPoolOptions::new()
         .max_connections(config.db_max_connections)
         .min_connections(config.db_min_connections)
-        .acquire_timeout(std::time::Duration::from_secs(config.db_acquire_timeout_secs))
+        .acquire_timeout(std::time::Duration::from_secs(
+            config.db_acquire_timeout_secs,
+        ))
         .idle_timeout(std::time::Duration::from_secs(config.db_idle_timeout_secs))
         .connect(&config.database_url)
         .await
@@ -117,8 +158,13 @@ async fn main() {
     // graceful shutdown (Issue #1261).
     let shutdown = CancellationToken::new();
 
-    let app: Router =
-        agora_server::routes::create_routes(pool.clone(), config.clone(), redis.clone(), shutdown.clone()).await;
+    let app: Router = agora_server::routes::create_routes(
+        pool.clone(),
+        config.clone(),
+        redis.clone(),
+        shutdown.clone(),
+    )
+    .await;
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("🚀 Server running at http://localhost:{}", config.port);
     tracing::info!("Request IDs will be set via '{REQUEST_ID_HEADER}' header");
@@ -166,26 +212,7 @@ async fn main() {
 
     let serve_result = axum::serve(listener, app)
         .with_graceful_shutdown(async move {
-            // Resolve on SIGTERM or SIGINT. The OS sends SIGTERM on `docker stop`
-            // / Kubernetes rolling deploys, and SIGINT on Ctrl-C.
-            let mut sigterm =
-                signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
-            let mut sigint =
-                signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
-
-            tokio::select! {
-                _ = sigterm.recv() => {
-                    tracing::info!("Received SIGTERM, starting graceful shutdown");
-                }
-                _ = sigint.recv() => {
-                    tracing::info!("Received SIGINT, starting graceful shutdown");
-                }
-                _ = tokio::time::sleep(Duration::from_secs(shutdown_timeout)) => {
-                    tracing::warn!(
-                        "Shutdown timeout of {shutdown_timeout}s elapsed, forcing shutdown"
-                    );
-                }
-            }
+            wait_for_shutdown_signal(shutdown_timeout).await;
 
             // Signal background tasks (indexer, queue admission worker, nonce
             // cleanup) to stop via the cancellation token.

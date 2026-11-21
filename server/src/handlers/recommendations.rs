@@ -17,10 +17,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{
-    utils::error::AppError,
-    middleware::auth::AuthUser,
-};
+use crate::{middleware::auth::AuthUser, utils::error::AppError};
 
 // ── Request & Response types ──────────────────────────────────────────────────
 
@@ -238,7 +235,6 @@ pub async fn get_recommended_events(
         .await?
     };
 
-    let based_on_categories: Vec<String> = user_categories.into_iter().map(|(_, n)| n).collect();
     Ok((
         StatusCode::OK,
         Json(build_recommendations_response(events, &user_categories)),

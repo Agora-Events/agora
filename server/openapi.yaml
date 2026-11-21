@@ -135,6 +135,21 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: limit
+          in: query
+          required: false
+          description: Number of failures to return (default 50, maximum 200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from pagination.next_cursor on the previous page.
+          schema:
+            type: string
       responses:
         '200':
           description: Organizer's webhook delivery failures
@@ -146,9 +161,7 @@ paths:
                   - type: object
                     properties:
                       data:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/WebhookDeliveryFailure'
+                        $ref: '#/components/schemas/WebhookFailurePage'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -632,6 +645,37 @@ components:
           type: string
           nullable: true
       required: [endpoint_id, url, event, status_code, latency_ms, success]
+
+    WebhookFailurePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookDeliveryFailure'
+        pagination:
+          type: object
+          properties:
+            page_size:
+              type: integer
+            has_more:
+              type: boolean
+            next_cursor:
+              type: string
+              nullable: true
+          required: [page_size, has_more]
+        meta:
+          type: object
+          properties:
+            page_size:
+              type: integer
+            has_more:
+              type: boolean
+            total:
+              type: integer
+              nullable: true
+          required: [page_size, has_more]
+      required: [items, pagination, meta]
 
     WebhookDeliveryFailure:
       type: object

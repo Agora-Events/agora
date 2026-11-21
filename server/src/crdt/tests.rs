@@ -71,16 +71,16 @@ mod integration_tests {
     fn test_timestamp_monotonicity_increasing_wins() {
         // Later timestamp should always win regardless of node ID
         let mut set: LWWElementSet<String> = LWWElementSet::new();
-        
+
         // Add with timestamp 100
         set.add("value1".to_string(), "node1", Some(100));
         assert!(set.has(&"value1".to_string()));
-        
+
         // Update with later timestamp 200
         set.add("value1".to_string(), "node1", Some(200));
         assert!(set.has(&"value1".to_string()));
         assert_eq!(set.size(), 1);
-        
+
         // Remove with even later timestamp 300
         set.remove("value1".to_string(), "node1", Some(300));
         assert!(!set.has(&"value1".to_string()));
@@ -90,12 +90,12 @@ mod integration_tests {
     fn test_timestamp_monotonicity_non_monotonic_ignored() {
         // Earlier timestamp should be ignored
         let mut set: LWWElementSet<String> = LWWElementSet::new();
-        
+
         set.add("value1".to_string(), "node1", Some(200));
-        
+
         // Try to update with earlier timestamp - should be ignored
         set.add("value1".to_string(), "node1", Some(100));
-        
+
         assert!(set.has(&"value1".to_string()));
         assert_eq!(set.size(), 1);
     }
@@ -125,10 +125,10 @@ mod integration_tests {
     fn test_tombstone_add_then_remove() {
         // Add with timestamp 100, remove with timestamp 200
         let mut set: LWWElementSet<String> = LWWElementSet::new();
-        
+
         set.add("value1".to_string(), "node1", Some(100));
         assert!(set.has(&"value1".to_string()));
-        
+
         set.remove("value1".to_string(), "node1", Some(200));
         assert!(!set.has(&"value1".to_string()));
     }
@@ -137,10 +137,10 @@ mod integration_tests {
     fn test_tombstone_remove_then_add() {
         // Remove with timestamp 100, add with timestamp 200
         let mut set: LWWElementSet<String> = LWWElementSet::new();
-        
+
         set.remove("value1".to_string(), "node1", Some(100));
         assert!(!set.has(&"value1".to_string()));
-        
+
         set.add("value1".to_string(), "node1", Some(200));
         assert!(set.has(&"value1".to_string()));
     }
@@ -166,10 +166,10 @@ mod integration_tests {
     fn test_tombstone_remove_lower_timestamp() {
         // Remove with lower timestamp than add should be ignored
         let mut set: LWWElementSet<String> = LWWElementSet::new();
-        
+
         set.add("value1".to_string(), "node1", Some(200));
         set.remove("value1".to_string(), "node1", Some(100));
-        
+
         assert!(set.has(&"value1".to_string()));
     }
 
@@ -177,10 +177,10 @@ mod integration_tests {
     fn test_tombstone_remove_higher_timestamp() {
         // Remove with higher timestamp should work
         let mut set: LWWElementSet<String> = LWWElementSet::new();
-        
+
         set.add("value1".to_string(), "node1", Some(100));
         set.remove("value1".to_string(), "node1", Some(300));
-        
+
         assert!(!set.has(&"value1".to_string()));
     }
 
@@ -188,10 +188,10 @@ mod integration_tests {
     fn test_tombstone_remove_by_different_node() {
         // Remove from different node but higher timestamp should work
         let mut set: LWWElementSet<String> = LWWElementSet::new();
-        
+
         set.add("value1".to_string(), "node1", Some(100));
         set.remove("value1".to_string(), "node2", Some(200));
-        
+
         assert!(!set.has(&"value1".to_string()));
     }
 
@@ -517,7 +517,6 @@ mod integration_tests {
         assert!(VectorClockUtils::equals(&clock1, &clock2));
     }
 
-
     // Concurrency coverage for the sync path (issue #1668): concurrent updates,
     // timestamp monotonicity, and tombstone removal.
 
@@ -611,6 +610,7 @@ mod integration_tests {
         assert_eq!(clock1.compare(&clock2), -1);
         assert_eq!(clock2.compare(&clock1), 1);
         assert!(clock1.happened_before(&clock2));
+    }
 
     // ───────────────────────────────────────────────────────────────────────────
     // Edge Cases and Complex Scenarios
@@ -637,7 +637,7 @@ mod integration_tests {
         set.add("value2".to_string(), "node2", Some(200));
 
         let initial_size = set.size();
-        set.merge(&set);
+        set.merge(&set.clone());
 
         assert_eq!(set.size(), initial_size);
     }

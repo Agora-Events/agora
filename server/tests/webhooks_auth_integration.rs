@@ -152,7 +152,7 @@ async fn webhook_management_is_authenticated_and_organizer_scoped() {
             None,
         ),
     ] {
-        let (status, _) = send_request(router.clone(), method, &uri, body, None).await;
+        let (status, _) = send_request(router.clone(), method.clone(), &uri, body, None).await;
         assert_eq!(
             status,
             StatusCode::UNAUTHORIZED,
@@ -223,8 +223,14 @@ async fn webhook_management_is_authenticated_and_organizer_scoped() {
             format!("/webhooks/failures/{other_failure}/retry"),
         ),
     ] {
-        let (status, _) =
-            send_request(router.clone(), method, &uri, None, Some(&owner_token)).await;
+        let (status, _) = send_request(
+            router.clone(),
+            method.clone(),
+            &uri,
+            None,
+            Some(&owner_token),
+        )
+        .await;
         assert_eq!(
             status,
             StatusCode::NOT_FOUND,
@@ -235,19 +241,77 @@ async fn webhook_management_is_authenticated_and_organizer_scoped() {
     let (status, failures) = send_request(
         router.clone(),
         Method::GET,
-        &format!("/webhooks/failures?organizer_id={other_id}"),
+        "/webhooks/failures",
         None,
         Some(&owner_token),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(failures["data"]
+    assert!(failures["data"]["items"]
         .as_array()
         .unwrap()
         .iter()
         .all(|failure| { failure["endpoint_id"] == owner_endpoint.to_string() }));
-    assert_eq!(failures["data"][0]["id"], owner_failure.to_string());
+    assert_eq!(
+        failures["data"]["items"][0]["id"],
+        owner_failure.to_string()
+    );
 
     cleanup_organizer(&pool, owner_id).await;
     cleanup_organizer(&pool, other_id).await;
+}
+
+#[tokio::test]
+async fn webhook_failure_pagination_follows_cursor_to_second_page() {
+    let Some(pool) = test_pool("webhook_failure_pagination_follows_cursor_to_second_page").await
+    else {
+        return;
+    };
+    std::env::set_var("JWT_SECRET", "test-secret-do-not-use-in-production");
+
+    let wallet = format!("webhook-pagination-{}", Uuid::new_v4());
+    let organizer_id = seed_organizer(&pool, "Webhook pagination owner", &wallet).await;
+    let endpoint_id = seed_endpoint(&pool, organizer_id).await;
+    let first_id = seed_failure(&pool, endpoint_id).await;
+    let second_id = seed_failure(&pool, endpoint_id).await;
+    let third_id = seed_failure(&pool, endpoint_id).await;
+    let token = issue_jwt(&wallet).expect("issue pagination JWT");
+    let router = webhook_router(pool.clone());
+
+    let (status, first_page) = send_request(
+        router.clone(),
+        Method::GET,
+        &format!("/webhooks/failures?endpoint_id={endpoint_id}&limit=2"),
+        None,
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first_page["data"]["items"].as_array().unwrap().len(), 2);
+    let next_cursor = first_page["data"]["pagination"]["next_cursor"]
+        .as_str()
+        .expect("first page should have a next cursor")
+        .to_string();
+
+    let (status, second_page) = send_request(
+        router,
+        Method::GET,
+        &format!("/webhooks/failures?endpoint_id={endpoint_id}&limit=2&cursor={next_cursor}"),
+        None,
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let second_items = second_page["data"]["items"].as_array().unwrap();
+    assert_eq!(second_items.len(), 1);
+    assert!(second_items.iter().any(|failure| {
+        let id = failure["id"].as_str().unwrap();
+        id == first_id.to_string() || id == second_id.to_string() || id == third_id.to_string()
+    }));
+    assert_eq!(
+        second_page["data"]["pagination"]["next_cursor"],
+        serde_json::Value::Null
+    );
+
+    cleanup_organizer(&pool, organizer_id).await;
 }
