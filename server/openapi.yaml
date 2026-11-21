@@ -19,6 +19,120 @@ tags:
     description: Event discovery and event-scoped resources
 
 paths:
+  /api/v1/webhooks:
+    get:
+      tags: [Webhooks]
+      summary: List the authenticated organizer's webhook endpoints
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organizer-owned webhook endpoints
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Webhooks]
+      summary: Register a webhook endpoint for the authenticated organizer
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookRequest'
+      responses:
+        '200':
+          description: Webhook endpoint created
+        '400':
+          description: Invalid webhook configuration
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/webhooks/{endpoint_id}:
+    delete:
+      tags: [Webhooks]
+      summary: Deactivate an owned webhook endpoint
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: endpoint_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Webhook endpoint deactivated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/webhooks/{endpoint_id}/test:
+    post:
+      tags: [Webhooks]
+      summary: Test an owned webhook endpoint
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: endpoint_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Test delivery result
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/webhooks/failures:
+    get:
+      tags: [Webhooks]
+      summary: List owned webhook delivery failures
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: endpoint_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Owned webhook delivery failures
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/webhooks/failures/{id}/retry:
+    post:
+      tags: [Webhooks]
+      summary: Retry an owned webhook delivery failure
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Webhook failure retried
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/v1/health:
     get:
       tags: [Health]
@@ -305,6 +419,18 @@ paths:
           $ref: '#/components/responses/NotFound'
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Authentication is required or the credential is invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
   parameters:
     EventId:
       name: id
@@ -324,6 +450,20 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
 
   schemas:
+    CreateWebhookRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        secret:
+          type: string
+        events:
+          type: array
+          items:
+            type: string
+      required: [url, secret, events]
+
     ApiResponse:
       type: object
       description: Standard success envelope wrapping all API responses.
