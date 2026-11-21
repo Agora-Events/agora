@@ -53,13 +53,12 @@ use crate::handlers::{
     categories::{get_category, list_categories, CategoryState},
     events::{
         clone_event, create_event, export_attendees_csv, flag_event, get_attendee_count,
-        get_checkin_stats, get_event,
-        get_event_counts, get_event_organizer, get_event_revenue, get_event_share_link,
-        get_event_social_proof, get_events_map, get_ratings_summary, list_event_attendees,
-        list_event_ratings, list_event_tickets, list_events, list_events_by_category,
-        list_featured_events, list_past_events, list_similar_events, list_ticket_tiers,
-        list_upcoming_events, search_events, set_event_featured, submit_event_rating,
-        toggle_event_flag, EventState,
+        get_checkin_stats, get_event, get_event_counts, get_event_organizer, get_event_revenue,
+        get_event_share_link, get_event_social_proof, get_events_map, get_ratings_summary,
+        list_event_attendees, list_event_ratings, list_event_tickets, list_events,
+        list_events_by_category, list_featured_events, list_past_events, list_similar_events,
+        list_ticket_tiers, list_upcoming_events, search_events, set_event_featured,
+        submit_event_rating, toggle_event_flag, EventState,
     },
     example_empty_success, example_not_found, example_validation_error,
     governance::{
@@ -67,8 +66,8 @@ use crate::handlers::{
         GovernanceState,
     },
     health::{
-        health_check, health_check_blockchain, health_check_db, health_check_live, health_check_ready,
-        health_check_redis, version,
+        health_check, health_check_blockchain, health_check_db, health_check_live,
+        health_check_ready, health_check_redis, version,
     },
     marketplace::{
         cancel_listing, create_key_envelope, create_listing, create_offer, get_key_envelope,
@@ -132,6 +131,7 @@ use utoipa::OpenApi;
         crate::handlers::webhooks::create_webhook,
         crate::handlers::webhooks::list_webhooks,
         crate::handlers::webhooks::delete_webhook,
+        crate::handlers::webhooks::test_webhook,
         crate::handlers::webhooks::list_webhook_failures,
         crate::handlers::webhooks::retry_webhook_failure,
         crate::handlers::affiliates::register_affiliate,
@@ -148,6 +148,7 @@ use utoipa::OpenApi;
             crate::handlers::webhooks::CreateWebhookRequest,
             crate::handlers::webhooks::CreateWebhookResponse,
             crate::handlers::webhooks::ListWebhooksParams,
+            crate::handlers::webhooks::TestWebhookResponse,
             crate::handlers::webhooks::ListWebhookFailuresParams,
             crate::models::webhook::WebhookEndpoint,
             crate::models::webhook::WebhookDeliveryFailure,
@@ -374,8 +375,8 @@ pub async fn create_routes(
                     pool: pool.clone(),
                     broker: Some(broadcaster.clone()),
                 }),
-            )
-            .merge(admin_category_routes);
+        )
+        .merge(admin_category_routes);
 
     // WebSocket sub-router for real-time purchase and organizer telemetry updates.
     // Each socket has a different state type, so build separate sub-routers and
@@ -452,7 +453,10 @@ pub async fn create_routes(
             post(crate::handlers::webhooks::create_webhook)
                 .get(crate::handlers::webhooks::list_webhooks),
         )
-        .route("/failures", get(crate::handlers::webhooks::list_webhook_failures))
+        .route(
+            "/failures",
+            get(crate::handlers::webhooks::list_webhook_failures),
+        )
         .route(
             "/failures/:id/retry",
             post(crate::handlers::webhooks::retry_webhook_failure),
@@ -786,7 +790,10 @@ mod tests {
             .route("/api/v1/examples/not-found/:id", get(|| async { "ok" }))
             .route("/api/v1/upload/image", post(|| async { "ok" }))
             .route("/api/v1/webhooks/failures", get(|| async { "ok" }))
-            .route("/api/v1/webhooks/failures/:id/retry", post(|| async { "ok" }))
+            .route(
+                "/api/v1/webhooks/failures/:id/retry",
+                post(|| async { "ok" }),
+            )
     }
 
     async fn get_status(router: Router, path: &str) -> StatusCode {
