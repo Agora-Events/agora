@@ -223,6 +223,18 @@ to already be migrated. The seed script (`apps/web/prisma/seed.ts`) uses
 `upsert` with fixed ids, so it is safe to run repeatedly -- re-running it
 will not create duplicate records.
 
+### Type-check the frontend
+
+```bash
+pnpm --filter web typecheck
+```
+
+This script runs `prisma generate` before `tsc --noEmit`, because the Prisma client
+(`PrismaClient` and the model types from `@prisma/client`) only exists after it has been
+generated. You do not need to generate it by hand first, so the check works on a fresh clone.
+If you only need to regenerate the client (for example after editing `apps/web/prisma/schema.prisma`),
+run `pnpm --filter web exec prisma generate`.
+
 ## 7. Run Contract Tests
 
 Open another terminal and run the Soroban contract test suite:

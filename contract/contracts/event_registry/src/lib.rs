@@ -2714,6 +2714,9 @@ mod issue_tests;
 mod test_issue_fixes;
 
 #[cfg(test)]
+mod test_max_per_user;
+
+#[cfg(test)]
 mod test_global_promo;
 
 #[cfg(test)]
