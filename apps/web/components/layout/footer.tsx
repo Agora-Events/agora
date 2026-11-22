@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -8,8 +8,8 @@ import { useLocale, useTranslations } from "next-intl";
 
 const LOCALES = [
   { code: "en", label: "English" },
-  { code: "es", label: "EspaÃ±ol" },
-  { code: "fr", label: "FranÃ§ais" },
+  { code: "es", label: "Español" },
+  { code: "fr", label: "Français" },
 ] as const;
 
 type Locale = (typeof LOCALES)[number]["code"];
