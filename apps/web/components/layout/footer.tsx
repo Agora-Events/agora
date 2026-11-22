@@ -1,22 +1,22 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 const LOCALES = [
   { code: "en", label: "English" },
-  { code: "es", label: "EspaÃ±ol" },
-  { code: "fr", label: "FranÃ§ais" },
+  { code: "es", label: "Español" },
+  { code: "fr", label: "Français" },
 ] as const;
 
 type Locale = (typeof LOCALES)[number]["code"];
 const LOCALE_COOKIE = "NEXT_LOCALE";
 
 export function Footer() {
+  const t = useTranslations("footer");
   const router = useRouter();
   const activeLocale = useLocale();
   const locale = LOCALES.find(({ code }) => code === activeLocale)?.code ?? "en";

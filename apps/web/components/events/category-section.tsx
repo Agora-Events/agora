@@ -52,6 +52,25 @@ export function CategorySection({
   selectedCategory,
   onCategoryChange,
 }: CategorySectionProps) {
+  const {
+    data: fetchedCategories,
+    error,
+    isLoading,
+  } = useSWR<DiscoverCategory[]>(
+    "/api/v1/categories",
+    () => fetchCategories(),
+    {
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      revalidateIfStale: false,
+      dedupingInterval: 2000,
+    },
+  );
+
+  const categories: DiscoverCategory[] =
+    fetchedCategories && fetchedCategories.length > 0
+      ? fetchedCategories
+      : defaultCategories;
   return (
     <section className="px-4 bg-base pt-12 pb-6">
       <div className="mx-auto max-w-[1221px]">
@@ -84,8 +103,17 @@ export function CategorySection({
             <div className="h-7 w-48 rounded-md bg-black/10 animate-pulse mb-6" />
           )}
 
+          {error && (
+            <div
+              role="alert"
+              className="mb-6 p-4 rounded-xl border border-red-200 bg-red-50 text-sm text-red-700"
+            >
+              Failed to load categories from server. Showing default categories.
+            </div>
+          )}
+
           <motion.div variants={container} className="flex flex-wrap gap-4">
-            {categories.map((category) => (
+            {categories.map((category: DiscoverCategory) => (
               <motion.div key={category.name} variants={item}>
                 <button
                   onClick={() =>

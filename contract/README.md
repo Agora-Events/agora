@@ -137,6 +137,10 @@ cargo test -p ticket-payment
 cargo test -p pro-subscription
 ```
 
+### Test snapshots
+
+Soroban test snapshots (`contracts/*/test_snapshots/`) are committed to git, so changes to emitted events or auth show up in review. When a test change legitimately alters a snapshot, commit the regenerated files with it; do not add `test_snapshots` to any `.gitignore`.
+
 ### Generate coverage for `ticket-payment`
 
 `scripts/generate_coverage.sh` expects `cargo-llvm-cov` to be installed and writes outputs under `coverage/`.

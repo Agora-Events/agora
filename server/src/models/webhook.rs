@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use utoipa::ToSchema;
 use url::Url;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Webhook events the dispatcher can emit (Issue #1339).
@@ -48,7 +48,6 @@ pub struct WebhookEndpointView {
 /// Request body for `POST /api/v1/webhooks`.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateWebhookRequest {
-    pub organizer_id: Uuid,
     /// HTTPS URL that will receive signed POST payloads.
     pub url: String,
     /// Shared secret used to generate the `X-Agora-Signature` HMAC.
@@ -86,7 +85,8 @@ pub const MAX_WEBHOOK_SECRET_LEN: usize = 512;
 /// rejecting private, loopback, link-local, and other reserved IP addresses.
 pub fn validate_create_webhook(req: &CreateWebhookRequest) -> Result<Vec<String>, String> {
     let url_str = req.url.trim();
-    if url_str.is_empty() || !url_str.starts_with("https://") || url_str.len() > MAX_WEBHOOK_URL_LEN {
+    if url_str.is_empty() || !url_str.starts_with("https://") || url_str.len() > MAX_WEBHOOK_URL_LEN
+    {
         return Err("url must be a valid HTTPS URL".to_string());
     }
 
@@ -182,7 +182,6 @@ mod tests {
     #[test]
     fn validation_accepts_public_ip() {
         let req = CreateWebhookRequest {
-            organizer_id: Uuid::new_v4(),
             url: "https://example.com/webhook".to_string(),
             secret: "s3cret".to_string(),
             events: vec!["PaymentProcessed".to_string()],
@@ -193,7 +192,6 @@ mod tests {
     #[test]
     fn validation_rejects_loopback_ipv4() {
         let req = CreateWebhookRequest {
-            organizer_id: Uuid::new_v4(),
             url: "https://127.0.0.1/hook".to_string(),
             secret: "s3cret".to_string(),
             events: vec!["PaymentProcessed".to_string()],
@@ -204,7 +202,6 @@ mod tests {
     #[test]
     fn validation_rejects_loopback_ipv6() {
         let req = CreateWebhookRequest {
-            organizer_id: Uuid::new_v4(),
             url: "https://[::1]/hook".to_string(),
             secret: "s3cret".to_string(),
             events: vec!["PaymentProcessed".to_string()],
@@ -215,7 +212,6 @@ mod tests {
     #[test]
     fn validation_rejects_private_ipv4_10() {
         let req = CreateWebhookRequest {
-            organizer_id: Uuid::new_v4(),
             url: "https://10.0.0.5/hook".to_string(),
             secret: "s3cret".to_string(),
             events: vec!["PaymentProcessed".to_string()],
@@ -226,7 +222,6 @@ mod tests {
     #[test]
     fn validation_rejects_private_ipv4_172() {
         let req = CreateWebhookRequest {
-            organizer_id: Uuid::new_v4(),
             url: "https://172.16.0.1/hook".to_string(),
             secret: "s3cret".to_string(),
             events: vec!["PaymentProcessed".to_string()],
@@ -237,7 +232,6 @@ mod tests {
     #[test]
     fn validation_rejects_private_ipv4_192() {
         let req = CreateWebhookRequest {
-            organizer_id: Uuid::new_v4(),
             url: "https://192.168.1.1/hook".to_string(),
             secret: "s3cret".to_string(),
             events: vec!["PaymentProcessed".to_string()],
@@ -248,7 +242,6 @@ mod tests {
     #[test]
     fn validation_rejects_link_local_ipv4() {
         let req = CreateWebhookRequest {
-            organizer_id: Uuid::new_v4(),
             url: "https://169.254.169.254/hook".to_string(),
             secret: "s3cret".to_string(),
             events: vec!["PaymentProcessed".to_string()],
@@ -259,7 +252,6 @@ mod tests {
     #[test]
     fn validation_rejects_localhost_hostname() {
         let req = CreateWebhookRequest {
-            organizer_id: Uuid::new_v4(),
             url: "https://localhost:6379/hook".to_string(),
             secret: "s3cret".to_string(),
             events: vec!["PaymentProcessed".to_string()],
@@ -270,7 +262,6 @@ mod tests {
     #[test]
     fn validation_accepts_normal_hostname() {
         let req = CreateWebhookRequest {
-            organizer_id: Uuid::new_v4(),
             url: "https://api.example.com/hook".to_string(),
             secret: "s3cret".to_string(),
             events: vec!["PaymentProcessed".to_string()],
@@ -293,4 +284,3 @@ pub struct WebhookDeliveryFailure {
     pub retried_at: Option<DateTime<Utc>>,
     pub retry_status: Option<String>,
 }
-
