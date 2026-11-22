@@ -1,9 +1,11 @@
 "use client";
 
 import { Suspense } from "react";
+import { useParams } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { ProfileSidebar } from "@/components/profile/profile-sidebar";
+import { OrganizerFollowerCount } from "@/components/profile/organizer-follower-count";
 import { FollowButton } from "@/components/profile/follow-button";
 import { EventCard } from "@/components/events/event-card";
 import { OrganizerProfileSkeleton } from "@/components/profile/organizer-profile-skeleton";
@@ -83,7 +85,9 @@ function OrganizerEvents({ address }: { address: string }) {
   );
 }
 
-export default function OrganizerProfilePage({ params }: { params: { id: string } }) {
+export default function OrganizerProfilePage() {
+  const { id } = useParams<{ id: string }>();
+
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
@@ -91,12 +95,15 @@ export default function OrganizerProfilePage({ params }: { params: { id: string 
         <div className="flex-1 w-full max-w-6xl mx-auto px-4 py-10 md:py-20">
           <div className="flex flex-col md:flex-row gap-10 items-start">
             <div className="w-full md:w-[32%] md:sticky md:top-24 flex flex-col gap-4">
-              <ProfileSidebar address={params.id} />
-              <FollowButton organizerId={params.id} />
+              <ProfileSidebar address={id} />
+              <div className="flex items-center gap-3">
+                <FollowButton organizerId={id} />
+                <OrganizerFollowerCount organizerId={id} />
+              </div>
             </div>
 
             <div className="flex-1 flex flex-col gap-10 w-full">
-              <OrganizerEvents address={params.id} />
+              <OrganizerEvents address={id} />
             </div>
           </div>
         </div>
