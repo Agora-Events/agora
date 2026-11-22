@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { mintTicket } from "@/utils/stellar";
 import crypto from "crypto";
@@ -71,7 +71,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       throwApiError("Server encryption key not configured", 500);
     }
     /*
-     Security note â€” Custodial wallet encryption
+     Security note — Custodial wallet encryption
 
      - Scheme: AES-256-GCM
      - Key derivation: HMAC-SHA256(email) keyed by `CUSTODIAL_ENCRYPTION_KEY`.
