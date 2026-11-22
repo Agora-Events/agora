@@ -68,6 +68,19 @@ The Apple OAuth flow follows the "Sign in with Apple" protocol.
 
 ---
 
+## Backend API Endpoints
+
+The Rust backend exposes a wallet challenge-response flow under `/api/v1/auth` (defined in `server/src/routes/mod.rs`, rate limited per minute). All endpoints are `POST`:
+
+| Endpoint | Purpose |
+| :--- | :--- |
+| `/api/v1/auth/nonce` | Issues a single-use nonce (valid for 5 minutes) for a wallet `address`. |
+| `/api/v1/auth/verify` | Verifies the signed nonce (`address`, `nonce`, `signature`, `public_key`) and returns a JWT. |
+| `/api/v1/auth/refresh` | Validates the current unexpired JWT and returns a fresh one (24-hour expiry). |
+| `/api/v1/auth/logout` | Stateless logout; the client discards the token. No server-side invalidation. |
+
+---
+
 ## Session Storage and Validation
 
 ### Validation Logic
