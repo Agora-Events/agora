@@ -366,10 +366,10 @@ fn test_set_global_promo_expired() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _admin, _contract_id) = setup(&env);
-    let expired_at = env.ledger().timestamp().saturating_sub(1);
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
 
-    client.set_global_promo(&2500, &expired_at);
-
+    let result = client.try_set_global_promo(&2500, &999);
+    assert_eq!(result, Err(Ok(EventRegistryError::InvalidDeadline)));
     assert_eq!(client.get_global_promo_bps(), 0);
 }
 
@@ -389,7 +389,8 @@ fn test_get_global_promo_returns_none_when_expired() {
     let (client, _admin, _contract_id) = setup(&env);
 
     env.ledger().with_mut(|li| li.timestamp = 1_000);
-    client.set_global_promo(&500, &999);
+    client.set_global_promo(&500, &1_500);
+    env.ledger().with_mut(|li| li.timestamp = 1_501);
 
     assert_eq!(client.get_global_promo(), None);
 }
@@ -554,4 +555,68 @@ fn test_approve_expired_proposal() {
     // The approvals list must not have been altered
     let approvals_after = client.get_proposal(&proposal_id).unwrap().approvals;
     assert_eq!(approvals_before, approvals_after);
+}
+
+// ── blacklist audit log pagination – issue #1740 ───────────────────────────
+
+fn blacklist_n(env: &Env, client: &EventRegistryClient<'static>, n: u32) -> Vec<Address> {
+    let mut organizers = Vec::new(env);
+    for _ in 0..n {
+        let organizer = Address::generate(env);
+        client.blacklist_organizer(&organizer, &String::from_str(env, "audit"));
+        organizers.push_back(organizer);
+    }
+    organizers
+}
+
+#[test]
+fn test_blacklist_audit_log_page_first_page() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+    let organizers = blacklist_n(&env, &client, 5);
+
+    let page = client.get_blacklist_audit_log_page(&0, &2);
+
+    assert_eq!(page.len(), 2);
+    assert_eq!(page.get(0).unwrap().organizer_address, organizers.get(0).unwrap());
+    assert_eq!(page.get(1).unwrap().organizer_address, organizers.get(1).unwrap());
+}
+
+#[test]
+fn test_blacklist_audit_log_page_last_partial_page() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+    let organizers = blacklist_n(&env, &client, 5);
+
+    let page = client.get_blacklist_audit_log_page(&4, &3);
+
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.get(0).unwrap().organizer_address, organizers.get(4).unwrap());
+}
+
+#[test]
+fn test_blacklist_audit_log_page_out_of_range_start_is_empty() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+    blacklist_n(&env, &client, 3);
+
+    assert_eq!(client.get_blacklist_audit_log_page(&3, &10).len(), 0);
+    assert_eq!(client.get_blacklist_audit_log_page(&u32::MAX, &u32::MAX).len(), 0);
+    assert_eq!(client.get_blacklist_audit_log_page(&0, &0).len(), 0);
+}
+
+#[test]
+fn test_blacklist_audit_log_page_limit_is_clamped_to_max_batch_size() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _contract_id) = setup(&env);
+    blacklist_n(&env, &client, 55);
+
+    let page = client.get_blacklist_audit_log_page(&0, &1_000);
+
+    assert_eq!(page.len(), 50);
+    assert_eq!(client.get_blacklist_audit_log().len(), 55);
 }
