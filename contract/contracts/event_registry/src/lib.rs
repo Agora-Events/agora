@@ -1377,9 +1377,37 @@ impl EventRegistry {
         storage::is_blacklisted(&env, &organizer_address)
     }
 
-    /// Retrieves the blacklist audit log.
+    /// Retrieves the entire blacklist audit log.
+    ///
+    /// The log only grows, so this getter is unsuitable for large logs: the read
+    /// can exceed Soroban resource limits. Prefer [`Self::get_blacklist_audit_log_page`].
     pub fn get_blacklist_audit_log(env: Env) -> Vec<BlacklistAuditEntry> {
         storage::get_blacklist_audit_log(&env)
+    }
+
+    /// Retrieves one page of the blacklist audit log, oldest entries first.
+    ///
+    /// # Arguments
+    /// * `start` - Zero-based index of the first entry to return.
+    /// * `limit` - Maximum entries to return; clamped to `MAX_BATCH_SIZE` (50).
+    ///
+    /// Returns an empty vector when `start` is out of range or `limit` is 0.
+    pub fn get_blacklist_audit_log_page(
+        env: Env,
+        start: u32,
+        limit: u32,
+    ) -> Vec<BlacklistAuditEntry> {
+        let log = storage::get_blacklist_audit_log(&env);
+        let len = log.len();
+        let mut page = Vec::new(&env);
+        if start >= len {
+            return page;
+        }
+        let end = start.saturating_add(limit.min(MAX_BATCH_SIZE)).min(len);
+        for i in start..end {
+            page.push_back(log.get(i).unwrap());
+        }
+        page
     }
 
     /// Sets a platform-wide promotional discount. Only callable by the administrator.
@@ -1388,6 +1416,11 @@ impl EventRegistry {
     /// # Arguments
     /// * `global_promo_bps` - Discount rate in basis points (e.g., 1500 = 15% off). 0 clears the promo.
     /// * `promo_expiry` - Unix timestamp after which the promo is no longer applied.
+    ///   Must be strictly in the future when `global_promo_bps > 0`.
+    ///
+    /// # Errors
+    /// * `InvalidPromoBps` - `global_promo_bps` exceeds 10000.
+    /// * `InvalidDeadline` - `global_promo_bps > 0` and `promo_expiry` is not in the future.
     pub fn set_global_promo(
         env: Env,
         global_promo_bps: u32,
@@ -1397,6 +1430,12 @@ impl EventRegistry {
 
         if global_promo_bps > 10000 {
             return Err(EventRegistryError::InvalidPromoBps);
+        }
+
+        // A live promo must expire in the future; otherwise it would be
+        // reported as set but never applied. Clearing (bps == 0) accepts any expiry.
+        if global_promo_bps > 0 && promo_expiry <= env.ledger().timestamp() {
+            return Err(EventRegistryError::InvalidDeadline);
         }
 
         storage::set_global_promo_bps(&env, global_promo_bps);
