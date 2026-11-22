@@ -19,120 +19,52 @@ tags:
     description: Event discovery and event-scoped resources
 
 paths:
-  /api/v1/webhooks:
-    get:
-      tags: [Webhooks]
-      summary: List the authenticated organizer's webhook endpoints
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Organizer-owned webhook endpoints
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-    post:
-      tags: [Webhooks]
-      summary: Register a webhook endpoint for the authenticated organizer
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateWebhookRequest'
-      responses:
-        '200':
-          description: Webhook endpoint created
-        '400':
-          description: Invalid webhook configuration
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/v1/webhooks/{endpoint_id}:
-    delete:
-      tags: [Webhooks]
-      summary: Deactivate an owned webhook endpoint
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: endpoint_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Webhook endpoint deactivated
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/v1/webhooks/{endpoint_id}/test:
-    post:
-      tags: [Webhooks]
-      summary: Test an owned webhook endpoint
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: endpoint_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Test delivery result
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
   /api/v1/webhooks/failures:
     get:
       tags: [Webhooks]
-      summary: List owned webhook delivery failures
-      security:
-        - bearerAuth: []
+      summary: List webhook delivery failures
       parameters:
         - name: endpoint_id
           in: query
           required: false
+          description: Filter by webhook endpoint ID.
           schema:
             type: string
             format: uuid
-      responses:
-        '200':
-          description: Owned webhook delivery failures
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/v1/webhooks/failures/{id}/retry:
-    post:
-      tags: [Webhooks]
-      summary: Retry an owned webhook delivery failure
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
+        - name: organizer_id
+          in: query
+          required: false
+          description: Filter by organizer ID.
           schema:
             type: string
             format: uuid
+        - name: limit
+          in: query
+          required: false
+          description: Number of failures to return (default 50, maximum 200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from pagination.next_cursor on the previous page.
+          schema:
+            type: string
       responses:
         '200':
-          description: Webhook failure retried
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
+          description: Paginated webhook delivery failures
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookFailurePage'
   /api/v1/health:
     get:
       tags: [Health]
@@ -498,6 +430,71 @@ components:
           type: string
           description: Human-readable error message safe to show to end users.
       required: [code, message]
+
+    WebhookFailurePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookDeliveryFailure'
+        pagination:
+          type: object
+          properties:
+            page_size:
+              type: integer
+            has_more:
+              type: boolean
+            next_cursor:
+              type: string
+              nullable: true
+          required: [page_size, has_more]
+        meta:
+          type: object
+          properties:
+            page_size:
+              type: integer
+            has_more:
+              type: boolean
+            total:
+              type: integer
+              nullable: true
+          required: [page_size, has_more]
+      required: [items, pagination, meta]
+
+    WebhookDeliveryFailure:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        endpoint_id:
+          type: string
+          format: uuid
+        event:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        attempts:
+          type: integer
+        last_status_code:
+          type: integer
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+        failed_at:
+          type: string
+          format: date-time
+        retried_at:
+          type: string
+          format: date-time
+          nullable: true
+        retry_status:
+          type: string
+          nullable: true
+      required: [id, endpoint_id, event, payload, attempts, failed_at]
 
     ListMeta:
       type: object
