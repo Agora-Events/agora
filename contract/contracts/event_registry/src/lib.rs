@@ -1494,11 +1494,30 @@ impl EventRegistry {
         // Only the organizer may postpone their event.
         auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
+        // A cancelled event is already being refunded through the cancellation
+        // flow, and an inactive event is not running. Neither may be postponed.
+        if matches!(event_info.status, EventStatus::Cancelled) {
+            return Err(EventRegistryError::EventCancelled);
+        }
+        if !event_info.is_active || matches!(event_info.status, EventStatus::Inactive) {
+            return Err(EventRegistryError::EventInactive);
+        }
+
         let now = env.ledger().timestamp();
         if new_start_time <= now {
             return Err(EventRegistryError::InvalidDeadline);
         }
+        // Postponing moves the start later. An earlier or equal start is not a
+        // postponement, and it would still open the postponement refund window.
+        if new_start_time <= event_info.start_time {
+            return Err(EventRegistryError::InvalidDeadline);
+        }
         if grace_period_end <= now {
+            return Err(EventRegistryError::InvalidGracePeriod);
+        }
+        // The refund window must close no later than the rescheduled start,
+        // otherwise guests could claim postponement refunds after the event began.
+        if grace_period_end > new_start_time {
             return Err(EventRegistryError::InvalidGracePeriod);
         }
 
