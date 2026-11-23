@@ -195,6 +195,7 @@ The contract emits events for tracking and integration:
 - `StakerRewardsDistributed` - Rewards distributed
 - `StakerRewardsClaimed` - Rewards claimed
 - `DisputeStatusChanged` - Admin dispute override set or cleared (persisted)
+- `MaxTicketsPerWalletUpdated` - Organizer changed the per-wallet purchase limit (carries `old_limit`, `new_limit`, `updated_by`; `0` = unlimited)
 - `ContractPaused` - Contract paused
 - `ContractUnpaused` - Contract resumed
 - `ParameterChanged` - Contract parameter updated
