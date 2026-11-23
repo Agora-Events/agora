@@ -88,8 +88,30 @@ uses.
 - `set_price_oracle_contract(address)` - Set price oracle contract
 - `set_event_registry_contract(address)` - Set event registry contract
 - `set_transfer_fee(fee)` - Set token transfer fee
+- `set_event_dispute(event_id, disputed)` - Set or clear the admin dispute override
+- `is_event_disputed(event_id)` - Whether the event is currently disputed
 - `pause()` - Pause contract operations
 - `unpause()` - Resume operations
+
+#### Dispute Status
+
+`set_event_dispute(event_id, disputed)` is admin-only and **persists** an
+override flag (`DataKey::EventDisputeOverride(event_id)`) in contract storage.
+It does not replace the `event_registry` dispute flow; it layers on top of it.
+
+`is_event_disputed(event_id)` returns `true` when **either**:
+
+- the admin override for the event is set (via `set_event_dispute(id, true)`), or
+- the `event_registry` reports an open or voting dispute for the event.
+
+Clearing the override with `set_event_dispute(id, false)` therefore does not
+force `is_event_disputed` to `false` — a registry-reported dispute still
+applies. Anything gated on `is_event_disputed` (refund cascades, withdrawals)
+sees the same value the contract enforces.
+
+`DisputeStatusChanged` is emitted on every successful `set_event_dispute` call
+and reflects the stored override state, so indexers consuming it stay in sync
+with what the contract enforces.
 
 ### Reward Operations
 - `distribute_staker_rewards(event_id)` - Distribute rewards to stakers
@@ -172,6 +194,7 @@ The contract emits events for tracking and integration:
 - `AuctionSettled` - Auction completed
 - `StakerRewardsDistributed` - Rewards distributed
 - `StakerRewardsClaimed` - Rewards claimed
+- `DisputeStatusChanged` - Admin dispute override set or cleared (persisted)
 - `ContractPaused` - Contract paused
 - `ContractUnpaused` - Contract resumed
 - `ParameterChanged` - Contract parameter updated

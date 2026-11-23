@@ -24,6 +24,8 @@ pub enum ProSubscriptionError {
     SubscriptionAlreadyActive = 13,
     /// new_admin is the same as the current admin
     SameAdmin = 15,
+    /// Subscription duration is zero or exceeds MAX_SUBSCRIPTION_MONTHS
+    InvalidDuration = 16,
 }
 
 impl core::fmt::Display for ProSubscriptionError {
@@ -59,6 +61,12 @@ impl core::fmt::Display for ProSubscriptionError {
             ProSubscriptionError::SameAdmin => {
                 write!(f, "New admin is the same as the current admin")
             }
+            ProSubscriptionError::InvalidDuration => {
+                write!(
+                    f,
+                    "Subscription duration must be between 1 and MAX_SUBSCRIPTION_MONTHS months"
+                )
+            }
         }
     }
 }
@@ -89,6 +97,7 @@ mod tests {
             ProSubscriptionError::InvalidAddress,
             ProSubscriptionError::SubscriptionAlreadyActive,
             ProSubscriptionError::SameAdmin,
+            ProSubscriptionError::InvalidDuration,
         ];
 
         for error in variants {
@@ -104,5 +113,6 @@ mod tests {
         assert_eq!(ProSubscriptionError::SubscriptionNotFound as u32, 4);
         assert_eq!(ProSubscriptionError::InvalidPrice as u32, 8);
         assert_eq!(ProSubscriptionError::SameAdmin as u32, 15);
+        assert_eq!(ProSubscriptionError::InvalidDuration as u32, 16);
     }
 }

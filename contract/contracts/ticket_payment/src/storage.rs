@@ -667,6 +667,33 @@ pub fn mark_discount_hash_used(env: &Env, hash: soroban_sdk::BytesN<32>) {
         .set(&DataKey::DiscountCodeUsed(hash), &true);
 }
 
+// ── Event dispute override ────────────────────────────────────────────────────
+
+/// Persists an admin dispute override flag for `event_id`.
+///
+/// When set to `true`, `is_event_disputed` reports the event as disputed even
+/// if the `event_registry` does not report an open or voting dispute.
+pub fn set_event_dispute_override(env: &Env, event_id: &String, disputed: bool) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventDisputeOverride(event_id.clone()), &disputed);
+}
+
+/// Returns the admin dispute override flag for `event_id` (defaults to `false`).
+pub fn get_event_dispute_override(env: &Env, event_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventDisputeOverride(event_id.clone()))
+        .unwrap_or(false)
+}
+
+/// Removes any stored admin dispute override for `event_id`.
+pub fn clear_event_dispute_override(env: &Env, event_id: &String) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventDisputeOverride(event_id.clone()));
+}
+
 pub fn is_event_cancelled_for_refund(env: &Env, event_id: &String) -> bool {
     env.storage()
         .persistent()

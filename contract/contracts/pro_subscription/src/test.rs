@@ -2,10 +2,10 @@ use super::contract::ProSubscriptionContract;
 use super::types::Subscription;
 use crate::error::ProSubscriptionError;
 use crate::events::{AdminUpdatedEvent, PriceUpdatedEvent, ProSubscriptionEvent};
-use crate::types::{SubscriptionTier, SECONDS_PER_MONTH};
+use crate::types::{SubscriptionTier, MAX_SUBSCRIPTION_MONTHS, SECONDS_PER_MONTH};
 use crate::ProSubscriptionContractClient;
 use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo, MockAuth, MockAuthInvoke};
-use soroban_sdk::{token, token::StellarAssetClient, Address, Env, IntoVal};
+use soroban_sdk::{token, token::StellarAssetClient, Address, BytesN, Env, IntoVal};
 
 fn setup_env() -> (
     Env,
@@ -295,10 +295,217 @@ fn test_subscribe_zero_months_error() {
     let organizer = Address::generate(&env);
     // No need to mint/approve — contract should reject months == 0 early
     let res = client.try_subscribe_pro(&organizer, &0u32);
-    assert_eq!(res, Err(Ok(ProSubscriptionError::InvalidPrice)));
+    assert_eq!(res, Err(Ok(ProSubscriptionError::InvalidDuration)));
     // ensure no subscription was created
     assert!(client.get_subscription(&organizer).is_none());
     let _ = usdc; // keep unused warning away
+}
+
+// ── Issue #1726: subscription duration validation ────────────────────────────
+
+#[test]
+fn test_subscribe_max_months_succeeds() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+    let total_cost = monthly_price * (MAX_SUBSCRIPTION_MONTHS as i128);
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &total_cost);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &total_cost, &99999);
+
+    client.subscribe_pro(&organizer, &MAX_SUBSCRIPTION_MONTHS);
+
+    let sub = client.get_subscription(&organizer).unwrap();
+    assert!(sub.is_active);
+    assert_eq!(
+        sub.expires_at,
+        env.ledger().timestamp() + SECONDS_PER_MONTH * (MAX_SUBSCRIPTION_MONTHS as u64)
+    );
+}
+
+#[test]
+fn test_subscribe_above_max_months_fails() {
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let organizer = Address::generate(&env);
+
+    let res = client.try_subscribe_pro(&organizer, &(MAX_SUBSCRIPTION_MONTHS + 1));
+    assert_eq!(res, Err(Ok(ProSubscriptionError::InvalidDuration)));
+    assert!(client.get_subscription(&organizer).is_none());
+}
+
+#[test]
+fn test_renew_zero_months_error() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    let res = client.try_renew_subscription(&organizer, &0u32);
+    assert_eq!(res, Err(Ok(ProSubscriptionError::InvalidDuration)));
+}
+
+#[test]
+fn test_renew_max_months_succeeds() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    let expiry_before = client.get_subscription_expiry(&organizer).unwrap();
+
+    let total_cost = monthly_price * (MAX_SUBSCRIPTION_MONTHS as i128);
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &total_cost);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &total_cost, &99999);
+
+    client.renew_subscription(&organizer, &MAX_SUBSCRIPTION_MONTHS);
+
+    let expiry_after = client.get_subscription_expiry(&organizer).unwrap();
+    assert_eq!(
+        expiry_after,
+        expiry_before + SECONDS_PER_MONTH * (MAX_SUBSCRIPTION_MONTHS as u64)
+    );
+}
+
+#[test]
+fn test_renew_above_max_months_fails() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    let res = client.try_renew_subscription(&organizer, &(MAX_SUBSCRIPTION_MONTHS + 1));
+    assert_eq!(res, Err(Ok(ProSubscriptionError::InvalidDuration)));
+}
+
+// ── Issue #1727: read-only getters are side-effect free ──────────────────────
+
+fn expire_subscription(env: &Env, client: &ProSubscriptionContractClient, organizer: &Address) {
+    let sub = client.get_subscription(organizer).unwrap();
+    env.ledger().set(LedgerInfo {
+        timestamp: sub.expires_at + 1,
+        protocol_version: 23,
+        sequence_number: 40,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+}
+
+#[test]
+fn test_getters_do_not_emit_events_on_expired_subscription() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    expire_subscription(&env, &client, &organizer);
+
+    // Drain any events emitted so far by re-reading the event list length.
+    let events_before = env.events().all().len();
+
+    assert!(!client.is_pro_member(&organizer));
+    let sub = client.get_subscription(&organizer).unwrap();
+    assert!(!sub.is_active);
+    assert_eq!(
+        client.get_subscription_expiry(&organizer),
+        Some(sub.expires_at)
+    );
+
+    let events_after = env.events().all().len();
+    assert_eq!(
+        events_before, events_after,
+        "read-only getters must not emit events"
+    );
+}
+
+#[test]
+fn test_getters_do_not_mutate_members_list_on_expired_subscription() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &monthly_price);
+    token::Client::new(&env, &usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+    client.subscribe_pro(&organizer, &1u32);
+
+    expire_subscription(&env, &client, &organizer);
+
+    // Getters report the lapsed state but leave storage untouched.
+    assert!(!client.is_pro_member(&organizer));
+    let _ = client.get_subscription(&organizer);
+    let _ = client.get_subscription_expiry(&organizer);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+    assert!(client.get_pro_members().contains(&organizer));
+
+    // A subsequent mutating call corrects the members list and counter.
+    client.sync_expired(&organizer);
+
+    assert_eq!(client.get_total_pro_subscriptions(), 0u32);
+    assert!(!client.get_pro_members().contains(&organizer));
+}
+
+// ── Issue #1728: admin-gated upgrade ─────────────────────────────────────────
+
+#[test]
+fn test_upgrade_by_admin_succeeds_and_emits_event() {
+    use crate::events::ContractUpgradedEvent;
+
+    let (env, client, _admin, _platform_wallet, _usdc) = setup();
+    let new_wasm_hash = env
+        .deployer()
+        .upload_contract_wasm(ProSubscriptionContract {});
+
+    client.upgrade(&new_wasm_hash);
+
+    let events = env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+
+    let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(&env);
+    assert_eq!(topic, ProSubscriptionEvent::ContractUpgraded);
+
+    let payload: ContractUpgradedEvent = data.into_val(&env);
+    assert_eq!(payload.new_wasm_hash, new_wasm_hash);
+}
+
+#[test]
+fn test_upgrade_by_non_admin_is_rejected() {
+    let (env, client, contract_id, _admin, _platform_wallet, _usdc) = setup_without_auth_mock();
+    let non_admin = Address::generate(&env);
+    let new_wasm_hash: BytesN<32> = BytesN::from_array(&env, &[7u8; 32]);
+
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "upgrade",
+            args: (&new_wasm_hash,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.upgrade(&new_wasm_hash);
+    }));
+
+    assert!(
+        result.is_err(),
+        "upgrade should fail when called without the admin's authorization"
+    );
 }
 
 #[test]
