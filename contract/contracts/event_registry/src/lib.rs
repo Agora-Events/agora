@@ -2437,6 +2437,13 @@ impl EventRegistry {
 
     /// Joins the waitlist for an event. Emits WaitlistJoinedEvent.
     /// Requires the user's authentication.
+    ///
+    /// Only events that can still sell tickets accept new waitlist entries.
+    /// # Errors
+    /// * `EventNotFound` - the event does not exist.
+    /// * `EventCancelled` - the event has been cancelled.
+    /// * `EventInactive` - the event is inactive or suspended.
+    /// * `AlreadyOnWaitlist` - the user is already on the waitlist.
     pub fn join_waitlist(
         env: Env,
         event_id: String,
@@ -2444,9 +2451,15 @@ impl EventRegistry {
     ) -> Result<(), EventRegistryError> {
         user.require_auth();
 
-        // Check if event exists
-        if !storage::event_exists(&env, event_id.clone()) {
-            return Err(EventRegistryError::EventNotFound);
+        // Load the event so cancelled or inactive events are rejected. Leaving
+        // the waitlist is not gated by event status (see `leave_waitlist`).
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        if matches!(event_info.status, EventStatus::Cancelled) {
+            return Err(EventRegistryError::EventCancelled);
+        }
+        if !event_info.is_active || matches!(event_info.status, EventStatus::Inactive) {
+            return Err(EventRegistryError::EventInactive);
         }
 
         // Check if user is already on the waitlist
