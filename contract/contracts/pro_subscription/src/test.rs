@@ -5,7 +5,10 @@ use crate::events::{AdminUpdatedEvent, PriceUpdatedEvent, ProSubscriptionEvent};
 use crate::types::{SubscriptionTier, MAX_SUBSCRIPTION_MONTHS, SECONDS_PER_MONTH};
 use crate::ProSubscriptionContractClient;
 use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo, MockAuth, MockAuthInvoke};
-use soroban_sdk::{token, token::StellarAssetClient, Address, BytesN, Env, IntoVal};
+use soroban_sdk::{
+    contract, contractimpl, token, token::StellarAssetClient, Address, BytesN, Env, Executable,
+    IntoVal, TryIntoVal,
+};
 
 fn setup_env() -> (
     Env,
@@ -504,16 +507,35 @@ fn test_getters_do_not_mutate_members_list_on_expired_subscription() {
 
 // ── Issue #1728: admin-gated upgrade ─────────────────────────────────────────
 
+/// Minimal contract used to obtain a valid alternate Wasm hash for upgrade tests.
+#[contract]
+struct DummyUpgradeable;
+
+#[contractimpl]
+impl DummyUpgradeable {
+    pub fn ping(_env: Env) {}
+}
+
+fn wasm_hash_of(address: &Address) -> BytesN<32> {
+    match address.executable() {
+        Some(Executable::Wasm(hash)) => hash,
+        _ => panic!("address is not a Wasm contract"),
+    }
+}
+
 #[test]
 fn test_upgrade_by_admin_succeeds_and_emits_event() {
     use crate::events::ContractUpgradedEvent;
 
     let (env, client, _admin, _platform_wallet, _usdc) = setup();
-    let new_wasm_hash = env
-        .deployer()
-        .upload_contract_wasm(ProSubscriptionContract {});
+    let old_wasm_hash = wasm_hash_of(&client.address);
+    // The test host gives every natively registered contract the same mock Wasm hash, so the
+    // old and new hashes cannot be told apart here; the event is still checked against both.
+    let new_wasm_hash = wasm_hash_of(&env.register(DummyUpgradeable, ()));
 
     client.upgrade(&new_wasm_hash);
+
+    assert_eq!(wasm_hash_of(&client.address), new_wasm_hash);
 
     let events = env.events().all();
     let (_, topics, data) = events.last().unwrap();
@@ -522,6 +544,7 @@ fn test_upgrade_by_admin_succeeds_and_emits_event() {
     assert_eq!(topic, ProSubscriptionEvent::ContractUpgraded);
 
     let payload: ContractUpgradedEvent = data.into_val(&env);
+    assert_eq!(payload.old_wasm_hash, old_wasm_hash);
     assert_eq!(payload.new_wasm_hash, new_wasm_hash);
 }
 
@@ -688,6 +711,7 @@ fn test_admin_updated_event_payload() {
     assert_eq!(payload.old_admin, admin);
     assert_eq!(payload.new_admin, new_admin);
     assert_eq!(payload.updated_by, admin);
+    assert_eq!(payload.timestamp, env.ledger().timestamp());
 
     assert_eq!(client.get_admin(), Some(new_admin));
 }
@@ -835,8 +859,10 @@ fn test_pro_member_added_event_on_renew() {
 fn count_events(env: &Env, kind: ProSubscriptionEvent) -> u32 {
     let mut count = 0u32;
     for (_, topics, _) in env.events().all().iter() {
-        let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(env);
-        if topic == kind {
+        // Token transfers emitted during renewals use a different topic shape, so skip any
+        // event whose first topic is not a `ProSubscriptionEvent`.
+        let topic: Result<ProSubscriptionEvent, _> = topics.get(0).unwrap().try_into_val(env);
+        if topic == Ok(kind.clone()) {
             count += 1;
         }
     }
@@ -1296,6 +1322,8 @@ fn test_platform_wallet_updated_event_payload() {
     assert_eq!(payload.old_wallet, old_wallet);
     assert_eq!(payload.new_wallet, new_wallet);
     assert_eq!(payload.updated_by, admin);
+    assert_eq!(payload.timestamp, env.ledger().timestamp());
+    assert_eq!(client.get_platform_wallet(), Some(new_wallet));
 }
 
 // ── Issue #1440: PaymentTokenUpdated event ────────────────────────────────────
@@ -1321,6 +1349,8 @@ fn test_payment_token_updated_event_payload() {
     assert_eq!(payload.old_token, old_token);
     assert_eq!(payload.new_token, new_token);
     assert_eq!(payload.updated_by, admin);
+    assert_eq!(payload.timestamp, env.ledger().timestamp());
+    assert_eq!(client.get_payment_token(), Some(new_token));
 }
 
 // ── Issue #1441: Reject same-admin update ────────────────────────────────────
@@ -1387,7 +1417,10 @@ fn test_resubscribe_after_cancel() {
     // New expiry is based on the new subscription time, not the old one
     let new_expiry = client.get_subscription_expiry(&organizer).unwrap();
     assert_eq!(new_expiry, env.ledger().timestamp() + SECONDS_PER_MONTH);
-    assert!(new_expiry > first_expiry, "new expiry must be after the old one");
+    assert!(
+        new_expiry > first_expiry,
+        "new expiry must be after the old one"
+    );
 }
 
 // ── Issue #1725: paginated get_pro_members_page ──────────────────────────────
