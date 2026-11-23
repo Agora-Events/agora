@@ -233,6 +233,12 @@ impl TicketPaymentContract {
     }
 
     /// Creates a limited-time discount code for an event. Only callable by the contract admin.
+    ///
+    /// Validation, in order:
+    /// - `percentage` must be in `1..=100`, otherwise `InvalidDiscountPercent`.
+    /// - `expires_at` must be strictly after the current ledger timestamp, otherwise
+    ///   `DiscountExpired` (a code created already expired could never be redeemed).
+    /// - `max_uses` must be greater than zero, otherwise `InvalidDiscountMaxUses`.
     pub fn create_discount_code(
         env: Env,
         event_id: String,
@@ -243,7 +249,13 @@ impl TicketPaymentContract {
     ) -> Result<(), TicketPaymentError> {
         require_admin(&env)?;
         if percentage == 0 || percentage > 100 {
-            return Err(TicketPaymentError::InvalidFeePercent);
+            return Err(TicketPaymentError::InvalidDiscountPercent);
+        }
+        if expires_at <= env.ledger().timestamp() {
+            return Err(TicketPaymentError::DiscountExpired);
+        }
+        if max_uses == 0 {
+            return Err(TicketPaymentError::InvalidDiscountMaxUses);
         }
         set_discount_code(
             &env,
