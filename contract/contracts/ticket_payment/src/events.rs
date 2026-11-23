@@ -38,6 +38,7 @@ pub enum AgoraEvent {
     EscrowWithdrawalExecuted,
     MilestoneReleased,
     WithdrawalCapUpdated,
+    MaxTicketsPerWalletUpdated,
 }
 
 #[contracttype]
@@ -345,5 +346,20 @@ pub struct WithdrawalCapUpdatedEvent {
     pub token: Address,
     pub old_cap: i128,
     pub new_cap: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when an organizer changes the per-wallet purchase limit for an event.
+///
+/// A limit of `0` means "unlimited". `old_limit` is the value that was in effect
+/// before the update (also `0` if no limit had ever been configured), so
+/// indexers can reconcile cached limits without a separate read.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaxTicketsPerWalletUpdatedEvent {
+    pub event_id: String,
+    pub old_limit: u32,
+    pub new_limit: u32,
+    pub updated_by: Address,
     pub timestamp: u64,
 }
