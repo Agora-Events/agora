@@ -34,10 +34,10 @@ use crate::{
         DiscountCodeAppliedEvent, DisputeStatusChangedEvent, EscrowWithdrawalApprovedEvent,
         EscrowWithdrawalExecutedEvent, EscrowWithdrawalProposedEvent, FeeSettledEvent,
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
-        MaxTicketsPerWalletUpdatedEvent, PartialRefundProcessedEvent, PaymentProcessedEvent,
-        PaymentStatusChangedEvent, PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent,
-        ProposalVotedEvent, RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
-        WithdrawalCapUpdatedEvent,
+        MaxTicketsPerWalletUpdatedEvent, OracleUpdatedEvent, PartialRefundProcessedEvent,
+        PaymentProcessedEvent, PaymentStatusChangedEvent, PoapMintedEvent, PriceSwitchedEvent,
+        ProposalCreatedEvent, ProposalVotedEvent, RevenueClaimedEvent, SlippageUpdatedEvent,
+        TicketCheckedInEvent, TicketTransferredEvent, WithdrawalCapUpdatedEvent,
     },
 };
 use soroban_sdk::{
@@ -524,7 +524,9 @@ impl TicketPaymentContract {
                 set_withdrawal_cap(&env, token.clone(), *cap);
             }
             ParameterChange::UpdateSlippage(bps) => {
+                let old_bps = get_slippage_bps(&env);
                 set_slippage_bps(&env, *bps)?;
+                emit_slippage_updated(&env, old_bps, *bps);
             }
             ParameterChange::UpdateTransferFee(event_id, fee) => {
                 set_transfer_fee(&env, event_id.clone(), *fee);
@@ -558,9 +560,27 @@ impl TicketPaymentContract {
     }
 
     /// Sets the oracle contract address. Only callable by admin.
+    ///
+    /// The contract's own address is rejected, since it cannot serve prices.
+    /// Emits [`AgoraEvent::OracleUpdated`] with the previous and new oracle.
     pub fn set_oracle(env: Env, oracle_address: Address) -> Result<(), TicketPaymentError> {
         require_admin(&env)?;
+        if oracle_address == env.current_contract_address() {
+            return Err(TicketPaymentError::InvalidAddress);
+        }
+
+        let old_oracle = get_oracle_address(&env);
         set_oracle_address(&env, &oracle_address);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::OracleUpdated,),
+            OracleUpdatedEvent {
+                old_oracle,
+                new_oracle: oracle_address,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
         Ok(())
     }
 
@@ -578,10 +598,15 @@ impl TicketPaymentContract {
     }
 
     /// Sets the maximum allowable slippage basis points (must be <= 500). Only callable by admin.
+    ///
+    /// Emits [`AgoraEvent::SlippageUpdated`] after the value is stored.
     pub fn set_slippage(env: Env, bps: u32) -> Result<(), TicketPaymentError> {
         let admin = get_admin(&env).ok_or(TicketPaymentError::NotInitialized)?;
         admin.require_auth();
-        set_slippage_bps(&env, bps)
+        let old_bps = get_slippage_bps(&env);
+        set_slippage_bps(&env, bps)?;
+        emit_slippage_updated(&env, old_bps, bps);
+        Ok(())
     }
 
     /// Processes a payment for an event ticket.
@@ -3471,6 +3496,20 @@ impl TicketPaymentContract {
 
         Ok(refunded)
     }
+}
+
+/// Publishes [`AgoraEvent::SlippageUpdated`]. Shared by the admin setter and
+/// governance execution so every slippage change is observable.
+fn emit_slippage_updated(env: &Env, old_bps: u32, new_bps: u32) {
+    #[allow(deprecated)]
+    env.events().publish(
+        (AgoraEvent::SlippageUpdated,),
+        SlippageUpdatedEvent {
+            old_bps,
+            new_bps,
+            timestamp: env.ledger().timestamp(),
+        },
+    );
 }
 
 fn validate_address(env: &Env, address: &Address) -> Result<(), TicketPaymentError> {
