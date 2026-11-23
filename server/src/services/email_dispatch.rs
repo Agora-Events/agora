@@ -1,7 +1,7 @@
 //! Transactional email dispatch for ticket purchase (Issue #1342)
 //!
 //! Triggered after a PaymentProcessed event is confirmed from the blockchain indexer.
-//! Sends PDF ticket + .ics calendar invite via Resend/Postmark (or log if unconfigured).
+//! Sends PDF ticket + .ics calendar invite via Resend (or logs a stub in non-production when unconfigured).
 //! Retries up to 3 times on failure.
 
 use chrono::{DateTime, Utc};
@@ -37,7 +37,8 @@ pub fn build_ics(payload: &TicketEmailPayload) -> String {
 }
 
 /// Send email with retry (up to 3 attempts).
-/// Uses Resend API if RESEND_API_KEY is set, else logs and succeeds (for dev/tests).
+/// Uses Resend API if RESEND_API_KEY is set; otherwise succeeds with a stub outside
+/// production, and returns an error in production.
 pub async fn send_ticket_email_with_retry(payload: TicketEmailPayload) -> Result<(), String> {
     let mut last_err = String::new();
     for attempt in 1..=3 {
@@ -74,21 +75,22 @@ pub async fn send_ticket_email_with_retry(payload: TicketEmailPayload) -> Result
 }
 
 async fn send_ticket_email(payload: &TicketEmailPayload) -> Result<(), String> {
-    // If RESEND_API_KEY not set, we are in dev/test – just log and pretend success
     let api_key = std::env::var("RESEND_API_KEY").ok();
     let from = std::env::var("EMAIL_FROM").unwrap_or_else(|_| "noreply@agora.events".to_string());
 
     if api_key.is_none() {
-        tracing::info!(
+        let rust_env = std::env::var("RUST_ENV")
+            .unwrap_or_else(|_| "development".to_string())
+            .to_lowercase();
+        if rust_env == "production" {
+            return Err("email provider not configured".to_string());
+        }
+        tracing::warn!(
             to = %payload.to_email,
             event = %payload.event_title,
             pdf_size = payload.pdf_bytes.len(),
             "[stub] Would send email with PDF + ICS"
         );
-        // Validate that we have both attachments ready
-        let ics = build_ics(payload);
-        assert!(ics.contains("BEGIN:VCALENDAR"));
-        assert!(!payload.pdf_bytes.is_empty() || true); // pdf may be empty in tests
         return Ok(());
     }
 
@@ -243,12 +245,8 @@ mod tests {
         assert!(ics.contains("https://agora.events/e/1"));
     }
 
-    #[tokio::test]
-    async fn test_send_stub_succeeds_without_api_key() {
-        // Ensure RESEND_API_KEY is unset for the stub path
-        let orig = std::env::var("RESEND_API_KEY").ok();
-        unsafe { std::env::remove_var("RESEND_API_KEY"); }
-        let payload = TicketEmailPayload {
+    fn test_payload() -> TicketEmailPayload {
+        TicketEmailPayload {
             to_email: "a@example.com".to_string(),
             attendee_wallet: "GABC".to_string(),
             event_title: "Concert".to_string(),
@@ -258,12 +256,52 @@ mod tests {
             dtstart: Utc::now(),
             dtend: Utc::now() + chrono::Duration::hours(2),
             ticket_id: Uuid::new_v4(),
-            pdf_bytes: vec![0x25, 0x50, 0x44, 0x46], // %PDF
-        };
-        let res = send_ticket_email_with_retry(payload).await;
-        assert!(res.is_ok());
-        if let Some(v) = orig {
-            unsafe { std::env::set_var("RESEND_API_KEY", v); }
+            pdf_bytes: vec![0x25, 0x50, 0x44, 0x46],
         }
+    }
+
+    #[tokio::test]
+    async fn test_send_stub_succeeds_without_api_key_in_development() {
+        temp_env::async_with_vars(
+            [
+                ("RESEND_API_KEY", None::<&str>),
+                ("RUST_ENV", Some("development")),
+            ],
+            async {
+                let result = send_ticket_email(&test_payload()).await;
+                assert!(result.is_ok());
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_send_fails_without_api_key_in_production() {
+        temp_env::async_with_vars(
+            [
+                ("RESEND_API_KEY", None::<&str>),
+                ("RUST_ENV", Some("production")),
+            ],
+            async {
+                let result = send_ticket_email(&test_payload()).await;
+                assert_eq!(result, Err("email provider not configured".to_string()));
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_retry_reports_missing_api_key_in_production() {
+        temp_env::async_with_vars(
+            [
+                ("RESEND_API_KEY", None::<&str>),
+                ("RUST_ENV", Some("PRODUCTION")),
+            ],
+            async {
+                let result = send_ticket_email_with_retry(test_payload()).await;
+                assert_eq!(result, Err("email provider not configured".to_string()));
+            },
+        )
+        .await;
     }
 }

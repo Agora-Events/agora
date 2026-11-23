@@ -412,7 +412,7 @@ export default async function EventDetailPage({
               Secondary Marketplace
             </h2>
           </div>
-          <SecondaryMarketplaceTab eventId={eventId} />
+          <SecondaryMarketplaceTab eventId={event.id} />
         </div>
 
         {/* Report Event Link */}

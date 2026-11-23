@@ -16,6 +16,7 @@ import { useAuth } from '@/hooks/useAuth';
 import ScanVelocityChart from '@/components/organizer/ScanVelocityChart';
 import {
   organizerApi,
+  NotImplementedError,
   GateMetrics,
   ScanVelocityEvent,
   GateHeatmapEvent,
@@ -33,6 +34,16 @@ export default function OrganizerDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+
+  // "Coming soon" flags for organizer features whose backend endpoints are
+  // not implemented yet (see the comment at the top of organizerApi.ts /
+  // issue #1791). Set when the API responds 404; the UI renders a
+  // coming-soon state for that feature instead of a generic failure.
+  const [gatesComingSoon, setGatesComingSoon] = useState(false);
+  const [staffComingSoon, setStaffComingSoon] = useState(false);
+  const [delegationComingSoon, setDelegationComingSoon] = useState(false);
+  const [doorSalesComingSoon, setDoorSalesComingSoon] = useState(false);
+  const [broadcastComingSoon, setBroadcastComingSoon] = useState(false);
 
   // Delegation QR code state
   const [showDelegationModal, setShowDelegationModal] = useState(false);
@@ -54,17 +65,31 @@ export default function OrganizerDashboard() {
 
   const fetchEventData = useCallback(async () => {
     if (!selectedEventId) return;
-    
+
     try {
       setLoading(true);
-      const [gates, staff] = await Promise.all([
+      const [gatesResult, staffResult] = await Promise.allSettled([
         organizerApi.getEventGates(selectedEventId),
         organizerApi.getStaffAuthorizations(selectedEventId),
       ]);
-      setGateMetrics(gates);
-      setStaffAuthorizations(staff);
-    } catch (error) {
-      console.error('Failed to fetch event data:', error);
+
+      if (gatesResult.status === 'fulfilled') {
+        setGateMetrics(gatesResult.value);
+        setGatesComingSoon(false);
+      } else if (gatesResult.reason instanceof NotImplementedError) {
+        setGatesComingSoon(true);
+      } else {
+        console.error('Failed to fetch gate metrics:', gatesResult.reason);
+      }
+
+      if (staffResult.status === 'fulfilled') {
+        setStaffAuthorizations(staffResult.value);
+        setStaffComingSoon(false);
+      } else if (staffResult.reason instanceof NotImplementedError) {
+        setStaffComingSoon(true);
+      } else {
+        console.error('Failed to fetch staff authorizations:', staffResult.reason);
+      }
     } finally {
       setLoading(false);
     }
@@ -80,12 +105,19 @@ export default function OrganizerDashboard() {
   useEffect(() => {
     if (!selectedEventId || !user?.walletAddress) return;
 
-    const wsUrl = `${process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8080'}/api/v1/ws/organizer?token=${user.authToken}`;
-    const ws = new WebSocket(wsUrl);
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
+    const defaultWsUrl = /localhost|127\.0\.0\.1/.test(apiUrl)
+      ? 'ws://localhost:8080'
+      : apiUrl.replace(/\/api\/v1.*$/, '').replace(/^http/, 'ws');
+    const wsBaseUrl = (process.env.EXPO_PUBLIC_WS_URL || defaultWsUrl).replace(/\/$/, '');
+    const wsUrl = `${wsBaseUrl}/api/v1/ws/organizer`;
+    const ws = new WebSocket(wsUrl, undefined, {
+      headers: { Authorization: `Bearer ${user.authToken}` },
+    });
 
     ws.onopen = () => {
       setWsConnected(true);
-      console.log('Organizer WebSocket connected');
+      if (__DEV__) console.log('Organizer WebSocket connected');
     };
 
     ws.onmessage = (event) => {
@@ -124,7 +156,7 @@ export default function OrganizerDashboard() {
 
     ws.onclose = () => {
       setWsConnected(false);
-      console.log('Organizer WebSocket disconnected');
+      if (__DEV__) console.log('Organizer WebSocket disconnected');
     };
 
     return () => {
@@ -150,7 +182,12 @@ export default function OrganizerDashboard() {
       setGeneratedQR(qr);
       setShowDelegationModal(false);
     } catch (error) {
-      console.error('Failed to generate delegation QR:', error);
+      if (error instanceof NotImplementedError) {
+        setDelegationComingSoon(true);
+        setShowDelegationModal(false);
+      } else {
+        console.error('Failed to generate delegation QR:', error);
+      }
     }
   };
 
@@ -173,7 +210,12 @@ export default function OrganizerDashboard() {
       setDoorSalesEmail('');
       setDoorSalesName('');
     } catch (error) {
-      console.error('Failed to create door ticket:', error);
+      if (error instanceof NotImplementedError) {
+        setDoorSalesComingSoon(true);
+        setShowDoorSalesModal(false);
+      } else {
+        console.error('Failed to create door ticket:', error);
+      }
     }
   };
 
@@ -189,7 +231,12 @@ export default function OrganizerDashboard() {
       setShowBroadcastModal(false);
       setBroadcastMessage('');
     } catch (error) {
-      console.error('Failed to send broadcast:', error);
+      if (error instanceof NotImplementedError) {
+        setBroadcastComingSoon(true);
+        setShowBroadcastModal(false);
+      } else {
+        console.error('Failed to send broadcast:', error);
+      }
     }
   };
 
@@ -268,7 +315,9 @@ export default function OrganizerDashboard() {
             {/* Gate Heatmap */}
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Gate Congestion Heatmap</Text>
-              {loading ? (
+              {gatesComingSoon ? (
+                <Text style={styles.emptyText}>Gate congestion data is coming soon.</Text>
+              ) : loading ? (
                 <ActivityIndicator color={Colors.primaryYellow} />
               ) : gateMetrics.length === 0 ? (
                 <Text style={styles.emptyText}>No gate data available</Text>
@@ -320,11 +369,15 @@ export default function OrganizerDashboard() {
             <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>Staff Scanner Authorizations</Text>
-                <Pressable onPress={() => setShowDelegationModal(true)}>
-                  <Text style={styles.addButton}>+ Add Staff</Text>
-                </Pressable>
+                {!staffComingSoon && (
+                  <Pressable onPress={() => setShowDelegationModal(true)}>
+                    <Text style={styles.addButton}>+ Add Staff</Text>
+                  </Pressable>
+                )}
               </View>
-              {loading ? (
+              {staffComingSoon || delegationComingSoon ? (
+                <Text style={styles.emptyText}>Staff delegation is coming soon.</Text>
+              ) : loading ? (
                 <ActivityIndicator color={Colors.primaryYellow} />
               ) : staffAuthorizations.length === 0 ? (
                 <Text style={styles.emptyText}>No staff authorized</Text>
@@ -362,15 +415,17 @@ export default function OrganizerDashboard() {
               <Text style={styles.cardTitle}>Quick Actions</Text>
               <View style={styles.actionButtons}>
                 <Button
-                  title="Door Sales"
+                  title={doorSalesComingSoon ? 'Door Sales (Coming Soon)' : 'Door Sales'}
                   onPress={() => setShowDoorSalesModal(true)}
                   style={styles.actionButton}
+                  disabled={doorSalesComingSoon}
                 />
                 <Button
-                  title="Send Broadcast"
+                  title={broadcastComingSoon ? 'Broadcast (Coming Soon)' : 'Send Broadcast'}
                   variant="secondary"
                   onPress={() => setShowBroadcastModal(true)}
                   style={styles.actionButton}
+                  disabled={broadcastComingSoon}
                 />
               </View>
             </View>

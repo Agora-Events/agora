@@ -36,7 +36,7 @@ use crate::{
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
         PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
         PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
-        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
+        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent, WithdrawalCapUpdatedEvent,
     },
 };
 use soroban_sdk::{
@@ -172,13 +172,33 @@ impl TicketPaymentContract {
         is_paused(&env)
     }
 
-    /// Sets or clears a dispute for an event.
+    /// Sets or clears an admin dispute override for an event.
+    ///
+    /// This persists an admin-controlled override flag in contract storage
+    /// (`DataKey::EventDisputeOverride(event_id)`): calling with `disputed = true`
+    /// sets the flag and calling with `disputed = false` clears it. The
+    /// `DisputeStatusChanged` event is emitted on every call so indexers can
+    /// track the override state.
+    ///
+    /// The override is combined with the `event_registry` dispute flow:
+    /// [`Self::is_event_disputed`] returns `true` when either the override is
+    /// set or the registry reports an `Open`/`Voting` dispute. This means an
+    /// admin override takes effect immediately for anything gated on
+    /// `is_event_disputed` (refund cascades, withdrawals), while registry
+    /// disputes continue to be honored independently.
     pub fn set_event_dispute(
         env: Env,
         event_id: String,
         disputed: bool,
     ) -> Result<(), TicketPaymentError> {
         require_admin(&env)?;
+
+        let key = DataKey::EventDisputeOverride(event_id.clone());
+        if disputed {
+            env.storage().persistent().set(&key, &true);
+        } else {
+            env.storage().persistent().remove(&key);
+        }
 
         env.events().publish(
             (AgoraEvent::DisputeStatusChanged,),
@@ -193,7 +213,20 @@ impl TicketPaymentContract {
     }
 
     /// Returns if an event is currently disputed.
+    ///
+    /// Returns `true` if the admin override flag set via
+    /// [`Self::set_event_dispute`] is active, or if the `event_registry`
+    /// reports an `Open` or `Voting` dispute for the event.
     pub fn is_event_disputed(env: Env, event_id: String) -> bool {
+        if env
+            .storage()
+            .persistent()
+            .get::<DataKey, bool>(&DataKey::EventDisputeOverride(event_id.clone()))
+            .unwrap_or(false)
+        {
+            return true;
+        }
+
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
         if let Ok(Ok(Some(dispute))) = registry_client.try_get_dispute(&event_id) {
@@ -1850,10 +1883,23 @@ impl TicketPaymentContract {
         require_admin(&env)?;
 
         if amount < 0 {
-            return Err(TicketPaymentError::ArithmeticError);
+            return Err(TicketPaymentError::InvalidAmount);
         }
 
-        set_withdrawal_cap(&env, token, amount);
+        let old_cap = get_withdrawal_cap(&env, token.clone());
+        set_withdrawal_cap(&env, token.clone(), amount);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::WithdrawalCapUpdated,),
+            WithdrawalCapUpdatedEvent {
+                token,
+                old_cap,
+                new_cap: amount,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
         Ok(())
     }
 
@@ -2020,7 +2066,7 @@ impl TicketPaymentContract {
         bps: u32, // Changed from i128 amount to u32 basis points
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
-            panic!("Contract not initialized");
+            return Err(TicketPaymentError::NotInitialized);
         }
 
         let event_registry_addr = get_event_registry(&env);
@@ -2052,7 +2098,7 @@ impl TicketPaymentContract {
         rate_bps: u32,
     ) -> Result<(), TicketPaymentError> {
         if !is_initialized(&env) {
-            panic!("Contract not initialized");
+            return Err(TicketPaymentError::NotInitialized);
         }
 
         if rate_bps > MAX_BPS {

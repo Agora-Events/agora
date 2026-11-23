@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 /**
- * Toast â€” Issue #1542
+ * Toast — Issue #1542
  *
  * Animated toast notification for the transaction lifecycle.
  *

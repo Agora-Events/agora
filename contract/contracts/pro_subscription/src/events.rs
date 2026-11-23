@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address};
+use soroban_sdk::{contracttype, Address, BytesN};
 
 use crate::types::SubscriptionTier;
 
@@ -24,6 +24,8 @@ pub enum ProSubscriptionEvent {
     ProMemberRemoved,
     /// Contract admin updated
     AdminUpdated,
+    /// Contract WASM upgraded
+    ContractUpgraded,
 }
 
 /// Emitted when the contract is initialized
@@ -141,5 +143,17 @@ pub struct AdminUpdatedEvent {
     /// The address that performed the update (the previous admin)
     pub updated_by: Address,
     /// Ledger timestamp of the update
+    pub timestamp: u64,
+}
+
+/// Emitted when the contract WASM is upgraded in place
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractUpgradedEvent {
+    /// The WASM hash of the contract before the upgrade
+    pub old_wasm_hash: BytesN<32>,
+    /// The WASM hash of the contract after the upgrade
+    pub new_wasm_hash: BytesN<32>,
+    /// Ledger timestamp of the upgrade
     pub timestamp: u64,
 }

@@ -697,24 +697,49 @@ impl EventRegistry {
     /// will be `None`.
     ///
     /// # Errors
-    /// Returns `EventRegistryError::BatchSizeExceeded` if the input vector
-    /// exceeds `MAX_BATCH_SIZE`.
+    /// Returns `EventRegistryError::BatchSizeExceeded` (code 100) if the input
+    /// vector holds more than `MAX_BATCH_SIZE` (50) ids. Exactly 50 is
+    /// accepted. Split larger lookups into several calls of at most 50 ids.
     ///
     /// # Examples
+    /// Call it through the generated `EventRegistryClient`, using Soroban
+    /// types (`soroban_sdk::vec!` and `soroban_sdk::String`) rather than std
+    /// ones, since the contract is `#![no_std]`:
+    ///
     /// ```ignore
-    /// let event_ids: Vec<String> = vec!["event1".to_string(), "event2".to_string()];
-    /// let events = event_registry::get_events_batch(env, event_ids)?;
-    /// for event in events {
+    /// use soroban_sdk::{vec, Env, String};
+    ///
+    /// let client = EventRegistryClient::new(&env, &contract_id);
+    ///
+    /// let event_ids = vec![
+    ///     &env,
+    ///     String::from_str(&env, "event1"),
+    ///     String::from_str(&env, "event2"),
+    /// ];
+    ///
+    /// // Results line up with `event_ids`; unknown ids come back as `None`.
+    /// let events = client.get_events_batch(&event_ids);
+    /// for event in events.iter() {
     ///     if let Some(event_info) = event {
-    ///         println!("Event: {}", event_info.name);
+    ///         // e.g. read event_info.event_id, event_info.status, ...
     ///     }
     /// }
+    ///
+    /// // `try_` variant to handle the size limit instead of panicking:
+    /// match client.try_get_events_batch(&event_ids) {
+    ///     Ok(Ok(events)) => { /* use events */ }
+    ///     Err(Ok(EventRegistryError::BatchSizeExceeded)) => { /* > 50 ids */ }
+    ///     _ => { /* host or conversion error */ }
+    /// }
     /// ```
+    ///
+    /// The block is `ignore` because it needs a test `Env` and a registered
+    /// contract; `test_events_batch.rs` runs the same calls as real tests.
     pub fn get_events_batch(
         env: Env,
         event_ids: Vec<String>,
     ) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
-        if event_ids.len() > MAX_BATCH_SIZE as usize {
+        if event_ids.len() > MAX_BATCH_SIZE {
             return Err(EventRegistryError::BatchSizeExceeded);
         }
         let mut results = Vec::new(&env);
@@ -1352,9 +1377,37 @@ impl EventRegistry {
         storage::is_blacklisted(&env, &organizer_address)
     }
 
-    /// Retrieves the blacklist audit log.
+    /// Retrieves the entire blacklist audit log.
+    ///
+    /// The log only grows, so this getter is unsuitable for large logs: the read
+    /// can exceed Soroban resource limits. Prefer [`Self::get_blacklist_audit_log_page`].
     pub fn get_blacklist_audit_log(env: Env) -> Vec<BlacklistAuditEntry> {
         storage::get_blacklist_audit_log(&env)
+    }
+
+    /// Retrieves one page of the blacklist audit log, oldest entries first.
+    ///
+    /// # Arguments
+    /// * `start` - Zero-based index of the first entry to return.
+    /// * `limit` - Maximum entries to return; clamped to `MAX_BATCH_SIZE` (50).
+    ///
+    /// Returns an empty vector when `start` is out of range or `limit` is 0.
+    pub fn get_blacklist_audit_log_page(
+        env: Env,
+        start: u32,
+        limit: u32,
+    ) -> Vec<BlacklistAuditEntry> {
+        let log = storage::get_blacklist_audit_log(&env);
+        let len = log.len();
+        let mut page = Vec::new(&env);
+        if start >= len {
+            return page;
+        }
+        let end = start.saturating_add(limit.min(MAX_BATCH_SIZE)).min(len);
+        for i in start..end {
+            page.push_back(log.get(i).unwrap());
+        }
+        page
     }
 
     /// Sets a platform-wide promotional discount. Only callable by the administrator.
@@ -1363,6 +1416,11 @@ impl EventRegistry {
     /// # Arguments
     /// * `global_promo_bps` - Discount rate in basis points (e.g., 1500 = 15% off). 0 clears the promo.
     /// * `promo_expiry` - Unix timestamp after which the promo is no longer applied.
+    ///   Must be strictly in the future when `global_promo_bps > 0`.
+    ///
+    /// # Errors
+    /// * `InvalidPromoBps` - `global_promo_bps` exceeds 10000.
+    /// * `InvalidDeadline` - `global_promo_bps > 0` and `promo_expiry` is not in the future.
     pub fn set_global_promo(
         env: Env,
         global_promo_bps: u32,
@@ -1372,6 +1430,12 @@ impl EventRegistry {
 
         if global_promo_bps > 10000 {
             return Err(EventRegistryError::InvalidPromoBps);
+        }
+
+        // A live promo must expire in the future; otherwise it would be
+        // reported as set but never applied. Clearing (bps == 0) accepts any expiry.
+        if global_promo_bps > 0 && promo_expiry <= env.ledger().timestamp() {
+            return Err(EventRegistryError::InvalidDeadline);
         }
 
         storage::set_global_promo_bps(&env, global_promo_bps);
@@ -2650,6 +2714,9 @@ mod issue_tests;
 mod test_issue_fixes;
 
 #[cfg(test)]
+mod test_max_per_user;
+
+#[cfg(test)]
 mod test_global_promo;
 
 #[cfg(test)]
@@ -2670,3 +2737,6 @@ mod test_bridge;
 
 #[cfg(test)]
 mod test_event;
+
+#[cfg(test)]
+mod test_events_batch;

@@ -5,19 +5,14 @@ import { Footer } from "@/components/layout/footer";
 import { buildMetadata } from "@/components/layout/seo";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Pricing",
-  description: "Compare Agora plans and fees for event organizers.",
-  path: "/pricing",
-});
-
-export const metadata: Metadata = {
   title: { absolute: "Pricing | Agora" },
   description: "Compare Agora plans and fees for event organizers.",
+  path: "/pricing",
   openGraph: {
     title: "Pricing | Agora",
     description: "Compare Agora plans and fees for event organizers.",
   },
-};
+});
 
 export default function PricingPage() {
   return (

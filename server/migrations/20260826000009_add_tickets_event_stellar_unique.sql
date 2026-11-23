@@ -1,4 +1,3 @@
--- no-transaction
 -- Prevent duplicate on-chain tickets for the same event (Issue #1287).
 -- `tickets_stellar_id_idx` (20260728000002) only covers stellar_id on its own,
 -- so this partial index on (event_id, stellar_id) is not a duplicate of it.
@@ -22,8 +21,3 @@ BEGIN
     END IF;
 END
 $$;
-
--- CONCURRENTLY so the index build does not lock tickets on a live database.
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS tickets_event_id_stellar_id_key
-    ON tickets (event_id, stellar_id)
-    WHERE stellar_id IS NOT NULL;

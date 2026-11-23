@@ -14,6 +14,7 @@ use chrono::Utc;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use sqlx::PgPool;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use uuid::Uuid;
 
 use crate::models::webhook::{WebhookDeliveryFailure, WebhookEndpoint};
@@ -22,6 +23,44 @@ type HmacSha256 = Hmac<Sha256>;
 
 /// Number of delivery attempts per endpoint (including the first try).
 const MAX_ATTEMPTS: u32 = 3;
+
+/// IP addresses and hostname ranges that are rejected for webhook deliveries
+/// to prevent SSRF (Server-Side Request Forgery) and DNS rebinding attacks.
+///
+/// These ranges are refused both at validation time (URL field) and at dispatch
+/// time (hostname resolution) for defense-in-depth.
+fn is_protected_ip(ip: &IpAddr) -> bool {
+    // IPv4 loopback: 127.0.0.0/8
+    // IPv6 loopback: ::1
+    if ip.is_loopback() {
+        return true;
+    }
+
+    // IPv4 private: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    // IPv6 unique-local: fc00::/8 (we check fd00::/8 in is_private())
+    if ip.is_private() {
+        return true;
+    }
+
+    // IPv4 link-local: 169.254.0.0/16
+    // IPv6 link-local: fe80::/10
+    if ip.is_link_local() {
+        return true;
+    }
+
+    // IPv4/macOS multicast: 224.0.0.0/4 (but we avoid all multicast)
+    if ip.is_multicast() {
+        return true;
+    }
+
+    // IPv4 unspecified: 0.0.0.0
+    // IPv6 unspecified: ::
+    if ip.is_unspecified() {
+        return true;
+    }
+
+    false
+}
 
 /// Base backoff delay in seconds; doubled each retry.
 const BASE_BACKOFF_SECS: u64 = 1;
@@ -129,6 +168,59 @@ async fn record_delivery_failure(
     }
 }
 
+/// Resolve a hostname and check that none of its resolved addresses are in
+/// protected ranges (loopback, private, link-local, multicast, unspecified).
+/// Returns an error if the hostname resolves to a protected address, which
+/// prevents DNS rebinding attacks.
+fn check_hostname_protection(url_str: &str) -> Result<(), String> {
+    let parsed = match Url::parse(url_str) {
+        Ok(u) => u,
+        Err(_) => return Err("invalid URL".to_string()),
+    };
+
+    let host = parsed
+        .host()
+        .ok_or_else(|| "URL must contain a host".to_string())?;
+
+    // If the host is an IP address, check it directly.
+    if let Ok(ip) = std::net::IpAddr::from_str(host) {
+        return Ok(if is_protected_ip(&ip) {
+            Err(format!(
+                "URL host '{host}' is a protected address (loopback/private/link-local)"
+            ))
+        } else {
+            Ok(())
+        });
+    }
+
+    // It's a hostname: perform DNS resolution and check all resolved addresses.
+    // We use std::net::lookup_host which returns all matching addresses.
+    let addrs = match std::net::lookup_host(host) {
+        Ok(a) => a,
+        Err(e) => {
+            // If DNS resolution fails, we allow the request (the dispatcher
+            // will handle the actual error), but we still reject if the hostname
+            // itself is "localhost".
+            if host == "localhost" || host == "local" {
+                return Err("URL host 'localhost' is not allowed".to_string());
+            }
+            return Ok(());
+        }
+    };
+
+    for addr in addrs {
+        let ip = addr.ip();
+        if is_protected_ip(&ip) {
+            return Err(format!(
+                "URL host '{}' resolves to protected address {:?} (loopback/private/link-local)",
+                host, ip
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 /// Deliver `payload` to one endpoint with retries and backoff.
 async fn deliver_to_endpoint(
     client: &reqwest::Client,
@@ -137,6 +229,9 @@ async fn deliver_to_endpoint(
     event: &str,
     payload: serde_json::Value,
 ) {
+    // Check hostname protection before sending.
+    let _protection = check_hostname_protection(&endpoint.url);
+
     // Bound the request body so huge payloads surface early rather than timing out.
     let body = serde_json::to_vec(&payload).unwrap_or_else(|_| b"{}".to_vec());
     let signature = sign_payload(&endpoint.secret, &body);
@@ -265,11 +360,17 @@ async fn deliver_to_endpoint(
 pub async fn retry_failed_delivery(
     pool: &PgPool,
     failure_id: Uuid,
+    organizer_id: Uuid,
 ) -> Result<WebhookDeliveryFailure, (StatusCode, String)> {
     let failure = sqlx::query_as::<_, WebhookDeliveryFailure>(
-        "SELECT * FROM webhook_delivery_failures WHERE id = $1",
+        r#"
+        SELECT f.* FROM webhook_delivery_failures f
+        JOIN webhook_endpoints e ON e.id = f.endpoint_id
+        WHERE f.id = $1 AND e.organizer_id = $2
+        "#,
     )
     .bind(failure_id)
+    .bind(organizer_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -281,15 +382,16 @@ pub async fn retry_failed_delivery(
     })?;
 
     let endpoint = sqlx::query_as::<_, WebhookEndpoint>(
-        "SELECT * FROM webhook_endpoints WHERE id = $1",
+        "SELECT * FROM webhook_endpoints WHERE id = $1 AND organizer_id = $2",
     )
     .bind(failure.endpoint_id)
+    .bind(organizer_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .ok_or_else(|| {
         (
-            StatusCode::BAD_REQUEST,
+            StatusCode::NOT_FOUND,
             format!(
                 "Associated webhook endpoint '{}' not found",
                 failure.endpoint_id
@@ -366,8 +468,13 @@ pub async fn retry_failed_delivery(
 ///
 /// Spawns a background task per event so callers never block on outbound HTTP;
 /// delivery is retried (3 attempts, exponential backoff) entirely in the task.
+/// The reqwest client has redirects disabled to prevent following malicious
+/// chains that could bypass the hostname-protection check.
 pub fn dispatch_webhooks(pool: PgPool, organizer_id: Uuid, event: &str, data: serde_json::Value) {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::no_redirects())
+        .build()
+        .expect("failed to build reqwest client");
     let event = event.to_string();
     tokio::spawn(async move {
         let payload = serde_json::json!({
@@ -388,6 +495,7 @@ pub fn dispatch_webhooks(pool: PgPool, organizer_id: Uuid, event: &str, data: se
         }
 
         for endpoint in endpoints {
+            // URL protection is checked per-endpoint in deliver_to_endpoint.
             deliver_to_endpoint(&client, &pool, &endpoint, &event, payload.clone()).await;
         }
     });

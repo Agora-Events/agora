@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { apiUrl } from '@/constants/api';
 
 export interface AttendeeTicket {
   id: string;
@@ -22,7 +23,6 @@ export const FALLBACK_TICKETS: AttendeeTicket[] = [
 ];
 
 export const TICKETS_STORAGE_KEY = 'agora.attendee.tickets.cache';
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080/api/v1';
 
 export class NetworkError extends Error {
   constructor(message = 'Network error. Please check your connection.') {
@@ -47,7 +47,7 @@ export async function fetchAttendeeTickets(): Promise<AttendeeTicket[]> {
   }
 
   try {
-    const res = await fetch(`${API_BASE}/profile/tickets`, {
+    const res = await fetch(apiUrl('/profile/tickets'), {
       method: 'GET',
       headers,
     });

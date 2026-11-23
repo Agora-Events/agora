@@ -24,8 +24,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        # Version, components, and targets come from rust-toolchain.toml at the repo root.
+        # dtolnay/rust-toolchain does not read rust-toolchain.toml, so the toolchain input is
+        # required. Keep these values in sync with rust-toolchain.toml at the repo root.
         uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94"
+          components: rustfmt, clippy
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2

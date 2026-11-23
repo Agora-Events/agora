@@ -17,9 +17,9 @@ function validatePublicKey(value: string): boolean {
 /**
  * Validates a Stellar contract ID (C...) using the official SDK.
  */
-function validateContractId(value: string): boolean {
+export function validateContractId(value: string): boolean {
   try {
-    return StrKey.isValidContractStrKey(value);
+    return StrKey.isValidContract(value);
   } catch {
     return false;
   }
