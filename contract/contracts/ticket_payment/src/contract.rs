@@ -34,9 +34,10 @@ use crate::{
         DiscountCodeAppliedEvent, DisputeStatusChangedEvent, EscrowWithdrawalApprovedEvent,
         EscrowWithdrawalExecutedEvent, EscrowWithdrawalProposedEvent, FeeSettledEvent,
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
-        PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
-        PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
-        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent, WithdrawalCapUpdatedEvent,
+        MaxTicketsPerWalletUpdatedEvent, PartialRefundProcessedEvent, PaymentProcessedEvent,
+        PaymentStatusChangedEvent, PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent,
+        ProposalVotedEvent, RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
+        WithdrawalCapUpdatedEvent,
     },
 };
 use soroban_sdk::{
@@ -265,6 +266,9 @@ impl TicketPaymentContract {
 
     /// Sets the maximum number of tickets a single wallet may purchase for an event.
     /// A value of 0 disables the limit. Only callable by the event organizer.
+    ///
+    /// Emits `MaxTicketsPerWalletUpdated` with the previous and new limit so
+    /// off-chain consumers can invalidate any cached per-wallet limit.
     pub fn set_max_tickets_per_wallet(
         env: Env,
         event_id: String,
@@ -279,9 +283,26 @@ impl TicketPaymentContract {
             .flatten()
             .ok_or(TicketPaymentError::EventNotFound)?;
 
-        event_info.organizer_address.require_auth();
+        let organizer = event_info.organizer_address;
+        organizer.require_auth();
 
-        crate::storage::set_max_tickets_per_wallet(&env, event_id, max_tickets_per_wallet);
+        // Read the limit currently in effect before overwriting it so the
+        // event carries both sides of the change (0 = unlimited / never set).
+        let old_limit = crate::storage::get_max_tickets_per_wallet(&env, event_id.clone());
+        crate::storage::set_max_tickets_per_wallet(&env, event_id.clone(), max_tickets_per_wallet);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::MaxTicketsPerWalletUpdated,),
+            MaxTicketsPerWalletUpdatedEvent {
+                event_id,
+                old_limit,
+                new_limit: max_tickets_per_wallet,
+                updated_by: organizer,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
         Ok(())
     }
 
