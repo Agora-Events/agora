@@ -33,3 +33,28 @@ pub struct HighestBid {
     pub token_address: Address,
     pub amount: i128,
 }
+
+/// Outcome of validating a single ticket within a bulk check-in request.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BulkCheckInStatus {
+    /// The ticket exists and its validation hash matches; it can be checked in.
+    Valid,
+    /// No payment record is associated with the supplied numeric ticket id.
+    NotFound,
+    /// The supplied validation hash does not match the stored hash for the ticket.
+    InvalidSecret,
+    /// The ticket has already been checked in.
+    AlreadyCheckedIn,
+    /// The ticket is in a status that cannot be checked in (e.g. refunded/failed).
+    InvalidStatus,
+}
+
+/// Per-ticket result returned by `bulk_check_in_tickets`, paired with the
+/// numeric ticket id that was supplied so callers can correlate the response.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BulkCheckInResult {
+    pub ticket_id: u64,
+    pub status: BulkCheckInStatus,
+}
