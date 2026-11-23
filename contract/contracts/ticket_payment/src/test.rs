@@ -4569,6 +4569,34 @@ fn test_dispute_blocks_withdrawal() {
 }
 
 #[test]
+fn test_set_event_dispute_persists_admin_override() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // MockEventRegistry reports an Active event with no open/voting dispute,
+    // so any `true` result below must come from the admin override flag.
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+
+    // No dispute by default.
+    assert!(!client.is_event_disputed(&event_id));
+
+    // Admin override sets the dispute state that the contract reads.
+    client.set_event_dispute(&event_id, &true);
+    assert!(
+        client.is_event_disputed(&event_id),
+        "is_event_disputed must reflect the admin override set by set_event_dispute"
+    );
+
+    // Clearing the override restores the non-disputed state.
+    client.set_event_dispute(&event_id, &false);
+    assert!(
+        !client.is_event_disputed(&event_id),
+        "is_event_disputed must return false after the admin override is cleared"
+    );
+}
+
+#[test]
 fn test_admin_refund_during_dispute() {
     let env = Env::default();
     env.mock_all_auths();

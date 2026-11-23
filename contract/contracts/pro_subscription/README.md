@@ -39,12 +39,13 @@ bricking the contract by pointing critical addresses at itself.
 | --- | --- | --- |
 | `initialize(admin, platform_wallet, payment_token, pro_monthly_price)` | Anyone (once) | Sets up the contract. Fails if already initialized, if any address equals the contract address, or if `pro_monthly_price <= 0`. |
 | `version()` | Anyone | Returns the crate version compiled into the contract. |
-| `subscribe_pro(organizer, months)` | Organizer | Charges `pro_monthly_price * months` (minus the multi-month discount: 5% for 3+ months, 10% for 6+, 20% for 12+) from `organizer` to the platform wallet and creates/activates a Pro subscription. Fails if `months == 0`, if the organizer already has an active subscription, or on arithmetic overflow. |
-| `renew_subscription(organizer, months)` | Organizer | Charges for `months` more (same multi-month discount as `subscribe_pro`) and extends the subscription — from the current expiry if still active, or from now if expired. Fails if no subscription exists yet. |
+| `subscribe_pro(organizer, months)` | Organizer | Charges `pro_monthly_price * months` (minus the multi-month discount: 5% for 3+ months, 10% for 6+, 20% for 12+) from `organizer` to the platform wallet and creates/activates a Pro subscription. Fails with `InvalidDuration` if `months == 0` or `months > MAX_SUBSCRIPTION_MONTHS`, if the organizer already has an active subscription, or on arithmetic overflow. |
+| `renew_subscription(organizer, months)` | Organizer | Charges for `months` more (same multi-month discount as `subscribe_pro`) and extends the subscription — from the current expiry if still active, or from now if expired. Fails with `InvalidDuration` if `months == 0` or `months > MAX_SUBSCRIPTION_MONTHS`, or if no subscription exists yet. |
 | `cancel_subscription(organizer)` | Admin | Marks the subscription inactive, removes the organizer from the Pro members list, and decrements the Pro subscriber count. |
-| `is_pro_member(organizer)` | Anyone | Returns `true` only if a subscription exists, is active, and has not expired. |
-| `get_subscription(organizer)` | Anyone | Returns the full `Subscription` record, or `None` if the organizer never subscribed. |
-| `get_subscription_expiry(organizer)` | Anyone | Returns the subscription's `expires_at`, or `None` if the organizer never subscribed. |
+| `is_pro_member(organizer)` | Anyone | Returns `true` only if a subscription exists, is active, and has not expired. Side-effect free: performs no storage writes and emits no events. |
+| `get_subscription(organizer)` | Anyone | Returns the full `Subscription` record, or `None` if the organizer never subscribed. Side-effect free: performs no storage writes and emits no events. |
+| `get_subscription_expiry(organizer)` | Anyone | Returns the subscription's `expires_at`, or `None` if the organizer never subscribed. Side-effect free: performs no storage writes and emits no events. |
+| `sync_expired(organizer)` | Anyone | Explicitly cleans up a lapsed Pro subscription: marks it inactive, removes the organizer from the Pro members list, decrements the Pro subscriber count, and emits `SubscriptionExpired`. Also called internally by the mutating entry points. |
 | `get_pro_members()` | Anyone | Returns the list of addresses currently in the Pro members list. |
 | `get_pro_members_count()` | Anyone | Returns the length of the Pro members list. |
 | `register_basic(organizer)` | Organizer | Creates a free, non-expiring Basic subscription. Fails if the organizer already has an active Pro subscription. |
@@ -58,10 +59,31 @@ bricking the contract by pointing critical addresses at itself.
 | `update_platform_wallet(new_wallet)` | Admin | Rotates the platform wallet address. |
 | `get_payment_token()` | Anyone | Returns the current accepted payment token address. |
 | `update_payment_token(new_token)` | Admin | Rotates the accepted payment token address. |
+| `upgrade(new_wasm_hash)` | Admin | Replaces the contract WASM in place via `env.deployer().update_current_contract_wasm`. Emits `ContractUpgraded`. |
 
 "Admin" calls are enforced with `admin.require_auth()` inside `require_admin`.
 "Organizer" calls are enforced with `organizer.require_auth()` on the address
 passed in, so an organizer can only ever act on their own subscription.
+
+### Subscription duration limit
+
+`subscribe_pro` and `renew_subscription` accept between 1 and
+`MAX_SUBSCRIPTION_MONTHS` (36) months per call. `months == 0` and
+`months > MAX_SUBSCRIPTION_MONTHS` are both rejected with
+`ProSubscriptionError::InvalidDuration`. The upper bound keeps a single call
+from locking in today's price for decades and from overflowing the
+price × months multiplication.
+
+### Expiry handling
+
+The read-only getters (`is_pro_member`, `get_subscription`,
+`get_subscription_expiry`) are side-effect free: they compare `expires_at` to
+the ledger timestamp without writing storage or emitting events. Cleanup of a
+lapsed subscription (marking it inactive, removing the organizer from the
+members list, decrementing the total counter, emitting `SubscriptionExpired`)
+happens in `sync_expired(organizer)`, which anyone can call, and is also
+invoked by the mutating entry points (`subscribe_pro`, `renew_subscription`,
+`cancel_subscription`).
 
 ## Errors
 
@@ -74,10 +96,11 @@ in #1583 because nothing returned them; they are not reused.
 | `NotInitialized` | 2 | A call was made before `initialize`, or a required piece of contract state (admin/payment token/platform wallet) is missing. |
 | `SubscriptionNotFound` | 4 | `renew_subscription` or `cancel_subscription` was called for an organizer with no subscription record. |
 | `SubscriptionExpired` | 5 | Reserved for future use — expiry is currently checked by comparing `expires_at` to the ledger timestamp on read, not by transitioning state, so this variant is not emitted today. |
-| `InvalidPrice` | 8 | `pro_monthly_price`/`new_price` was `<= 0`, or `months == 0` was passed to `subscribe_pro`/`renew_subscription`. |
+| `InvalidPrice` | 8 | `pro_monthly_price`/`new_price` was `<= 0`. |
 | `ArithmeticError` | 10 | An overflow occurred multiplying price by months or adding to an expiry/total. |
 | `InvalidAddress` | 12 | `initialize`, `update_admin`, `update_platform_wallet`, or `update_payment_token` was called with the contract's own address. |
 | `SubscriptionAlreadyActive` | 13 | `subscribe_pro` was called while an active, unexpired subscription already exists, or `register_basic` was called while an active Pro subscription exists. |
+| `InvalidDuration` | 15 | `months == 0` or `months > MAX_SUBSCRIPTION_MONTHS` was passed to `subscribe_pro`/`renew_subscription`. |
 
 ## Events
 
@@ -93,7 +116,8 @@ Defined in `events.rs` as `ProSubscriptionEvent` topics, each paired with a
 | `PriceUpdated` | `PriceUpdatedEvent { old_price, new_price, updated_by, timestamp }` | `update_pro_price` |
 | `ProMemberAdded` | `ProMemberAddedEvent { organizer, timestamp }` | `subscribe_pro`, `renew_subscription` |
 | `ProMemberRemoved` | `ProMemberRemovedEvent { organizer, timestamp }` | `cancel_subscription` |
-| `SubscriptionExpired` | — (topic only, no payload struct) | Reserved; not currently emitted anywhere in `contract.rs`. |
+| `SubscriptionExpired` | — (topic only, no payload struct) | `sync_expired` |
+| `ContractUpgraded` | `ContractUpgradedEvent { old_wasm_hash, new_wasm_hash, timestamp }` | `upgrade` |
 
 ## Development
 
