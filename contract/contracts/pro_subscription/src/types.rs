@@ -15,6 +15,9 @@ pub const DISCOUNT_BPS_6_MONTHS: u32 = 1_000; // 10%
 /// Discount (in basis points) applied to subscriptions of 12 months or more.
 pub const DISCOUNT_BPS_12_MONTHS: u32 = 2_000; // 20%
 
+/// Maximum number of entries returned by a single paginated read.
+pub const MAX_PAGE_SIZE: u32 = 50;
+
 /// Subscription plan tiers
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

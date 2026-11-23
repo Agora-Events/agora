@@ -16,7 +16,7 @@ use crate::{
     },
     types::{
         Subscription, SubscriptionTier, DISCOUNT_BPS_12_MONTHS, DISCOUNT_BPS_3_MONTHS,
-        DISCOUNT_BPS_6_MONTHS, MAX_BPS, SECONDS_PER_MONTH,
+        DISCOUNT_BPS_6_MONTHS, MAX_BPS, MAX_PAGE_SIZE, SECONDS_PER_MONTH,
     },
     validation::validate_address,
 };
@@ -220,6 +220,17 @@ impl ProSubscriptionContract {
         let mut subscription =
             get_subscription(&env, &organizer).ok_or(ProSubscriptionError::SubscriptionNotFound)?;
 
+        // Capture whether the organizer was an active, unexpired Pro member before renewal.
+        // This determines whether the renewal is a membership transition (emit ProMemberAdded)
+        // or a plain extension of an already-active plan.
+        let was_active_member = get_subscription_with_expiration(&env, &organizer)
+            .map(|s| {
+                s.tier == SubscriptionTier::Pro
+                    && s.is_active
+                    && s.expires_at > env.ledger().timestamp()
+            })
+            .unwrap_or(false);
+
         let monthly_price = get_pro_monthly_price(&env);
         let total_amount = calculate_subscription_price(monthly_price, months)?;
 
@@ -256,13 +267,15 @@ impl ProSubscriptionContract {
         // Ensure they're in the pro members list
         add_to_pro_members_list(&env, &organizer);
 
-        env.events().publish(
-            (ProSubscriptionEvent::ProMemberAdded,),
-            ProMemberAddedEvent {
-                organizer: organizer.clone(),
-                timestamp: current_time,
-            },
-        );
+        if !was_active_member {
+            env.events().publish(
+                (ProSubscriptionEvent::ProMemberAdded,),
+                ProMemberAddedEvent {
+                    organizer: organizer.clone(),
+                    timestamp: current_time,
+                },
+            );
+        }
 
         env.events().publish(
             (ProSubscriptionEvent::SubscriptionRenewed,),
@@ -377,9 +390,36 @@ impl ProSubscriptionContract {
         get_subscription_with_expiration(&env, &organizer).map(|s| s.expires_at)
     }
 
-    /// Get all active pro members
+    /// Get all active pro members.
+    ///
+    /// Prefer [`Self::get_pro_members_page`] for large member lists: this function reads the
+    /// entire list in a single call and may exceed Soroban's read/return-size limits as the
+    /// number of Pro organizers grows.
     pub fn get_pro_members(env: Env) -> soroban_sdk::Vec<Address> {
         get_pro_members_list(&env)
+    }
+
+    /// Get a page of active pro members.
+    ///
+    /// Returns at most `MAX_PAGE_SIZE` entries starting at `start`. Returns an empty vector
+    /// when `start` is beyond the end of the list.
+    pub fn get_pro_members_page(env: Env, start: u32, limit: u32) -> soroban_sdk::Vec<Address> {
+        let members = get_pro_members_list(&env);
+        let len = members.len();
+        let mut page = soroban_sdk::Vec::new(&env);
+        if start >= len {
+            return page;
+        }
+        let limit = limit.min(MAX_PAGE_SIZE);
+        let end = start.saturating_add(limit).min(len);
+        let mut i = start;
+        while i < end {
+            if let Some(member) = members.get(i) {
+                page.push_back(member);
+            }
+            i += 1;
+        }
+        page
     }
 
     /// Get count of pro members in the members list
@@ -393,9 +433,15 @@ impl ProSubscriptionContract {
             return Err(ProSubscriptionError::NotInitialized);
         }
         organizer.require_auth();
-        if let Some(existing) = get_subscription(&env, &organizer) {
+        // Use the expiration-aware getter so a lapsed Pro plan is treated as inactive and its
+        // Pro state (members list, counter) is cleaned up before the Basic record is stored.
+        if let Some(existing) = get_subscription_with_expiration(&env, &organizer) {
             if existing.tier == SubscriptionTier::Pro && existing.is_active {
                 return Err(ProSubscriptionError::SubscriptionAlreadyActive);
+            }
+            if existing.tier == SubscriptionTier::Pro {
+                remove_from_pro_members_list(&env, &organizer);
+                decrement_total_pro_subscriptions(&env);
             }
         }
         let subscription = Subscription {
