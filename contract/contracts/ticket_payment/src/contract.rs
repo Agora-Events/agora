@@ -1,5 +1,5 @@
 use crate::storage::{
-    add_discount_hash, add_payment_to_buyer_index, add_to_active_escrow_by_token,
+    add_discount_hash, bump_config, add_payment_to_buyer_index, add_to_active_escrow_by_token,
     add_to_active_escrow_total, add_to_daily_withdrawn_amount,
     add_to_total_fees_collected_by_token, add_to_total_volume_processed, add_token_to_whitelist,
     get_admin, get_bulk_refund_index, get_daily_withdrawn_amount, get_discount_code,
@@ -119,6 +119,7 @@ impl TicketPaymentContract {
         set_platform_wallet(&env, platform_wallet.clone());
         set_event_registry(&env, event_registry.clone());
         set_initialized(&env, true);
+        bump_config(&env);
 
         // Whitelist USDC by default
         add_token_to_whitelist(&env, &usdc_token);
