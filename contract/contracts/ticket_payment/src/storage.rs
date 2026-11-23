@@ -7,7 +7,7 @@ use crate::{
         ParameterProposal, Payment, PaymentStatus,
     },
 };
-use crate::keys::{TicketKey, WalletLimitKey};
+use crate::keys::{DisputeKey, TicketKey, WalletLimitKey};
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
@@ -674,16 +674,17 @@ pub fn mark_discount_hash_used(env: &Env, hash: soroban_sdk::BytesN<32>) {
 /// When set to `true`, `is_event_disputed` reports the event as disputed even
 /// if the `event_registry` does not report an open or voting dispute.
 pub fn set_event_dispute_override(env: &Env, event_id: &String, disputed: bool) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::EventDisputeOverride(event_id.clone()), &disputed);
+    env.storage().persistent().set(
+        &DisputeKey::EventDisputeOverride(event_id.clone()),
+        &disputed,
+    );
 }
 
 /// Returns the admin dispute override flag for `event_id` (defaults to `false`).
 pub fn get_event_dispute_override(env: &Env, event_id: &String) -> bool {
     env.storage()
         .persistent()
-        .get(&DataKey::EventDisputeOverride(event_id.clone()))
+        .get(&DisputeKey::EventDisputeOverride(event_id.clone()))
         .unwrap_or(false)
 }
 
@@ -691,7 +692,7 @@ pub fn get_event_dispute_override(env: &Env, event_id: &String) -> bool {
 pub fn clear_event_dispute_override(env: &Env, event_id: &String) {
     env.storage()
         .persistent()
-        .remove(&DataKey::EventDisputeOverride(event_id.clone()));
+        .remove(&DisputeKey::EventDisputeOverride(event_id.clone()));
 }
 
 pub fn is_event_cancelled_for_refund(env: &Env, event_id: &String) -> bool {

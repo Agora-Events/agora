@@ -34,9 +34,10 @@ use crate::{
         DiscountCodeAppliedEvent, DisputeStatusChangedEvent, EscrowWithdrawalApprovedEvent,
         EscrowWithdrawalExecutedEvent, EscrowWithdrawalProposedEvent, FeeSettledEvent,
         GlobalPromoAppliedEvent, GovernanceActionExecutedEvent, InitializationEvent,
-        PartialRefundProcessedEvent, PaymentProcessedEvent, PaymentStatusChangedEvent,
-        PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent, ProposalVotedEvent,
-        RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent, WithdrawalCapUpdatedEvent,
+        MaxTicketsPerWalletUpdatedEvent, PartialRefundProcessedEvent, PaymentProcessedEvent,
+        PaymentStatusChangedEvent, PoapMintedEvent, PriceSwitchedEvent, ProposalCreatedEvent,
+        ProposalVotedEvent, RevenueClaimedEvent, TicketCheckedInEvent, TicketTransferredEvent,
+        WithdrawalCapUpdatedEvent,
     },
 };
 use soroban_sdk::{
@@ -193,11 +194,10 @@ impl TicketPaymentContract {
     ) -> Result<(), TicketPaymentError> {
         require_admin(&env)?;
 
-        let key = DataKey::EventDisputeOverride(event_id.clone());
         if disputed {
-            env.storage().persistent().set(&key, &true);
+            crate::storage::set_event_dispute_override(&env, &event_id, true);
         } else {
-            env.storage().persistent().remove(&key);
+            crate::storage::clear_event_dispute_override(&env, &event_id);
         }
 
         env.events().publish(
@@ -218,12 +218,7 @@ impl TicketPaymentContract {
     /// [`Self::set_event_dispute`] is active, or if the `event_registry`
     /// reports an `Open` or `Voting` dispute for the event.
     pub fn is_event_disputed(env: Env, event_id: String) -> bool {
-        if env
-            .storage()
-            .persistent()
-            .get::<DataKey, bool>(&DataKey::EventDisputeOverride(event_id.clone()))
-            .unwrap_or(false)
-        {
+        if crate::storage::get_event_dispute_override(&env, &event_id) {
             return true;
         }
 
@@ -271,6 +266,9 @@ impl TicketPaymentContract {
 
     /// Sets the maximum number of tickets a single wallet may purchase for an event.
     /// A value of 0 disables the limit. Only callable by the event organizer.
+    ///
+    /// Emits `MaxTicketsPerWalletUpdated` with the previous and new limit so
+    /// off-chain consumers can invalidate any cached per-wallet limit.
     pub fn set_max_tickets_per_wallet(
         env: Env,
         event_id: String,
@@ -285,9 +283,26 @@ impl TicketPaymentContract {
             .flatten()
             .ok_or(TicketPaymentError::EventNotFound)?;
 
-        event_info.organizer_address.require_auth();
+        let organizer = event_info.organizer_address;
+        organizer.require_auth();
 
-        crate::storage::set_max_tickets_per_wallet(&env, event_id, max_tickets_per_wallet);
+        // Read the limit currently in effect before overwriting it so the
+        // event carries both sides of the change (0 = unlimited / never set).
+        let old_limit = crate::storage::get_max_tickets_per_wallet(&env, event_id.clone());
+        crate::storage::set_max_tickets_per_wallet(&env, event_id.clone(), max_tickets_per_wallet);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (AgoraEvent::MaxTicketsPerWalletUpdated,),
+            MaxTicketsPerWalletUpdatedEvent {
+                event_id,
+                old_limit,
+                new_limit: max_tickets_per_wallet,
+                updated_by: organizer,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
         Ok(())
     }
 
@@ -1673,6 +1688,9 @@ impl TicketPaymentContract {
         event_id: String,
         token_address: Address,
     ) -> Result<i128, TicketPaymentError> {
+        if crate::storage::get_event_dispute_override(&env, &event_id) {
+            return Err(TicketPaymentError::EventDisputed);
+        }
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
         let event_info = registry_client
@@ -1911,6 +1929,9 @@ impl TicketPaymentContract {
     ) -> Result<i128, TicketPaymentError> {
         if is_paused(&env) {
             return Err(TicketPaymentError::ContractPaused);
+        }
+        if crate::storage::get_event_dispute_override(&env, &event_id) {
+            return Err(TicketPaymentError::EventDisputed);
         }
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);

@@ -11263,3 +11263,118 @@ fn test_bulk_check_in_paused_rejected() {
 
     let _ = admin;
 }
+
+// ── Max tickets per wallet: update event ──────────────────────────────────────
+
+/// Collects every `MaxTicketsPerWalletUpdated` payload published by `contract`.
+fn max_tickets_updated_events(
+    env: &Env,
+    contract: &Address,
+) -> soroban_sdk::Vec<crate::events::MaxTicketsPerWalletUpdatedEvent> {
+    let mut out = soroban_sdk::Vec::new(env);
+    for (addr, topics, data) in env.events().all().iter() {
+        if &addr != contract || topics.is_empty() {
+            continue;
+        }
+        let topic: Result<crate::events::AgoraEvent, _> = topics.get(0).unwrap().try_into_val(env);
+        if topic == Ok(crate::events::AgoraEvent::MaxTicketsPerWalletUpdated) {
+            out.push_back(data.try_into_val(env).unwrap());
+        }
+    }
+    out
+}
+
+#[test]
+fn test_set_max_tickets_per_wallet_emits_event_from_unset() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 1_700_000_000);
+
+    let (client, organizer, _registry_id, _usdc_id) = setup_discount_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+
+    client.set_max_tickets_per_wallet(&event_id, &4);
+
+    let events = max_tickets_updated_events(&env, &client.address);
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events.get(0).unwrap(),
+        crate::events::MaxTicketsPerWalletUpdatedEvent {
+            event_id: event_id.clone(),
+            old_limit: 0,
+            new_limit: 4,
+            updated_by: organizer,
+            timestamp: 1_700_000_000,
+        }
+    );
+    assert_eq!(client.get_max_tickets_per_wallet(&event_id), 4);
+}
+
+#[test]
+fn test_set_max_tickets_per_wallet_event_carries_previous_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, organizer, _registry_id, _usdc_id) = setup_discount_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+
+    client.set_max_tickets_per_wallet(&event_id, &2);
+    env.ledger().with_mut(|li| li.timestamp = 1_800_000_000);
+    client.set_max_tickets_per_wallet(&event_id, &10);
+
+    // Only the events from the most recent invocation are retained by the host.
+    let events = max_tickets_updated_events(&env, &client.address);
+    assert_eq!(events.len(), 1);
+    let ev = events.get(0).unwrap();
+    assert_eq!(ev.event_id, event_id);
+    assert_eq!(ev.old_limit, 2);
+    assert_eq!(ev.new_limit, 10);
+    assert_eq!(ev.updated_by, organizer);
+    assert_eq!(ev.timestamp, 1_800_000_000);
+}
+
+#[test]
+fn test_set_max_tickets_per_wallet_to_zero_emits_unlimited_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, organizer, _registry_id, _usdc_id) = setup_discount_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+
+    client.set_max_tickets_per_wallet(&event_id, &3);
+    client.set_max_tickets_per_wallet(&event_id, &0);
+
+    let events = max_tickets_updated_events(&env, &client.address);
+    assert_eq!(events.len(), 1);
+    let ev = events.get(0).unwrap();
+    assert_eq!(ev.old_limit, 3);
+    assert_eq!(
+        ev.new_limit, 0,
+        "0 must be reported as the unlimited sentinel"
+    );
+    assert_eq!(ev.updated_by, organizer);
+    assert_eq!(client.get_max_tickets_per_wallet(&event_id), 0);
+}
+
+#[test]
+fn test_set_max_tickets_per_wallet_unknown_event_emits_nothing() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketPaymentContract, ());
+    let client = TicketPaymentContractClient::new(&env, &contract_id);
+    let registry_id = env.register(MockEventRegistryNotFound, ());
+    client.initialize(
+        &Address::generate(&env),
+        &env.register_stellar_asset_contract_v2(Address::generate(&env))
+            .address(),
+        &Address::generate(&env),
+        &registry_id,
+    );
+
+    let event_id = String::from_str(&env, "missing");
+    let res = client.try_set_max_tickets_per_wallet(&event_id, &5);
+    assert_eq!(res, Err(Ok(TicketPaymentError::EventNotFound)));
+    assert_eq!(max_tickets_updated_events(&env, &client.address).len(), 0);
+    assert_eq!(client.get_max_tickets_per_wallet(&event_id), 0);
+}
