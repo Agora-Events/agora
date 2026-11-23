@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL =
   process.env.BACKEND_URL ??
@@ -22,6 +22,7 @@ function relativeListedAt(createdAt: string): string {
 }
 
 export async function GET(
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: eventId } = await params;
@@ -59,7 +60,7 @@ export async function GET(
       },
     );
 
-    return NextResponse.json({ success: true, data: listings });
+    return NextResponse.json({ success: true, eventId, data: listings });
   } catch (error) {
     console.error("Resale listing proxy failed:", error);
     return NextResponse.json(

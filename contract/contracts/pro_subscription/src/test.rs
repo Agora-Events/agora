@@ -131,6 +131,49 @@ fn test_register_basic_blocked_when_already_pro() {
     );
 }
 
+// ── Issue #1722: register_basic after Pro expiry ─────────────────────────────
+
+#[test]
+fn test_register_basic_succeeds_after_pro_expired() {
+    let (env, client, _, _, token_id) = setup_env();
+
+    let asset = StellarAssetClient::new(&env, &token_id);
+    let organizer = Address::generate(&env);
+    asset.mint(&organizer, &1_000_000);
+
+    client.subscribe_pro(&organizer, &1);
+    assert!(client.is_pro_member(&organizer));
+
+    let sub = client.get_subscription(&organizer).unwrap();
+
+    // Advance ledger past expiry
+    env.ledger().set(LedgerInfo {
+        timestamp: sub.expires_at + 10,
+        protocol_version: 23,
+        sequence_number: 10,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    // Pro has lapsed, so Basic registration must succeed
+    client.register_basic(&organizer);
+
+    let basic = client.get_subscription(&organizer).unwrap();
+    assert_eq!(basic.tier, SubscriptionTier::Basic);
+    assert!(basic.is_active);
+
+    // Pro state must be cleaned up
+    assert!(!client.is_pro_member(&organizer));
+    let members = client.get_pro_members();
+    assert!(
+        !members.contains(&organizer),
+        "expired organizer must not remain in the pro members list"
+    );
+}
+
 fn setup_without_auth_mock() -> (
     Env,
     ProSubscriptionContractClient<'static>,
@@ -787,6 +830,123 @@ fn test_pro_member_added_event_on_renew() {
     assert!(!events.is_empty(), "No events emitted");
 }
 
+// ── Issue #1724: ProMemberAdded only on membership transition ────────────────
+
+fn count_events(env: &Env, kind: ProSubscriptionEvent) -> u32 {
+    let mut count = 0u32;
+    for (_, topics, _) in env.events().all().iter() {
+        let topic: ProSubscriptionEvent = topics.get(0).unwrap().into_val(env);
+        if topic == kind {
+            count += 1;
+        }
+    }
+    count
+}
+
+#[test]
+fn test_renew_active_emits_only_subscription_renewed() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &(monthly_price * 2));
+    token::Client::new(&env, &usdc).approve(
+        &organizer,
+        &client.address,
+        &(monthly_price * 2),
+        &99999,
+    );
+    client.subscribe_pro(&organizer, &1u32);
+
+    // Clear the event buffer so only renewal events are observed
+    env.events().all();
+
+    client.renew_subscription(&organizer, &1u32);
+
+    assert_eq!(
+        count_events(&env, ProSubscriptionEvent::ProMemberAdded),
+        0,
+        "extending an active subscription must not emit ProMemberAdded"
+    );
+    assert_eq!(
+        count_events(&env, ProSubscriptionEvent::SubscriptionRenewed),
+        1,
+        "extending an active subscription must emit SubscriptionRenewed"
+    );
+}
+
+#[test]
+fn test_renew_expired_emits_pro_member_added_and_renewed() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &(monthly_price * 2));
+    token::Client::new(&env, &usdc).approve(
+        &organizer,
+        &client.address,
+        &(monthly_price * 2),
+        &99999,
+    );
+    client.subscribe_pro(&organizer, &1u32);
+    let sub = client.get_subscription(&organizer).unwrap();
+
+    // Advance ledger past expiry
+    env.ledger().set(LedgerInfo {
+        timestamp: sub.expires_at + 10,
+        protocol_version: 23,
+        sequence_number: 10,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3110400,
+    });
+
+    client.renew_subscription(&organizer, &1u32);
+
+    assert_eq!(
+        count_events(&env, ProSubscriptionEvent::ProMemberAdded),
+        1,
+        "reactivating an expired subscription must emit ProMemberAdded"
+    );
+    assert_eq!(
+        count_events(&env, ProSubscriptionEvent::SubscriptionRenewed),
+        1,
+        "reactivating an expired subscription must emit SubscriptionRenewed"
+    );
+}
+
+#[test]
+fn test_renew_cancelled_emits_pro_member_added_and_renewed() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    let monthly_price = 1_000_000i128;
+
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &(monthly_price * 2));
+    token::Client::new(&env, &usdc).approve(
+        &organizer,
+        &client.address,
+        &(monthly_price * 2),
+        &99999,
+    );
+    client.subscribe_pro(&organizer, &1u32);
+    client.cancel_subscription(&organizer);
+
+    client.renew_subscription(&organizer, &1u32);
+
+    assert_eq!(
+        count_events(&env, ProSubscriptionEvent::ProMemberAdded),
+        1,
+        "reactivating a cancelled subscription must emit ProMemberAdded"
+    );
+    assert_eq!(
+        count_events(&env, ProSubscriptionEvent::SubscriptionRenewed),
+        1,
+        "reactivating a cancelled subscription must emit SubscriptionRenewed"
+    );
+}
+
 #[test]
 fn test_pro_member_removed_event_on_cancel() {
     let (env, client, _admin, _platform_wallet, usdc) = setup();
@@ -1228,4 +1388,75 @@ fn test_resubscribe_after_cancel() {
     let new_expiry = client.get_subscription_expiry(&organizer).unwrap();
     assert_eq!(new_expiry, env.ledger().timestamp() + SECONDS_PER_MONTH);
     assert!(new_expiry > first_expiry, "new expiry must be after the old one");
+}
+
+// ── Issue #1725: paginated get_pro_members_page ──────────────────────────────
+
+fn subscribe_members(
+    env: &Env,
+    client: &ProSubscriptionContractClient<'static>,
+    usdc: &Address,
+    count: u32,
+) -> soroban_sdk::Vec<Address> {
+    let monthly_price = 1_000_000i128;
+    let mut members = soroban_sdk::Vec::new(env);
+    for _ in 0..count {
+        let organizer = Address::generate(env);
+        token::StellarAssetClient::new(env, usdc).mint(&organizer, &monthly_price);
+        token::Client::new(env, usdc).approve(&organizer, &client.address, &monthly_price, &99999);
+        client.subscribe_pro(&organizer, &1u32);
+        members.push_back(organizer);
+    }
+    members
+}
+
+#[test]
+fn test_get_pro_members_page_first_page() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let members = subscribe_members(&env, &client, &usdc, 5);
+
+    let page = client.get_pro_members_page(&0u32, &2u32);
+    assert_eq!(page.len(), 2);
+    assert_eq!(page.get(0).unwrap(), members.get(0).unwrap());
+    assert_eq!(page.get(1).unwrap(), members.get(1).unwrap());
+}
+
+#[test]
+fn test_get_pro_members_page_middle_page() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let members = subscribe_members(&env, &client, &usdc, 5);
+
+    let page = client.get_pro_members_page(&2u32, &2u32);
+    assert_eq!(page.len(), 2);
+    assert_eq!(page.get(0).unwrap(), members.get(2).unwrap());
+    assert_eq!(page.get(1).unwrap(), members.get(3).unwrap());
+}
+
+#[test]
+fn test_get_pro_members_page_last_partial_page() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let members = subscribe_members(&env, &client, &usdc, 5);
+
+    let page = client.get_pro_members_page(&4u32, &2u32);
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.get(0).unwrap(), members.get(4).unwrap());
+}
+
+#[test]
+fn test_get_pro_members_page_out_of_range_start() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    subscribe_members(&env, &client, &usdc, 3);
+
+    let page = client.get_pro_members_page(&10u32, &2u32);
+    assert_eq!(page.len(), 0);
+}
+
+#[test]
+fn test_get_pro_members_page_limit_clamped_to_max() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let total = crate::types::MAX_PAGE_SIZE + 5;
+    subscribe_members(&env, &client, &usdc, total);
+
+    let page = client.get_pro_members_page(&0u32, &u32::MAX);
+    assert_eq!(page.len(), crate::types::MAX_PAGE_SIZE);
 }
