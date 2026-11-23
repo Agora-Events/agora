@@ -2774,4 +2774,7 @@ mod test_event;
 mod test_events_batch;
 
 #[cfg(test)]
+mod test_waitlist;
+
+#[cfg(test)]
 mod test_postpone;
