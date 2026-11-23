@@ -99,6 +99,16 @@ pub enum WalletLimitKey {
     WalletTicketCount(String, Address),
 }
 
+/// Storage keys for admin dispute overrides.
+///
+/// Kept as a separate enum from `DataKey` to avoid exceeding the XDR symbol
+/// count limit on the main key enum.
+#[contracttype]
+pub enum DisputeKey {
+    /// Admin dispute override flag: event_id -> bool (Persistent)
+    EventDisputeOverride(String),
+}
+
 /// Storage keys for the numeric ticket-id index.
 ///
 /// Kept as a separate enum from `DataKey` to avoid exceeding the XDR symbol

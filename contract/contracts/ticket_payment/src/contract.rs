@@ -193,11 +193,10 @@ impl TicketPaymentContract {
     ) -> Result<(), TicketPaymentError> {
         require_admin(&env)?;
 
-        let key = DataKey::EventDisputeOverride(event_id.clone());
         if disputed {
-            env.storage().persistent().set(&key, &true);
+            crate::storage::set_event_dispute_override(&env, &event_id, true);
         } else {
-            env.storage().persistent().remove(&key);
+            crate::storage::clear_event_dispute_override(&env, &event_id);
         }
 
         env.events().publish(
@@ -218,12 +217,7 @@ impl TicketPaymentContract {
     /// [`Self::set_event_dispute`] is active, or if the `event_registry`
     /// reports an `Open` or `Voting` dispute for the event.
     pub fn is_event_disputed(env: Env, event_id: String) -> bool {
-        if env
-            .storage()
-            .persistent()
-            .get::<DataKey, bool>(&DataKey::EventDisputeOverride(event_id.clone()))
-            .unwrap_or(false)
-        {
+        if crate::storage::get_event_dispute_override(&env, &event_id) {
             return true;
         }
 
