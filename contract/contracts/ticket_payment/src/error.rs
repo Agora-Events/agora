@@ -135,6 +135,10 @@ pub enum TicketPaymentError {
     PaymentAlreadyExists = 67,
     /// Returned when a purchase would exceed the event's per-wallet ticket limit.
     WalletLimitExceeded = 68,
+    /// Returned when a discount code's percentage is outside the valid range of 1..=100.
+    InvalidDiscountPercent = 69,
+    /// Returned when a discount code is created with `max_uses` set to zero.
+    InvalidDiscountMaxUses = 70,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -219,6 +223,8 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             66 => TicketPaymentError::BatchTooLarge,
             67 => TicketPaymentError::PaymentAlreadyExists,
             68 => TicketPaymentError::WalletLimitExceeded,
+            69 => TicketPaymentError::InvalidDiscountPercent,
+            70 => TicketPaymentError::InvalidDiscountMaxUses,
             _ => TicketPaymentError::ArithmeticError,
         }
     }
