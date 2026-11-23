@@ -1412,6 +1412,7 @@ impl EventRegistry {
 
     /// Sets a platform-wide promotional discount. Only callable by the administrator.
     /// The promo automatically expires when the ledger timestamp passes `promo_expiry`.
+    /// Emits GlobalPromoUpdated on every successful call, including clears.
     ///
     /// # Arguments
     /// * `global_promo_bps` - Discount rate in basis points (e.g., 1500 = 15% off). 0 clears the promo.
@@ -1474,7 +1475,12 @@ impl EventRegistry {
         Some((storage::get_global_promo_bps(&env), expiry))
     }
 
-    /// Returns the expiry timestamp for the current global promo.
+    /// Returns the expiry timestamp of the stored global promo.
+    ///
+    /// Returns `0` when no promo has ever been set. The value is returned as
+    /// stored, even after it has passed. To check whether the promo is still
+    /// active, use [`Self::get_global_promo`] (returns `None` once expired) or
+    /// [`Self::get_global_promo_bps`] (returns `0` once expired).
     pub fn get_promo_expiry(env: Env) -> u64 {
         storage::get_promo_expiry(&env)
     }
@@ -2439,6 +2445,7 @@ impl EventRegistry {
     /// Requires the user's authentication.
     ///
     /// Only events that can still sell tickets accept new waitlist entries.
+    ///
     /// # Errors
     /// * `EventNotFound` - the event does not exist.
     /// * `EventCancelled` - the event has been cancelled.
@@ -2485,6 +2492,10 @@ impl EventRegistry {
 
     /// Leaves the waitlist for an event. Emits WaitlistLeftEvent.
     /// Requires the user's authentication.
+    ///
+    /// # Errors
+    /// * `EventNotFound` - the event does not exist.
+    /// * `NotOnWaitlist` - the user is not on the waitlist for this event.
     pub fn leave_waitlist(
         env: Env,
         event_id: String,
