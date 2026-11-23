@@ -197,7 +197,15 @@ impl ProSubscriptionContract {
         Ok(())
     }
 
-    /// Renew an existing Pro subscription
+    /// Renew a subscription for `months` at the current Pro price.
+    ///
+    /// A paid renewal always results in an active Pro subscription:
+    /// - an active Pro plan is extended from its current expiry;
+    /// - a lapsed or cancelled Pro plan is reactivated from now;
+    /// - a Basic record is upgraded to Pro and its `started_at` reset to now.
+    ///
+    /// The total Pro subscription counter is incremented only when the renewal turns a
+    /// non-Pro-member into a Pro member, so it stays in sync with the members list.
     pub fn renew_subscription(
         env: Env,
         organizer: Address,
@@ -217,9 +225,12 @@ impl ProSubscriptionContract {
         let mut subscription =
             get_subscription(&env, &organizer).ok_or(ProSubscriptionError::SubscriptionNotFound)?;
 
+        let previous_tier = subscription.tier;
+
         // Capture whether the organizer was an active, unexpired Pro member before renewal.
-        // This determines whether the renewal is a membership transition (emit ProMemberAdded)
-        // or a plain extension of an already-active plan.
+        // This determines whether the renewal is a membership transition (emit ProMemberAdded
+        // and bump the total Pro subscription counter) or a plain extension of an
+        // already-active plan.
         let was_active_member = get_subscription_with_expiration(&env, &organizer)
             .map(|s| {
                 s.tier == SubscriptionTier::Pro
@@ -252,6 +263,12 @@ impl ProSubscriptionContract {
             .checked_add(SECONDS_PER_MONTH * months as u64)
             .ok_or(ProSubscriptionError::ArithmeticError)?;
 
+        // A paid renewal always yields a Pro subscription. When upgrading from Basic, the Pro
+        // plan starts now rather than at the original Basic registration time.
+        if previous_tier == SubscriptionTier::Basic {
+            subscription.started_at = current_time;
+        }
+        subscription.tier = SubscriptionTier::Pro;
         subscription.expires_at = new_expiry;
         subscription.is_active = true;
         subscription.amount_paid = subscription
@@ -265,6 +282,10 @@ impl ProSubscriptionContract {
         add_to_pro_members_list(&env, &organizer);
 
         if !was_active_member {
+            // Reactivating a lapsed/cancelled plan or upgrading from Basic adds a new active
+            // Pro subscription, so count it exactly once here.
+            increment_total_pro_subscriptions(&env);
+
             env.events().publish(
                 (ProSubscriptionEvent::ProMemberAdded,),
                 ProMemberAddedEvent {

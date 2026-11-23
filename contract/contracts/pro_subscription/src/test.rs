@@ -973,6 +973,109 @@ fn test_renew_cancelled_emits_pro_member_added_and_renewed() {
     );
 }
 
+// ── Issue #1720: renew keeps total_pro_subscriptions in sync ─────────────────
+
+fn set_ledger_timestamp(env: &Env, timestamp: u64) {
+    env.ledger().with_mut(|li| li.timestamp = timestamp);
+}
+
+#[test]
+fn test_renew_after_cancel_restores_total() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &2_000_000i128);
+
+    client.subscribe_pro(&organizer, &1u32);
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    client.cancel_my_subscription(&organizer);
+    assert_eq!(client.get_total_pro_subscriptions(), 0u32);
+
+    client.renew_subscription(&organizer, &1u32);
+
+    assert!(client.is_pro_member(&organizer));
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+    assert_eq!(
+        client.get_total_pro_subscriptions(),
+        client.get_pro_members_count()
+    );
+}
+
+#[test]
+fn test_renew_active_subscription_does_not_change_total() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &3_000_000i128);
+
+    client.subscribe_pro(&organizer, &1u32);
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    client.renew_subscription(&organizer, &1u32);
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    client.renew_subscription(&organizer, &1u32);
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+    assert_eq!(client.get_pro_members_count(), 1u32);
+}
+
+#[test]
+fn test_renew_after_natural_expiry_restores_total() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &2_000_000i128);
+
+    client.subscribe_pro(&organizer, &1u32);
+    let expires_at = client.get_subscription(&organizer).unwrap().expires_at;
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    // Let the subscription lapse without any cancellation.
+    set_ledger_timestamp(&env, expires_at + 10);
+    assert!(!client.is_pro_member(&organizer));
+
+    client.renew_subscription(&organizer, &1u32);
+
+    assert!(client.is_pro_member(&organizer));
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+    assert_eq!(
+        client.get_total_pro_subscriptions(),
+        client.get_pro_members_count()
+    );
+}
+
+// ── Issue #1721: renew upgrades a Basic record to Pro ────────────────────────
+
+#[test]
+fn test_renew_basic_upgrades_to_pro() {
+    let (env, client, _admin, _platform_wallet, usdc) = setup();
+    let organizer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &usdc).mint(&organizer, &1_000_000i128);
+
+    set_ledger_timestamp(&env, 1_000);
+    client.register_basic(&organizer);
+    let basic = client.get_subscription(&organizer).unwrap();
+    assert_eq!(basic.tier, SubscriptionTier::Basic);
+    assert_eq!(basic.started_at, 1_000);
+    assert_eq!(client.get_total_pro_subscriptions(), 0u32);
+
+    set_ledger_timestamp(&env, 5_000);
+    client.renew_subscription(&organizer, &1u32);
+
+    let pro = client.get_subscription(&organizer).unwrap();
+    assert_eq!(pro.tier, SubscriptionTier::Pro);
+    assert_eq!(pro.started_at, 5_000, "started_at resets on Basic -> Pro");
+    assert_eq!(pro.expires_at, 5_000 + SECONDS_PER_MONTH);
+    assert!(pro.is_active);
+    assert!(client.is_pro_member(&organizer));
+    assert!(client.get_pro_members().contains(&organizer));
+    assert_eq!(client.get_total_pro_subscriptions(), 1u32);
+
+    // The upgraded record is a real Pro subscription, so the organizer can cancel it.
+    client.cancel_my_subscription(&organizer);
+    assert!(!client.is_pro_member(&organizer));
+    assert_eq!(client.get_total_pro_subscriptions(), 0u32);
+    assert!(!client.get_pro_members().contains(&organizer));
+}
+
 #[test]
 fn test_pro_member_removed_event_on_cancel() {
     let (env, client, _admin, _platform_wallet, usdc) = setup();
