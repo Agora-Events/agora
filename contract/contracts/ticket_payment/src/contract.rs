@@ -1688,6 +1688,9 @@ impl TicketPaymentContract {
         event_id: String,
         token_address: Address,
     ) -> Result<i128, TicketPaymentError> {
+        if crate::storage::get_event_dispute_override(&env, &event_id) {
+            return Err(TicketPaymentError::EventDisputed);
+        }
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
         let event_info = registry_client
@@ -1926,6 +1929,9 @@ impl TicketPaymentContract {
     ) -> Result<i128, TicketPaymentError> {
         if is_paused(&env) {
             return Err(TicketPaymentError::ContractPaused);
+        }
+        if crate::storage::get_event_dispute_override(&env, &event_id) {
+            return Err(TicketPaymentError::EventDisputed);
         }
         let event_registry_addr = get_event_registry(&env);
         let registry_client = event_registry::Client::new(&env, &event_registry_addr);
