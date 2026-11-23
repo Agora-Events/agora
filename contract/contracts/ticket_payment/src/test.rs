@@ -8500,9 +8500,10 @@ fn test_discount_code_expired_returns_error() {
     let event_id = String::from_str(&env, "event_1");
     let code = String::from_str(&env, "EXPIRED");
 
-    // Set ledger time to 1000, create code that expired at 500
+    // Create a valid code at ledger time 1000 that expires at 2000, then let it lapse.
     env.ledger().set_timestamp(1000);
-    client.create_discount_code(&event_id, &code, &10, &500u64, &10);
+    client.create_discount_code(&event_id, &code, &10, &2000u64, &10);
+    env.ledger().set_timestamp(3000);
 
     let buyer = Address::generate(&env);
     let amount = 1000_0000000i128;
@@ -8528,6 +8529,92 @@ fn test_discount_code_expired_returns_error() {
         &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::DiscountExpired)));
+}
+
+#[test]
+fn test_create_discount_code_rejects_zero_percent() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "ZERO");
+
+    let res = client.try_create_discount_code(&event_id, &code, &0, &9_999_999_999u64, &5);
+    assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountPercent)));
+    assert!(client.get_discount_code(&event_id, &code).is_none());
+}
+
+#[test]
+fn test_create_discount_code_rejects_percent_over_100() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "OVER");
+
+    let res = client.try_create_discount_code(&event_id, &code, &101, &9_999_999_999u64, &5);
+    assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountPercent)));
+    assert!(client.get_discount_code(&event_id, &code).is_none());
+}
+
+#[test]
+fn test_create_discount_code_rejects_expired_timestamp() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "PAST");
+
+    env.ledger().set_timestamp(1000);
+
+    // Expiry strictly in the past
+    let res = client.try_create_discount_code(&event_id, &code, &10, &500u64, &5);
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountExpired)));
+
+    // Expiry equal to the current ledger time is also already expired
+    let res = client.try_create_discount_code(&event_id, &code, &10, &1000u64, &5);
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountExpired)));
+
+    assert!(client.get_discount_code(&event_id, &code).is_none());
+}
+
+#[test]
+fn test_create_discount_code_rejects_zero_max_uses() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "NOUSES");
+
+    let res = client.try_create_discount_code(&event_id, &code, &10, &9_999_999_999u64, &0);
+    assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountMaxUses)));
+    assert!(client.get_discount_code(&event_id, &code).is_none());
+}
+
+#[test]
+fn test_create_discount_code_valid_is_stored() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "VALID");
+
+    env.ledger().set_timestamp(1000);
+
+    // 100% is the upper bound of the valid percentage range
+    let res = client.try_create_discount_code(&event_id, &code, &100, &2000u64, &5);
+    assert_eq!(res, Ok(Ok(())));
+
+    let data = client.get_discount_code(&event_id, &code).unwrap();
+    assert_eq!(data.percentage, 100);
+    assert_eq!(data.expires_at, 2000);
+    assert_eq!(data.max_uses, 5);
+    assert_eq!(data.current_uses, 0);
 }
 
 #[test]
