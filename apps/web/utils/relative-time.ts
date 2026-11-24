@@ -1,8 +1,8 @@
 /**
  * Returns a relative time string for a given date.
  * Uses Intl.RelativeTimeFormat to format the time difference.
- * Special-cases "Today" and "Tomorrow".
- * Picks the largest sensible unit (minutes → hours → days → weeks → months).
+ * Special-cases "Yesterday", "Today", and "Tomorrow".
+ * Picks the largest sensible unit (minutes → hours → days → weeks → months → years).
  */
 
 export function getRelativeTime(date: Date): string {
@@ -18,14 +18,15 @@ export function getRelativeTime(date: Date): string {
   const diffDays = diffHours / 24;
   const diffWeeks = diffDays / 7;
   const diffMonths = diffDays / 30;
+  const diffYears = diffMonths / 12;
 
   const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
-  // Check if it's today
-  const isToday = date.toDateString() === now.toDateString();
+  const calendarDate = date.toDateString();
+  const isToday = calendarDate === now.toDateString();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const isTomorrow = date.toDateString() === tomorrow.toDateString();
+  const isTomorrow = calendarDate === tomorrow.toDateString();
 
   if (isToday) {
     return "Today";
@@ -35,7 +36,17 @@ export function getRelativeTime(date: Date): string {
     return "Tomorrow";
   }
 
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (calendarDate === yesterday.toDateString()) {
+    return "Yesterday";
+  }
+
   // Pick the largest sensible unit
+  if (Math.abs(diffYears) >= 1) {
+    return rtf.format(Math.round(diffYears), "year");
+  }
+
   if (Math.abs(diffMonths) >= 1) {
     return rtf.format(Math.round(diffMonths), "month");
   }
