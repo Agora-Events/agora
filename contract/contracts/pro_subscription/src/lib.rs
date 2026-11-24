@@ -5,6 +5,9 @@
 //! This contract manages organizer Pro subscriptions, including subscription
 //! creation, renewal, cancellation, and admin controls.
 
+#[cfg(test)]
+extern crate std;
+
 mod contract;
 mod error;
 mod events;

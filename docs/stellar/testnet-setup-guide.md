@@ -1,6 +1,6 @@
 # Stellar Testnet Contributor Setup & Faucet Guide
 
-> **Goal:** Follow this guide from scratch and execute a complete ticket purchase on Stellar Testnet in under 10 minutes.
+> **Goal:** Follow this guide from scratch and execute a complete ticket purchase on Stellar Testnet in under 10 minutes, not counting the one-off contract build and deploy in [§7](#7-testnet-contract-ids--token-issuers).
 
 ## Table of Contents
 
@@ -122,40 +122,48 @@ cp apps/web/.env.example apps/web/.env.local
 
 ### Required Stellar / Soroban Variables
 
-| Variable | Description | Testnet Value |
-|---|---|---|
-| `NEXT_PUBLIC_STELLAR_NETWORK` | Network identifier consumed by client-side helpers. | `TESTNET` |
-| `NEXT_PUBLIC_SOROBAN_RPC_URL` | Soroban RPC endpoint for contract queries. | `https://soroban-testnet.stellar.org` |
-| `NEXT_PUBLIC_TICKET_CONTRACT_ID` | Deployed `ticket_payment` contract address. | See [§7](#7-testnet-contract-ids--token-issuers) |
-| `NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID` | Same as above — used by the Card Onramp component. | See [§7](#7-testnet-contract-ids--token-issuers) |
-| `STELLAR_CONTRACT_ADDRESS` | Server-side contract address for the `mintTicket` util. | See [§7](#7-testnet-contract-ids--token-issuers) |
-| `STELLAR_RPC_URL` | Server-side Soroban RPC URL. | `https://soroban-testnet.stellar.org` |
-| `STELLAR_NETWORK_PASSPHRASE` | Network passphrase for signing transactions. | `Test SDF Network ; September 2015` |
-| `STELLAR_SOURCE_SECRET` | **Server-only.** Secret key of the fee-paying source account. | A funded Testnet `S...` key |
+| Variable                                 | Description                                                         | Testnet Value                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_STELLAR_NETWORK`            | Network identifier consumed by client-side helpers.                 | `TESTNET`                                                                  |
+| `NEXT_PUBLIC_SOROBAN_RPC_URL`            | Soroban RPC endpoint for contract queries.                          | `https://soroban-testnet.stellar.org`                                      |
+| `NEXT_PUBLIC_EVENT_CONTRACT_ID`          | Deployed `event_registry` contract ID.                              | **Your own deployment** — see [§7](#7-testnet-contract-ids--token-issuers) |
+| `NEXT_PUBLIC_TICKET_CONTRACT_ID`         | Deployed `ticket_payment` contract ID.                              | **Your own deployment** — see [§7](#7-testnet-contract-ids--token-issuers) |
+| `NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID` | Same as above — used by the Card Onramp component.                  | **Your own deployment** — see [§7](#7-testnet-contract-ids--token-issuers) |
+| `STELLAR_CONTRACT_ADDRESS`               | Server-side `ticket_payment` contract ID for the `mintTicket` util. | **Your own deployment** — see [§7](#7-testnet-contract-ids--token-issuers) |
+| `STELLAR_RPC_URL`                        | Server-side Soroban RPC URL.                                        | `https://soroban-testnet.stellar.org`                                      |
+| `STELLAR_NETWORK_PASSPHRASE`             | Network passphrase for signing transactions.                        | `Test SDF Network ; September 2015`                                        |
+| `STELLAR_SOURCE_SECRET`                  | **Server-only.** Secret key of the fee-paying source account.       | A funded Testnet `S...` key                                                |
+
+> **There are no shared contract IDs to copy.** Agora does not publish a long-lived Testnet deployment, so the contract ID variables have no default value. Deploy your own contracts with [§7](#7-testnet-contract-ids--token-issuers) (the deploy script writes these variables for you). The web app validates every contract ID when it loads `apps/web/lib/stellar/config.ts` and throws if one is missing or is not a valid contract address, so placeholder text will stop it from starting.
 
 ### Auth Variables (also required for full-stack dev)
 
-| Variable | Description |
-|---|---|
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `JWT_SECRET` | Long random string for session token signing |
+| Variable               | Description                                  |
+| ---------------------- | -------------------------------------------- |
+| `GOOGLE_CLIENT_ID`     | Google OAuth client ID                       |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret                   |
+| `JWT_SECRET`           | Long random string for session token signing |
 
 > **Security note:** `STELLAR_SOURCE_SECRET` is server-only. Never prefix it with `NEXT_PUBLIC_` and never commit it to version control.
 
 ### Minimal `.env.local` for ticket purchase testing
 
+Every value in angle brackets (`<YOUR_...>`) is a placeholder that you must replace. None of them is a real contract or key. Get the contract IDs by deploying the contracts in [§7](#7-testnet-contract-ids--token-issuers); `./scripts/deploy-testnet.sh` writes the contract ID lines to `apps/web/.env.local` for you.
+
 ```dotenv
 # Stellar / Soroban
 NEXT_PUBLIC_STELLAR_NETWORK=TESTNET
 NEXT_PUBLIC_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
-NEXT_PUBLIC_TICKET_CONTRACT_ID=CCMOCKCONTRACTADDRESS1234567890
-NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID=CCMOCKCONTRACTADDRESS1234567890
 
-STELLAR_CONTRACT_ADDRESS=CCMOCKCONTRACTADDRESS1234567890
+# REPLACE these with the IDs from your own deployment (§7). Placeholders, not real contracts.
+NEXT_PUBLIC_EVENT_CONTRACT_ID=<YOUR_EVENT_REGISTRY_CONTRACT_ID>
+NEXT_PUBLIC_TICKET_CONTRACT_ID=<YOUR_TICKET_PAYMENT_CONTRACT_ID>
+NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID=<YOUR_TICKET_PAYMENT_CONTRACT_ID>
+
+STELLAR_CONTRACT_ADDRESS=<YOUR_TICKET_PAYMENT_CONTRACT_ID>
 STELLAR_RPC_URL=https://soroban-testnet.stellar.org
 STELLAR_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
-STELLAR_SOURCE_SECRET=S... # your funded Testnet keypair
+STELLAR_SOURCE_SECRET=<YOUR_FUNDED_TESTNET_SECRET_KEY> # an S... key; never commit it
 
 # Auth (generate JWT secret with: openssl rand -base64 32)
 JWT_SECRET=change-me-to-a-long-random-string
@@ -183,6 +191,7 @@ pnpm dev
 - [ ] Freighter installed and set to **TESTNET**
 - [ ] Account funded via Friendbot (shows XLM balance in Freighter)
 - [ ] USDC trustline added (visible in Freighter's asset list or via Stellar Laboratory)
+- [ ] Contracts deployed and initialized on Testnet, and `apps/web/.env.local` contains **your** contract IDs (§7)
 - [ ] `apps/web/.env.local` contains all required `NEXT_PUBLIC_STELLAR_*` variables
 - [ ] `pnpm dev` starts without errors
 
@@ -190,39 +199,145 @@ pnpm dev
 
 ## 7. Testnet Contract IDs & Token Issuers
 
-> **Note:** Contract IDs below are reference values for the Agora Testnet deployment. Check `contract/.env.devnet` or ask a maintainer for the currently active addresses if these are stale.
+> **There are no shared Agora contract IDs for Testnet.** The repository does not maintain a long-lived Testnet deployment, and Stellar periodically resets Testnet, which removes every deployed contract. An ID copied from a document would point at nothing. Deploy your own copies of the contracts and use the IDs you get back.
 
-| Name | Address |
-|---|---|
-| `ticket_payment` contract | `CCMOCKCONTRACTADDRESS1234567890` |
-| `event_registry` contract | `CCMOCKREGISTRYADDRESS1234567890` |
-| `pro_subscription` contract | `CCMOCKSUBSCRIPTIONADDRESS1234` |
+Contract IDs are 56 characters long and start with `C`. Anything written as `<YOUR_..._CONTRACT_ID>` in this guide is a placeholder for an ID you will have after deploying.
+
+### 7.1 Deploy the contracts
+
+You need:
+
+- The Rust toolchain. The repo pins the version in `rust-toolchain.toml`, and `rustup` installs it on first use, including the `wasm32-unknown-unknown` target.
+- The Stellar CLI: `cargo install --locked stellar-cli` (or see the [Stellar CLI setup docs](https://developers.stellar.org/docs/build/smart-contracts/getting-started/setup)).
+
+From the repo root:
+
+```bash
+./scripts/deploy-testnet.sh
+```
+
+The script:
+
+1. Checks that the Stellar CLI is installed and the Testnet RPC is healthy.
+2. Uses the secret key in `STELLAR_ACCOUNT_SECRET` as the deployer, or generates an identity called `agora-testnet-deployer` and funds it through Friendbot.
+3. Builds the contracts with `cargo build --target wasm32-unknown-unknown --release` in `contract/`. The first build takes several minutes.
+4. Deploys `event_registry` and `ticket_payment` with `stellar contract deploy`.
+5. Writes the resulting IDs, plus the Testnet RPC URL and passphrase, to `apps/web/.env.local`.
+6. Prints each contract ID with a Stellar Expert link.
+
+Optional environment variables:
+
+| Variable                    | Effect                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| `STELLAR_ACCOUNT_SECRET`    | Deploy from your own funded Testnet account (`S...`) instead of a generated one.     |
+| `STELLAR_RPC_URL`           | Use a different Testnet RPC endpoint.                                                |
+| `SKIP_BUILD=1`              | Reuse the WASM files from a previous build.                                          |
+| `DEPLOY_PRO_SUBSCRIPTION=1` | Also deploy `pro_subscription` and write `NEXT_PUBLIC_PRO_SUBSCRIPTION_CONTRACT_ID`. |
+
+To deploy a single contract by hand instead:
+
+```bash
+stellar contract deploy \
+  --wasm contract/target/wasm32-unknown-unknown/release/ticket_payment.wasm \
+  --source-account <YOUR_DEPLOYER_IDENTITY_OR_SECRET_KEY> \
+  --network testnet
+```
+
+The command prints the new contract ID.
+
+### 7.2 Initialize and link the contracts
+
+The deploy script only deploys. Each contract must be initialized once, and `event_registry` must be told which `ticket_payment` contract it trusts, before the app can use them. Run these with the deployer account (it becomes the admin). Fill in the first block with your own values; the rest can be pasted as is.
+
+```bash
+# --- Replace these placeholders ---------------------------------------------
+EVENT_REGISTRY_ID=<YOUR_EVENT_REGISTRY_CONTRACT_ID>
+TICKET_PAYMENT_ID=<YOUR_TICKET_PAYMENT_CONTRACT_ID>
+SOURCE=agora-testnet-deployer   # the identity name, or your deployer's S... secret key
+ADMIN=<YOUR_DEPLOYER_PUBLIC_KEY>   # a G... address; for the generated identity: stellar keys address agora-testnet-deployer
+# -----------------------------------------------------------------------------
+
+# Soroban contract for Testnet USDC (derived from the issuer in the table below)
+USDC_TOKEN=$(stellar contract id asset \
+  --asset USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5 \
+  --network testnet)
+
+# 1. Initialize event_registry (platform fee is in basis points: 500 = 5%)
+stellar contract invoke --id "$EVENT_REGISTRY_ID" --source-account "$SOURCE" --network testnet \
+  -- initialize \
+  --admin "$ADMIN" \
+  --platform_wallet "$ADMIN" \
+  --platform_fee_percent 500 \
+  --usdc_token "$USDC_TOKEN"
+
+# 2. Initialize ticket_payment
+stellar contract invoke --id "$TICKET_PAYMENT_ID" --source-account "$SOURCE" --network testnet \
+  -- initialize \
+  --admin "$ADMIN" \
+  --usdc_token "$USDC_TOKEN" \
+  --platform_wallet "$ADMIN" \
+  --event_registry "$EVENT_REGISTRY_ID"
+
+# 3. Link ticket_payment into event_registry
+stellar contract invoke --id "$EVENT_REGISTRY_ID" --source-account "$SOURCE" --network testnet \
+  -- set_ticket_payment_contract \
+  --ticket_payment_address "$TICKET_PAYMENT_ID"
+```
+
+If you also deployed `pro_subscription`, initialize it the same way. `pro_monthly_price` is in stroops (7 decimals), so `100000000` is 10 USDC:
+
+```bash
+stellar contract invoke --id <YOUR_PRO_SUBSCRIPTION_CONTRACT_ID> --source-account "$SOURCE" --network testnet \
+  -- initialize \
+  --admin "$ADMIN" \
+  --platform_wallet "$ADMIN" \
+  --payment_token "$USDC_TOKEN" \
+  --pro_monthly_price 100000000
+```
+
+> **Note:** If `stellar contract id asset` prints an ID that the explorer cannot find (Testnet was reset and the asset contract was not recreated), deploy it once with `stellar contract asset deploy --asset USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5 --source-account "$SOURCE" --network testnet`. It fails harmlessly if the contract already exists.
+
+### 7.3 Check the result
+
+- Open `https://stellar.expert/explorer/testnet/contract/<YOUR_TICKET_PAYMENT_CONTRACT_ID>` (use your own ID). The page should show the deployed contract and its invocations.
+- Run `npx tsx contract/scripts/deploy.ts` to print explorer links for every valid contract ID found in your environment and `.env` files.
+- Confirm `apps/web/.env.local` contains your IDs, not the `<YOUR_...>` placeholders. See [§5](#5-environment-variables).
+
+For more detail on the contracts and the other deployment script, see [`contract/README.md`](../../contract/README.md).
+
+### 7.4 Token issuers (real values)
+
+Unlike the contract IDs above, these are real, public network values you can use as they are. They match the defaults in `apps/web/lib/stellar/config.ts`.
+
+| Name                      | Address                                                    |
+| ------------------------- | ---------------------------------------------------------- |
 | **USDC issuer (Testnet)** | `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` |
 | **USDC issuer (Mainnet)** | `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN` |
 
 ### Useful Testnet Links
 
-| Resource | URL |
-|---|---|
-| Stellar Expert (Testnet explorer) | <https://stellar.expert/explorer/testnet> |
-| Friendbot faucet | <https://friendbot.stellar.org> |
-| Stellar Laboratory | <https://laboratory.stellar.org/#?network=test> |
-| Soroban RPC status | <https://soroban-testnet.stellar.org> |
+| Resource                          | URL                                             |
+| --------------------------------- | ----------------------------------------------- |
+| Stellar Expert (Testnet explorer) | <https://stellar.expert/explorer/testnet>       |
+| Friendbot faucet                  | <https://friendbot.stellar.org>                 |
+| Stellar Laboratory                | <https://laboratory.stellar.org/#?network=test> |
+| Soroban RPC status                | <https://soroban-testnet.stellar.org>           |
 
 ---
 
 ## 8. Common Issues
 
-| Symptom | Likely Cause | Fix |
-|---|---|---|
-| `TicketModal` shows "Add USDC Trustline" button | Account has no USDC trustline | Click the button and approve in Freighter, or follow §4 |
-| Freighter popup shows "Wrong Network" | Freighter is on Mainnet | Switch to Testnet in Freighter settings |
-| `Account not found` error in trustline helper | Account not yet funded | Run Friendbot (§3) |
-| `op_no_trust` error during purchase | Trustline missing | Add trustline (§4) |
-| `op_underfunded` error during purchase | Insufficient USDC balance | Fund USDC via a Testnet faucet or direct transfer |
-| Transaction explorer link shows wrong network | `NEXT_PUBLIC_STELLAR_NETWORK` is unset | Set it to `TESTNET` in `.env.local` |
-| Repeated RPC calls on every modal open | Cache not warming | Ensure `useTicketAvailability` is called with a stable `eventId`; cache TTL is 30 s |
+| Symptom                                                                                                                                                | Likely Cause                                                                                       | Fix                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `TicketModal` shows "Add USDC Trustline" button                                                                                                        | Account has no USDC trustline                                                                      | Click the button and approve in Freighter, or follow §4                             |
+| Freighter popup shows "Wrong Network"                                                                                                                  | Freighter is on Mainnet                                                                            | Switch to Testnet in Freighter settings                                             |
+| `Account not found` error in trustline helper                                                                                                          | Account not yet funded                                                                             | Run Friendbot (§3)                                                                  |
+| `op_no_trust` error during purchase                                                                                                                    | Trustline missing                                                                                  | Add trustline (§4)                                                                  |
+| `op_underfunded` error during purchase                                                                                                                 | Insufficient USDC balance                                                                          | Fund USDC via a Testnet faucet or direct transfer                                   |
+| App fails to start with "Invalid event contract ID format", "Invalid ticket contract ID format", or "Event and ticket contract IDs must be configured" | A contract ID variable is missing, still a `<YOUR_...>` placeholder, or is not a valid contract ID | Deploy the contracts (§7) and put your own IDs in `apps/web/.env.local`             |
+| Transaction explorer link shows wrong network                                                                                                          | `NEXT_PUBLIC_STELLAR_NETWORK` is unset                                                             | Set it to `TESTNET` in `.env.local`                                                 |
+| Repeated RPC calls on every modal open                                                                                                                 | Cache not warming                                                                                  | Ensure `useTicketAvailability` is called with a stable `eventId`; cache TTL is 30 s |
 
 ---
 
-*This guide covers Testnet only. For Mainnet deployment, see [DEPLOYMENT.md](../../apps/web/DEPLOYMENT.md).*
+_This guide covers Testnet only. For Mainnet deployment, see [DEPLOYMENT.md](../../apps/web/DEPLOYMENT.md)._

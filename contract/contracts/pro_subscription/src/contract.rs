@@ -3,10 +3,10 @@ use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String};
 use crate::{
     error::ProSubscriptionError,
     events::{
-        AdminUpdatedEvent, ContractUpgradedEvent, InitializationEvent, PriceUpdatedEvent,
-        ProMemberAddedEvent, ProMemberRemovedEvent, ProSubscriptionEvent,
-        SubscriptionCancelledEvent, SubscriptionCreatedEvent, SubscriptionExpiredEvent,
-        SubscriptionRenewedEvent,
+        AdminUpdatedEvent, ContractUpgradedEvent, InitializationEvent, PaymentTokenUpdatedEvent,
+        PlatformWalletUpdatedEvent, PriceUpdatedEvent, ProMemberAddedEvent, ProMemberRemovedEvent,
+        ProSubscriptionEvent, SubscriptionCancelledEvent, SubscriptionCreatedEvent,
+        SubscriptionExpiredEvent, SubscriptionRenewedEvent,
     },
     storage::{
         add_to_pro_members_list, decrement_total_pro_subscriptions, get_admin, get_payment_token,
@@ -17,7 +17,7 @@ use crate::{
     },
     types::{
         Subscription, SubscriptionTier, DISCOUNT_BPS_12_MONTHS, DISCOUNT_BPS_3_MONTHS,
-        DISCOUNT_BPS_6_MONTHS, MAX_BPS, MAX_SUBSCRIPTION_MONTHS, SECONDS_PER_MONTH,
+        DISCOUNT_BPS_6_MONTHS, MAX_BPS, MAX_PAGE_SIZE, MAX_SUBSCRIPTION_MONTHS, SECONDS_PER_MONTH,
     },
     validation::validate_address,
 };
@@ -197,7 +197,15 @@ impl ProSubscriptionContract {
         Ok(())
     }
 
-    /// Renew an existing Pro subscription
+    /// Renew a subscription for `months` at the current Pro price.
+    ///
+    /// A paid renewal always results in an active Pro subscription:
+    /// - an active Pro plan is extended from its current expiry;
+    /// - a lapsed or cancelled Pro plan is reactivated from now;
+    /// - a Basic record is upgraded to Pro and its `started_at` reset to now.
+    ///
+    /// The total Pro subscription counter is incremented only when the renewal turns a
+    /// non-Pro-member into a Pro member, so it stays in sync with the members list.
     pub fn renew_subscription(
         env: Env,
         organizer: Address,
@@ -217,9 +225,12 @@ impl ProSubscriptionContract {
         let mut subscription =
             get_subscription(&env, &organizer).ok_or(ProSubscriptionError::SubscriptionNotFound)?;
 
+        let previous_tier = subscription.tier;
+
         // Capture whether the organizer was an active, unexpired Pro member before renewal.
-        // This determines whether the renewal is a membership transition (emit ProMemberAdded)
-        // or a plain extension of an already-active plan.
+        // This determines whether the renewal is a membership transition (emit ProMemberAdded
+        // and bump the total Pro subscription counter) or a plain extension of an
+        // already-active plan.
         let was_active_member = get_subscription_with_expiration(&env, &organizer)
             .map(|s| {
                 s.tier == SubscriptionTier::Pro
@@ -252,6 +263,12 @@ impl ProSubscriptionContract {
             .checked_add(SECONDS_PER_MONTH * months as u64)
             .ok_or(ProSubscriptionError::ArithmeticError)?;
 
+        // A paid renewal always yields a Pro subscription. When upgrading from Basic, the Pro
+        // plan starts now rather than at the original Basic registration time.
+        if previous_tier == SubscriptionTier::Basic {
+            subscription.started_at = current_time;
+        }
+        subscription.tier = SubscriptionTier::Pro;
         subscription.expires_at = new_expiry;
         subscription.is_active = true;
         subscription.amount_paid = subscription
@@ -265,6 +282,10 @@ impl ProSubscriptionContract {
         add_to_pro_members_list(&env, &organizer);
 
         if !was_active_member {
+            // Reactivating a lapsed/cancelled plan or upgrading from Basic adds a new active
+            // Pro subscription, so count it exactly once here.
+            increment_total_pro_subscriptions(&env);
+
             env.events().publish(
                 (ProSubscriptionEvent::ProMemberAdded,),
                 ProMemberAddedEvent {
@@ -541,7 +562,7 @@ impl ProSubscriptionContract {
     pub fn update_admin(env: Env, new_admin: Address) -> Result<(), ProSubscriptionError> {
         let old_admin = require_admin(&env)?;
         validate_address(&env, &new_admin)?;
-        if new_admin == current_admin {
+        if new_admin == old_admin {
             return Err(ProSubscriptionError::SameAdmin);
         }
         set_admin(&env, &new_admin);
@@ -574,8 +595,7 @@ impl ProSubscriptionContract {
     ) -> Result<(), ProSubscriptionError> {
         let admin = require_admin(&env)?;
         validate_address(&env, &new_wallet)?;
-        let old_wallet =
-            get_platform_wallet(&env).ok_or(ProSubscriptionError::NotInitialized)?;
+        let old_wallet = get_platform_wallet(&env).ok_or(ProSubscriptionError::NotInitialized)?;
         set_platform_wallet(&env, &new_wallet);
 
         env.events().publish(
@@ -601,9 +621,12 @@ impl ProSubscriptionContract {
     /// Emits a [`ProSubscriptionEvent::ContractUpgraded`] event carrying the old and new
     /// WASM hashes so indexers and clients can track the deployed implementation.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), ProSubscriptionError> {
-        let admin = require_admin(&env)?;
+        require_admin(&env)?;
 
-        let old_wasm_hash = env.deployer().current_contract_wasm_hash();
+        let old_wasm_hash = match env.current_contract_address().executable() {
+            Some(soroban_sdk::Executable::Wasm(hash)) => hash,
+            _ => panic!("Current contract is not a Wasm contract"),
+        };
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
 
@@ -612,7 +635,6 @@ impl ProSubscriptionContract {
             ContractUpgradedEvent {
                 old_wasm_hash,
                 new_wasm_hash,
-                updated_by: admin,
                 timestamp: env.ledger().timestamp(),
             },
         );
@@ -627,8 +649,7 @@ impl ProSubscriptionContract {
     pub fn update_payment_token(env: Env, new_token: Address) -> Result<(), ProSubscriptionError> {
         let admin = require_admin(&env)?;
         validate_address(&env, &new_token)?;
-        let old_token =
-            get_payment_token(&env).ok_or(ProSubscriptionError::NotInitialized)?;
+        let old_token = get_payment_token(&env).ok_or(ProSubscriptionError::NotInitialized)?;
         set_payment_token(&env, &new_token);
 
         env.events().publish(
