@@ -12,6 +12,9 @@ export type { AuthUser, SessionResponse };
 const SESSION_ENDPOINT = "/api/auth/session";
 const SIGNOUT_ENDPOINT = "/api/auth/signout";
 
+// Evaluated once at module load — stable across renders.
+const IS_TESTNET_BUILD = process.env.NEXT_PUBLIC_STELLAR_NETWORK === "TESTNET";
+
 const SIGNED_OUT: SessionResponse = { user: null };
 
 async function fetchSession(url: string): Promise<SessionResponse> {
@@ -80,6 +83,7 @@ export function useAuth(): UseAuthResult {
     },
   );
 
+  const isTestnetBuild = IS_TESTNET_BUILD;
   const isTestnetBuild =
     process.env.NEXT_PUBLIC_STELLAR_NETWORK === "TESTNET";
 
@@ -111,6 +115,8 @@ export function useAuth(): UseAuthResult {
         { id: "wrong-network", duration: 8_000 },
       );
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_isCorrectNetwork, user, networkLoading]);
   }, [_isCorrectNetwork, user, networkLoading, isTestnetBuild]);
 
   const signOut = useCallback(async () => {

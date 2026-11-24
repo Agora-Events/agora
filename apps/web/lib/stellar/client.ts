@@ -39,6 +39,7 @@ export const STELLAR_NETWORK_PASSPHRASE: string =
  * - Additional request headers can be appended here if your RPC provider
  *   requires an API key.
  */
+const SERVER_OPTS: rpc.RpcServer.Options = {
 const SERVER_OPTS: rpc.Server.Options = {
   allowHttp: false,
   timeout: 30_000,
@@ -49,6 +50,8 @@ const SERVER_OPTS: rpc.Server.Options = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Creates a new `rpc.Server` instance targeting the configured Soroban RPC
+ * endpoint.  Pass a custom `url` to override the default (useful in tests).
  * Creates and returns a new `rpc.Server` instance targeting the configured Soroban RPC endpoint.
  *
  * @param {string} [url=SOROBAN_RPC_URL] - The Soroban RPC endpoint URL. Defaults to the environment-configured URL or Testnet.
@@ -88,6 +91,7 @@ export function getSorobanRpcServer(): rpc.Server {
 }
 
 /**
+ * Reset the singleton — used in tests to force fresh instantiation.
  * Resets the cached singleton `rpc.Server` instance to `null`.
  * Primarily used in test suites to force fresh instantiation between tests.
  *

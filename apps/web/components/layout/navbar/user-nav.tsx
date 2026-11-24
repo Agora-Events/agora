@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { BaseNav, type NavItem } from "./base-nav";
+import { useStellarNetwork } from "@/hooks/useStellarNetwork";
 import { NotificationDropdown } from "@/components/notifications/NotificationDropdown";
 import { useStellarNetwork } from "@/hooks/useStellarNetwork";
 import { NetworkSwitcher } from "@/components/layout/network-switcher";
@@ -56,6 +57,18 @@ const userCta = (
   </Link>
 );
 
+/**
+ * Network status pill — Issue #1491
+ *
+ * Displays a small badge next to the wallet avatar reflecting whether the
+ * connected Freighter wallet is on the correct network.  Clicking it when
+ * on the wrong network fires requestNetworkSwitch().
+ *
+ * Only visible when NEXT_PUBLIC_STELLAR_NETWORK === "TESTNET".
+ */
+function NetworkPill() {
+  const { isCorrectNetwork, currentNetwork, isLoading, requestNetworkSwitch } =
+    useStellarNetwork();
 function NetworkPill() {
   const { isCorrectNetwork, currentNetwork, isLoading, requestNetworkSwitch } = useStellarNetwork();
 
@@ -80,6 +93,9 @@ function NetworkPill() {
       }`}
     >
       <span
+        className={`w-1.5 h-1.5 rounded-full ${
+          isCorrectNetwork ? "bg-green-500" : "bg-red-500"
+        }`}
         className={`w-1.5 h-1.5 rounded-full ${isCorrectNetwork ? "bg-green-500" : "bg-red-500"}`}
         aria-hidden="true"
       />
@@ -89,8 +105,16 @@ function NetworkPill() {
 }
 
 function UserEndSlot() {
+  const [notifications] = useState<any[]>([]);
+
+function UserEndSlot() {
   return (
     <>
+      {/* Network status pill — only visible on testnet builds */}
+      <NetworkPill />
+
+      <div className="relative">
+        <Link href="/notifications">
       {/* Testnet/Mainnet switcher */}
       <NetworkSwitcher />
 

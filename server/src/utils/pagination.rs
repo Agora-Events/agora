@@ -65,9 +65,14 @@ pub struct ValidatedPagination {
 }
 
 impl ValidatedPagination {
-    /// Calculate the SQL OFFSET value
+    /// Calculate the SQL OFFSET value.
+    ///
+    /// The multiplication is performed entirely in `i64` so that no valid `u32`
+    /// page number can overflow (Issue #1858).  The largest possible result is
+    /// `(u32::MAX - 1) * MAX_PAGE_SIZE = 4_294_967_294 * 100 = 429_496_729_400`,
+    /// which fits comfortably in an `i64` (max ~9.2 × 10¹⁸).
     pub fn offset(&self) -> i64 {
-        ((self.page - 1) * self.page_size) as i64
+        (self.page as i64 - 1) * self.page_size as i64
     }
 
     /// Get the SQL LIMIT value
@@ -340,5 +345,47 @@ mod tests {
         assert_eq!(response.meta.total, Some(5));
         assert_eq!(response.meta.page_size, 2);
         assert!(response.meta.has_more);
+    }
+
+    // -----------------------------------------------------------------------
+    // Overflow safety — Issue #1858
+    // -----------------------------------------------------------------------
+
+    /// Page 1, any page_size → offset must be 0.
+    #[test]
+    fn test_offset_page_one_is_zero() {
+        let vp = ValidatedPagination {
+            page: 1,
+            page_size: MAX_PAGE_SIZE,
+            include_count: true,
+        };
+        assert_eq!(vp.offset(), 0);
+    }
+
+    /// Page 2 × MAX_PAGE_SIZE → offset = MAX_PAGE_SIZE as i64.
+    #[test]
+    fn test_offset_page_two_equals_page_size() {
+        let vp = ValidatedPagination {
+            page: 2,
+            page_size: MAX_PAGE_SIZE,
+            include_count: true,
+        };
+        assert_eq!(vp.offset(), MAX_PAGE_SIZE as i64);
+    }
+
+    /// u32::MAX page with MAX_PAGE_SIZE must not overflow — the result must be
+    /// a large positive i64, never negative or zero (Issue #1858).
+    #[test]
+    fn test_offset_u32_max_page_does_not_overflow() {
+        let vp = ValidatedPagination {
+            page: u32::MAX,
+            page_size: MAX_PAGE_SIZE,
+            include_count: true,
+        };
+        let offset = vp.offset();
+        // Expected: (4_294_967_295 - 1) * 100 = 429_496_729_400
+        assert_eq!(offset, 429_496_729_400_i64);
+        // Must be positive — a negative value would indicate overflow.
+        assert!(offset > 0);
     }
 }

@@ -43,6 +43,13 @@ export const metadata: Metadata = {
   },
 };
 
+import { Suspense } from "react";
+import LoadingBar from "@/components/ui/loading-bar";
+import { ThemeProvider } from "@/components/providers/theme-context";
+import { AttributionCapture } from "@/components/analytics/attribution-capture";
+import { TestnetBanner } from "@/components/layout/testnet-banner";
+
+export default function RootLayout({
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -57,6 +64,15 @@ export default async function RootLayout({
   return (
     <html lang={locale}>
       <body className={`${inter.variable} antialiased`}>
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
+        <LocaleProvider>
+          <LiveAnnouncer />
+          {/* Testnet warning banner — Issue #1491.
+              TestnetBanner is a client component that self-gates on
+              NEXT_PUBLIC_STELLAR_NETWORK so it renders nothing in production. */}
+          <TestnetBanner />
         <NextIntlClientProvider locale={locale}>
           {children}
         </NextIntlClientProvider>
