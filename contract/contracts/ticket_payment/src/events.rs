@@ -39,6 +39,8 @@ pub enum AgoraEvent {
     MilestoneReleased,
     WithdrawalCapUpdated,
     MaxTicketsPerWalletUpdated,
+    OracleUpdated,
+    SlippageUpdated,
 }
 
 #[contracttype]
@@ -361,5 +363,29 @@ pub struct MaxTicketsPerWalletUpdatedEvent {
     pub old_limit: u32,
     pub new_limit: u32,
     pub updated_by: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when the admin changes the FX price oracle used for FX-converted purchases.
+///
+/// `old_oracle` is `None` if no oracle had been configured before this call.
+/// Monitoring can use this to detect a change in the price source.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleUpdatedEvent {
+    pub old_oracle: Option<Address>,
+    pub new_oracle: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when the admin changes the FX slippage tolerance.
+///
+/// Values are in basis points. `old_bps` is the tolerance that was in effect
+/// before the call, including the default when none had been set explicitly.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SlippageUpdatedEvent {
+    pub old_bps: u32,
+    pub new_bps: u32,
     pub timestamp: u64,
 }

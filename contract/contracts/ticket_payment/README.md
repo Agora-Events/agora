@@ -196,6 +196,8 @@ The contract emits events for tracking and integration:
 - `StakerRewardsClaimed` - Rewards claimed
 - `DisputeStatusChanged` - Admin dispute override set or cleared (persisted)
 - `MaxTicketsPerWalletUpdated` - Organizer changed the per-wallet purchase limit (carries `old_limit`, `new_limit`, `updated_by`; `0` = unlimited)
+- `OracleUpdated` - Admin changed the FX price oracle (carries `old_oracle`, `new_oracle`; the contract's own address is rejected)
+- `SlippageUpdated` - FX slippage tolerance changed (carries `old_bps`, `new_bps`; emitted by the admin setter and by governance)
 - `ContractPaused` - Contract paused
 - `ContractUnpaused` - Contract resumed
 - `ParameterChanged` - Contract parameter updated

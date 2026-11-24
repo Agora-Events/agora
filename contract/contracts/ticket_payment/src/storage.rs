@@ -12,6 +12,19 @@ use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
 
+// ── Configuration TTL policy ─────────────────────────────────────────────────
+//
+// Core configuration (admin, USDC token, platform wallet, event registry,
+// oracle, slippage) lives in persistent storage, so it archives when its TTL
+// runs out. Archived config makes `require_admin` and `get_event_registry`
+// fail for nearly every entry point. To prevent that:
+//   * `initialize` bumps every config key (see `bump_config`);
+//   * each config setter bumps the key it writes;
+//   * each config getter bumps the key it reads, if the key exists.
+// All of these use the persistent thresholds above (≈ 7 days remaining
+// triggers an extension to ≈ 30 days), so the cost of a call is only a ledger
+// write when the entry is close to expiring.
+
 // ── TTL / Ledger-Lifetime Constants ──────────────────────────────────────────
 //
 // Stellar produces roughly one ledger every 5 seconds.
@@ -54,6 +67,38 @@ pub fn bump_persistent(env: &Env, key: &DataKey) {
     );
 }
 
+/// Like [`bump_persistent`], but a no-op when the entry does not exist.
+///
+/// Extending the TTL of a missing key is an error, and several configuration
+/// keys stay unset until an admin sets them.
+pub fn bump_persistent_if_present(env: &Env, key: &DataKey) {
+    if env.storage().persistent().has(key) {
+        bump_persistent(env, key);
+    }
+}
+
+/// The persistent configuration keys that every entry point depends on.
+fn config_keys() -> [DataKey; 6] {
+    [
+        DataKey::Admin,
+        DataKey::UsdcToken,
+        DataKey::PlatformWallet,
+        DataKey::EventRegistry,
+        DataKey::OracleAddress,
+        DataKey::SlippageBps,
+    ]
+}
+
+/// Bumps the TTL of every core configuration entry that exists.
+///
+/// Called from `initialize` so a fresh deployment starts with all config keys
+/// at the full bump target. Later reads and writes of each key bump it again.
+pub fn bump_config(env: &Env) {
+    for key in config_keys() {
+        bump_persistent_if_present(env, &key);
+    }
+}
+
 /// Extend the TTL of the contract's *instance* storage so it lives for at
 /// least another [`INSTANCE_BUMP_AMOUNT`] ledgers (≈ 90 days).
 ///
@@ -68,9 +113,11 @@ pub fn bump_instance(env: &Env) {
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&DataKey::Admin, admin);
+    bump_persistent(env, &DataKey::Admin);
 }
 
 pub fn get_admin(env: &Env) -> Option<Address> {
+    bump_persistent_if_present(env, &DataKey::Admin);
     env.storage().persistent().get(&DataKey::Admin)
 }
 
@@ -195,9 +242,11 @@ pub fn set_usdc_token(env: &Env, address: Address) {
     env.storage()
         .persistent()
         .set(&DataKey::UsdcToken, &address);
+    bump_persistent(env, &DataKey::UsdcToken);
 }
 
 pub fn get_usdc_token(env: &Env) -> Address {
+    bump_persistent_if_present(env, &DataKey::UsdcToken);
     env.storage()
         .persistent()
         .get(&DataKey::UsdcToken)
@@ -208,9 +257,11 @@ pub fn set_platform_wallet(env: &Env, address: Address) {
     env.storage()
         .persistent()
         .set(&DataKey::PlatformWallet, &address);
+    bump_persistent(env, &DataKey::PlatformWallet);
 }
 
 pub fn get_platform_wallet(env: &Env) -> Address {
+    bump_persistent_if_present(env, &DataKey::PlatformWallet);
     env.storage()
         .persistent()
         .get(&DataKey::PlatformWallet)
@@ -221,9 +272,11 @@ pub fn set_event_registry(env: &Env, address: Address) {
     env.storage()
         .persistent()
         .set(&DataKey::EventRegistry, &address);
+    bump_persistent(env, &DataKey::EventRegistry);
 }
 
 pub fn get_event_registry(env: &Env) -> Address {
+    bump_persistent_if_present(env, &DataKey::EventRegistry);
     env.storage()
         .persistent()
         .get(&DataKey::EventRegistry)
@@ -714,9 +767,11 @@ pub fn set_oracle_address(env: &Env, address: &Address) {
     env.storage()
         .persistent()
         .set(&DataKey::OracleAddress, address);
+    bump_persistent(env, &DataKey::OracleAddress);
 }
 
 pub fn get_oracle_address(env: &Env) -> Option<Address> {
+    bump_persistent_if_present(env, &DataKey::OracleAddress);
     env.storage().persistent().get(&DataKey::OracleAddress)
 }
 
@@ -728,10 +783,12 @@ pub fn set_slippage_bps(env: &Env, bps: u32) -> Result<(), TicketPaymentError> {
     }
 
     env.storage().persistent().set(&DataKey::SlippageBps, &bps);
+    bump_persistent(env, &DataKey::SlippageBps);
     Ok(())
 }
 
 pub fn get_slippage_bps(env: &Env) -> u32 {
+    bump_persistent_if_present(env, &DataKey::SlippageBps);
     env.storage()
         .persistent()
         .get(&DataKey::SlippageBps)

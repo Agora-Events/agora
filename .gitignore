@@ -10,6 +10,9 @@ dist
 server/target
 contract/target
 
+# Local cargo test logs
+test_output*.txt
+
 # NPM lockfiles are stale in this pnpm repo
 package-lock.json
 **/package-lock.json

@@ -8,7 +8,7 @@ use super::types::{
 };
 use crate::error::TicketPaymentError;
 use soroban_sdk::{
-    testutils::{Address as _, EnvTestConfig, Events, Ledger},
+    testutils::{storage::Persistent as _, Address as _, EnvTestConfig, Events, Ledger},
     token, Address, Bytes, BytesN, Env, IntoVal, String, Symbol, TryIntoVal,
 };
 
@@ -8500,9 +8500,10 @@ fn test_discount_code_expired_returns_error() {
     let event_id = String::from_str(&env, "event_1");
     let code = String::from_str(&env, "EXPIRED");
 
-    // Set ledger time to 1000, create code that expired at 500
+    // Create a valid code at ledger time 1000 that expires at 2000, then let it lapse.
     env.ledger().set_timestamp(1000);
-    client.create_discount_code(&event_id, &code, &10, &500u64, &10);
+    client.create_discount_code(&event_id, &code, &10, &2000u64, &10);
+    env.ledger().set_timestamp(3000);
 
     let buyer = Address::generate(&env);
     let amount = 1000_0000000i128;
@@ -8528,6 +8529,92 @@ fn test_discount_code_expired_returns_error() {
         &hash,
     );
     assert_eq!(res, Err(Ok(TicketPaymentError::DiscountExpired)));
+}
+
+#[test]
+fn test_create_discount_code_rejects_zero_percent() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "ZERO");
+
+    let res = client.try_create_discount_code(&event_id, &code, &0, &9_999_999_999u64, &5);
+    assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountPercent)));
+    assert!(client.get_discount_code(&event_id, &code).is_none());
+}
+
+#[test]
+fn test_create_discount_code_rejects_percent_over_100() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "OVER");
+
+    let res = client.try_create_discount_code(&event_id, &code, &101, &9_999_999_999u64, &5);
+    assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountPercent)));
+    assert!(client.get_discount_code(&event_id, &code).is_none());
+}
+
+#[test]
+fn test_create_discount_code_rejects_expired_timestamp() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "PAST");
+
+    env.ledger().set_timestamp(1000);
+
+    // Expiry strictly in the past
+    let res = client.try_create_discount_code(&event_id, &code, &10, &500u64, &5);
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountExpired)));
+
+    // Expiry equal to the current ledger time is also already expired
+    let res = client.try_create_discount_code(&event_id, &code, &10, &1000u64, &5);
+    assert_eq!(res, Err(Ok(TicketPaymentError::DiscountExpired)));
+
+    assert!(client.get_discount_code(&event_id, &code).is_none());
+}
+
+#[test]
+fn test_create_discount_code_rejects_zero_max_uses() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "NOUSES");
+
+    let res = client.try_create_discount_code(&event_id, &code, &10, &9_999_999_999u64, &0);
+    assert_eq!(res, Err(Ok(TicketPaymentError::InvalidDiscountMaxUses)));
+    assert!(client.get_discount_code(&event_id, &code).is_none());
+}
+
+#[test]
+fn test_create_discount_code_valid_is_stored() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _usdc_id, _, _) = setup_test(&env);
+    let event_id = String::from_str(&env, "event_1");
+    let code = String::from_str(&env, "VALID");
+
+    env.ledger().set_timestamp(1000);
+
+    // 100% is the upper bound of the valid percentage range
+    let res = client.try_create_discount_code(&event_id, &code, &100, &2000u64, &5);
+    assert_eq!(res, Ok(Ok(())));
+
+    let data = client.get_discount_code(&event_id, &code).unwrap();
+    assert_eq!(data.percentage, 100);
+    assert_eq!(data.expires_at, 2000);
+    assert_eq!(data.max_uses, 5);
+    assert_eq!(data.current_uses, 0);
 }
 
 #[test]
@@ -11377,4 +11464,180 @@ fn test_set_max_tickets_per_wallet_unknown_event_emits_nothing() {
     assert_eq!(res, Err(Ok(TicketPaymentError::EventNotFound)));
     assert_eq!(max_tickets_updated_events(&env, &client.address).len(), 0);
     assert_eq!(client.get_max_tickets_per_wallet(&event_id), 0);
+}
+
+#[test]
+fn test_config_ttl_extended_by_admin_entry_point() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _usdc_id, _platform_wallet, _registry_id) = setup_test(&env);
+    let contract_id = client.address.clone();
+
+    // Initialize bumps every config key to the full persistent target.
+    let initial_ttl = env.as_contract(&contract_id, || {
+        env.storage().persistent().get_ttl(&DataKey::Admin)
+    });
+    assert!(initial_ttl > PERSISTENT_LIFETIME_THRESHOLD);
+
+    // Keep the contract instance alive so only the admin entry's TTL is tested.
+    env.as_contract(&contract_id, || bump_instance(&env));
+
+    // Advance until the admin entry is about to archive, well inside the threshold.
+    env.ledger()
+        .with_mut(|li| li.sequence_number += PERSISTENT_BUMP_AMOUNT - 1_000);
+    let near_expiry = env.as_contract(&contract_id, || {
+        env.storage().persistent().get_ttl(&DataKey::Admin)
+    });
+    assert!(near_expiry < PERSISTENT_LIFETIME_THRESHOLD);
+
+    // `set_oracle` reads the admin through `require_admin`, which must bump it.
+    let oracle_id = Address::generate(&env);
+    client.set_oracle(&oracle_id);
+
+    let extended_ttl = env.as_contract(&contract_id, || {
+        env.storage().persistent().get_ttl(&DataKey::Admin)
+    });
+    assert!(extended_ttl > PERSISTENT_LIFETIME_THRESHOLD);
+    assert!(extended_ttl > near_expiry);
+    assert_eq!(client.get_slippage(), 200);
+}
+
+fn oracle_updated_events(
+    env: &Env,
+    contract: &Address,
+) -> soroban_sdk::Vec<crate::events::OracleUpdatedEvent> {
+    let mut out = soroban_sdk::Vec::new(env);
+    for (addr, topics, data) in env.events().all().iter() {
+        if &addr != contract || topics.is_empty() {
+            continue;
+        }
+        let topic: Result<crate::events::AgoraEvent, _> = topics.get(0).unwrap().try_into_val(env);
+        if topic == Ok(crate::events::AgoraEvent::OracleUpdated) {
+            out.push_back(data.try_into_val(env).unwrap());
+        }
+    }
+    out
+}
+
+fn slippage_updated_events(
+    env: &Env,
+    contract: &Address,
+) -> soroban_sdk::Vec<crate::events::SlippageUpdatedEvent> {
+    let mut out = soroban_sdk::Vec::new(env);
+    for (addr, topics, data) in env.events().all().iter() {
+        if &addr != contract || topics.is_empty() {
+            continue;
+        }
+        let topic: Result<crate::events::AgoraEvent, _> = topics.get(0).unwrap().try_into_val(env);
+        if topic == Ok(crate::events::AgoraEvent::SlippageUpdated) {
+            out.push_back(data.try_into_val(env).unwrap());
+        }
+    }
+    out
+}
+
+#[test]
+fn test_set_oracle_emits_previous_and_new_oracle() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 1_700_000_100);
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    let first = Address::generate(&env);
+    client.set_oracle(&first);
+    let events = oracle_updated_events(&env, &client.address);
+    assert_eq!(
+        events.get(events.len() - 1).unwrap(),
+        crate::events::OracleUpdatedEvent {
+            old_oracle: None,
+            new_oracle: first.clone(),
+            timestamp: 1_700_000_100,
+        }
+    );
+
+    env.ledger().with_mut(|li| li.timestamp = 1_700_000_200);
+    let second = Address::generate(&env);
+    client.set_oracle(&second);
+    let events = oracle_updated_events(&env, &client.address);
+    assert_eq!(
+        events.get(events.len() - 1).unwrap(),
+        crate::events::OracleUpdatedEvent {
+            old_oracle: Some(first),
+            new_oracle: second,
+            timestamp: 1_700_000_200,
+        }
+    );
+}
+
+#[test]
+fn test_set_oracle_rejects_contract_address_without_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    let err = client.try_set_oracle(&client.address);
+    assert_eq!(err, Err(Ok(TicketPaymentError::InvalidAddress)));
+
+    assert!(oracle_updated_events(&env, &client.address).is_empty());
+    let stored = env.as_contract(&client.address, || get_oracle_address(&env));
+    assert_eq!(stored, None);
+}
+
+#[test]
+fn test_set_slippage_emits_previous_and_new_bps() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 1_700_000_300);
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    // No explicit value yet: the event reports the default of 200 bps.
+    client.set_slippage(&300);
+    let events = slippage_updated_events(&env, &client.address);
+    assert_eq!(
+        events.get(events.len() - 1).unwrap(),
+        crate::events::SlippageUpdatedEvent {
+            old_bps: 200,
+            new_bps: 300,
+            timestamp: 1_700_000_300,
+        }
+    );
+}
+
+#[test]
+fn test_set_slippage_over_max_emits_nothing() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _, _, _) = setup_test(&env);
+
+    let err = client.try_set_slippage(&501);
+    assert_eq!(err, Err(Ok(TicketPaymentError::InvalidSlippageBps)));
+    assert!(slippage_updated_events(&env, &client.address).is_empty());
+    assert_eq!(client.get_slippage(), 200);
+}
+
+#[test]
+fn test_governance_slippage_change_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _, _, _) = setup_test(&env);
+
+    // Proposing counts the proposer's vote, so the proposal can be executed directly.
+    let proposal = client.propose_parameter_change(&admin, &ParameterChange::UpdateSlippage(150));
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 172801);
+    let executed_at = env.ledger().timestamp();
+    client.execute_proposal(&admin, &proposal);
+
+    // Read events before any other contract call: `events().all()` only
+    // reports the most recent invocation.
+    let events = slippage_updated_events(&env, &client.address);
+    assert_eq!(
+        events.get(events.len() - 1).unwrap(),
+        crate::events::SlippageUpdatedEvent {
+            old_bps: 200,
+            new_bps: 150,
+            timestamp: executed_at,
+        }
+    );
+    assert_eq!(client.get_slippage(), 150);
 }
