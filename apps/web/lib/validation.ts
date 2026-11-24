@@ -4,10 +4,7 @@ import { z } from "zod";
 export const MAX_DESCRIPTION_LENGTH = 10000;
 
 export const authSchema = z.object({
-  email: z
-    .string()
-    .min(1, "Email is required")
-    .email("Enter a valid email"),
+  email: z.string().min(1, "Email is required").email("Enter a valid email"),
 });
 
 export const createEventSchema = z
@@ -34,12 +31,26 @@ export const createEventSchema = z
       }),
     visibility: z.enum(["Public", "Private"]),
   })
+  .refine((data) => !data.endDate || !data.startDate || data.endDate >= data.startDate, {
+    message: "End date must be on or after the start date",
+    path: ["endDate"],
+  })
   .refine(
-    (data) => !data.endDate || !data.startDate || data.endDate >= data.startDate,
-    {
-      message: "End date must be on or after the start date",
-      path: ["endDate"],
+    (data) => {
+      if (!data.endDate || !data.endTime || !data.startDate || !data.startTime) {
+        return true;
+      }
+      const startDateTime = new Date(`${data.startDate}T${data.startTime}`);
+      const endDateTime = new Date(`${data.endDate}T${data.endTime}`);
+      if (!Number.isNaN(startDateTime.getTime()) && !Number.isNaN(endDateTime.getTime())) {
+        return endDateTime > startDateTime;
+      }
+      return `${data.endDate}T${data.endTime}` > `${data.startDate}T${data.startTime}`;
     },
+    {
+      message: "End time must be after the start time",
+      path: ["endTime"],
+    }
   );
 
 export type AuthFormData = z.infer<typeof authSchema>;
