@@ -64,7 +64,9 @@ export function buildIcsFile(event: CalendarEventInput): string {
   const dtStamp = formatToUtcString(now);
   const dtStart = formatToUtcString(startDate);
   const dtEnd = formatToUtcString(endDate);
-  const uid = `${event.id ?? "agora-event"}-${startDate.getTime()}@agora.events`;
+  const eventKey =
+    event.id ?? `agora-event-${startDate.getTime()}-${encodeURIComponent(event.title)}`;
+  const uid = `${eventKey}@agora.events`;
 
   const summary = escapeIcsText(event.title || "Agora Event");
   const description = escapeIcsText(event.description || "");
