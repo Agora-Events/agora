@@ -46,6 +46,11 @@ describe("getRelativeTime", () => {
     expect(getRelativeTime(fromNow(DAY_MS))).toBe("Tomorrow");
   });
 
+  it('returns "Yesterday" for a date on the previous calendar day', () => {
+    expect(getRelativeTime(fromNow(-13 * HOUR_MS))).toBe("Yesterday");
+    expect(getRelativeTime(fromNow(-35 * HOUR_MS))).toBe("Yesterday");
+  });
+
   it("formats a few days into the future", () => {
     expect(getRelativeTime(fromNow(3 * DAY_MS))).toBe("in 3 days");
   });
@@ -64,6 +69,13 @@ describe("getRelativeTime", () => {
 
   it("formats a couple of months in the past", () => {
     expect(getRelativeTime(fromNow(-60 * DAY_MS))).toBe("2 months ago");
+  });
+
+  it("uses years for dates at least twelve months away", () => {
+    expect(getRelativeTime(fromNow(359 * DAY_MS))).toBe("in 12 months");
+    expect(getRelativeTime(fromNow(360 * DAY_MS))).toBe("next year");
+    expect(getRelativeTime(fromNow(-360 * DAY_MS))).toBe("last year");
+    expect(getRelativeTime(fromNow(720 * DAY_MS))).toBe("in 2 years");
   });
 
   it("does not throw for an invalid date and falls back to an empty string", () => {
