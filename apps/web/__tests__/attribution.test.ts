@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { captureAttribution, getCheckoutAttribution } from "@/utils/attribution";
+import {
+  ATTRIBUTION_MAX_AGE_MS,
+  captureAttribution,
+  getCheckoutAttribution,
+} from "@/utils/attribution";
 
 const STORAGE_KEY = "agora_checkout_attribution";
 
@@ -24,7 +28,10 @@ describe("attribution", () => {
       utmMedium: "social",
       utmCampaign: "launch",
     });
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual(result);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({
+      ...result,
+      capturedAt: expect.any(Number),
+    });
   });
 
   it("returns null and stores nothing when there are no UTM params", () => {
@@ -101,5 +108,81 @@ describe("attribution", () => {
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ utmSource: 123 }));
     expect(getCheckoutAttribution()).toBeUndefined();
+  });
+  describe("30-day expiry", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const NOW = new Date("2026-11-24T12:00:00Z");
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(NOW);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("window is 30 days", () => {
+      expect(ATTRIBUTION_MAX_AGE_MS).toBe(30 * DAY_MS);
+    });
+
+    it("stores capturedAt as the capture time", () => {
+      captureAttribution(new URLSearchParams("utm_source=twitter"));
+      expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({
+        utmSource: "twitter",
+        capturedAt: NOW.getTime(),
+      });
+    });
+
+    it("returns a fresh entry, including one exactly 30 days old", () => {
+      captureAttribution(new URLSearchParams("utm_source=twitter&utm_campaign=launch"));
+
+      vi.advanceTimersByTime(29 * DAY_MS);
+      expect(getCheckoutAttribution()).toEqual({
+        utmSource: "twitter",
+        utmMedium: undefined,
+        utmCampaign: "launch",
+      });
+
+      vi.advanceTimersByTime(DAY_MS);
+      expect(getCheckoutAttribution()?.utmCampaign).toBe("launch");
+      expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+    });
+
+    it("ignores and removes an entry older than 30 days", () => {
+      captureAttribution(new URLSearchParams("utm_source=twitter&utm_campaign=launch"));
+
+      vi.advanceTimersByTime(30 * DAY_MS + 1);
+
+      expect(getCheckoutAttribution()).toBeUndefined();
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+
+    it("ignores and removes a legacy entry without capturedAt", () => {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ utmSource: "existing", utmMedium: "email", utmCampaign: "old" })
+      );
+
+      expect(getCheckoutAttribution()).toBeUndefined();
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+
+    it("ignores entries whose capturedAt is not a usable timestamp", () => {
+      for (const capturedAt of ["2026-11-01", null, NOW.getTime() + DAY_MS]) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ utmSource: "x", capturedAt }));
+        expect(getCheckoutAttribution()).toBeUndefined();
+        expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+      }
+    });
+
+    it("a new capture restarts the window", () => {
+      captureAttribution(new URLSearchParams("utm_campaign=first"));
+      vi.advanceTimersByTime(20 * DAY_MS);
+      captureAttribution(new URLSearchParams("utm_campaign=second"));
+      vi.advanceTimersByTime(20 * DAY_MS);
+
+      expect(getCheckoutAttribution()?.utmCampaign).toBe("second");
+    });
   });
 });
