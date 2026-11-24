@@ -36,7 +36,38 @@ const COINGECKO_API_URL =
 /** Cache the last successful fetch to avoid hammering the API on re-renders. */
 let _cache: { data: Record<FiatCurrency, number>; fetchedAt: number } | null =
   null;
+let _inFlightRequest: Promise<Record<FiatCurrency, number>> | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getAbortError(signal: AbortSignal): unknown {
+  return signal.reason instanceof DOMException
+    ? signal.reason
+    : new DOMException("Aborted", "AbortError");
+}
+
+function waitForRateRequest(
+  request: Promise<Record<FiatCurrency, number>>,
+  signal?: AbortSignal,
+): Promise<Record<FiatCurrency, number>> {
+  if (!signal) return request;
+  if (signal.aborted) return Promise.reject(getAbortError(signal));
+
+  return new Promise((resolve, reject) => {
+    const handleAbort = () => reject(getAbortError(signal));
+    signal.addEventListener("abort", handleAbort, { once: true });
+
+    request.then(
+      (data) => {
+        signal.removeEventListener("abort", handleAbort);
+        resolve(data);
+      },
+      (error) => {
+        signal.removeEventListener("abort", handleAbort);
+        reject(error);
+      },
+    );
+  });
+}
 
 /**
  * Fetch the current USDC exchange rate for the given fiat currency.
@@ -59,36 +90,53 @@ export async function fetchUsdcRate(
   }
 
   try {
-    const response = await fetch(COINGECKO_API_URL, {
-      signal,
-      // Instruct browsers/CDNs to revalidate after 5 minutes
-      next: { revalidate: 300 },
-    } as RequestInit);
+    if (!_inFlightRequest) {
+      _inFlightRequest = (async () => {
+        const response = await fetch(COINGECKO_API_URL, {
+          // Instruct browsers/CDNs to revalidate after 5 minutes
+          next: { revalidate: 300 },
+        } as RequestInit);
 
-    if (!response.ok) {
-      throw new Error(
-        `CoinGecko responded with status ${response.status}: ${response.statusText}`,
+        if (!response.ok) {
+          throw new Error(
+            `CoinGecko responded with status ${response.status}: ${response.statusText}`,
+          );
+        }
+
+        const json = (await response.json()) as {
+          "usd-coin"?: { usd?: number; eur?: number };
+        };
+
+        const usdRate = json["usd-coin"]?.usd;
+        const eurRate = json["usd-coin"]?.eur;
+
+        if (typeof usdRate !== "number" || typeof eurRate !== "number") {
+          throw new Error("Unexpected CoinGecko response shape");
+        }
+
+        const data = { usd: usdRate, eur: eurRate };
+        _cache = {
+          data,
+          fetchedAt: Date.now(),
+        };
+        return data;
+      })();
+
+      const sharedRequest = _inFlightRequest;
+      void sharedRequest.then(
+        () => {
+          if (_inFlightRequest === sharedRequest) _inFlightRequest = null;
+        },
+        () => {
+          if (_inFlightRequest === sharedRequest) _inFlightRequest = null;
+        },
       );
     }
 
-    const json = (await response.json()) as {
-      "usd-coin"?: { usd?: number; eur?: number };
-    };
-
-    const usdRate = json["usd-coin"]?.usd;
-    const eurRate = json["usd-coin"]?.eur;
-
-    if (typeof usdRate !== "number" || typeof eurRate !== "number") {
-      throw new Error("Unexpected CoinGecko response shape");
-    }
-
-    _cache = {
-      data: { usd: usdRate, eur: eurRate },
-      fetchedAt: Date.now(),
-    };
+    const data = await waitForRateRequest(_inFlightRequest, signal);
 
     return {
-      rate: _cache.data[currency],
+      rate: data[currency],
       isFallback: false,
       currency,
     };

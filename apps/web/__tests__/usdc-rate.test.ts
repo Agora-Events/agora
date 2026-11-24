@@ -82,6 +82,26 @@ describe("fetchUsdcRate", () => {
     expect(typeof result.rate).toBe("number");
   });
 
+  it("shares one in-flight request across currencies", async () => {
+    const fetchMock = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve(mockFetch(MOCK_API_RESPONSE)()), 10);
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { fetchUsdcRate: freshFetch } = await import("@/utils/usdc-rate");
+    const [usd, eur] = await Promise.all([
+      freshFetch("usd"),
+      freshFetch("eur"),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(usd.rate).toBe(1.001);
+    expect(eur.rate).toBe(0.924);
+  });
+
   it("falls back to USD rate of 1.0 when fetch fails", async () => {
     vi.stubGlobal(
       "fetch",
