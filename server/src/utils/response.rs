@@ -67,6 +67,26 @@ where
     (StatusCode::OK, Json(body))
 }
 
+/// Creates a successful response with 201 Created status and data
+///
+/// # Arguments
+/// * `data` - Serializable data to include in response
+/// * `message` - Success message to include
+///
+/// # Returns
+/// An Axum response with 201 status code and JSON body
+pub fn created<T>(data: T, message: impl Into<String>) -> impl IntoResponse
+where
+    T: Serialize,
+{
+    let body = ApiResponse {
+        success: true,
+        data: Some(data),
+        message: Some(message.into()),
+    };
+    (StatusCode::CREATED, Json(body))
+}
+
 /// Creates a successful response without data
 ///
 /// # Arguments
@@ -128,6 +148,29 @@ mod tests {
         assert_eq!(body["success"], true);
         assert_eq!(body["data"], payload);
         assert_eq!(body["message"], "Operation succeeded");
+    }
+
+    #[tokio::test]
+    async fn test_created_helper() {
+        let payload = json!({ "following": true, "created": true });
+        let resp = created(payload.clone(), "Followed successfully").into_response();
+
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        assert_eq!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/json")
+        );
+
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(body["success"], true);
+        assert_eq!(body["data"], payload);
+        assert_eq!(body["message"], "Followed successfully");
     }
 
     #[tokio::test]
@@ -225,12 +268,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_helper_forbidden() {
-        let resp = error(
-            "FORBIDDEN",
-            "Access denied",
-            None,
-            StatusCode::FORBIDDEN,
-        );
+        let resp = error("FORBIDDEN", "Access denied", None, StatusCode::FORBIDDEN);
 
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)

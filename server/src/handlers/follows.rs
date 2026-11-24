@@ -13,7 +13,7 @@ use crate::models::organizer_profile::OrganizerProfile;
 use crate::notifications::{Notification, NotificationService};
 use crate::utils::error::AppError;
 use crate::utils::pagination::PaginationParams;
-use crate::utils::response::success;
+use crate::utils::response::{created, success};
 
 #[derive(Clone)]
 pub struct FollowState {
@@ -24,6 +24,12 @@ pub struct FollowState {
 pub struct FollowCountResponse {
     pub organizer_id: String,
     pub followers_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct FollowResponse {
+    pub following: bool,
+    pub created: bool,
 }
 
 /// POST /api/v1/organizers/:id/follow
@@ -67,7 +73,18 @@ pub async fn follow_organizer(
     .execute(&state.pool)
     .await
     {
-        Ok(_) => success(serde_json::json!({}), "Followed successfully").into_response(),
+        Ok(result) => {
+            let is_new = result.rows_affected() > 0;
+            let data = FollowResponse {
+                following: true,
+                created: is_new,
+            };
+            if is_new {
+                created(data, "Followed successfully").into_response()
+            } else {
+                success(data, "Followed successfully").into_response()
+            }
+        }
         Err(e) => {
             tracing::error!("Failed to follow: {:?}", e);
             AppError::DatabaseError(e).into_response()
@@ -184,7 +201,9 @@ pub async fn list_following_events(
     Query(pagination): Query<crate::utils::cursor_pagination::CursorParams>,
 ) -> Response {
     use crate::models::event::{populate_is_free, Event};
-    use crate::utils::cursor_pagination::{decode_cursor, encode_cursor, CursorResponse, EventCursor};
+    use crate::utils::cursor_pagination::{
+        decode_cursor, encode_cursor, CursorResponse, EventCursor,
+    };
     let follower = match extract_auth(&headers) {
         Ok(a) => a,
         Err(e) => return e.into_response(),
@@ -193,7 +212,9 @@ pub async fn list_following_events(
     let cursor = match validated.cursor {
         Some(ref c) => match decode_cursor::<EventCursor>(c) {
             Ok(cur) => Some(cur),
-            Err(e) => return AppError::ValidationError(format!("Invalid cursor: {e}")).into_response(),
+            Err(e) => {
+                return AppError::ValidationError(format!("Invalid cursor: {e}")).into_response()
+            }
         },
         None => None,
     };
@@ -348,11 +369,35 @@ mod tests {
         assert_eq!(json["organizer_id"], "GABC");
     }
 
+    #[test]
+    fn test_follow_response_new_follow_serializes() {
+        let resp = FollowResponse {
+            following: true,
+            created: true,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["following"], true);
+        assert_eq!(json["created"], true);
+    }
+
+    #[test]
+    fn test_follow_response_duplicate_follow_serializes() {
+        let resp = FollowResponse {
+            following: true,
+            created: false,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["following"], true);
+        assert_eq!(json["created"], false);
+    }
+
     /// One notification per follower, including followers on a second batch.
     #[tokio::test]
     async fn notify_followers_sends_once_per_follower() {
         let Ok(database_url) = std::env::var("TEST_DATABASE_URL") else {
-            eprintln!("Skipping PostgreSQL-backed follower notification test: TEST_DATABASE_URL is unset");
+            eprintln!(
+                "Skipping PostgreSQL-backed follower notification test: TEST_DATABASE_URL is unset"
+            );
             return;
         };
         let pool = sqlx::postgres::PgPoolOptions::new()
