@@ -7,9 +7,23 @@ use crate::{
         ParameterProposal, Payment, PaymentStatus,
     },
 };
+use crate::keys::{DisputeKey, TicketKey, WalletLimitKey};
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, String, Vec};
 
 const SHARD_SIZE: u32 = 100;
+
+// ── Configuration TTL policy ─────────────────────────────────────────────────
+//
+// Core configuration (admin, USDC token, platform wallet, event registry,
+// oracle, slippage) lives in persistent storage, so it archives when its TTL
+// runs out. Archived config makes `require_admin` and `get_event_registry`
+// fail for nearly every entry point. To prevent that:
+//   * `initialize` bumps every config key (see `bump_config`);
+//   * each config setter bumps the key it writes;
+//   * each config getter bumps the key it reads, if the key exists.
+// All of these use the persistent thresholds above (≈ 7 days remaining
+// triggers an extension to ≈ 30 days), so the cost of a call is only a ledger
+// write when the entry is close to expiring.
 
 // ── TTL / Ledger-Lifetime Constants ──────────────────────────────────────────
 //
@@ -53,6 +67,38 @@ pub fn bump_persistent(env: &Env, key: &DataKey) {
     );
 }
 
+/// Like [`bump_persistent`], but a no-op when the entry does not exist.
+///
+/// Extending the TTL of a missing key is an error, and several configuration
+/// keys stay unset until an admin sets them.
+pub fn bump_persistent_if_present(env: &Env, key: &DataKey) {
+    if env.storage().persistent().has(key) {
+        bump_persistent(env, key);
+    }
+}
+
+/// The persistent configuration keys that every entry point depends on.
+fn config_keys() -> [DataKey; 6] {
+    [
+        DataKey::Admin,
+        DataKey::UsdcToken,
+        DataKey::PlatformWallet,
+        DataKey::EventRegistry,
+        DataKey::OracleAddress,
+        DataKey::SlippageBps,
+    ]
+}
+
+/// Bumps the TTL of every core configuration entry that exists.
+///
+/// Called from `initialize` so a fresh deployment starts with all config keys
+/// at the full bump target. Later reads and writes of each key bump it again.
+pub fn bump_config(env: &Env) {
+    for key in config_keys() {
+        bump_persistent_if_present(env, &key);
+    }
+}
+
 /// Extend the TTL of the contract's *instance* storage so it lives for at
 /// least another [`INSTANCE_BUMP_AMOUNT`] ledgers (≈ 90 days).
 ///
@@ -67,9 +113,11 @@ pub fn bump_instance(env: &Env) {
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&DataKey::Admin, admin);
+    bump_persistent(env, &DataKey::Admin);
 }
 
 pub fn get_admin(env: &Env) -> Option<Address> {
+    bump_persistent_if_present(env, &DataKey::Admin);
     env.storage().persistent().get(&DataKey::Admin)
 }
 
@@ -194,9 +242,11 @@ pub fn set_usdc_token(env: &Env, address: Address) {
     env.storage()
         .persistent()
         .set(&DataKey::UsdcToken, &address);
+    bump_persistent(env, &DataKey::UsdcToken);
 }
 
 pub fn get_usdc_token(env: &Env) -> Address {
+    bump_persistent_if_present(env, &DataKey::UsdcToken);
     env.storage()
         .persistent()
         .get(&DataKey::UsdcToken)
@@ -207,9 +257,11 @@ pub fn set_platform_wallet(env: &Env, address: Address) {
     env.storage()
         .persistent()
         .set(&DataKey::PlatformWallet, &address);
+    bump_persistent(env, &DataKey::PlatformWallet);
 }
 
 pub fn get_platform_wallet(env: &Env) -> Address {
+    bump_persistent_if_present(env, &DataKey::PlatformWallet);
     env.storage()
         .persistent()
         .get(&DataKey::PlatformWallet)
@@ -220,9 +272,11 @@ pub fn set_event_registry(env: &Env, address: Address) {
     env.storage()
         .persistent()
         .set(&DataKey::EventRegistry, &address);
+    bump_persistent(env, &DataKey::EventRegistry);
 }
 
 pub fn get_event_registry(env: &Env) -> Address {
+    bump_persistent_if_present(env, &DataKey::EventRegistry);
     env.storage()
         .persistent()
         .get(&DataKey::EventRegistry)
@@ -328,6 +382,32 @@ pub fn get_transfer_fee(env: &Env, event_id: String) -> Option<u32> {
     env.storage()
         .persistent()
         .get(&DataKey::TransferFee(event_id))
+}
+
+pub fn set_max_tickets_per_wallet(env: &Env, event_id: String, max: u32) {
+    env.storage()
+        .persistent()
+        .set(&WalletLimitKey::MaxTicketsPerWallet(event_id), &max);
+}
+
+pub fn get_max_tickets_per_wallet(env: &Env, event_id: String) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&WalletLimitKey::MaxTicketsPerWallet(event_id))
+        .unwrap_or(0)
+}
+
+pub fn get_wallet_ticket_count(env: &Env, event_id: String, buyer: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&WalletLimitKey::WalletTicketCount(event_id, buyer.clone()))
+        .unwrap_or(0)
+}
+
+pub fn set_wallet_ticket_count(env: &Env, event_id: String, buyer: &Address, count: u32) {
+    env.storage()
+        .persistent()
+        .set(&WalletLimitKey::WalletTicketCount(event_id, buyer.clone()), &count);
 }
 
 pub fn add_payment_to_event_index(env: &Env, event_id: String, payment_id: String) {
@@ -640,6 +720,34 @@ pub fn mark_discount_hash_used(env: &Env, hash: soroban_sdk::BytesN<32>) {
         .set(&DataKey::DiscountCodeUsed(hash), &true);
 }
 
+// ── Event dispute override ────────────────────────────────────────────────────
+
+/// Persists an admin dispute override flag for `event_id`.
+///
+/// When set to `true`, `is_event_disputed` reports the event as disputed even
+/// if the `event_registry` does not report an open or voting dispute.
+pub fn set_event_dispute_override(env: &Env, event_id: &String, disputed: bool) {
+    env.storage().persistent().set(
+        &DisputeKey::EventDisputeOverride(event_id.clone()),
+        &disputed,
+    );
+}
+
+/// Returns the admin dispute override flag for `event_id` (defaults to `false`).
+pub fn get_event_dispute_override(env: &Env, event_id: &String) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DisputeKey::EventDisputeOverride(event_id.clone()))
+        .unwrap_or(false)
+}
+
+/// Removes any stored admin dispute override for `event_id`.
+pub fn clear_event_dispute_override(env: &Env, event_id: &String) {
+    env.storage()
+        .persistent()
+        .remove(&DisputeKey::EventDisputeOverride(event_id.clone()));
+}
+
 pub fn is_event_cancelled_for_refund(env: &Env, event_id: &String) -> bool {
     env.storage()
         .persistent()
@@ -659,22 +767,28 @@ pub fn set_oracle_address(env: &Env, address: &Address) {
     env.storage()
         .persistent()
         .set(&DataKey::OracleAddress, address);
+    bump_persistent(env, &DataKey::OracleAddress);
 }
 
 pub fn get_oracle_address(env: &Env) -> Option<Address> {
+    bump_persistent_if_present(env, &DataKey::OracleAddress);
     env.storage().persistent().get(&DataKey::OracleAddress)
 }
 
+pub const MAX_ALLOWED_SLIPPAGE_BPS: u32 = 500;
+
 pub fn set_slippage_bps(env: &Env, bps: u32) -> Result<(), TicketPaymentError> {
-    if bps > 5000 {
+    if bps > MAX_ALLOWED_SLIPPAGE_BPS {
         return Err(TicketPaymentError::InvalidSlippageBps);
     }
 
     env.storage().persistent().set(&DataKey::SlippageBps, &bps);
+    bump_persistent(env, &DataKey::SlippageBps);
     Ok(())
 }
 
 pub fn get_slippage_bps(env: &Env) -> u32 {
+    bump_persistent_if_present(env, &DataKey::SlippageBps);
     env.storage()
         .persistent()
         .get(&DataKey::SlippageBps)
@@ -876,6 +990,33 @@ pub fn store_validation_hash(env: &Env, payment_id: &String, hash: &BytesN<32>) 
     env.storage()
         .persistent()
         .set(&DataKey::ValidationHash(payment_id.clone()), hash);
+}
+
+/// Records the numeric ticket id -> payment_id association.
+pub fn set_ticket_payment_id(env: &Env, ticket_id: u64, payment_id: &String) {
+    env.storage()
+        .persistent()
+        .set(&TicketKey::TicketId(ticket_id), payment_id);
+}
+
+/// Resolves the payment_id associated with a numeric ticket id, if any.
+pub fn get_ticket_payment_id(env: &Env, ticket_id: u64) -> Option<String> {
+    env.storage()
+        .persistent()
+        .get(&TicketKey::TicketId(ticket_id))
+}
+
+/// Returns the next numeric ticket id and increments the sequence counter.
+pub fn next_ticket_id(env: &Env) -> u64 {
+    let next: u64 = env
+        .storage()
+        .persistent()
+        .get(&TicketKey::TicketIdCounter)
+        .unwrap_or(0);
+    env.storage()
+        .persistent()
+        .set(&TicketKey::TicketIdCounter, &(next + 1));
+    next
 }
 
 /// Retrieves the stored validation hash for a payment.

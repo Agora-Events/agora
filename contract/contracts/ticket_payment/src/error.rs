@@ -42,8 +42,8 @@ pub enum TicketPaymentError {
     InvalidDiscountCode = 18,
     /// The discount code has already been used.
     DiscountCodeUsed = 19,
-    /// Caller is not authorized to perform this action.
-    Unauthorized = 20,
+    // 20 (Unauthorized) retired in #1583 — never returned; auth is enforced by
+    // `require_auth`. Do not reuse the code.
     /// The event has not yet completed.
     EventNotCompleted = 21,
     /// There are no funds available to withdraw.
@@ -58,6 +58,20 @@ pub enum TicketPaymentError {
     ResalePriceExceedsCap = 26,
     /// The contract is currently paused.
     ContractPaused = 27,
+    /// Returned when a buyer provides a secret that does not match the stored hash.
+    InvalidSecret = 28,
+    /// Returned when a commit-reveal window has expired.
+    CommitExpired = 29,
+    /// Returned when a per-event discount code has passed its expiry timestamp.
+    DiscountExpired = 30,
+    /// Returned when a per-event discount code has reached its maximum usage count.
+    DiscountMaxUsesReached = 31,
+    /// Returned when a dispute cannot be resolved (e.g. insufficient votes or wrong state).
+    DisputeNotResolved = 32,
+    /// Returned when escrow has not been initialised for an event.
+    EscrowNotInitialized = 33,
+    /// Returned when a purchase amount is invalid (negative, or zero on a paid event).
+    InvalidAmount = 34,
     /// The event has been cancelled.
     EventCancelled = 35,
     /// The event is under dispute.
@@ -117,6 +131,14 @@ pub enum TicketPaymentError {
     EmptyBatch = 65,
     /// Returned when a bulk operation input exceeds `MAX_BATCH_SIZE`.
     BatchTooLarge = 66,
+    /// Returned when a payment ID has already been processed.
+    PaymentAlreadyExists = 67,
+    /// Returned when a purchase would exceed the event's per-wallet ticket limit.
+    WalletLimitExceeded = 68,
+    /// Returned when a discount code's percentage is outside the valid range of 1..=100.
+    InvalidDiscountPercent = 69,
+    /// Returned when a discount code is created with `max_uses` set to zero.
+    InvalidDiscountMaxUses = 70,
 }
 
 impl From<TicketPaymentError> for soroban_sdk::Error {
@@ -153,7 +175,6 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             17 => TicketPaymentError::InvalidPrice,
             18 => TicketPaymentError::InvalidDiscountCode,
             19 => TicketPaymentError::DiscountCodeUsed,
-            20 => TicketPaymentError::Unauthorized,
             21 => TicketPaymentError::EventNotCompleted,
             22 => TicketPaymentError::NoFundsAvailable,
             23 => TicketPaymentError::RefundDeadlinePassed,
@@ -200,6 +221,10 @@ impl From<soroban_sdk::Error> for TicketPaymentError {
             64 => TicketPaymentError::InvalidRoyaltyBps,
             65 => TicketPaymentError::EmptyBatch,
             66 => TicketPaymentError::BatchTooLarge,
+            67 => TicketPaymentError::PaymentAlreadyExists,
+            68 => TicketPaymentError::WalletLimitExceeded,
+            69 => TicketPaymentError::InvalidDiscountPercent,
+            70 => TicketPaymentError::InvalidDiscountMaxUses,
             _ => TicketPaymentError::ArithmeticError,
         }
     }

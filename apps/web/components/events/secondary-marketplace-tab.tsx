@@ -7,52 +7,21 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 import { Ticket } from "@/components/ui/icons";
+import { purchaseResaleTicketWithFreighter } from "@/utils/stellar";
 
 interface ResaleListing {
   id: string;
   sellerName: string;
   sellerAvatar: string;
   price: number;
-  originalPrice: number;
+  priceStroops: string;
   quantity: number;
   listedAt: string;
 }
 
 interface SecondaryMarketplaceTabProps {
-  eventId: number;
+  eventId: string | number;
 }
-
-// ─── Mock data ─────────────────────────────────────────────────────────────────
-
-const mockResaleListings: ResaleListing[] = [
-  {
-    id: "rsl-001",
-    sellerName: "Alex M.",
-    sellerAvatar: "/images/pfp.png",
-    price: 75,
-    originalPrice: 49,
-    quantity: 2,
-    listedAt: "2 hours ago",
-  },
-  {
-    id: "rsl-002",
-    sellerName: "Jordan K.",
-    sellerAvatar: "/images/pfp.png",
-    price: 60,
-    originalPrice: 49,
-    quantity: 1,
-    listedAt: "5 hours ago",
-  },
-  {
-    id: "rsl-003",
-    sellerName: "Sam T.",
-    sellerAvatar: "/images/pfp.png",
-    price: 55,
-    originalPrice: 49,
-    quantity: 1,
-    listedAt: "1 day ago",
-  },
-];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -65,8 +34,10 @@ function formatPrice(amount: number): string {
 export function SecondaryMarketplaceTab({
   eventId,
 }: SecondaryMarketplaceTabProps) {
-  const [listings, setListings] = useState<ResaleListing[]>(mockResaleListings);
+  const [listings, setListings] = useState<ResaleListing[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
 
   React.useEffect(() => {
@@ -74,15 +45,21 @@ export function SecondaryMarketplaceTab({
     async function fetchResaleListings() {
       try {
         setIsLoading(true);
+        setLoadError("");
         const res = await fetch(`/api/v1/events/${eventId}/resale`);
-        if (res.ok) {
-          const json = await res.json();
-          if (isMounted && Array.isArray(json.data)) {
-            setListings(json.data);
-          }
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(json.message || "Could not load resale listings.");
         }
-      } catch {
-        // Retain initial fallback mock listings on error
+        if (isMounted && Array.isArray(json.data)) {
+          setListings(json.data);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLoadError(
+            error instanceof Error ? error.message : "Could not load resale listings.",
+          );
+        }
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -91,33 +68,52 @@ export function SecondaryMarketplaceTab({
     return () => {
       isMounted = false;
     };
-  }, [eventId]);
+  }, [eventId, loadAttempt]);
 
   const hasListings = listings.length > 0;
 
   const handlePurchase = async (listing: ResaleListing) => {
-
     setPurchasingId(listing.id);
     try {
-      // TODO: Replace with real API call when #1145 is implemented
-      const response = await fetch(`/api/v1/events/${eventId}/resale/${listing.id}/purchase`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listingId: listing.id }),
+      const transactionHash = await purchaseResaleTicketWithFreighter(
+        listing.id,
+        listing.priceStroops,
+      );
+      setListings((current) => current.filter((item) => item.id !== listing.id));
+      toast.success("Resale purchase confirmed on Stellar.", {
+        description: `Transaction ${transactionHash.slice(0, 12)}…`,
       });
-
-      if (!response.ok) {
-        // Fallback: mock success for now
-        await new Promise((resolve) => setTimeout(resolve, 800));
-      }
-
-      toast.success("Ticket purchased from marketplace!");
-    } catch {
-      toast.error("Failed to purchase ticket. Please try again.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Resale purchase failed.",
+      );
     } finally {
       setPurchasingId(null);
     }
   };
+
+  if (isLoading) {
+    return (
+      <p role="status" className="py-8 text-center text-sm text-black/50">
+        Loading resale tickets...
+      </p>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div role="alert" className="py-8 text-center">
+        <p className="text-sm text-red-700">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+          className="mt-3 text-sm font-semibold text-black underline underline-offset-4"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   if (!hasListings) {
     return (
@@ -184,14 +180,11 @@ export function SecondaryMarketplaceTab({
                 <span className="text-lg font-bold text-black font-heading">
                   {formatPrice(listing.price)}
                 </span>
-                <span className="text-xs text-black/40 line-through">
-                  {formatPrice(listing.originalPrice)}
-                </span>
               </div>
               <Button
                 variant="primary"
                 onClick={() => handlePurchase(listing)}
-                disabled={purchasingId === listing.id}
+                disabled={purchasingId !== null}
                 className="h-11 px-6 rounded-full text-sm whitespace-nowrap"
                 aria-label={`Purchase ${listing.quantity} ticket(s) from ${listing.sellerName} for ${formatPrice(listing.price)}`}
               >

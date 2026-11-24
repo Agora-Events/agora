@@ -10,8 +10,8 @@ dist
 server/target
 contract/target
 
-# Contract test snapshots
-**/test_snapshots/
+# Local cargo test logs
+test_output*.txt
 
 # NPM lockfiles are stale in this pnpm repo
 package-lock.json
@@ -33,3 +33,9 @@ storybook-static
 
 # Local PR description files (for reference only, not part of the repo)
 pr-*.md
+
+# Session changelog (generated per-session, not part of the repo)
+CHANGES.md
+
+# Local changelog
+CHANGES.md

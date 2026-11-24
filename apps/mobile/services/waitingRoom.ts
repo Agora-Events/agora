@@ -15,8 +15,7 @@
  */
 
 import { sha256Hex } from '@/utils/sha256';
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+import { apiUrl } from '@/constants/api';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -74,7 +73,7 @@ async function postJson<T>(path: string, payload: unknown): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(apiUrl(path), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -98,7 +97,7 @@ async function getJson<T>(path: string): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(apiUrl(path), {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: controller.signal,
@@ -118,7 +117,7 @@ async function getJson<T>(path: string): Promise<T> {
 
 /** Issue a fresh proof-of-work challenge for an event. */
 export async function fetchPowChallenge(eventId: string): Promise<PowChallenge> {
-  return postJson<PowChallenge>('/api/v1/waiting-room/challenge', { event_id: eventId });
+  return postJson<PowChallenge>('/waiting-room/challenge', { event_id: eventId });
 }
 
 /**
@@ -139,13 +138,13 @@ export function solvePow(challenge: string, difficulty: number, maxAttempts = 2_
 
 /** Verify the client is in the queue / holds a grant. */
 export async function joinWaitingRoom(payload: JoinWaitingRoomRequest): Promise<QueueStatusPayload> {
-  return postJson<QueueStatusPayload>('/api/v1/waiting-room/join', payload);
+  return postJson<QueueStatusPayload>('/waiting-room/join', payload);
 }
 
 /** Current queue status for a client. Throws 404 when not in the queue. */
 export async function getWaitingRoomStatus(eventId: string, clientId: string): Promise<QueueStatusPayload> {
   const query = `event_id=${encodeURIComponent(eventId)}&client_id=${encodeURIComponent(clientId)}`;
-  return getJson<QueueStatusPayload>(`/api/v1/waiting-room/status?${query}`);
+  return getJson<QueueStatusPayload>(`/waiting-room/status?${query}`);
 }
 
 export interface WaitingRoomStreamHandlers {
@@ -167,7 +166,7 @@ export function openWaitingRoomStream(
   clientId: string,
   handlers: WaitingRoomStreamHandlers
 ): () => void {
-  const url = `${API_BASE_URL}/api/v1/waiting-room/stream?event_id=${encodeURIComponent(eventId)}&client_id=${encodeURIComponent(clientId)}`;
+  const url = `${apiUrl('/waiting-room/stream')}?event_id=${encodeURIComponent(eventId)}&client_id=${encodeURIComponent(clientId)}`;
 
   const xhr = new XMLHttpRequest();
   let cursor = 0;

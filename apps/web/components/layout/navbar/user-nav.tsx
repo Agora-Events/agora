@@ -1,11 +1,13 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { BaseNav, type NavItem } from "./base-nav";
 import { useStellarNetwork } from "@/hooks/useStellarNetwork";
+import { NotificationDropdown } from "@/components/notifications/NotificationDropdown";
+import { useStellarNetwork } from "@/hooks/useStellarNetwork";
+import { NetworkSwitcher } from "@/components/layout/network-switcher";
 
 const USER_NAV_ITEMS: NavItem[] = [
   {
@@ -40,15 +42,9 @@ const USER_NAV_ITEMS: NavItem[] = [
   },
 ];
 
-
-
 const userCta = (
   <Link href="/create-event">
-    <Button
-      backgroundColor="bg-white"
-      textColor="text-black"
-      shadowColor="rgba(0,0,0,1)"
-    >
+    <Button backgroundColor="bg-white" textColor="text-black" shadowColor="rgba(0,0,0,1)">
       <span>Create Your Event</span>
       <Image
         src="/icons/arrow-up-right-01.svg"
@@ -73,6 +69,8 @@ const userCta = (
 function NetworkPill() {
   const { isCorrectNetwork, currentNetwork, isLoading, requestNetworkSwitch } =
     useStellarNetwork();
+function NetworkPill() {
+  const { isCorrectNetwork, currentNetwork, isLoading, requestNetworkSwitch } = useStellarNetwork();
 
   if (process.env.NEXT_PUBLIC_STELLAR_NETWORK !== "TESTNET") return null;
   if (isLoading) return null;
@@ -98,6 +96,7 @@ function NetworkPill() {
         className={`w-1.5 h-1.5 rounded-full ${
           isCorrectNetwork ? "bg-green-500" : "bg-red-500"
         }`}
+        className={`w-1.5 h-1.5 rounded-full ${isCorrectNetwork ? "bg-green-500" : "bg-red-500"}`}
         aria-hidden="true"
       />
       {label}
@@ -108,6 +107,7 @@ function NetworkPill() {
 function UserEndSlot() {
   const [notifications] = useState<any[]>([]);
 
+function UserEndSlot() {
   return (
     <>
       {/* Network status pill — only visible on testnet builds */}
@@ -115,46 +115,34 @@ function UserEndSlot() {
 
       <div className="relative">
         <Link href="/notifications">
+      {/* Testnet/Mainnet switcher */}
+      <NetworkSwitcher />
+
+      {/* Network status pill */}
+      <NetworkPill />
+
+      <div className="hidden md:flex items-center gap-4 lg:gap-[29px]">
+        <NotificationDropdown />
+        <Link href="/profile">
           <Button
             backgroundColor="bg-white"
-            className="relative w-[55.22px] h-[53px] px-[10px] py-[10px]"
+            className="relative w-[55.22px] h-[53px] px-0! py-0"
             textColor="text-black"
             shadowColor="rgba(0,0,0,1)"
-            aria-label="View notifications"
+            aria-label="User profile"
           >
-            {notifications.length > 0 && (
-              <div className="size-[9px] bg-red-500 rounded-full absolute top-[4px] right-[2px]" />
-            )}
-            <Image
-              src="/icons/notification.svg"
-              alt="Notifications"
-              width={24}
-              height={24}
-              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-            />
+            <div className="size-[49px] rounded-full">
+              <Image
+                src="/images/pfp.png"
+                alt="Profile"
+                width={49}
+                height={49}
+                className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+              />
+            </div>
           </Button>
         </Link>
       </div>
-
-      <Link href="/profile">
-        <Button
-          backgroundColor="bg-white"
-          className="relative w-[55.22px] h-[53px] px-0! py-0"
-          textColor="text-black"
-          shadowColor="rgba(0,0,0,1)"
-          aria-label="User profile"
-        >
-          <div className="size-[49px] rounded-full">
-            <Image
-              src="/images/pfp.png"
-              alt="Profile"
-              width={49}
-              height={49}
-              className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
-            />
-          </div>
-        </Button>
-      </Link>
     </>
   );
 }

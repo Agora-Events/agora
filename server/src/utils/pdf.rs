@@ -152,4 +152,58 @@ mod tests {
     fn test_escape_pdf_text() {
         assert_eq!(escape_pdf_text("a(b)c"), "a\\(b\\)c");
     }
+
+    #[test]
+    fn test_pdf_magic_bytes() {
+        let pdf = generate_ticket_pdf("Web3 Summit", "2026-07-20", "Berlin", "General", "GABC...WXYZ", "qr://test");
+        // Verify exactly the %PDF-1.4 header bytes at index 0
+        assert_eq!(&pdf[..8], b"%PDF-1.4");
+        assert_eq!(pdf[8], b'\n');
+    }
+
+    #[test]
+    fn test_pdf_helvetica_font_table_reference() {
+        let pdf = generate_ticket_pdf("Hackathon", "2026-08-10", "Online", "Hacker", "GABC...WXYZ", "qr://hack");
+        let pdf_str = String::from_utf8_lossy(&pdf);
+
+        // Verify Helvetica Type 1 font declaration and F1 font table mapping
+        assert!(pdf_str.contains("/BaseFont /Helvetica"));
+        assert!(pdf_str.contains("/Subtype /Type1"));
+        assert!(pdf_str.contains("/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>"));
+
+        // Verify content stream references /F1 font tag
+        assert!(pdf_str.contains("BT /F1"));
+    }
+
+    #[test]
+    fn test_escape_pdf_text_backslash_and_parentheses() {
+        // Test backslash escaping
+        assert_eq!(escape_pdf_text("path\\to\\ticket"), "path\\\\to\\\\ticket");
+        // Test opening and closing parentheses
+        assert_eq!(escape_pdf_text("(Section A)"), "\\(Section A\\)");
+        // Test combination of backslashes and parentheses
+        assert_eq!(
+            escape_pdf_text("VIP (Special\\Backstage) \\Tier\\"),
+            "VIP \\(Special\\\\Backstage\\) \\\\Tier\\\\"
+        );
+    }
+
+    #[test]
+    fn test_generate_ticket_pdf_escapes_metadata_fields() {
+        let title = "Stellar (Dev) Conference \\2026\\";
+        let venue = "Hall (Room 4) \\ Building A";
+        let tier = "VIP (Pass)";
+        let attendee = "G123... (User)";
+        let qr = "qr://code(123)\\token";
+
+        let pdf = generate_ticket_pdf(title, "2026-09-01", venue, tier, attendee, qr);
+        let pdf_str = String::from_utf8_lossy(&pdf);
+
+        // Confirm escaped forms appear in the stream
+        assert!(pdf_str.contains("Event: Stellar \\(Dev\\) Conference \\\\2026\\\\"));
+        assert!(pdf_str.contains("Venue: Hall \\(Room 4\\) \\\\ Building A"));
+        assert!(pdf_str.contains("Tier: VIP \\(Pass\\)"));
+        assert!(pdf_str.contains("Attendee: G123... \\(User\\)"));
+        assert!(pdf_str.contains("QR: qr://code\\(123\\)\\\\token"));
+    }
 }

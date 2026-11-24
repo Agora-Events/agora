@@ -11,7 +11,8 @@
 //! Uses Ed25519 digital signatures for payload signing and verification.
 
 use axum::{
-    extract::Path, extract::Query, extract::State, response::IntoResponse, response::Response, Json,
+    extract::Path, extract::Query, extract::State, http::HeaderMap, response::IntoResponse,
+    response::Response, Json,
 };
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Duration, Utc};
@@ -601,19 +602,29 @@ pub async fn scan_ticket(
 /// Returns success if the QR code was marked as used
 pub async fn mark_qr_used(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     axum::extract::Path(qr_id): axum::extract::Path<String>,
 ) -> Response {
-    // Check if QR exists and is not already used
-    let record = match sqlx::query_as::<_, (bool, DateTime<Utc>)>(
+    let requester = match crate::handlers::auth::extract_auth(&headers) {
+        Ok(wallet) => wallet,
+        Err(error) => return error.into_response(),
+    };
+
+    let record = match sqlx::query_as::<_, (bool, DateTime<Utc>, Option<Uuid>)>(
         r#"
-        SELECT is_used, expires_at FROM qr_payloads WHERE id = $1
+        SELECT qr.is_used, qr.expires_at,
+               COALESCE(ticket.event_id, tier.event_id, qr.event_id)
+        FROM qr_payloads qr
+        LEFT JOIN tickets ticket ON ticket.id = qr.ticket_id
+        LEFT JOIN ticket_tiers tier ON tier.id = ticket.ticket_tier_id
+        WHERE qr.id = $1
         "#,
     )
     .bind(&qr_id)
     .fetch_optional(&pool)
     .await
     {
-        Ok(Some((is_used, expires_at))) => (is_used, expires_at),
+        Ok(Some(record)) => record,
         Ok(None) => {
             return AppError::NotFound(format!("QR payload with id '{}' not found", qr_id))
                 .into_response();
@@ -622,6 +633,45 @@ pub async fn mark_qr_used(
             return AppError::DatabaseError(e).into_response();
         }
     };
+
+    let event_id = match record.2 {
+        Some(event_id) => event_id,
+        None => {
+            return AppError::Forbidden("QR payload is not associated with an event".to_string())
+                .into_response();
+        }
+    };
+
+    let is_authorized = match sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM events e
+            JOIN organizers o ON o.id = e.organizer_id
+            WHERE e.id = $1
+              AND (o.wallet_address = $2 OR o.id::text = $2)
+        ) OR EXISTS (
+            SELECT 1
+            FROM event_scanners
+            WHERE event_id = $1 AND wallet_address = $2
+        )
+        "#,
+    )
+    .bind(event_id)
+    .bind(&requester)
+    .fetch_one(&pool)
+    .await
+    {
+        Ok(is_authorized) => is_authorized,
+        Err(error) => return AppError::DatabaseError(error).into_response(),
+    };
+
+    if !is_authorized {
+        return AppError::Forbidden(
+            "You are not authorized to scan QR codes for this event".to_string(),
+        )
+        .into_response();
+    }
 
     if record.0 {
         return AppError::ValidationError("QR code has already been used".to_string())
@@ -652,6 +702,9 @@ pub async fn mark_qr_used(
 /// Query parameters for filtering QR payloads
 #[derive(Debug, Deserialize)]
 pub struct QrPayloadFilters {
+    /// Filter by event; required for organizers and optional for admins.
+    pub event_id: Option<Uuid>,
+
     /// Filter by QR type
     pub qr_type: Option<String>,
 
@@ -662,6 +715,18 @@ pub struct QrPayloadFilters {
     pub expired: Option<bool>,
 }
 
+fn authorize_qr_event_listing(
+    requester_wallet: Option<&str>,
+    is_event_organizer: bool,
+) -> Result<(), AppError> {
+    match (requester_wallet, is_event_organizer) {
+        (None, _) | (Some(_), true) => Ok(()),
+        (Some(_), false) => Err(AppError::Forbidden(
+            "Only the event organizer or an admin may list QR payloads".to_string(),
+        )),
+    }
+}
+
 /// List QR payloads with pagination and filters
 ///
 /// # Endpoint
@@ -670,6 +735,7 @@ pub struct QrPayloadFilters {
 /// # Query Parameters
 /// - `page` (optional): Page number (default: 1)
 /// - `page_size` (optional): Items per page (default: 20, max: 100)
+/// - `event_id` (required for organizers): Event whose QR payloads to list
 /// - `qr_type` (optional): Filter by QR type
 /// - `is_used` (optional): Filter by usage status
 /// - `expired` (optional): Filter expired QR codes
@@ -678,14 +744,65 @@ pub struct QrPayloadFilters {
 /// Returns a paginated list of QR payloads
 pub async fn list_qr_payloads(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<QrPayloadFilters>,
 ) -> Response {
+    let requester = match crate::handlers::events::verify_export_attendees_auth(&headers) {
+        Ok(requester) => requester,
+        Err(error) => return error.into_response(),
+    };
+
+    if let Some(wallet) = requester.as_deref() {
+        let event_id = match filters.event_id {
+            Some(event_id) => event_id,
+            None => {
+                return AppError::ValidationError(
+                    "event_id is required when listing QR payloads".to_string(),
+                )
+                .into_response();
+            }
+        };
+        let is_organizer = match sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM events e
+                JOIN organizers o ON o.id = e.organizer_id
+                WHERE e.id = $1 AND (o.wallet_address = $2 OR o.id::text = $2)
+            )
+            "#,
+        )
+        .bind(event_id)
+        .bind(wallet)
+        .fetch_one(&pool)
+        .await
+        {
+            Ok(is_organizer) => is_organizer,
+            Err(error) => {
+                tracing::error!("Failed to verify event organizer for QR listing: {:?}", error);
+                return AppError::DatabaseError(error).into_response();
+            }
+        };
+
+        if let Err(error) = authorize_qr_event_listing(Some(wallet), is_organizer) {
+            return error.into_response();
+        }
+    }
+
     let validated_pagination = pagination.validate();
 
     // Build WHERE clause
     let mut where_clauses = Vec::new();
     let mut param_count = 0;
+
+    if requester.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("event_id = ${}", param_count));
+    } else if filters.event_id.is_some() {
+        param_count += 1;
+        where_clauses.push(format!("event_id = ${}", param_count));
+    }
 
     if filters.qr_type.is_some() {
         param_count += 1;
@@ -715,6 +832,9 @@ pub async fn list_qr_payloads(
     let count_query = format!("SELECT COUNT(*) FROM qr_payloads {}", where_clause);
     let mut count_query_builder = sqlx::query_scalar::<_, i64>(&count_query);
 
+    if let Some(event_id) = filters.event_id.filter(|_| param_count > 0) {
+        count_query_builder = count_query_builder.bind(event_id);
+    }
     if let Some(ref qr_type) = filters.qr_type {
         count_query_builder = count_query_builder.bind(qr_type);
     }
@@ -740,6 +860,9 @@ pub async fn list_qr_payloads(
 
     let mut items_query_builder = sqlx::query_as::<_, QrPayloadListItem>(&items_query);
 
+    if let Some(event_id) = filters.event_id.filter(|_| param_count > 0) {
+        items_query_builder = items_query_builder.bind(event_id);
+    }
     if let Some(ref qr_type) = filters.qr_type {
         items_query_builder = items_query_builder.bind(qr_type);
     }
@@ -780,9 +903,46 @@ pub struct QrPayloadListItem {
 /// Deletes the QR payload with the given ID.
 pub async fn delete_qr_payload(
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     axum::extract::Path(qr_id): axum::extract::Path<Uuid>,
 ) -> Response {
+    let requester = match crate::handlers::auth::extract_auth(&headers) {
+        Ok(wallet) => wallet,
+        Err(error) => return error.into_response(),
+    };
+
     let id_str = qr_id.to_string();
+    let record = match sqlx::query_as::<_, (Option<String>, Option<String>)>(
+        r#"
+        SELECT ticket.owner_wallet, organizer.wallet_address
+        FROM qr_payloads qr
+        LEFT JOIN tickets ticket ON ticket.id = qr.ticket_id
+        LEFT JOIN ticket_tiers tier ON tier.id = ticket.ticket_tier_id
+        LEFT JOIN events event
+            ON event.id = COALESCE(ticket.event_id, tier.event_id, qr.event_id)
+        LEFT JOIN organizers organizer ON organizer.id = event.organizer_id
+        WHERE qr.id = $1
+        "#,
+    )
+    .bind(&id_str)
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(Some(record)) => record,
+        Ok(None) => {
+            return AppError::NotFound(format!("QR payload with id '{}' not found", qr_id))
+                .into_response();
+        }
+        Err(error) => return AppError::DatabaseError(error).into_response(),
+    };
+
+    let is_ticket_owner = record.0.as_deref() == Some(requester.as_str());
+    let is_event_organizer = record.1.as_deref() == Some(requester.as_str());
+    if !is_ticket_owner && !is_event_organizer {
+        return AppError::Forbidden("You are not authorized to delete this QR payload".to_string())
+            .into_response();
+    }
+
     match sqlx::query_scalar::<_, String>("DELETE FROM qr_payloads WHERE id = $1 RETURNING id")
         .bind(&id_str)
         .fetch_optional(&pool)
@@ -796,6 +956,119 @@ pub async fn delete_qr_payload(
             tracing::error!("Failed to delete QR payload: {:?}", e);
             AppError::DatabaseError(e).into_response()
         }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EventScannerRequest {
+    pub wallet_address: String,
+}
+
+async fn require_event_organizer(
+    pool: &PgPool,
+    event_id: Uuid,
+    requester: &str,
+) -> Result<(), AppError> {
+    let is_organizer = match sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT COALESCE(
+            o.wallet_address = $2 OR o.id::text = $2,
+            FALSE
+        )
+        FROM events e
+        JOIN organizers o ON o.id = e.organizer_id
+        WHERE e.id = $1
+        "#,
+    )
+    .bind(event_id)
+    .bind(requester)
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(Some(is_organizer)) => is_organizer,
+        Ok(None) => {
+            return Err(AppError::NotFound(format!(
+                "Event '{}' not found",
+                event_id
+            )));
+        }
+        Err(error) => return Err(AppError::DatabaseError(error)),
+    };
+
+    if !is_organizer {
+        return Err(AppError::Forbidden(
+            "Only the event organizer can manage scanners".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Authorize a wallet to scan tickets for an event.
+///
+/// POST `/api/v1/events/:id/qr-scanners`
+pub async fn add_event_scanner(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path(event_id): Path<Uuid>,
+    Json(request): Json<EventScannerRequest>,
+) -> Response {
+    let requester = match crate::handlers::auth::extract_auth(&headers) {
+        Ok(wallet) => wallet,
+        Err(error) => return error.into_response(),
+    };
+
+    let wallet_address = request.wallet_address.trim();
+    if wallet_address.is_empty() {
+        return AppError::ValidationError("wallet_address is required".to_string()).into_response();
+    }
+
+    if let Err(error) = require_event_organizer(&pool, event_id, &requester).await {
+        return error.into_response();
+    }
+
+    match sqlx::query(
+        r#"
+        INSERT INTO event_scanners (event_id, wallet_address, created_by)
+        SELECT id, $2, organizer_id FROM events WHERE id = $1
+        ON CONFLICT (event_id, wallet_address) DO NOTHING
+        "#,
+    )
+    .bind(event_id)
+    .bind(wallet_address)
+    .execute(&pool)
+    .await
+    {
+        Ok(_) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Err(error) => AppError::DatabaseError(error).into_response(),
+    }
+}
+
+/// Revoke a wallet's scanner authorization for an event.
+///
+/// DELETE `/api/v1/events/:id/qr-scanners/:wallet_address`
+pub async fn remove_event_scanner(
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Path((event_id, wallet_address)): Path<(Uuid, String)>,
+) -> Response {
+    let requester = match crate::handlers::auth::extract_auth(&headers) {
+        Ok(wallet) => wallet,
+        Err(error) => return error.into_response(),
+    };
+
+    if let Err(error) = require_event_organizer(&pool, event_id, &requester).await {
+        return error.into_response();
+    }
+
+    match sqlx::query("DELETE FROM event_scanners WHERE event_id = $1 AND wallet_address = $2")
+        .bind(event_id)
+        .bind(wallet_address)
+        .execute(&pool)
+        .await
+    {
+        Ok(_) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Err(error) => AppError::DatabaseError(error).into_response(),
     }
 }
 
@@ -886,6 +1159,12 @@ pub async fn list_event_qr_codes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        Router,
+    };
+    use tower::ServiceExt;
 
     #[test]
     fn test_qr_payload_serialization() {
@@ -924,6 +1203,83 @@ mod tests {
         let parsed = Uuid::parse_str(&uuid_str).unwrap();
         assert_eq!(test_uuid, parsed);
     }
+
+    #[tokio::test]
+    async fn test_anonymous_qr_listing_returns_401() {
+        let pool = PgPool::connect_lazy("postgresql://localhost/test").expect("test pool");
+        let router = Router::new()
+            .route("/list", axum::routing::get(list_qr_payloads))
+            .with_state(pool);
+        let request = Request::builder()
+            .uri("/list?page=1&page_size=20")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_mark_qr_used_requires_authentication() {
+        let pool = PgPool::connect_lazy("postgresql://localhost/test").expect("test pool");
+        let response = mark_qr_used(
+            State(pool),
+            HeaderMap::new(),
+            Path(Uuid::new_v4().to_string()),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_delete_qr_payload_requires_authentication() {
+        let pool = PgPool::connect_lazy("postgresql://localhost/test").expect("test pool");
+        let response = delete_qr_payload(State(pool), HeaderMap::new(), Path(Uuid::new_v4())).await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_qr_listing_rejects_another_events_organizer() {
+        assert!(matches!(
+            authorize_qr_event_listing(Some("organizer-a"), false),
+            Err(AppError::Forbidden(_))
+        ));
+    }
+
+    #[test]
+    fn test_qr_listing_allows_event_organizer() {
+        assert!(authorize_qr_event_listing(Some("organizer-a"), true).is_ok());
+    }
+
+    #[test]
+    fn test_sanitize_attendee_metadata_escapes_delimiters() {
+        let sanitized =
+            sanitize_attendee_metadata("name", "  Alice \"A\" <b> & \\  ", MAX_ATTENDEE_NAME_LEN)
+                .unwrap();
+        assert_eq!(sanitized, "Alice \\\"A\\\" &lt;b&gt; &amp; \\\\");
+    }
+
+    #[test]
+    fn test_sanitize_attendee_metadata_rejects_control_chars() {
+        let err = sanitize_attendee_metadata("name", "Alice\nBob", MAX_ATTENDEE_NAME_LEN)
+            .unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_sanitize_attendee_metadata_rejects_empty() {
+        let err = sanitize_attendee_metadata("email", "   ", MAX_ATTENDEE_EMAIL_LEN).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn test_sanitize_attendee_metadata_enforces_max_length() {
+        let long = "a".repeat(MAX_ATTENDEE_NAME_LEN + 1);
+        let err = sanitize_attendee_metadata("name", &long, MAX_ATTENDEE_NAME_LEN).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -960,6 +1316,70 @@ pub struct AttendeeQrResponse {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Maximum allowed length for an attendee name field.
+const MAX_ATTENDEE_NAME_LEN: usize = 128;
+/// Maximum allowed length for an attendee email field.
+const MAX_ATTENDEE_EMAIL_LEN: usize = 254;
+/// Maximum allowed length for any other attendee metadata field.
+const MAX_ATTENDEE_METADATA_LEN: usize = 256;
+
+/// Sanitize a single attendee metadata string before it is embedded in a QR
+/// payload.
+///
+/// This strips control characters (including newlines, carriage returns and
+/// tabs) and escapes payload-delimiter / JSON-breaking characters (`"`, `\`,
+/// `<`, `>`, `&`) so that a malicious value cannot manipulate the encoded
+/// payload. The sanitized value is then length-checked against `max_len`.
+///
+/// Returns `AppError::ValidationError` when the input exceeds `max_len` or
+/// contains content that cannot be safely represented.
+fn sanitize_attendee_metadata(
+    field: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<String, AppError> {
+    let trimmed = value.trim();
+
+    if trimmed.is_empty() {
+        return Err(AppError::ValidationError(format!(
+            "{} cannot be empty",
+            field
+        )));
+    }
+
+    // Reject any control characters outright – they have no legitimate place
+    // in attendee metadata and are a common payload-injection vector.
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err(AppError::ValidationError(format!(
+            "{} contains disallowed control characters",
+            field
+        )));
+    }
+
+    // Escape characters that could break out of the JSON payload or be used
+    // to inject markup into downstream SVG/QR renderers.
+    let mut sanitized = String::with_capacity(trimmed.len());
+    for c in trimmed.chars() {
+        match c {
+            '"' => sanitized.push_str("\\\""),
+            '\\' => sanitized.push_str("\\\\"),
+            '<' => sanitized.push_str("&lt;"),
+            '>' => sanitized.push_str("&gt;"),
+            '&' => sanitized.push_str("&amp;"),
+            _ => sanitized.push(c),
+        }
+    }
+
+    if sanitized.chars().count() > max_len {
+        return Err(AppError::ValidationError(format!(
+            "{} exceeds maximum length of {} characters",
+            field, max_len
+        )));
+    }
+
+    Ok(sanitized)
+}
+
 /// `POST /api/v1/qr/attendee`
 ///
 /// Generate a short-lived, signed QR payload for an attendee to present at
@@ -987,11 +1407,16 @@ pub async fn generate_attendee_qr(
     State(pool): State<PgPool>,
     Json(request): Json<AttendeeQrRequest>,
 ) -> Response {
-    // Basic input validation
-    if request.wallet_address.trim().is_empty() {
-        return AppError::ValidationError("wallet_address cannot be empty".to_string())
-            .into_response();
-    }
+    // Sanitize and strictly validate the attendee metadata before it is
+    // embedded in the signed payload (Issue #1632).
+    let wallet_address = match sanitize_attendee_metadata(
+        "wallet_address",
+        &request.wallet_address,
+        MAX_ATTENDEE_METADATA_LEN,
+    ) {
+        Ok(value) => value,
+        Err(err) => return err.into_response(),
+    };
 
     // Confirm the ticket exists and belongs to the claimed wallet address
     let ticket_ok = match sqlx::query_scalar::<_, bool>(
@@ -1005,7 +1430,7 @@ pub async fn generate_attendee_qr(
         "#,
     )
     .bind(request.ticket_id)
-    .bind(request.wallet_address.trim())
+    .bind(&wallet_address)
     .fetch_one(&pool)
     .await
     {
@@ -1034,7 +1459,7 @@ pub async fn generate_attendee_qr(
         id: qr_id.clone(),
         qr_type: "ticket".to_string(),
         data: serde_json::json!({
-            "wallet_address": request.wallet_address.trim(),
+            "wallet_address": wallet_address,
             "ticket_id": request.ticket_id.to_string(),
         }),
         created_at,

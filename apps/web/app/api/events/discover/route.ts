@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { type Event } from "@prisma/client";
+import { type Event, Prisma } from "@prisma/client";
 import { withErrorHandler } from "@/lib/api-handler";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +13,20 @@ type OrganizerData = {
   wallet?: string;
 };
 
-export const GET = withErrorHandler(async () => {
-  const events = await prisma.event.findMany();
+export const GET = withErrorHandler(async (request: NextRequest) => {
+  const { searchParams } = new URL(request.url);
+  const category = searchParams.get("category");
+  const free = searchParams.get("free") === "1" || searchParams.get("free") === "true";
+
+  const where: Prisma.EventWhereInput = {};
+  if (category) {
+    where.category = category;
+  }
+  if (free) {
+    where.ticketPrice = 0;
+  }
+
+  const events = await prisma.event.findMany({ where });
 
   const categories = Array.from(
     new Set<string>(events.map((event: Event) => event.category))

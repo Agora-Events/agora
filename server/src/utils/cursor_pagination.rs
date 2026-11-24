@@ -11,6 +11,7 @@ use crate::utils::pagination::ListMeta;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json;
+use utoipa::ToSchema;
 
 /// Default page size if not specified
 pub const DEFAULT_PAGE_SIZE: u32 = 20;
@@ -75,7 +76,7 @@ impl ValidatedCursorParams {
 }
 
 /// Pagination metadata included in cursor-based responses
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct CursorMeta {
     /// Number of items in the current page
     pub page_size: u32,
@@ -88,7 +89,7 @@ pub struct CursorMeta {
 }
 
 /// Standard cursor-paginated response wrapper
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct CursorResponse<T> {
     /// The data items for this page
     pub items: Vec<T>,
@@ -105,11 +106,7 @@ impl<T> CursorResponse<T> {
     ///
     /// `items` may contain up to `limit + 1` rows; if it contains the extra row,
     /// that row is removed and used to generate `next_cursor`.
-    pub fn new(
-        items: Vec<T>,
-        params: &ValidatedCursorParams,
-        next_cursor: Option<String>,
-    ) -> Self {
+    pub fn new(items: Vec<T>, params: &ValidatedCursorParams, next_cursor: Option<String>) -> Self {
         let has_more = next_cursor.is_some();
         let returned_count = items.len() as u32;
 
@@ -200,6 +197,24 @@ pub struct PastEventCursor {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AttendeeCursor {
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub id: uuid::Uuid,
+}
+
+/// Cursor structure for webhook failure listings ordered by (failed_at DESC, id DESC).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FailureCursor {
+    pub failed_at: chrono::DateTime<chrono::Utc>,
+    pub id: uuid::Uuid,
+}
+
+/// Cursor structure for wallet ticket listings (Issue #1809).
+///
+/// Upcoming: `(start_time ASC NULLS LAST, id ASC)`;
+/// past: `(start_time DESC, id DESC)`. `event_start_time` is `None` for
+/// tickets without an associated event and sorts last in upcoming results.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WalletTicketCursor {
+    pub event_start_time: Option<chrono::DateTime<chrono::Utc>>,
     pub id: uuid::Uuid,
 }
 

@@ -1,6 +1,7 @@
 pub mod admin_auth;
 pub mod api_key_auth;
 pub mod audit;
+pub mod auth;
 pub mod catch_panic;
 pub mod content_type;
 pub mod csrf;

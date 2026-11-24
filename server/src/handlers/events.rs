@@ -3,7 +3,10 @@
 //! This module provides HTTP handlers for event-related operations including
 //! listing, creating, updating, and deleting events.
 
-use axum::{extract::Path, extract::Query, extract::State, response::IntoResponse, response::Response};
+use axum::{
+    extract::OriginalUri, extract::Path, extract::Query, extract::State,
+    response::IntoResponse, response::Response,
+};
 use axum::http::HeaderMap;
 use crate::models::event_translation::{
     validate_translations, EventTranslation, EventTranslationInput,
@@ -14,6 +17,7 @@ use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Row};
+use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -21,6 +25,7 @@ use crate::cache::{RedisCache, EVENTS_LIST_CACHE_KEY, EVENTS_LIST_CACHE_TTL};
 use crate::middleware::audit::AuditMetadata;
 use crate::models::event::{populate_is_free, Event};
 use crate::models::organizer_profile::OrganizerProfile;
+use crate::notifications::NotificationService;
 use crate::utils::cursor_pagination::{
     decode_cursor, encode_cursor, AttendeeCursor, CursorParams, CursorResponse, EventCursor,
     PastEventCursor,
@@ -31,6 +36,57 @@ use crate::utils::pagination::{PaginatedResponse, PaginationParams};
 use crate::utils::response::success;
 use axum::http::HeaderValue;
 use utoipa::ToSchema;
+
+/// Sort field for search results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchSortBy {
+    /// Sort by event start time (default).
+    StartTime,
+    /// Sort by the date the event was created.
+    CreatedAt,
+    /// Sort by the number of minted tickets (popularity proxy).
+    Popularity,
+}
+
+impl Default for SearchSortBy {
+    fn default() -> Self {
+        Self::StartTime
+    }
+}
+
+impl SearchSortBy {
+    fn column(self) -> &'static str {
+        match self {
+            Self::StartTime => "e.start_time",
+            Self::CreatedAt => "e.created_at",
+            Self::Popularity => "e.minted_tickets",
+        }
+    }
+}
+
+/// Sort direction for search results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchSortOrder {
+    Asc,
+    Desc,
+}
+
+impl Default for SearchSortOrder {
+    fn default() -> Self {
+        Self::Desc
+    }
+}
+
+impl SearchSortOrder {
+    fn sql(self) -> &'static str {
+        match self {
+            Self::Asc => "ASC",
+            Self::Desc => "DESC",
+        }
+    }
+}
 
 /// Query parameters for searching events with filters
 #[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
@@ -53,6 +109,12 @@ pub struct SearchParams {
     pub location: Option<String>,
     /// Filter by ticket tier name (partial match, case-insensitive)
     pub ticket_type: Option<String>,
+    /// Sort field: `start_time` (default), `created_at`, or `popularity`
+    #[serde(default)]
+    pub sort_by: SearchSortBy,
+    /// Sort direction: `asc` or `desc` (default)
+    #[serde(default)]
+    pub order: SearchSortOrder,
     /// Page number (default: 1)
     #[serde(default = "default_page")]
     pub page: u32,
@@ -91,6 +153,7 @@ pub struct EventState {
     pub pool: PgPool,
     pub redis: RedisCache,
     pub base_url: String,
+    pub notifications: Arc<NotificationService>,
 }
 
 /// Event detail response that includes the organizer's public profile (Issue #486).
@@ -1165,8 +1228,12 @@ fn build_past_event_where_clause(
                 date_to: None,
                 location: None,
                 ticket_type: None,
+                sort_by: SearchSortBy::default(),
+                order: SearchSortOrder::default(),
                 page: 1,
                 page_size: size,
+                sort_by: Default::default(),
+                order: Default::default(),
             };
             assert!(
                 params.validate_page_size().is_ok(),
@@ -1188,8 +1255,12 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 0,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
         let err = params.validate_page_size().unwrap_err();
         assert!(err.contains("page_size must be between 1 and 100"));
@@ -1207,8 +1278,12 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 101,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
         let err = params.validate_page_size().unwrap_err();
         assert!(err.contains("page_size must be between 1 and 100"));
@@ -1226,8 +1301,12 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: Some("VIP".to_string()),
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
 
         assert_eq!(params.ticket_type, Some("VIP".to_string()));
@@ -1245,8 +1324,12 @@ fn build_past_event_where_clause(
             date_to: None,
             location: None,
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
 
         assert!(params.ticket_type.is_none());
@@ -1353,8 +1436,12 @@ fn build_past_event_where_clause(
             date_to: None,
             location: Some("Lagos".to_string()),
             ticket_type: None,
+            sort_by: SearchSortBy::default(),
+            order: SearchSortOrder::default(),
             page: 1,
             page_size: 20,
+            sort_by: Default::default(),
+            order: Default::default(),
         };
         assert_eq!(params.location.as_deref(), Some("Lagos"));
     }
@@ -1813,13 +1900,19 @@ pub struct SubmitEventRatingResponse {
         ("count" = Option<bool>, Query, description = "Include total count"),
     ),
     responses(
-        (status = 200, description = "List of events", body = Vec<Event>),
+        (status = 200, description = "List of events", body = Vec<Event>,
+            headers(
+                ("X-Total-Count" = i64, description = "Total number of matching events (omitted when `count=false`)"),
+                ("Link" = String, description = "RFC 5988 `rel=\"next\"` link to the next page, present when more results are available"),
+            ),
+        ),
         (status = 400, description = "Invalid parameters"),
     ),
     tag = "Events"
 )]
 pub async fn list_events(
     State(mut state): State<EventState>,
+    OriginalUri(original_uri): OriginalUri,
     Query(pagination): Query<CursorParams>,
     Query(mut filters): Query<EventFilters>,
 ) -> Response {
@@ -1843,7 +1936,12 @@ pub async fn list_events(
         {
             Ok(Some(cached)) => {
                 tracing::debug!("Cache hit for {}", EVENTS_LIST_CACHE_KEY);
-                return success(cached, "Events retrieved successfully (cached)").into_response();
+                let total = cached.meta.total;
+                let next_cursor = cached.pagination.next_cursor.clone();
+                let mut resp =
+                    success(cached, "Events retrieved successfully (cached)").into_response();
+                apply_pagination_headers(&mut resp, total, next_cursor.as_deref(), &original_uri);
+                return resp;
             }
             Ok(None) => {
                 tracing::debug!("Cache miss for {}", EVENTS_LIST_CACHE_KEY);
@@ -2096,6 +2194,7 @@ pub async fn list_events(
 
     populate_is_free(&mut items, &state.pool).await;
 
+    let next_cursor_for_header = next_cursor.clone();
     let response = CursorResponse::new(items, &validated, next_cursor)
         .with_total(total_count.unwrap_or(0), validated.include_count);
 
@@ -2110,19 +2209,107 @@ pub async fn list_events(
     }
 
     let mut resp = success(response, "Events retrieved successfully").into_response();
+    apply_pagination_headers(
+        &mut resp,
+        total_count,
+        next_cursor_for_header.as_deref(),
+        &original_uri,
+    );
+    resp
+}
+
+/// Attach standard pagination response headers to a cursor-paginated list response:
+///
+/// - `X-Total-Count`: total number of matching rows (when the count was requested).
+/// - `Link`: an RFC 5988-style `rel="next"` link carrying the cursor for the next
+///   page, built from the original request URI so existing filters/sort params
+///   are preserved.
+fn apply_pagination_headers(
+    resp: &mut Response,
+    total_count: Option<i64>,
+    next_cursor: Option<&str>,
+    original_uri: &axum::http::Uri,
+) {
     if let Some(total) = total_count {
         if let Ok(v) = HeaderValue::from_str(&total.to_string()) {
             resp.headers_mut().insert("X-Total-Count", v);
         }
     }
-    resp
+
+    if let Some(next) = next_cursor {
+        let path = original_uri.path();
+        let mut params: Vec<String> = original_uri
+            .query()
+            .unwrap_or("")
+            .split('&')
+            .filter(|p| !p.is_empty() && !p.starts_with("cursor="))
+            .map(|p| p.to_string())
+            .collect();
+        // `next` is a URL_SAFE_NO_PAD base64 cursor, so it needs no percent-encoding.
+        params.push(format!("cursor={}", next));
+        let link_url = format!("{}?{}", path, params.join("&"));
+        if let Ok(v) = HeaderValue::from_str(&format!("<{}>; rel=\"next\"", link_url)) {
+            resp.headers_mut().insert(axum::http::header::LINK, v);
+        }
+    }
+}
+
+/// Clamp the featured-events `limit` query parameter to the supported range.
+fn featured_events_limit(params: &UpcomingParams) -> i64 {
+    params.limit.unwrap_or(6).clamp(1, 20) as i64
+}
+
+/// Defensive in-memory filter matching the featured-events SQL predicates.
+fn filter_featured_upcoming_events(events: Vec<Event>) -> Vec<Event> {
+    let now = Utc::now();
+    events
+        .into_iter()
+        .filter(|event| {
+            event.is_featured
+                && !event.is_flagged
+                && event.end_time.is_some_and(|end_time| end_time > now)
+        })
+        .collect()
 }
 
 /// GET `/api/v1/events/featured`
 ///
-/// Placeholder route registered for the featured-events migration; full handler pending.
-pub async fn list_featured_events(State(_state): State<EventState>) -> Response {
-    AppError::NotFound("Featured events are not yet available".to_string()).into_response()
+/// Returns upcoming, unflagged featured events ordered by start time, with a
+/// clamped `limit` query parameter (default 6, range 1–20).
+#[utoipa::path(
+    get,
+    path = "/events/featured",
+    params(
+        UpcomingParams,
+    ),
+    responses(
+        (status = 200, description = "List of featured upcoming events", body = Vec<Event>),
+    ),
+    tag = "Events"
+)]
+pub async fn list_featured_events(
+    State(state): State<EventState>,
+    Query(params): Query<UpcomingParams>,
+) -> Response {
+    let limit = featured_events_limit(&params);
+
+    let mut events = match sqlx::query_as::<_, Event>(
+        "SELECT * FROM events WHERE is_featured = TRUE AND end_time > NOW() AND is_flagged = FALSE ORDER BY start_time ASC LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(events) => events,
+        Err(e) => {
+            tracing::error!("Failed to fetch featured events: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    events = filter_featured_upcoming_events(events);
+    populate_is_free(&mut events, &state.pool).await;
+    success(events, "Featured events retrieved successfully").into_response()
 }
 
 /// Query parameters for `GET /api/v1/events/upcoming`.
@@ -2586,6 +2773,12 @@ pub struct CreateEventRequest {
     /// Optional localised title/description variants (Issue #1344).
     #[serde(default)]
     pub translations: Option<Vec<EventTranslationInput>>,
+    /// Private events are not broadcast to followers (Issue #1798).
+    #[serde(default, alias = "private")]
+    pub is_private: Option<bool>,
+    /// The web form sends `visibility: "Private"` for private events.
+    #[serde(default)]
+    pub visibility: Option<String>,
 }
 
 const MAX_IMAGE_URL_LEN: usize = 2048;
@@ -2709,6 +2902,25 @@ fn validate_event_timestamps(
     }
 
     Ok(())
+}
+
+/// Invalidate the cached event detail and the shared events list after a
+/// successful write (Issues #1629).
+///
+/// Failures are logged but never fail the request: a stale cache entry will
+/// expire on its own TTL, whereas a failed write must still be reported as
+/// successful.
+async fn invalidate_event_caches(state: &EventState, event_id: Uuid) {
+    let cache_key = format!("event:detail:{}", event_id);
+    if let Err(e) = state.redis.delete(&cache_key).await {
+        tracing::warn!(
+            "Failed to invalidate cache key '{}' for event {}: {:?}",
+            cache_key,
+            event_id,
+            e
+        );
+    }
+    state.redis.invalidate_events_list().await;
 }
 
 /// Create a new event and warm up the Redis cache for `GET /api/v1/events/:id`.
@@ -2871,20 +3083,42 @@ pub async fn create_event(
     // New events invalidate the shared list cache.
     state.redis.invalidate_events_list().await;
 
-    // Notify followers of the organiser (Issue #1346) – fire-and-forget
-    if let Ok(Some(Some(wallet))) = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT wallet_address FROM organizers WHERE id = $1",
-    )
-    .bind(event.organizer_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        let pool = state.pool.clone();
-        let eid = event.id;
-        let w = wallet.clone();
-        tokio::spawn(async move {
-            crate::handlers::follows::notify_followers_on_new_event(&pool, &w, eid).await;
-        });
+    // Notify followers (Issue #1798) – fire-and-forget. Private events are not
+    // broadcast, and notification failures are logged but never fail creation.
+    let is_private = payload.is_private.unwrap_or(false)
+        || payload
+            .visibility
+            .as_deref()
+            .is_some_and(|v| v.eq_ignore_ascii_case("private"));
+    if !is_private {
+        match sqlx::query_scalar::<_, Option<String>>(
+            "SELECT wallet_address FROM organizers WHERE id = $1",
+        )
+        .bind(event.organizer_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(Some(Some(wallet))) => {
+                let pool = state.pool.clone();
+                let notifications = state.notifications.clone();
+                let eid = event.id;
+                tokio::spawn(async move {
+                    crate::handlers::follows::notify_followers_on_new_event(
+                        &pool,
+                        notifications.as_ref(),
+                        &wallet,
+                        eid,
+                    )
+                    .await;
+                });
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!(
+                "Failed to load organizer wallet for follower notification on event {}: {:?}",
+                event.id,
+                e
+            ),
+        }
     }
 
     // Fire outgoing webhooks (Issue #1339) – EventCreated
@@ -2975,6 +3209,141 @@ fn content_hash(value: &serde_json::Value) -> String {
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     hex::encode(hasher.finalize())
+}
+
+/// Clone an existing event into a new draft owned by the authenticated caller
+/// (Issue #1630).
+///
+/// # Endpoint
+/// POST `/api/v1/events/:id/clone`
+///
+/// Copies the source event's metadata (title, description, location, times,
+/// image, host email, coordinates, capacity) plus its ticket tiers and
+/// categories into a brand-new event with status `draft`. The caller must be
+/// the organizer/owner of the source event.
+pub async fn clone_event(
+    State(mut state): State<EventState>,
+    Path(event_id): Path<Uuid>,
+    extensions: axum::extract::Extension<axum::http::Extensions>,
+) -> Response {
+    // 1. Resolve the authenticated caller (organizer wallet) from request extensions.
+    let caller_wallet = match extract_caller_wallet(&extensions.0) {
+        Some(wallet) => wallet,
+        None => {
+            return AppError::Unauthorized("Authentication required".to_string()).into_response();
+        }
+    };
+
+    // 2. Load the source event.
+    let source = match sqlx::query_as::<_, Event>("SELECT * FROM events WHERE id = $1")
+        .bind(event_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        Ok(Some(event)) => event,
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch source event for clone: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // 3. Verify ownership: the caller's wallet must own the source event's organizer.
+    let owner_wallet = match sqlx::query_scalar::<_, Option<String>>(
+        "SELECT wallet_address FROM organizers WHERE id = $1",
+    )
+    .bind(source.organizer_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(Some(wallet))) => wallet,
+        Ok(_) => {
+            return AppError::Forbidden(
+                "You are not the organizer of this event".to_string(),
+            )
+            .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Failed to resolve organizer for clone: {:?}", e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    if owner_wallet != caller_wallet {
+        return AppError::Forbidden("You are not the organizer of this event".to_string())
+            .into_response();
+    }
+
+    // 4. Insert the cloned event as a draft owned by the caller.
+    let cloned = match sqlx::query_as::<_, Event>(
+        "INSERT INTO events (
+             organizer_id, title, description, location, start_time, end_time,
+             image_url, host_email, latitude, longitude, total_tickets, status
+         )
+         SELECT
+             organizer_id, title, description, location, start_time, end_time,
+             image_url, host_email, latitude, longitude, total_tickets, 'draft'
+         FROM events
+         WHERE id = $1
+         RETURNING *",
+    )
+    .bind(event_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(event) => event,
+        Err(e) => {
+            tracing::error!("Failed to clone event {}: {:?}", event_id, e);
+            return AppError::DatabaseError(e).into_response();
+        }
+    };
+
+    // 5. Copy ticket tiers (fresh inventory, no sales carried over).
+    if let Err(e) = sqlx::query(
+        "INSERT INTO ticket_tiers (
+             event_id, name, description, price, total_quantity, available_quantity
+         )
+         SELECT $1, name, description, price, total_quantity, total_quantity
+         FROM ticket_tiers
+         WHERE event_id = $2",
+    )
+    .bind(cloned.id)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!(
+            "Failed to copy ticket tiers while cloning event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    // 6. Copy category associations.
+    if let Err(e) = sqlx::query(
+        "INSERT INTO event_categories (event_id, category_id)
+         SELECT $1, category_id FROM event_categories WHERE event_id = $2
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(cloned.id)
+    .bind(event_id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::warn!(
+            "Failed to copy categories while cloning event {}: {:?}",
+            event_id,
+            e
+        );
+    }
+
+    // 7. A new event invalidates the shared list cache.
+    state.redis.invalidate_events_list().await;
+
+    success(cloned, "Event cloned successfully").into_response()
 }
 
 /// Extract the highest-priority locale from `Accept-Language`, using the
@@ -3339,7 +3708,7 @@ pub async fn search_events(
 
     // Deterministic cache key from all search parameters (issue #592).
     let cache_key = format!(
-        "search:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        "search:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
         params.q.as_deref().unwrap_or(""),
         params
             .category_id
@@ -3352,6 +3721,8 @@ pub async fn search_events(
         params.date_to.map(|d| d.timestamp()).unwrap_or(0),
         validated_pagination.page,
         validated_pagination.page_size,
+        params.sort_by.column(),
+        params.order.sql(),
     );
 
     // Try cache first; fall through to DB on miss or Redis error.
@@ -3508,12 +3879,16 @@ pub async fn search_events(
         }
     };
 
-    // Fetch paginated items with DISTINCT to handle joins
+    // Fetch paginated items with DISTINCT to handle joins.
+    // Apply the caller-supplied sort column and direction instead of the
+    // previous hard-coded `ORDER BY e.start_time DESC`.
     let items_query = format!(
-        "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY e.start_time DESC LIMIT ${} OFFSET ${}",
+        "SELECT DISTINCT e.* FROM events e {} {} WHERE {} ORDER BY {} {} LIMIT ${} OFFSET ${}",
         category_join,
         ticket_tiers_join,
         where_clause,
+        params.sort_by.column(),
+        params.order.sql(),
         param_count + 1,
         param_count + 2
     );
@@ -3759,11 +4134,24 @@ pub async fn flag_event(
 }
 
 /// Revenue summary response for an event
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct EventRevenueResponse {
     pub total_revenue_usd: f64,
     pub tickets_sold: i64,
     pub average_ticket_price: f64,
+}
+
+/// Build the revenue summary from an event's aggregate ticket figures.
+fn build_event_revenue_summary(total_revenue: f64, tickets_sold: i64) -> EventRevenueResponse {
+    EventRevenueResponse {
+        total_revenue_usd: total_revenue,
+        tickets_sold,
+        average_ticket_price: if tickets_sold > 0 {
+            total_revenue / tickets_sold as f64
+        } else {
+            0.0
+        },
+    }
 }
 
 /// Share link response for an event
@@ -4000,30 +4388,77 @@ pub async fn get_attendee_count(
 /// GET /api/v1/events/:id/revenue
 ///
 /// Returns revenue statistics for an event: total revenue, tickets sold,
-/// and average ticket price. Returns zeros for events with no tickets sold.
+/// and average ticket price. Requires the caller to be the event's organizer
+/// or an admin. Returns zeros for events with no tickets sold.
 /// Returns 404 for non-existent events.
+#[utoipa::path(
+    get,
+    path = "/events/{id}/revenue",
+    params(
+        ("id" = Uuid, Path, description = "Event ID"),
+    ),
+    responses(
+        (status = 200, description = "Event revenue statistics", body = EventRevenueResponse),
+        (status = 401, description = "Authentication required"),
+        (status = 403, description = "Only the organizer or an admin may view revenue"),
+        (status = 404, description = "Event not found"),
+    ),
+    tag = "Events"
+)]
 pub async fn get_event_revenue(
     State(state): State<EventState>,
+    headers: HeaderMap,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    // 404 if event doesn't exist
-    let exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    // Admin token maps to None; organizer JWT/API key maps to a wallet.
+    let requester = match verify_export_attendees_auth(&headers) {
+        Ok(req) => req,
+        Err(e) => return e.into_response(),
+    };
+
+    // 404 if event doesn't exist; also fetch its organizer for authorization.
+    let organizer_id = match sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
     .bind(event_id)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     {
-        Ok(v) => v,
+        Ok(Some(org_id)) => org_id.unwrap_or_else(Uuid::nil),
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
         Err(e) => {
             tracing::error!("Failed to check event existence: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
-    if !exists {
-        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
-            .into_response();
+    if let Some(ref wallet) = requester {
+        let is_organizer = match sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM organizers
+                WHERE id = $1 AND (wallet_address = $2 OR id::text = $2)
+            )
+            "#,
+        )
+        .bind(organizer_id)
+        .bind(wallet)
+        .fetch_one(&state.pool)
+        .await
+        {
+            Ok(is_org) => is_org,
+            Err(e) => {
+                tracing::error!("Failed to verify organizer: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+        if let Err(e) = require_event_organizer(is_organizer) {
+            return e.into_response();
+        }
     }
 
     let row = match sqlx::query(
@@ -4049,21 +4484,23 @@ pub async fn get_event_revenue(
 
     let total_revenue: f64 = row.try_get::<f64, _>("total_revenue").unwrap_or(0.0);
     let tickets_sold: i64 = row.try_get::<i64, _>("tickets_sold").unwrap_or(0);
-    let average_ticket_price = if tickets_sold > 0 {
-        total_revenue / tickets_sold as f64
-    } else {
-        0.0
-    };
 
     success(
-        EventRevenueResponse {
-            total_revenue_usd: total_revenue,
-            tickets_sold,
-            average_ticket_price,
-        },
+        build_event_revenue_summary(total_revenue, tickets_sold),
         "Revenue stats retrieved",
     )
     .into_response()
+}
+
+/// Convert an organizer authorization check into an API error.
+fn require_event_organizer(is_organizer: bool) -> Result<(), AppError> {
+    if is_organizer {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "Only the event organizer or an admin is allowed to view revenue data".to_string(),
+        ))
+    }
 }
 
 #[test]
@@ -4262,8 +4699,12 @@ fn test_search_params_ticket_type() {
         date_to: None,
         location: None,
         ticket_type: Some("VIP".to_string()),
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
+        sort_by: Default::default(),
+        order: Default::default(),
     };
 
     assert_eq!(params.ticket_type, Some("VIP".to_string()));
@@ -4281,8 +4722,12 @@ fn test_search_params_ticket_type_none() {
         date_to: None,
         location: None,
         ticket_type: None,
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
+        sort_by: Default::default(),
+        order: Default::default(),
     };
 
     assert!(params.ticket_type.is_none());
@@ -4310,8 +4755,12 @@ fn test_search_params_location() {
         date_to: None,
         location: Some("Lagos".to_string()),
         ticket_type: None,
+        sort_by: SearchSortBy::default(),
+        order: SearchSortOrder::default(),
         page: 1,
         page_size: 20,
+        sort_by: Default::default(),
+        order: Default::default(),
     };
     assert_eq!(params.location.as_deref(), Some("Lagos"));
 }
@@ -4345,6 +4794,71 @@ fn test_csv_row_format() {
     assert!(row.contains(owner));
     assert!(row.contains(buyer));
     assert!(row.contains("2"));
+}
+
+#[test]
+fn test_verify_export_attendees_auth_missing_header() {
+    let headers = HeaderMap::new();
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        AppError::AuthError(msg) => assert!(msg.contains("Missing Authorization")),
+        other => panic!("Unexpected error: {:?}", other),
+    }
+}
+
+#[test]
+fn test_verify_export_attendees_auth_invalid_scheme() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        "Basic invalid_token".parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        AppError::AuthError(msg) => assert!(msg.contains("must use Bearer scheme")),
+        other => panic!("Unexpected error: {:?}", other),
+    }
+}
+
+#[test]
+fn test_verify_export_attendees_auth_admin_token() {
+    std::env::set_var("ADMIN_TOKEN", "test-admin-secret-token");
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        "Bearer test-admin-secret-token".parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), None); // None signifies admin authorization
+}
+
+#[test]
+fn test_verify_export_attendees_auth_valid_jwt() {
+    std::env::set_var("JWT_SECRET", "super-secret-key-for-unit-testing-32-bytes");
+    let now = chrono::Utc::now();
+    let claims = crate::handlers::auth::Claims {
+        sub: "GAORGANIZERTESTWALLET123456789".to_string(),
+        iat: now.timestamp(),
+        exp: (now + chrono::Duration::hours(1)).timestamp(),
+    };
+    let token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret("super-secret-key-for-unit-testing-32-bytes".as_bytes()),
+    )
+    .unwrap();
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        format!("Bearer {}", token).parse().unwrap(),
+    );
+    let res = verify_export_attendees_auth(&headers);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), Some("GAORGANIZERTESTWALLET123456789".to_string()));
 }
 
 #[derive(Serialize)]
@@ -4977,32 +5491,104 @@ pub fn sanitize_csv_field(field: &str) -> String {
     }
 }
 
+/// Validates caller authorization for exporting attendee CSV (Issue #1624).
+/// Returns `Ok(None)` if authorized as admin, `Ok(Some(wallet))` if authorized with organizer credentials,
+/// or `Err(AppError)` if missing, malformed, or invalid.
+pub fn verify_export_attendees_auth(headers: &HeaderMap) -> Result<Option<String>, AppError> {
+    if let Some(auth_hdr) = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
+        let token = auth_hdr
+            .strip_prefix("Bearer ")
+            .or_else(|| auth_hdr.strip_prefix("bearer "))
+            .unwrap_or(auth_hdr)
+            .trim();
+        if let Ok(admin_token) = std::env::var("ADMIN_TOKEN") {
+            if !admin_token.is_empty() && token == admin_token {
+                return Ok(None);
+            }
+        }
+    }
+
+    let wallet = crate::handlers::auth::extract_auth(headers)?;
+    Ok(Some(wallet))
+}
+
 /// GET /api/v1/events/:id/export-attendees
 ///
 /// Exports all attendees for an event as a CSV file.
+/// Requires the caller to be the event's organizer or an admin (Issue #1624).
 /// Returns owner_wallet, buyer_wallet, quantity, created_at for all tickets.
 pub async fn export_attendees_csv(
     State(state): State<EventState>,
+    headers: HeaderMap,
     Path(event_id): Path<Uuid>,
 ) -> Response {
-    // Verify the event exists
-    let event_exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND is_flagged = FALSE)",
+    // 1. Verify authorization: admin token or organizer JWT / API key
+    let requester = match verify_export_attendees_auth(&headers) {
+        Ok(req) => req,
+        Err(e) => return e.into_response(),
+    };
+
+    // 2. Verify the event exists and fetch organizer_id
+    let organizer_id = match sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT organizer_id FROM events WHERE id = $1 AND is_flagged = FALSE",
     )
     .bind(event_id)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     {
-        Ok(exists) => exists,
+        Ok(Some(Some(org_id))) => org_id,
+        Ok(Some(None)) => {
+            if requester.is_some() {
+                return AppError::Forbidden(
+                    "Only the event organizer or an admin is allowed to export attendee data"
+                        .to_string(),
+                )
+                .into_response();
+            }
+            Uuid::nil()
+        }
+        Ok(None) => {
+            return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+                .into_response();
+        }
         Err(e) => {
             tracing::error!("Failed to check event existence: {:?}", e);
             return AppError::DatabaseError(e).into_response();
         }
     };
 
-    if !event_exists {
-        return AppError::NotFound(format!("Event with id '{}' not found", event_id))
+    // 3. If not admin, verify requester is the organizer
+    if let Some(ref wallet) = requester {
+        let is_organizer = match sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM organizers
+                WHERE id = $1 AND (wallet_address = $2 OR id::text = $2)
+            )
+            "#,
+        )
+        .bind(organizer_id)
+        .bind(wallet)
+        .fetch_one(&state.pool)
+        .await
+        {
+            Ok(is_org) => is_org,
+            Err(e) => {
+                tracing::error!("Failed to verify organizer: {:?}", e);
+                return AppError::DatabaseError(e).into_response();
+            }
+        };
+
+        if !is_organizer {
+            return AppError::Forbidden(
+                "Only the event organizer or an admin is allowed to export attendee data"
+                    .to_string(),
+            )
             .into_response();
+        }
     }
 
     // Fetch all tickets for the event
@@ -5337,6 +5923,13 @@ pub async fn list_ticket_tiers(
 // ---------------------------------------------------------------------------
 // Unit tests for list_event_tickets and image_url validation
 // ---------------------------------------------------------------------------
+
+#[test]
+fn test_clone_event_cache_key_matches_detail_key() {
+    let id = Uuid::new_v4();
+    let key = format!("event:detail:{}", id);
+    assert_eq!(key, format!("event:detail:{}", id));
+}
 
 #[test]
 fn test_ticket_tier_response_serialization() {
@@ -5676,5 +6269,93 @@ mod search_cache_tests {
             sanitize_csv_field("GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
             "GDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         );
+    }
+
+    fn featured_test_event(featured: bool, end_time: Option<DateTime<Utc>>) -> Event {
+        Event {
+            id: Uuid::new_v4(),
+            organizer_id: Uuid::new_v4(),
+            title: "Featured test event".to_string(),
+            description: None,
+            location: "Lagos".to_string(),
+            start_time: Utc::now(),
+            end_time,
+            is_flagged: false,
+            is_featured: featured,
+            sum_of_ratings: 0,
+            count_of_ratings: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            image_url: None,
+            latitude: None,
+            longitude: None,
+            is_free: false,
+            minted_tickets: 0,
+            total_tickets: 0,
+            is_free_populated: false,
+            min_ticket_price: 0.0,
+        }
+    }
+
+    #[test]
+    fn test_featured_events_empty_result() {
+        assert!(filter_featured_upcoming_events(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn test_featured_events_excludes_past_events() {
+        let future = featured_test_event(true, Some(Utc::now() + chrono::Duration::days(1)));
+        let past = featured_test_event(true, Some(Utc::now() - chrono::Duration::days(1)));
+        let not_featured = featured_test_event(false, Some(Utc::now() + chrono::Duration::days(1)));
+
+        let filtered = filter_featured_upcoming_events(vec![future, past, not_featured]);
+        assert_eq!(filtered.len(), 1);
+        assert!(filtered[0].is_featured);
+    }
+
+    #[test]
+    fn test_featured_events_limit_clamping() {
+        assert_eq!(featured_events_limit(&UpcomingParams { limit: None }), 6);
+        assert_eq!(
+            featured_events_limit(&UpcomingParams { limit: Some(0) }),
+            1
+        );
+        assert_eq!(
+            featured_events_limit(&UpcomingParams { limit: Some(100) }),
+            20
+        );
+    }
+
+    #[test]
+    fn test_get_event_revenue_requires_auth() {
+        let err = verify_export_attendees_auth(&HeaderMap::new()).unwrap_err();
+        assert_eq!(err.status_code(), axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_get_event_revenue_rejects_non_organizer() {
+        let err = require_event_organizer(false).unwrap_err();
+        assert_eq!(err.status_code(), axum::http::StatusCode::FORBIDDEN);
+        assert!(require_event_organizer(true).is_ok());
+    }
+
+    #[test]
+    fn test_get_event_revenue_returns_values_for_organizer() {
+        let summary = build_event_revenue_summary(125.0, 5);
+        assert_eq!(summary.total_revenue_usd, 125.0);
+        assert_eq!(summary.tickets_sold, 5);
+        assert_eq!(summary.average_ticket_price, 25.0);
+        let response = success(summary, "Revenue stats retrieved").into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[test]
+    fn test_get_event_revenue_returns_zeros_without_tickets() {
+        let summary = build_event_revenue_summary(0.0, 0);
+        assert_eq!(summary.total_revenue_usd, 0.0);
+        assert_eq!(summary.tickets_sold, 0);
+        assert_eq!(summary.average_ticket_price, 0.0);
+        let response = success(summary, "Revenue stats retrieved").into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
     }
 }

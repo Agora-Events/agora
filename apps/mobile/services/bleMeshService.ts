@@ -28,7 +28,7 @@ const MAX_GOSSIP_HOPS = 6;
 /** How often we sweep for new peers and retry a server flush, in ms. */
 const GOSSIP_INTERVAL_MS = 8000;
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+import { apiUrl } from '@/constants/api';
 const FLUSH_TIMEOUT_MS = 15_000;
 
 export type CheckInResult = 'approved' | 'denied';
@@ -170,7 +170,7 @@ async function postCheckInBatch(gateId: string, records: CheckInRecord[]): Promi
   const timer = setTimeout(() => controller.abort(), FLUSH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/gate/checkins/batch`, {
+    const response = await fetch(apiUrl('/gate/checkins/batch'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ gateId, records }),

@@ -84,6 +84,8 @@ export function useAuth(): UseAuthResult {
   );
 
   const isTestnetBuild = IS_TESTNET_BUILD;
+  const isTestnetBuild =
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK === "TESTNET";
 
   // Network state is only polled on testnet builds to avoid unnecessary
   // Freighter calls in production.
@@ -115,6 +117,7 @@ export function useAuth(): UseAuthResult {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [_isCorrectNetwork, user, networkLoading]);
+  }, [_isCorrectNetwork, user, networkLoading, isTestnetBuild]);
 
   const signOut = useCallback(async () => {
     try {

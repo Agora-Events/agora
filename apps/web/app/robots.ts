@@ -18,10 +18,10 @@ const BASE_URL = "https://agora.events";
  *   side-effecting.
  * - `/__visual_fixtures__` renders component fixtures for visual regression
  *   tests; indexing it would surface fragments of the UI as search results.
- * - `/auth` and `/settings` are per-user and behind a session, so a crawler
- *   only ever sees a redirect or an empty shell.
+ * - `/auth`, `/settings`, and `/wallet` are per-user and behind a session, so a
+ *   crawler only ever sees a redirect or an empty shell.
  */
-const DISALLOWED = ["/api/", "/__visual_fixtures__", "/auth", "/settings"];
+const DISALLOWED = ["/api/", "/__visual_fixtures__", "/auth", "/settings", "/wallet"];
 
 export default function robots(): MetadataRoute.Robots {
   return {

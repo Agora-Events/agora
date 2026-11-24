@@ -4,12 +4,18 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { X, Minus, Plus, Ticket, ArrowRight, CheckCircle2, Gift } from "@/components/ui/icons";
+import { X, Minus, Plus, Ticket, ArrowRight, Gift, Check, Tag } from "@/components/ui/icons";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import CardOnramp from "@/components/payments/CardOnramp";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { CheckoutAttribution, getCheckoutAttribution } from "@/utils/attribution";
+import { checkUsdcTrustline, addUsdcTrustlineViaFreighter } from "@/lib/stellar/trustline";
+import { StellarExplorerLink } from "@/components/stellar/stellar-explorer-link";
+import { parseAndLogError } from "@/lib/stellar/error-parser";
+import { syncTicketPurchase } from "@/lib/api-handler";
+import { PurchaseSuccessAnimation } from "@/components/events/PurchaseSuccessAnimation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,7 +23,7 @@ interface TicketModalProps {
   isOpen: boolean;
   onClose: () => void;
   event: {
-    id: number;
+    id: string | number;
     title: string;
     price: string;
     location: string;
@@ -28,8 +34,15 @@ interface TicketModalProps {
   initialQuantity: number;
 }
 
-/** The three distinct modal views. */
-type ModalView = "purchase" | "purchased" | "waitlist_success";
+interface AppliedDiscount {
+  code: string;
+  discountPercentage?: number;
+  discountAmount?: number;
+  discountHash?: string;
+}
+
+/** The distinct modal views. */
+type ModalView = "purchase" | "trustline" | "purchased" | "waitlist_success";
 
 // ─── Waitlist icon ────────────────────────────────────────────────────────────
 
@@ -59,23 +72,50 @@ function ClockIcon({ size = 24, className }: { size?: number; className?: string
 export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketModalProps) {
   const isSoldOut = event.availableQuantity === 0;
 
-  const [view, setView] = useState<ModalView>(isSoldOut ? "purchase" : "purchase");
+  const [view, setView] = useState<ModalView>("purchase");
   const [quantity, setQuantity] = useState(initialQuantity);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
-  const [purchasedTicket, setPurchasedTicket] = useState<{ id: string } | null>(null);
+  const [purchasedTicket, setPurchasedTicket] = useState<{ id: string; txHash?: string } | null>(
+    null
+  );
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
   const [recipientWallet, setRecipientWallet] = useState<string>("");
   const [isGiftMode, setIsGiftMode] = useState(false);
   const [activeTab, setActiveTab] = useState<"wallet" | "card">("wallet");
 
+  // ── Promo code state ─────────────────────────────────────────────────────
+  const [promoCodeInput, setPromoCodeInput] = useState<string>("");
+  const [isValidatingPromo, setIsValidatingPromo] = useState<boolean>(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [appliedDiscount, setAppliedDiscount] = useState<AppliedDiscount | null>(null);
+
+  // ── Trustline state ──────────────────────────────────────────────────────
+  const [isCheckingTrustline, setIsCheckingTrustline] = useState(false);
+  const [isAddingTrustline, setIsAddingTrustline] = useState(false);
+
+  // ── Accessibility: screen reader live announcements (WCAG 2.1 SC 4.1.3) ──
+  const [liveAnnouncement, setLiveAnnouncement] = useState<string>("");
+
   const modalRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   const isFree = event.price.toLowerCase() === "free";
   const unitPrice = isFree ? 0 : parseFloat(event.price.replace("$", ""));
-  const totalPrice = unitPrice * quantity;
+  const subtotal = unitPrice * quantity;
 
-  // Reset internal state whenever the modal opens/closes or soldOut flips.
+  // Calculate discount deductions
+  let discountDeduction = 0;
+  if (!isFree && appliedDiscount) {
+    if (typeof appliedDiscount.discountPercentage === "number") {
+      discountDeduction = (subtotal * appliedDiscount.discountPercentage) / 100;
+    } else if (typeof appliedDiscount.discountAmount === "number") {
+      discountDeduction = appliedDiscount.discountAmount;
+    }
+  }
+  const finalPrice = Math.max(0, subtotal - discountDeduction);
+
+  // Reset internal state whenever modal opens or closes
   useEffect(() => {
     if (isOpen) {
       setView("purchase");
@@ -84,8 +124,99 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       setIsGiftMode(false);
       setRecipientWallet("");
       setQuantity(initialQuantity);
+      setLiveAnnouncement("");
+      setPromoCodeInput("");
+      setPromoError(null);
+      setAppliedDiscount(null);
     }
   }, [isOpen, initialQuantity]);
+
+  // ── Promo Code Handlers ──────────────────────────────────────────────────
+  const handleApplyPromo = async () => {
+    const trimmed = promoCodeInput.trim();
+    if (!trimmed) return;
+
+    setIsValidatingPromo(true);
+    setPromoError(null);
+
+    try {
+      const res = await fetch(
+        `/api/v1/events/${event.id}/discount?code=${encodeURIComponent(trimmed)}`
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.valid) {
+        const errorMsg = data.message || "Invalid or expired promo code.";
+        setPromoError(errorMsg);
+        setAppliedDiscount(null);
+        setLiveAnnouncement(errorMsg);
+        return;
+      }
+
+      const discountData: AppliedDiscount = {
+        code: trimmed,
+        discountPercentage: data.discountPercentage,
+        discountAmount: data.discountAmount,
+        discountHash: data.discountHash,
+      };
+
+      setAppliedDiscount(discountData);
+      setPromoError(null);
+      setLiveAnnouncement(`Promo code ${trimmed} applied.`);
+      toast.success(`Promo code "${trimmed}" applied!`);
+    } catch {
+      const errorMsg = "Unable to validate promo code. Please try again.";
+      setPromoError(errorMsg);
+      setAppliedDiscount(null);
+      setLiveAnnouncement(errorMsg);
+    } finally {
+      setIsValidatingPromo(false);
+    }
+  };
+
+  const handleRemovePromo = () => {
+    setPromoCodeInput("");
+    setAppliedDiscount(null);
+    setPromoError(null);
+    setLiveAnnouncement("Promo code removed.");
+  };
+
+  // ── Trustline pre-check ─────────────────────────────────────────────────
+  const handleProceedToConfirm = async () => {
+    if (isFree || activeTab !== "wallet") return;
+
+    const buyerWallet = "GBUYERMOCKADDRESS1234567890STEL";
+    setIsCheckingTrustline(true);
+    try {
+      const result = await checkUsdcTrustline(buyerWallet);
+      if (!result.hasTrustline) {
+        setView("trustline");
+        return;
+      }
+    } catch {
+      // Allow attempt to continue and show errors if any
+    } finally {
+      setIsCheckingTrustline(false);
+    }
+    await handleConfirmPurchase();
+  };
+
+  // ── Add trustline handler ───────────────────────────────────────────────
+  const handleAddTrustline = async () => {
+    const buyerWallet = "GBUYERMOCKADDRESS1234567890STEL";
+    setIsAddingTrustline(true);
+    try {
+      await addUsdcTrustlineViaFreighter(buyerWallet);
+      toast.success("USDC trustline added! You can now purchase tickets.");
+      setView("purchase");
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to add trustline. Please try again."
+      );
+    } finally {
+      setIsAddingTrustline(false);
+    }
+  };
 
   // Keyboard & scroll lock
   useEffect(() => {
@@ -111,11 +242,20 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
         buyerWallet: string;
         recipientWallet?: string;
         attribution?: CheckoutAttribution;
+        promoCode?: string;
+        discountHash?: string;
       } = {
         eventId: event.id.toString(),
         quantity: quantity,
         buyerWallet: "GBUYERMOCKADDRESS1234567890STEL",
       };
+
+      if (appliedDiscount) {
+        requestBody.promoCode = appliedDiscount.code;
+        if (appliedDiscount.discountHash) {
+          requestBody.discountHash = appliedDiscount.discountHash;
+        }
+      }
 
       requestBody.attribution = getCheckoutAttribution();
 
@@ -130,32 +270,58 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to purchase ticket");
+      if (!response.ok) {
+        const { userMessage } = parseAndLogError(data.error || data, "ticket purchase request");
+        throw new Error(userMessage);
+      }
 
-      // Client-side XDR signature prompt via Freighter (Issue #1086)
+      let txHash: string | undefined;
       if (data.transactionXdr && data.requiresSignature) {
         try {
           const freighter = await import("@stellar/freighter-api");
           if (await freighter.isConnected()) {
+            setLiveAnnouncement("Please approve the transaction in your Freighter wallet.");
             toast.info("Please sign the transaction in your Freighter wallet...");
             await freighter.signTransaction(data.transactionXdr, {
-              networkPassphrase: process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015",
+              networkPassphrase:
+                process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ||
+                "Test SDF Network ; September 2015",
             });
+            txHash = data.transactionXdr?.slice(0, 64);
           }
         } catch (signErr) {
-          console.warn("Freighter wallet interaction:", signErr);
+          const { userMessage } = parseAndLogError(signErr, "Freighter wallet signing");
+          toast.error(userMessage);
+          throw signErr;
+        }
+      } else {
+        txHash = data.txHash;
+      }
+
+      if (txHash && data.ticketId) {
+        setIsSyncing(true);
+        try {
+          await syncTicketPurchase({
+            txHash,
+            eventId: event.id.toString(),
+            buyerAddress: requestBody.buyerWallet,
+          });
+          toast.success("Transaction confirmed and ticket synced!");
+        } catch (syncErr) {
+          const { userMessage } = parseAndLogError(syncErr, "ticket backend sync");
+          console.warn("Sync failed but showing user on-chain transaction:", userMessage);
+          toast.warning("Ticket confirmed on-chain but sync pending. Check your wallet.");
+        } finally {
+          setIsSyncing(false);
         }
       }
 
-      setPurchasedTicket({ id: data.ticketId });
+      setPurchasedTicket({ id: data.ticketId, txHash });
       setView("purchased");
-      toast.success(
-        isGiftMode && recipientWallet.trim()
-          ? "Ticket purchased as a gift! The recipient will see it in their wallet."
-          : "Ticket purchased successfully!",
-      );
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      const errorMsg =
+        error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      toast.error(errorMsg);
     } finally {
       setIsPurchasing(false);
     }
@@ -171,11 +337,20 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
         buyerWallet: string;
         recipientWallet?: string;
         attribution?: CheckoutAttribution;
+        promoCode?: string;
+        discountHash?: string;
       } = {
         eventId: event.id.toString(),
         quantity: quantity,
         buyerWallet: fundedWallet,
       };
+
+      if (appliedDiscount) {
+        requestBody.promoCode = appliedDiscount.code;
+        if (appliedDiscount.discountHash) {
+          requestBody.discountHash = appliedDiscount.discountHash;
+        }
+      }
 
       requestBody.attribution = getCheckoutAttribution();
 
@@ -190,13 +365,36 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to purchase ticket");
+      if (!response.ok) {
+        const { userMessage } = parseAndLogError(data.error || data, "onramp ticket purchase");
+        throw new Error(userMessage);
+      }
 
-      setPurchasedTicket({ id: data.ticketId });
+      if (data.txHash && data.ticketId) {
+        setIsSyncing(true);
+        try {
+          await syncTicketPurchase({
+            txHash: data.txHash,
+            eventId: event.id.toString(),
+            buyerAddress: fundedWallet,
+          });
+          toast.success("Payment complete! Ticket synced to your account.");
+        } catch (syncErr) {
+          const { userMessage } = parseAndLogError(syncErr, "onramp ticket backend sync");
+          console.warn("Sync failed but showing user on-chain transaction:", userMessage);
+          toast.warning("Payment confirmed on-chain but sync pending.");
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+
+      setPurchasedTicket({ id: data.ticketId, txHash: data.txHash });
       setView("purchased");
-      toast.success("Ticket purchased successfully!");
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      const errorMsg =
+        error instanceof Error ? error.message : "Something went wrong. Please try again.";
+      toast.error(errorMsg);
+      setActiveTab("wallet");
     } finally {
       setIsPurchasing(false);
     }
@@ -218,7 +416,9 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
       setView("waitlist_success");
       toast.success(`You're #${data.position} on the waitlist!`);
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      toast.error(
+        error instanceof Error ? error.message : "Something went wrong. Please try again."
+      );
     } finally {
       setIsJoiningWaitlist(false);
     }
@@ -248,367 +448,561 @@ export function TicketModal({ isOpen, onClose, event, initialQuantity }: TicketM
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
-            className="relative w-full max-w-[500px] bg-base rounded-[32px] overflow-hidden border border-black/10 shadow-2xl z-10"
+            className="relative w-full max-w-[500px] bg-base rounded-[32px] overflow-hidden border border-black/10 shadow-2xl z-10 max-h-[90vh] flex flex-col"
           >
             {/* Close button */}
             <button
               type="button"
               onClick={onClose}
-              className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/50 hover:bg-white transition-colors flex items-center justify-center border border-black/5 z-10"
+              className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/50 hover:bg-white transition-colors flex items-center justify-center border border-black/5 z-20"
               aria-label="Close modal"
             >
               <X size={20} className="text-black" />
             </button>
 
-            {/* ── Purchase view ─────────────────────────────────────────── */}
-            {view === "purchase" && !isSoldOut && (
-              <div className="p-8 sm:p-10 flex flex-col gap-8">
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-accent font-bold uppercase tracking-wider text-sm">
-                    <Ticket size={16} aria-hidden="true" />
-                    <span>Confirm Ticket</span>
-                  </div>
-                  <h2
-                    id="ticket-modal-title"
-                    className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight"
-                  >
-                    {event.title}
-                  </h2>
-                  <p id="ticket-modal-subtitle" className="text-black/60 font-medium">
-                    {event.date} • {event.location}
-                  </p>
-                </div>
+            {/* Screen reader live region */}
+            <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+              {liveAnnouncement}
+            </div>
 
-                {/* Tabs: Pay with Wallet / Pay with Card */}
-                {!isFree && (
-                  <div className="flex items-center gap-2 bg-white/40 rounded-xl p-2">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("wallet")}
-                      className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
-                        activeTab === "wallet" ? "bg-accent text-white" : "bg-transparent text-black/70"
-                      }`}
+            {/* Modal Scroll Container */}
+            <div className="overflow-y-auto w-full">
+              {/* ── Purchase view ─────────────────────────────────────────── */}
+              {view === "purchase" && !isSoldOut && (
+                <div className="p-8 sm:p-10 flex flex-col gap-6">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-accent font-bold uppercase tracking-wider text-sm">
+                      <Ticket size={16} aria-hidden="true" />
+                      <span>Confirm Ticket</span>
+                    </div>
+                    <h2
+                      id="ticket-modal-title"
+                      className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight"
                     >
-                      Pay with Wallet
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("card")}
-                      className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
-                        activeTab === "card" ? "bg-accent text-white" : "bg-transparent text-black/70"
-                      }`}
-                    >
-                      Pay with Card
-                    </button>
+                      {event.title}
+                    </h2>
+                    <p id="ticket-modal-subtitle" className="text-black/60 font-medium">
+                      {event.date} • {event.location}
+                    </p>
                   </div>
-                )}
 
-                {/* Wallet flow */}
-                {activeTab === "wallet" && (
-                  <div className="bg-white/50 rounded-2xl p-6 border border-black/5 flex flex-col gap-6">
-                  {/* Quantity */}
-                  <div className="flex justify-between items-center">
-                    <span className="text-lg font-bold text-black">Quantity</span>
-                    <div className="flex items-center gap-4">
+                  {/* Tabs: Pay with Wallet / Pay with Card */}
+                  {!isFree && (
+                    <div className="flex items-center gap-2 bg-white/40 rounded-xl p-2">
                       <button
                         type="button"
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-accent transition-colors"
-                        aria-label="Decrease quantity"
-                      >
-                        <Minus size={18} />
-                      </button>
-                      <span
-                        className="text-xl font-bold w-6 text-center"
-                        aria-live="polite"
-                        aria-atomic="true"
-                      >
-                        {quantity}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setQuantity(quantity + 1)}
-                        className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-accent transition-colors"
-                        aria-label="Increase quantity"
-                      >
-                        <Plus size={18} />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="h-[1px] bg-black/5 w-full" aria-hidden="true" />
-
-                  {/* Gift toggle */}
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <Gift size={20} className="text-black/70" aria-hidden="true" />
-                      <span className="text-lg font-bold text-black">Gift to someone?</span>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={isGiftMode}
-                      onClick={() => {
-                        setIsGiftMode(!isGiftMode);
-                        if (isGiftMode) setRecipientWallet("");
-                      }}
-                      className={`w-14 h-8 rounded-full transition-colors relative ${
-                        isGiftMode ? "bg-accent" : "bg-gray-300"
-                      }`}
-                      aria-label="Gift mode"
-                    >
-                      <div
-                        className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${
-                          isGiftMode ? "translate-x-7" : "translate-x-1"
+                        onClick={() => setActiveTab("wallet")}
+                        className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
+                          activeTab === "wallet"
+                            ? "bg-accent text-white"
+                            : "bg-transparent text-black/70"
                         }`}
-                      />
-                    </button>
-                  </div>
-
-                  {isGiftMode && (
-                    <div className="flex flex-col gap-2">
-                      <label htmlFor="recipientWallet" className="text-sm font-bold text-black/70">
-                        Recipient Wallet Address
-                      </label>
-                      <input
-                        id="recipientWallet"
-                        type="text"
-                        value={recipientWallet}
-                        onChange={(e) => setRecipientWallet(e.target.value)}
-                        placeholder="G... (Stellar address)"
-                        className="w-full px-4 py-3 rounded-xl border border-black/10 bg-white focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
-                      />
-                      <p className="text-xs text-black/50">
-                        The ticket will be sent to this wallet address
-                      </p>
+                      >
+                        Pay with Wallet
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("card")}
+                        className={`px-4 py-2 rounded-xl font-semibold transition-colors ${
+                          activeTab === "card"
+                            ? "bg-accent text-white"
+                            : "bg-transparent text-black/70"
+                        }`}
+                      >
+                        Pay with Card
+                      </button>
                     </div>
                   )}
 
-                  <div className="h-[1px] bg-black/5 w-full" aria-hidden="true" />
+                  {/* Wallet flow */}
+                  {activeTab === "wallet" && (
+                    <div className="bg-white/50 rounded-2xl p-6 border border-black/5 flex flex-col gap-6">
+                      {/* Quantity */}
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-bold text-black">Quantity</span>
+                        <div className="flex items-center gap-4">
+                          <button
+                            type="button"
+                            onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                            className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-accent transition-colors"
+                            aria-label="Decrease quantity"
+                          >
+                            <Minus size={18} />
+                          </button>
+                          <span
+                            className="text-xl font-bold w-6 text-center"
+                            aria-live="polite"
+                            aria-atomic="true"
+                          >
+                            {quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setQuantity(quantity + 1)}
+                            className="w-10 h-10 rounded-full bg-white border border-black/10 flex items-center justify-center hover:bg-accent transition-colors"
+                            aria-label="Increase quantity"
+                          >
+                            <Plus size={18} />
+                          </button>
+                        </div>
+                      </div>
 
-                  {/* Total */}
-                  <div className="flex justify-between items-center">
-                    <span className="text-lg font-bold text-black">Total Price</span>
-                    <span className="text-2xl font-bold text-black font-heading">
-                      {isFree ? "FREE" : `$${totalPrice.toFixed(2)}`}
-                    </span>
-                  </div>
-                </div>
+                      <div className="h-[1px] bg-black/5 w-full" aria-hidden="true" />
 
-                <Button
-                  variant="primary"
-                  onClick={handleConfirmPurchase}
-                  disabled={isPurchasing}
-                  className="w-full h-16 rounded-full text-xl disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {isPurchasing ? (
-                    <div
-                      className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin"
-                      aria-label="Processing purchase"
-                    />
-                  ) : (
-                    <>
-                      <span>Confirm Purchase</span>
-                      <ArrowRight
-                        size={24}
-                        className="group-hover:translate-x-1 transition-transform"
-                        aria-hidden="true"
-                      />
-                    </>
-                  )}
-                </Button>
-
-                {/* Card onramp flow */}
-                {activeTab === "card" && (
-                  <div className="bg-white/50 rounded-2xl p-6 border border-black/5 flex flex-col gap-6">
-                    <CardOnramp
-                      amountUsd={totalPrice}
-                      receivingAddress={process.env.NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID || ""}
-                      onSuccess={(fundedWallet) => handleOnrampSuccess(fundedWallet)}
-                      onCancel={() => {
-                        toast.info("Payment cancelled");
-                        setActiveTab("wallet");
-                      }}
-                      onError={(err) => {
-                        toast.error(err.message || "Onramp error");
-                        setActiveTab("wallet");
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Sold-out / Join Waitlist view ──────────────────────────── */}
-            {view === "purchase" && isSoldOut && (
-              <div className="p-8 sm:p-10 flex flex-col gap-8">
-                <div className="flex flex-col gap-2">
-                  {/* Sold-out chip */}
-                  <div className="flex items-center gap-2 text-error font-bold uppercase tracking-wider text-sm">
-                    <ClockIcon size={16} />
-                    <span>Sold Out</span>
-                  </div>
-                  <h2
-                    id="ticket-modal-title"
-                    className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight"
-                  >
-                    {event.title}
-                  </h2>
-                  <p id="ticket-modal-subtitle" className="text-black/60 font-medium">
-                    {event.date} • {event.location}
-                  </p>
-                </div>
-
-                {/* Info box */}
-                <div
-                  className="bg-white/60 rounded-2xl p-6 border border-black/5 flex flex-col gap-4"
-                  role="status"
-                  aria-live="polite"
-                >
-                  <p className="text-base font-semibold text-black">
-                    All tickets for this event have been claimed.
-                  </p>
-                  <p className="text-sm text-black/60 leading-relaxed">
-                    Join the waitlist and we&apos;ll notify you automatically if a
-                    spot becomes available. You won&apos;t be charged anything now.
-                  </p>
-
-                  {/* What happens section */}
-                  <ul className="flex flex-col gap-2 pt-2 border-t border-black/5">
-                    {[
-                      "You'll receive an email if a ticket is released",
-                      "Your queue position is reserved instantly",
-                      "No payment required to join",
-                    ].map((item) => (
-                      <li key={item} className="flex items-start gap-2 text-sm text-black/70">
-                        <span
-                          className="w-5 h-5 rounded-full bg-accent flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                          aria-hidden="true"
+                      {/* Gift toggle */}
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          <Gift size={20} className="text-black/70" aria-hidden="true" />
+                          <span className="text-lg font-bold text-black">Gift to someone?</span>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={isGiftMode}
+                          onClick={() => {
+                            setIsGiftMode(!isGiftMode);
+                            if (isGiftMode) setRecipientWallet("");
+                          }}
+                          className={`w-14 h-8 rounded-full transition-colors relative ${
+                            isGiftMode ? "bg-accent" : "bg-gray-300"
+                          }`}
+                          aria-label="Gift mode"
                         >
-                          ✓
-                        </span>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                          <div
+                            className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${
+                              isGiftMode ? "translate-x-7" : "translate-x-1"
+                            }`}
+                          />
+                        </button>
+                      </div>
 
-                <Button
-                  variant="primary"
-                  onClick={handleJoinWaitlist}
-                  disabled={isJoiningWaitlist}
-                  className="w-full h-16 rounded-full text-xl disabled:opacity-70 disabled:cursor-not-allowed"
-                  aria-label="Join the waitlist for this event"
-                >
-                  {isJoiningWaitlist ? (
-                    <div
-                      className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin"
-                      aria-label="Joining waitlist"
-                    />
-                  ) : (
-                    <>
-                      <ClockIcon size={22} aria-hidden="true" />
-                      <span>Join Waitlist</span>
-                    </>
+                      {isGiftMode && (
+                        <div className="flex flex-col gap-2">
+                          <label
+                            htmlFor="recipientWallet"
+                            className="text-sm font-bold text-black/70"
+                          >
+                            Recipient Wallet Address
+                          </label>
+                          <input
+                            id="recipientWallet"
+                            type="text"
+                            value={recipientWallet}
+                            onChange={(e) => setRecipientWallet(e.target.value)}
+                            placeholder="G... (Stellar address)"
+                            className="w-full px-4 py-3 rounded-xl border border-black/10 bg-white focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
+                          />
+                          <p className="text-xs text-black/50">
+                            The ticket will be sent to this wallet address
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Promo Code section (only for non-free tickets) */}
+                      {!isFree && (
+                        <>
+                          <div className="h-[1px] bg-black/5 w-full" aria-hidden="true" />
+                          <div className="flex flex-col gap-2">
+                            <label
+                              htmlFor="promoCodeInput"
+                              className="flex items-center gap-2 text-sm font-bold text-black/80"
+                            >
+                              <Tag size={16} className="text-black/60" aria-hidden="true" />
+                              <span>Promo Code</span>
+                            </label>
+
+                            <div className="flex gap-2">
+                              <input
+                                id="promoCodeInput"
+                                type="text"
+                                value={promoCodeInput}
+                                onChange={(e) => {
+                                  setPromoCodeInput(e.target.value);
+                                  if (promoError) setPromoError(null);
+                                }}
+                                disabled={isValidatingPromo || !!appliedDiscount}
+                                placeholder="Enter code"
+                                className="flex-1 px-4 py-2.5 rounded-xl border border-black/10 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-accent font-medium uppercase placeholder:normal-case disabled:opacity-60"
+                              />
+
+                              {appliedDiscount ? (
+                                <button
+                                  type="button"
+                                  onClick={handleRemovePromo}
+                                  className="px-4 py-2.5 rounded-xl border border-red-500/20 text-red-600 bg-red-50 hover:bg-red-100 text-sm font-semibold transition-colors"
+                                >
+                                  Remove
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={handleApplyPromo}
+                                  disabled={isValidatingPromo || !promoCodeInput.trim()}
+                                  className="px-5 py-2.5 rounded-xl bg-accent text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                                >
+                                  {isValidatingPromo ? "Applying..." : "Apply"}
+                                </button>
+                              )}
+                            </div>
+
+                            {promoError && (
+                              <p role="alert" className="text-xs font-semibold text-red-600">
+                                {promoError}
+                              </p>
+                            )}
+
+                            {appliedDiscount && (
+                              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
+                                <Check size={14} />
+                                <span>
+                                  Code &quot;{appliedDiscount.code}&quot; applied:{" "}
+                                  {appliedDiscount.discountPercentage
+                                    ? `${appliedDiscount.discountPercentage}% OFF`
+                                    : `-$${appliedDiscount.discountAmount?.toFixed(2)}`}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      <div className="h-[1px] bg-black/5 w-full" aria-hidden="true" />
+
+                      {/* Pricing breakdown */}
+                      <div className="flex flex-col gap-2">
+                        <div className="flex justify-between items-center text-sm text-black/70">
+                          <span>Subtotal</span>
+                          <span>{isFree ? "FREE" : `$${subtotal.toFixed(2)}`}</span>
+                        </div>
+
+                        {appliedDiscount && discountDeduction > 0 && (
+                          <div className="flex justify-between items-center text-sm text-emerald-600 font-medium">
+                            <span>Discount</span>
+                            <span>-${discountDeduction.toFixed(2)}</span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center pt-2 border-t border-black/5">
+                          <span className="flex items-center gap-1.5 text-lg font-bold text-black">
+                            Total Price
+                            {!isFree && (
+                              <InfoTooltip
+                                label="What is a Stroop?"
+                                text="Payments settle on the Stellar network, where the smallest unit is a Stroop — 1 XLM equals 10,000,000 Stroops. Network fees are a fraction of a Stroop."
+                              />
+                            )}
+                          </span>
+                          <span className="text-2xl font-bold text-black font-heading">
+                            {isFree ? "FREE" : `$${finalPrice.toFixed(2)}`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   )}
-                </Button>
-              </div>
-            )}
 
-            {/* ── Purchased success view ─────────────────────────────────── */}
-            {view === "purchased" && purchasedTicket && (
-              <div className="p-8 sm:p-10 flex flex-col items-center text-center gap-8">
-                <motion.div
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center text-green-600"
-                >
-                  <CheckCircle2 size={48} aria-hidden="true" />
-                </motion.div>
+                  <Button
+                    variant="primary"
+                    onClick={handleProceedToConfirm}
+                    disabled={isPurchasing || isCheckingTrustline || isSyncing}
+                    className="w-full h-16 rounded-full text-xl disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {isPurchasing || isCheckingTrustline || isSyncing ? (
+                      <div
+                        className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin"
+                        aria-label={
+                          isCheckingTrustline
+                            ? "Checking wallet…"
+                            : isSyncing
+                              ? "Finalising ticket issuance…"
+                              : "Processing purchase"
+                        }
+                      />
+                    ) : (
+                      <>
+                        <span>Confirm Purchase</span>
+                        <ArrowRight
+                          size={24}
+                          className="group-hover:translate-x-1 transition-transform"
+                          aria-hidden="true"
+                        />
+                      </>
+                    )}
+                  </Button>
 
-                <div className="flex flex-col gap-2">
-                  <h2 className="text-3xl font-bold text-black font-heading">Ticket Minted!</h2>
-                  <p className="text-black/60 font-medium">
-                    {isGiftMode && recipientWallet.trim()
-                      ? `Your gift ticket has been sent to ${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-4)} on the Stellar network.`
-                      : "Your ticket has been successfully registered on the Stellar network."}
-                  </p>
+                  {/* Card onramp flow */}
+                  {activeTab === "card" && (
+                    <div className="bg-white/50 rounded-2xl p-6 border border-black/5 flex flex-col gap-6">
+                      <CardOnramp
+                        amountUsd={finalPrice}
+                        receivingAddress={process.env.NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID || ""}
+                        onSuccess={(fundedWallet) => handleOnrampSuccess(fundedWallet)}
+                        onCancel={() => {
+                          toast.info("Payment cancelled");
+                          setActiveTab("wallet");
+                        }}
+                        onError={(err) => {
+                          toast.error(err.message || "Onramp error");
+                          setActiveTab("wallet");
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
+              )}
 
-                <div className="bg-white p-6 rounded-3xl shadow-xl border border-black/5 flex flex-col items-center gap-4">
-                  <QRCodeSVG value={purchasedTicket.id} size={200} level="H" includeMargin />
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs font-bold text-black/40 uppercase tracking-widest">
-                      Ticket ID
-                    </span>
-                    <span className="font-mono text-sm font-bold text-black">
-                      {purchasedTicket.id}
-                    </span>
+              {/* ── Sold-out / Join Waitlist view ──────────────────────────── */}
+              {view === "purchase" && isSoldOut && (
+                <div className="p-8 sm:p-10 flex flex-col gap-8">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-error font-bold uppercase tracking-wider text-sm">
+                      <ClockIcon size={16} />
+                      <span>Sold Out</span>
+                    </div>
+                    <h2
+                      id="ticket-modal-title"
+                      className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight"
+                    >
+                      {event.title}
+                    </h2>
+                    <p id="ticket-modal-subtitle" className="text-black/60 font-medium">
+                      {event.date} • {event.location}
+                    </p>
+                  </div>
+
+                  <div
+                    className="bg-white/60 rounded-2xl p-6 border border-black/5 flex flex-col gap-4"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <p className="text-base font-semibold text-black">
+                      All tickets for this event have been claimed.
+                    </p>
+                    <p className="text-sm text-black/60 leading-relaxed">
+                      Join the waitlist and we&apos;ll notify you automatically if a spot becomes
+                      available. You won&apos;t be charged anything now.
+                    </p>
+
+                    <ul className="flex flex-col gap-2 pt-2 border-t border-black/5">
+                      {[
+                        "You'll receive an email if a ticket is released",
+                        "Your queue position is reserved instantly",
+                        "No payment required to join",
+                      ].map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-black/70">
+                          <span
+                            className="w-5 h-5 rounded-full bg-accent flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                            aria-hidden="true"
+                          >
+                            ✓
+                          </span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <Button
+                    variant="primary"
+                    onClick={handleJoinWaitlist}
+                    disabled={isJoiningWaitlist}
+                    className="w-full h-16 rounded-full text-xl disabled:opacity-70 disabled:cursor-not-allowed"
+                    aria-label="Join the waitlist for this event"
+                  >
+                    {isJoiningWaitlist ? (
+                      <div
+                        className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin"
+                        aria-label="Joining waitlist"
+                      />
+                    ) : (
+                      <>
+                        <ClockIcon size={22} aria-hidden="true" />
+                        <span>Join Waitlist</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+
+              {/* ── Trustline setup view ───────────────────────────────────── */}
+              {view === "trustline" && (
+                <div className="p-8 sm:p-10 flex flex-col gap-6">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-amber-600 font-bold uppercase tracking-wider text-sm">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width={16}
+                        height={16}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
+                      <span>Trustline Required</span>
+                    </div>
+                    <h2
+                      id="ticket-modal-title"
+                      className="text-[28px] sm:text-[32px] font-bold text-black font-heading leading-tight"
+                    >
+                      Add USDC Trustline (Testnet)
+                    </h2>
+                  </div>
+
+                  <div
+                    className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col gap-3"
+                    role="status"
+                  >
+                    <p className="text-sm font-semibold text-amber-900">
+                      Your wallet does not have a USDC trustline set up.
+                    </p>
+                    <p className="text-sm text-amber-800 leading-relaxed">
+                      A <strong>trustline</strong> is a voluntary link between your Stellar account
+                      and a specific asset issuer (in this case, USDC). Without one, your account
+                      cannot receive or hold USDC, so ticket payments cannot be processed.
+                    </p>
+                    <p className="text-sm text-amber-800 leading-relaxed">
+                      Clicking the button below will prompt Freighter to sign a{" "}
+                      <code className="bg-amber-100 px-1 rounded text-xs">ChangeTrust</code>{" "}
+                      transaction on your behalf. This is a one-time, no-cost operation — you will
+                      only need XLM for the tiny base-reserve fee (~0.5 XLM).
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <Button
+                      variant="primary"
+                      onClick={handleAddTrustline}
+                      disabled={isAddingTrustline}
+                      className="w-full h-14 rounded-full text-lg disabled:opacity-70 disabled:cursor-not-allowed"
+                      aria-label="Add USDC Trustline via Freighter"
+                    >
+                      {isAddingTrustline ? (
+                        <div
+                          className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin"
+                          aria-label="Adding trustline…"
+                        />
+                      ) : (
+                        "Add USDC Trustline (Testnet)"
+                      )}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setView("purchase")}
+                      className="text-sm text-black/50 hover:text-black/80 transition-colors underline-offset-2 hover:underline"
+                    >
+                      Go back
+                    </button>
                   </div>
                 </div>
+              )}
 
-                <Button
-                  variant="primary"
-                  onClick={onClose}
-                  className="w-full h-14 rounded-full text-lg"
-                >
-                  Done
-                </Button>
-              </div>
-            )}
+              {/* ── Purchased success view ─────────────────────────────────── */}
+              {view === "purchased" && purchasedTicket && (
+                <div className="p-8 sm:p-10 flex flex-col items-center text-center gap-8">
+                  <PurchaseSuccessAnimation active={view === "purchased"} />
 
-            {/* ── Waitlist success view ──────────────────────────────────── */}
-            {view === "waitlist_success" && waitlistPosition !== null && (
-              <div className="p-8 sm:p-10 flex flex-col items-center text-center gap-8">
-                <motion.div
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="w-20 h-20 rounded-full bg-accent flex items-center justify-center"
-                >
-                  <ClockIcon size={40} className="text-black" />
-                </motion.div>
+                  <div className="flex flex-col gap-2">
+                    <h2 className="text-3xl font-bold text-black font-heading">Ticket Minted!</h2>
+                    <p className="text-black/60 font-medium">
+                      {isGiftMode && recipientWallet.trim()
+                        ? `Your gift ticket has been sent to ${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-4)} on the Stellar network.`
+                        : "Your ticket has been successfully registered on the Stellar network."}
+                    </p>
+                  </div>
 
-                <div className="flex flex-col gap-2">
-                  <h2 className="text-3xl font-bold text-black font-heading">
-                    You&apos;re on the list!
-                  </h2>
-                  <p className="text-black/60 font-medium">
-                    We&apos;ll notify you if a spot opens up for{" "}
-                    <strong>{event.title}</strong>.
+                  <div className="bg-white p-6 rounded-3xl shadow-xl border border-black/5 flex flex-col items-center gap-4">
+                    <QRCodeSVG value={purchasedTicket.id} size={200} level="H" includeMargin />
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-bold text-black/40 uppercase tracking-widest">
+                        Ticket ID
+                      </span>
+                      <span className="font-mono text-sm font-bold text-black">
+                        {purchasedTicket.id}
+                      </span>
+                    </div>
+                    {purchasedTicket.txHash && (
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-xs font-bold text-black/40 uppercase tracking-widest">
+                          Transaction
+                        </span>
+                        <StellarExplorerLink txHash={purchasedTicket.txHash} />
+                      </div>
+                    )}
+                  </div>
+
+                  <Button
+                    variant="primary"
+                    onClick={onClose}
+                    className="w-full h-14 rounded-full text-lg"
+                  >
+                    Done
+                  </Button>
+                </div>
+              )}
+
+              {/* ── Waitlist success view ──────────────────────────────────── */}
+              {view === "waitlist_success" && waitlistPosition !== null && (
+                <div className="p-8 sm:p-10 flex flex-col items-center text-center gap-8">
+                  <motion.div
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="w-20 h-20 rounded-full bg-accent flex items-center justify-center"
+                  >
+                    <ClockIcon size={40} className="text-black" />
+                  </motion.div>
+
+                  <div className="flex flex-col gap-2">
+                    <h2 className="text-3xl font-bold text-black font-heading">
+                      You&apos;re on the list!
+                    </h2>
+                    <p className="text-black/60 font-medium">
+                      We&apos;ll notify you if a spot opens up for <strong>{event.title}</strong>.
+                    </p>
+                  </div>
+
+                  <div
+                    className="bg-white border-2 border-black rounded-3xl shadow-[-4px_4px_0_rgba(0,0,0,1)] px-10 py-6 flex flex-col items-center gap-1"
+                    aria-label={`Your waitlist position is number ${waitlistPosition}`}
+                  >
+                    <span className="text-xs font-bold text-black/40 uppercase tracking-widest">
+                      Your Position
+                    </span>
+                    <span className="text-6xl font-extrabold text-ink-deep leading-none">
+                      #{waitlistPosition}
+                    </span>
+                    <span className="text-sm text-black/50 font-medium">in the queue</span>
+                  </div>
+
+                  <p className="text-xs text-black/40 max-w-xs">
+                    You can leave the waitlist at any time from your profile page.
                   </p>
+
+                  <Button
+                    variant="primary"
+                    onClick={onClose}
+                    className="w-full h-14 rounded-full text-lg"
+                  >
+                    Done
+                  </Button>
                 </div>
-
-                {/* Queue position badge */}
-                <div
-                  className="bg-white border-2 border-black rounded-3xl shadow-[-4px_4px_0_rgba(0,0,0,1)] px-10 py-6 flex flex-col items-center gap-1"
-                  aria-label={`Your waitlist position is number ${waitlistPosition}`}
-                >
-                  <span className="text-xs font-bold text-black/40 uppercase tracking-widest">
-                    Your Position
-                  </span>
-                  <span className="text-6xl font-extrabold text-ink-deep leading-none">
-                    #{waitlistPosition}
-                  </span>
-                  <span className="text-sm text-black/50 font-medium">in the queue</span>
-                </div>
-
-                <p className="text-xs text-black/40 max-w-xs">
-                  You can leave the waitlist at any time from your profile page.
-                </p>
-
-                <Button
-                  variant="primary"
-                  onClick={onClose}
-                  className="w-full h-14 rounded-full text-lg"
-                >
-                  Done
-                </Button>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Background watermark */}
             <div className="absolute -right-10 -bottom-10 opacity-[0.03] pointer-events-none -rotate-12 z-0">
-              <Image src="/icons/stellar-logo.svg" width={300} height={300} alt="" aria-hidden="true" />
+              <Image
+                src="/icons/stellar-logo.svg"
+                width={300}
+                height={300}
+                alt=""
+                aria-hidden="true"
+              />
             </div>
           </motion.div>
         </div>

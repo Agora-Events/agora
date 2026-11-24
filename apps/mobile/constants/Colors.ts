@@ -16,6 +16,16 @@ export const Colors = {
     icon: '#8E8E93',
     tabIconDefault: '#8E8E93',
     tabIconSelected: '#FDDA23',
+    /** Card / surface background (e.g. ticket cards) */
+    cardBackground: '#F2F2F7',
+    /** Subtle border / separator color */
+    border: '#C6C6C8',
+    /** Muted success green (e.g. "Verified" badge background) */
+    successBadgeBackground: '#34C75922',
+    /** Success green text */
+    successBadgeText: '#1A7F37',
+    /** Counter warning color (approaching max length) */
+    counterWarning: '#FF9500',
   },
   dark: {
     text: '#FFFFFF',
@@ -24,6 +34,16 @@ export const Colors = {
     icon: '#8E8E93',
     tabIconDefault: '#8E8E93',
     tabIconSelected: '#FDDA23',
+    /** Card / surface background (e.g. ticket cards) */
+    cardBackground: '#1E1E20',
+    /** Subtle border / separator color */
+    border: '#2C2C2E',
+    /** Muted success green (e.g. "Verified" badge background) */
+    successBadgeBackground: '#34C75922',
+    /** Success green text */
+    successBadgeText: '#34C759',
+    /** Counter warning color (approaching max length) */
+    counterWarning: '#FF9500',
   },
 };
 

@@ -78,7 +78,7 @@ export default function AuthScreen() {
           style={styles.keyboardView}
         >
           <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-            <View style={styles.headerContainer}>
+            <View style={styles.headerContainer} accessible={true} accessibilityRole="header">
               <Text style={styles.logoText}>AGORA</Text>
               <Text style={styles.subtitleText}>Decentralized Event Ticketing</Text>
             </View>
@@ -96,6 +96,8 @@ export default function AuthScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                accessibilityLabel="Email Address"
+                accessibilityHint="Enter your email address to log in"
               />
 
               <Input
@@ -110,20 +112,27 @@ export default function AuthScreen() {
                 secureTextEntry
                 autoCapitalize="none"
                 autoCorrect={false}
+                accessibilityLabel="Password"
+                accessibilityHint="Enter your password"
               />
 
               <Button
                 title={loading ? 'Logging in...' : 'Log In'}
                 onPress={handleLogin}
                 loading={loading}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel={loading ? 'Logging in...' : 'Log In'}
+                accessibilityHint="Submits your email and password to log in"
+                accessibilityState={{ disabled: loading }}
                 style={styles.loginButton}
               />
             </View>
 
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
+            <View style={styles.dividerContainer} accessible={false} importantForAccessibility="no">
+              <View style={styles.dividerLine} accessible={false} />
               <Text style={styles.dividerText}>or continue with</Text>
-              <View style={styles.dividerLine} />
+              <View style={styles.dividerLine} accessible={false} />
             </View>
 
             <View style={styles.socialContainer}>
@@ -131,12 +140,22 @@ export default function AuthScreen() {
                 title="Sign In with Google"
                 onPress={() => handleSocialLogin('Google')}
                 variant="outline"
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Sign In with Google"
+                accessibilityHint="Authenticates using your Google account"
+                accessibilityState={{ disabled: loading }}
                 style={styles.socialButton}
               />
               <Button
                 title="Sign In with Apple"
                 onPress={() => handleSocialLogin('Apple')}
                 variant="outline"
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Sign In with Apple"
+                accessibilityHint="Authenticates using your Apple ID"
+                accessibilityState={{ disabled: loading }}
                 style={styles.socialButton}
               />
             </View>

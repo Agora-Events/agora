@@ -15,12 +15,13 @@ function DiscoverContent() {
   const searchParams = useSearchParams();
   const category = searchParams.get("category") ?? "";
   const organizer = searchParams.get("organizer") ?? "";
+  const free = searchParams.get("free") === "1" || searchParams.get("free") === "true";
 
-  const updateFilter = (name: "category" | "organizer", value: string) => {
+  const updateFilter = (name: "category" | "organizer" | "free", value: string | boolean) => {
     const params = new URLSearchParams(searchParams.toString());
 
     if (value) {
-      params.set(name, value);
+      params.set(name, typeof value === "boolean" ? "1" : String(value));
     } else {
       params.delete(name);
     }
@@ -43,6 +44,8 @@ function DiscoverContent() {
         onCategoryChange={(value) => updateFilter("category", value)}
         selectedOrganizer={organizer}
         onOrganizerChange={(value) => updateFilter("organizer", value)}
+        free={free}
+        onFreeChange={(value) => updateFilter("free", value)}
       />
       <OrganizerComponent
         selectedOrganizer={organizer}

@@ -1,5 +1,7 @@
 export const COOKIE_CONSENT_KEY = "cookie_consent";
 
+export const SUPPORT_EMAIL = "hello@agora.com";
+
 export const CATEGORIES = [
   { id: "tech", label: "Tech", color: "#DBF4C2", icon: "/icons/Tech.svg" },
   { id: "party", label: "Party", color: "#FFABD3", icon: "/icons/party.svg" },

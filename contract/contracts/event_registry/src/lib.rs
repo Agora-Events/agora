@@ -19,8 +19,9 @@ use crate::events::{
     WaitlistLeftEvent,
 };
 use crate::types::{
-    BlacklistAuditEntry, EventInfo, EventReceipt, EventRegistrationArgs, EventStatus, GuestProfile,
-    MultiSigConfig, OrganizerStake, PaymentInfo, TicketTier,
+    BlacklistAuditEntry, EventCapacity, EventInfo, EventReceipt, EventRegistrationArgs,
+    EventStatus, GuestProfile, MultiSigConfig, OrganizerStake, PaymentInfo, StakingConfig,
+    TicketTier,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
@@ -31,6 +32,7 @@ pub mod error;
 pub mod events;
 pub mod storage;
 pub mod teleport;
+pub mod ticket;
 mod topics;
 pub mod types;
 
@@ -40,6 +42,9 @@ use crate::error::EventRegistryError;
 
 /// Maximum number of ticket tiers allowed per event during registration.
 const MAX_TIERS_PER_EVENT: u32 = 20;
+
+/// Maximum number of events that can be queried in a single batch call.
+const MAX_BATCH_SIZE: u32 = 50;
 
 #[contract]
 pub struct EventRegistry;
@@ -272,6 +277,10 @@ impl EventRegistry {
 
         if args.tiers.len() > MAX_TIERS_PER_EVENT {
             return Err(EventRegistryError::TooManyTiers);
+        }
+
+        for tier in args.tiers.values() {
+            validate_tier_price(&tier)?;
         }
 
         // Validate tier limits don't exceed max_supply
@@ -531,14 +540,16 @@ impl EventRegistry {
                 }
 
                 // Update metadata
+                let old_metadata_cid = event_info.metadata_cid.clone();
                 event_info.metadata_cid = new_metadata_cid.clone();
                 storage::update_event(&env, event_info.clone());
 
-                // Emit metadata update event
+                // Emit metadata update event so indexers can follow CID changes (#1561)
                 env.events().publish(
                     (AgoraEvent::MetadataUpdated,),
                     MetadataUpdatedEvent {
                         event_id,
+                        old_metadata_cid,
                         new_metadata_cid,
                         updated_by: event_info.organizer_address,
                         timestamp: env.ledger().timestamp(),
@@ -637,13 +648,99 @@ impl EventRegistry {
         storage::get_event(&env, event_id)
     }
 
-    /// Retrieves a batch of events by their IDs (max 50).
+    /// Retrieves an event's capacity (max supply, current supply, and
+    /// remaining availability) without fetching the entire `EventInfo`
+    /// struct (Issue #1560).
+    ///
+    /// Cheaper for indexers and the frontend than `get_event` when only the
+    /// supply/availability numbers are needed (e.g. for a "X tickets left"
+    /// badge or sold-out check).
+    ///
+    /// # Errors
+    /// Returns `EventRegistryError::EventNotFound` if no event exists with
+    /// the given `event_id`.
+    pub fn get_event_capacity(
+        env: Env,
+        event_id: String,
+    ) -> Result<EventCapacity, EventRegistryError> {
+        let event_info =
+            storage::get_event(&env, event_id).ok_or(EventRegistryError::EventNotFound)?;
+
+        let available = if event_info.max_supply > 0 {
+            Some(event_info.max_supply.saturating_sub(event_info.current_supply))
+        } else {
+            // max_supply == 0 means unlimited capacity.
+            None
+        };
+
+        Ok(EventCapacity {
+            max_supply: event_info.max_supply,
+            current_supply: event_info.current_supply,
+            available,
+        })
+    }
+
+    /// Retrieves a batch of events by their IDs (max MAX_BATCH_SIZE).
+    ///
+    /// This function provides efficient batch retrieval of event information
+    /// for marketplace discovery and event listing features. It allows querying
+    /// multiple events in a single RPC call, reducing latency and preventing
+    /// RPC throttling that would occur with individual event queries.
+    ///
+    /// # Arguments
+    /// * `event_ids` - A vector of event IDs to retrieve. The length must not
+    ///   exceed `MAX_BATCH_SIZE` (currently 50).
+    ///
+    /// # Returns
+    /// Returns a vector of optional `EventInfo` objects in the same order as
+    /// the input IDs. If an event doesn't exist, its corresponding position
+    /// will be `None`.
+    ///
+    /// # Errors
+    /// Returns `EventRegistryError::BatchSizeExceeded` (code 100) if the input
+    /// vector holds more than `MAX_BATCH_SIZE` (50) ids. Exactly 50 is
+    /// accepted. Split larger lookups into several calls of at most 50 ids.
+    ///
+    /// # Examples
+    /// Call it through the generated `EventRegistryClient`, using Soroban
+    /// types (`soroban_sdk::vec!` and `soroban_sdk::String`) rather than std
+    /// ones, since the contract is `#![no_std]`:
+    ///
+    /// ```ignore
+    /// use soroban_sdk::{vec, Env, String};
+    ///
+    /// let client = EventRegistryClient::new(&env, &contract_id);
+    ///
+    /// let event_ids = vec![
+    ///     &env,
+    ///     String::from_str(&env, "event1"),
+    ///     String::from_str(&env, "event2"),
+    /// ];
+    ///
+    /// // Results line up with `event_ids`; unknown ids come back as `None`.
+    /// let events = client.get_events_batch(&event_ids);
+    /// for event in events.iter() {
+    ///     if let Some(event_info) = event {
+    ///         // e.g. read event_info.event_id, event_info.status, ...
+    ///     }
+    /// }
+    ///
+    /// // `try_` variant to handle the size limit instead of panicking:
+    /// match client.try_get_events_batch(&event_ids) {
+    ///     Ok(Ok(events)) => { /* use events */ }
+    ///     Err(Ok(EventRegistryError::BatchSizeExceeded)) => { /* > 50 ids */ }
+    ///     _ => { /* host or conversion error */ }
+    /// }
+    /// ```
+    ///
+    /// The block is `ignore` because it needs a test `Env` and a registered
+    /// contract; `test_events_batch.rs` runs the same calls as real tests.
     pub fn get_events_batch(
         env: Env,
         event_ids: Vec<String>,
     ) -> Result<Vec<Option<EventInfo>>, EventRegistryError> {
-        if event_ids.len() > 50 {
-            return Err(EventRegistryError::TooManyTiers);
+        if event_ids.len() > MAX_BATCH_SIZE {
+            return Err(EventRegistryError::BatchSizeExceeded);
         }
         let mut results = Vec::new(&env);
         for id in event_ids.into_iter() {
@@ -801,6 +898,20 @@ impl EventRegistry {
             .ok_or(EventRegistryError::NotInitialized)?;
 
         storage::set_admin(&env, &proposed_admin);
+
+        if let Some(mut config) = storage::get_multisig_config(&env) {
+            let mut updated_admins = soroban_sdk::Vec::new(&env);
+            for admin in config.admins.iter() {
+                if admin == previous_admin {
+                    updated_admins.push_back(proposed_admin.clone());
+                } else {
+                    updated_admins.push_back(admin);
+                }
+            }
+            config.admins = updated_admins;
+            storage::set_multisig_config(&env, &config);
+        }
+
         storage::clear_pending_admin(&env);
 
         #[allow(deprecated)]
@@ -1034,6 +1145,14 @@ impl EventRegistry {
             storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
         event_info.organizer_address.require_auth();
 
+        validate_tier_price(&tier)?;
+
+        if !event_info.tiers.contains_key(tier_id.clone())
+            && event_info.tiers.len() >= MAX_TIERS_PER_EVENT
+        {
+            return Err(EventRegistryError::TooManyTiers);
+        }
+
         if event_info.max_supply > 0 {
             let mut total_tier_limit: i128 = 0;
             for existing_tier in event_info.tiers.values() {
@@ -1258,17 +1377,51 @@ impl EventRegistry {
         storage::is_blacklisted(&env, &organizer_address)
     }
 
-    /// Retrieves the blacklist audit log.
+    /// Retrieves the entire blacklist audit log.
+    ///
+    /// The log only grows, so this getter is unsuitable for large logs: the read
+    /// can exceed Soroban resource limits. Prefer [`Self::get_blacklist_audit_log_page`].
     pub fn get_blacklist_audit_log(env: Env) -> Vec<BlacklistAuditEntry> {
         storage::get_blacklist_audit_log(&env)
     }
 
+    /// Retrieves one page of the blacklist audit log, oldest entries first.
+    ///
+    /// # Arguments
+    /// * `start` - Zero-based index of the first entry to return.
+    /// * `limit` - Maximum entries to return; clamped to `MAX_BATCH_SIZE` (50).
+    ///
+    /// Returns an empty vector when `start` is out of range or `limit` is 0.
+    pub fn get_blacklist_audit_log_page(
+        env: Env,
+        start: u32,
+        limit: u32,
+    ) -> Vec<BlacklistAuditEntry> {
+        let log = storage::get_blacklist_audit_log(&env);
+        let len = log.len();
+        let mut page = Vec::new(&env);
+        if start >= len {
+            return page;
+        }
+        let end = start.saturating_add(limit.min(MAX_BATCH_SIZE)).min(len);
+        for i in start..end {
+            page.push_back(log.get(i).unwrap());
+        }
+        page
+    }
+
     /// Sets a platform-wide promotional discount. Only callable by the administrator.
     /// The promo automatically expires when the ledger timestamp passes `promo_expiry`.
+    /// Emits GlobalPromoUpdated on every successful call, including clears.
     ///
     /// # Arguments
     /// * `global_promo_bps` - Discount rate in basis points (e.g., 1500 = 15% off). 0 clears the promo.
     /// * `promo_expiry` - Unix timestamp after which the promo is no longer applied.
+    ///   Must be strictly in the future when `global_promo_bps > 0`.
+    ///
+    /// # Errors
+    /// * `InvalidPromoBps` - `global_promo_bps` exceeds 10000.
+    /// * `InvalidDeadline` - `global_promo_bps > 0` and `promo_expiry` is not in the future.
     pub fn set_global_promo(
         env: Env,
         global_promo_bps: u32,
@@ -1278,6 +1431,12 @@ impl EventRegistry {
 
         if global_promo_bps > 10000 {
             return Err(EventRegistryError::InvalidPromoBps);
+        }
+
+        // A live promo must expire in the future; otherwise it would be
+        // reported as set but never applied. Clearing (bps == 0) accepts any expiry.
+        if global_promo_bps > 0 && promo_expiry <= env.ledger().timestamp() {
+            return Err(EventRegistryError::InvalidDeadline);
         }
 
         storage::set_global_promo_bps(&env, global_promo_bps);
@@ -1316,7 +1475,12 @@ impl EventRegistry {
         Some((storage::get_global_promo_bps(&env), expiry))
     }
 
-    /// Returns the expiry timestamp for the current global promo.
+    /// Returns the expiry timestamp of the stored global promo.
+    ///
+    /// Returns `0` when no promo has ever been set. The value is returned as
+    /// stored, even after it has passed. To check whether the promo is still
+    /// active, use [`Self::get_global_promo`] (returns `None` once expired) or
+    /// [`Self::get_global_promo_bps`] (returns `0` once expired).
     pub fn get_promo_expiry(env: Env) -> u64 {
         storage::get_promo_expiry(&env)
     }
@@ -1336,11 +1500,30 @@ impl EventRegistry {
         // Only the organizer may postpone their event.
         auth::require_organizer(&env, &event_id, &event_info.organizer_address)?;
 
+        // A cancelled event is already being refunded through the cancellation
+        // flow, and an inactive event is not running. Neither may be postponed.
+        if matches!(event_info.status, EventStatus::Cancelled) {
+            return Err(EventRegistryError::EventCancelled);
+        }
+        if !event_info.is_active || matches!(event_info.status, EventStatus::Inactive) {
+            return Err(EventRegistryError::EventInactive);
+        }
+
         let now = env.ledger().timestamp();
         if new_start_time <= now {
             return Err(EventRegistryError::InvalidDeadline);
         }
+        // Postponing moves the start later. An earlier or equal start is not a
+        // postponement, and it would still open the postponement refund window.
+        if new_start_time <= event_info.start_time {
+            return Err(EventRegistryError::InvalidDeadline);
+        }
         if grace_period_end <= now {
+            return Err(EventRegistryError::InvalidGracePeriod);
+        }
+        // The refund window must close no later than the rescheduled start,
+        // otherwise guests could claim postponement refunds after the event began.
+        if grace_period_end > new_start_time {
             return Err(EventRegistryError::InvalidGracePeriod);
         }
 
@@ -1466,6 +1649,14 @@ impl EventRegistry {
         );
 
         Ok(())
+    }
+
+    /// Returns the configured staking token and minimum stake amount.
+    pub fn get_staking_config(env: Env) -> StakingConfig {
+        StakingConfig {
+            token: storage::get_staking_token(&env),
+            min_amount: storage::get_min_stake_amount(&env),
+        }
     }
 
     /// Allows an organizer to stake collateral tokens to unlock Verified status.
@@ -2170,7 +2361,7 @@ impl EventRegistry {
                 let mut new_config = config.clone();
                 new_config.admins.push_back(new_admin.clone());
                 storage::set_multisig_config(&env, &new_config);
-                storage::set_admin(&env, new_admin); // Update legacy admin storage
+                storage::set_admin(&env, &new_admin); // Update legacy admin storage
             }
             types::ParameterChange::RemoveAdmin(admin_to_remove) => {
                 let mut new_config = config.clone();
@@ -2195,7 +2386,7 @@ impl EventRegistry {
                 storage::set_multisig_config(&env, &new_config);
             }
             types::ParameterChange::UpdatePlatformWallet(new_wallet) => {
-                storage::set_platform_wallet(&env, new_wallet);
+                storage::set_platform_wallet(&env, &new_wallet);
             }
             types::ParameterChange::SetPlatformFee(fee) => {
                 storage::set_platform_fee(&env, *fee);
@@ -2252,6 +2443,14 @@ impl EventRegistry {
 
     /// Joins the waitlist for an event. Emits WaitlistJoinedEvent.
     /// Requires the user's authentication.
+    ///
+    /// Only events that can still sell tickets accept new waitlist entries.
+    ///
+    /// # Errors
+    /// * `EventNotFound` - the event does not exist.
+    /// * `EventCancelled` - the event has been cancelled.
+    /// * `EventInactive` - the event is inactive or suspended.
+    /// * `AlreadyOnWaitlist` - the user is already on the waitlist.
     pub fn join_waitlist(
         env: Env,
         event_id: String,
@@ -2259,9 +2458,15 @@ impl EventRegistry {
     ) -> Result<(), EventRegistryError> {
         user.require_auth();
 
-        // Check if event exists
-        if !storage::event_exists(&env, event_id.clone()) {
-            return Err(EventRegistryError::EventNotFound);
+        // Load the event so cancelled or inactive events are rejected. Leaving
+        // the waitlist is not gated by event status (see `leave_waitlist`).
+        let event_info =
+            storage::get_event(&env, event_id.clone()).ok_or(EventRegistryError::EventNotFound)?;
+        if matches!(event_info.status, EventStatus::Cancelled) {
+            return Err(EventRegistryError::EventCancelled);
+        }
+        if !event_info.is_active || matches!(event_info.status, EventStatus::Inactive) {
+            return Err(EventRegistryError::EventInactive);
         }
 
         // Check if user is already on the waitlist
@@ -2287,6 +2492,10 @@ impl EventRegistry {
 
     /// Leaves the waitlist for an event. Emits WaitlistLeftEvent.
     /// Requires the user's authentication.
+    ///
+    /// # Errors
+    /// * `EventNotFound` - the event does not exist.
+    /// * `NotOnWaitlist` - the user is not on the waitlist for this event.
     pub fn leave_waitlist(
         env: Env,
         event_id: String,
@@ -2431,6 +2640,15 @@ fn validate_address(env: &Env, address: &Address) -> Result<(), EventRegistryErr
     Ok(())
 }
 
+/// Tier prices are denominated in stroops. Zero is allowed (free tickets);
+/// negative prices are rejected (Issue #1559).
+fn validate_tier_price(tier: &TicketTier) -> Result<(), EventRegistryError> {
+    if tier.price < 0 {
+        return Err(EventRegistryError::InvalidPrice);
+    }
+    Ok(())
+}
+
 fn validate_metadata_cid(env: &Env, cid: &String) -> Result<(), EventRegistryError> {
     let len = cid.len();
     let mut bytes = soroban_sdk::Bytes::new(env);
@@ -2539,6 +2757,9 @@ mod issue_tests;
 mod test_issue_fixes;
 
 #[cfg(test)]
+mod test_max_per_user;
+
+#[cfg(test)]
 mod test_global_promo;
 
 #[cfg(test)]
@@ -2556,3 +2777,15 @@ mod test_admin_transfer;
 
 #[cfg(test)]
 mod test_bridge;
+
+#[cfg(test)]
+mod test_event;
+
+#[cfg(test)]
+mod test_events_batch;
+
+#[cfg(test)]
+mod test_waitlist;
+
+#[cfg(test)]
+mod test_postpone;

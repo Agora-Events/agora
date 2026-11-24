@@ -6,6 +6,7 @@ import {
   fetchUsdcRate,
   type FiatCurrency,
 } from "@/utils/usdc-rate";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,9 +114,13 @@ export function PriceTag({
       aria-label={`${usdcDisplay} USDC${fiatDisplay !== null ? `, approximately ${symbol}${fiatDisplay} ${label}` : ""}`}
     >
       {/* Primary: USDC amount */}
-      <span className="font-semibold text-[20px] leading-tight text-black">
+      <span className="flex items-center gap-1 font-semibold text-[20px] leading-tight text-black">
         {usdcDisplay}{" "}
         <span className="text-[14px] font-medium text-black/60">USDC</span>
+        <InfoTooltip
+          label="What is a Stroop?"
+          text="Stellar settlement amounts are ultimately denominated in Stroops, the network's smallest unit — 1 XLM = 10,000,000 Stroops."
+        />
       </span>
 
       {/* Secondary: fiat conversion */}

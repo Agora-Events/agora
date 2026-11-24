@@ -50,6 +50,28 @@ describe("calendar utils", () => {
       expect(ics).toContain("END:VCALENDAR");
     });
 
+    it.each([0, "event-123"])("keeps the UID when event %s is rescheduled", (id) => {
+      const event = { id, title: "Conference", startsAt: "2026-11-17T10:00:00Z" };
+      const original = buildIcsFile(event);
+      const rescheduled = buildIcsFile({ ...event, startsAt: "2026-11-18T10:00:00Z" });
+
+      expect(original.split("\r\n")).toContain(`UID:${id}@agora.events`);
+      expect(rescheduled.split("\r\n")).toContain(`UID:${id}@agora.events`);
+      expect(original).toContain("DTSTART:20261117T100000Z");
+      expect(rescheduled).toContain("DTSTART:20261118T100000Z");
+    });
+
+    it("uses title and start time to distinguish events without IDs", () => {
+      const event = { title: "Morning workshop", startsAt: "2026-11-17T10:00:00Z" };
+      const getUid = (ics: string) => ics.split("\r\n").find((line) => line.startsWith("UID:"));
+      const uid = getUid(buildIcsFile(event));
+
+      expect(uid).toBeDefined();
+      expect(getUid(buildIcsFile(event))).toBe(uid);
+      expect(getUid(buildIcsFile({ ...event, title: "Builder meetup" }))).not.toBe(uid);
+      expect(getUid(buildIcsFile({ ...event, startsAt: "2026-11-17T11:00:00Z" }))).not.toBe(uid);
+    });
+
     it("uses explicit end time when provided", () => {
       const event = {
         title: "Conference",

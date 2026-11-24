@@ -146,12 +146,20 @@ if [ -z "$EVENT_REGISTRY_ID_ALREADY_SET" ]; then
         --ticket_payment_address "$TICKET_PAYMENT_ID"
 fi
 
+EXPLORER="https://stellar.expert/explorer/testnet/contract"
+
 echo ""
 echo "=============================================================================="
 echo "Deployment/Upgrade Complete!"
 echo "------------------------------------------------------------------------------"
-echo "EVENT_REGISTRY_ID: $EVENT_REGISTRY_ID"
-echo "TICKET_PAYMENT_ID: $TICKET_PAYMENT_ID"
+echo "EVENT_REGISTRY_ID:  $EVENT_REGISTRY_ID"
+echo "  Stellar Expert:   $EXPLORER/$EVENT_REGISTRY_ID"
+echo "TICKET_PAYMENT_ID:  $TICKET_PAYMENT_ID"
+echo "  Stellar Expert:   $EXPLORER/$TICKET_PAYMENT_ID"
 echo "USDC_TOKEN_ADDRESS: $USDC_TOKEN_ADDRESS"
+if [[ "$USDC_TOKEN_ADDRESS" != "REPLACE_WITH_TOKEN_ADDRESS" ]] && [[ -n "$USDC_TOKEN_ADDRESS" ]]; then
+echo "  Stellar Expert:   $EXPLORER/$USDC_TOKEN_ADDRESS"
+fi
 echo "=============================================================================="
 echo "Update your .env.devnet with these IDs for E2E tests."
+echo "Verify contracts at: $EXPLORER/{contract_id}"

@@ -9,11 +9,71 @@ import { EmptyState } from "../ui/empty-state";
 import { Button } from "../ui/button";
 import { dataEvents } from "./mockups";
 import { useTranslations } from "next-intl";
+import { useDebounce } from "@/hooks/useDebounce";
+import { fetchPopularEvents, type DiscoverEvent } from "@/utils/api";
 import {
   FilterSidebar,
   FilterState,
   getActiveFilterCount,
 } from "./filter-sidebar";
+
+export type EventSort = "date-soonest" | "price-asc" | "price-desc" | "popularity";
+
+export const SORT_OPTIONS: { value: EventSort; label: string }[] = [
+  { value: "date-soonest", label: "Date (soonest)" },
+  { value: "price-asc", label: "Price (low → high)" },
+  { value: "price-desc", label: "Price (high → low)" },
+  { value: "popularity", label: "Most popular" },
+];
+
+function parseEventTimestamp(date: string): number {
+  const direct = Date.parse(date);
+  if (!Number.isNaN(direct)) return direct;
+
+  const match = date.match(/(\d{1,2})\s+([A-Za-z]{3}),?\s+(\d{1,2}:\d{2})/);
+  if (match) {
+    const parsed = Date.parse(
+      `${match[1]} ${match[2]} ${new Date().getFullYear()} ${match[3]}`,
+    );
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
+function parseEventPrice(price: string): number {
+  if (!price || price.toLowerCase() === "free") return 0;
+  const value = Number.parseFloat(price);
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function sortEvents(events: DiscoverEvent[], sort: EventSort): DiscoverEvent[] {
+  const copy = [...events];
+
+  copy.sort((a, b) => {
+    switch (sort) {
+      case "price-asc":
+        return parseEventPrice(a.price) - parseEventPrice(b.price);
+      case "price-desc":
+        return parseEventPrice(b.price) - parseEventPrice(a.price);
+      case "popularity":
+        return (b.mintedTickets ?? 0) - (a.mintedTickets ?? 0);
+      case "date-soonest":
+      default:
+        return parseEventTimestamp(a.date) - parseEventTimestamp(b.date);
+    }
+  });
+
+  return copy;
+}
+
+const ITEMS_PER_PAGE = 12;
+const SEARCH_DEBOUNCE_MS = 300;
+
+const defaultEvents: DiscoverEvent[] = dataEvents.map((e) => ({
+  ...e,
+  id: String(e.id),
+}));
 
 const container = {
   hidden: { opacity: 0 },
@@ -49,13 +109,20 @@ const DEFAULT_FILTERS: FilterState = {
   locations: [],
   minPrice: "",
   maxPrice: "",
+  freeOnly: false,
 };
 
 interface PopularEventsSectionProps {
-  category: string;
-  onCategoryChange: (category: string) => void;
+  category?: string;
+  onCategoryChange?: (category: string) => void;
   selectedOrganizer?: string;
   onOrganizerChange?: (organizer: string) => void;
+  free?: boolean;
+  onFreeChange?: (free: boolean) => void;
+  activeCategory?: string;
+  onError?: (message: string) => void;
+  onEventsChange?: (count: number) => void;
+  events?: DiscoverEvent[];
 }
 
 type ActiveFilter = {
@@ -65,23 +132,65 @@ type ActiveFilter = {
 };
 
 export function PopularEventsSection({
-  category,
+  category = "",
   onCategoryChange,
   selectedOrganizer,
   onOrganizerChange,
+  free,
+  onFreeChange,
+  activeCategory,
+  onError,
+  onEventsChange,
+  events: initialEvents,
 }: PopularEventsSectionProps) {
   const t = useTranslations("discover");
+  const currentCategory = category || activeCategory || "";
+  const gridSectionRef = useRef<HTMLElement>(null);
   const [isFocused, setIsFocused] = useState(false);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, SEARCH_DEBOUNCE_MS);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
     ...DEFAULT_FILTERS,
-    categories: category ? [category] : [],
+    categories: currentCategory ? [currentCategory] : [],
+    freeOnly: free ?? false,
   });
+
+  const [sortBy, setSortBy] = useState<EventSort>("date-soonest");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [events, setEvents] = useState<DiscoverEvent[]>(initialEvents ?? defaultEvents);
+  const [isLoading, setIsLoading] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadEvents = async () => {
+      try {
+        setIsLoading(true);
+        const data = await fetchPopularEvents();
+        if (active) {
+          setEvents(data.events ?? data);
+        }
+      } catch (err) {
+        if (active) {
+          setEvents(defaultEvents);
+          onError?.("Could not load popular events");
+        }
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadEvents();
+    return () => {
+      active = false;
+    };
+  }, [onError]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -131,13 +240,17 @@ export function PopularEventsSection({
   useEffect(() => {
     setFilters((currentFilters) => ({
       ...currentFilters,
-      categories: category ? [category] : [],
+      categories: currentCategory ? [currentCategory] : [],
+      freeOnly: free ?? false,
     }));
-  }, [category]);
+  }, [currentCategory, free]);
 
   const handleFiltersChange = (nextFilters: FilterState) => {
     setFilters(nextFilters);
-    onCategoryChange(nextFilters.categories[0] ?? "");
+    onCategoryChange?.(nextFilters.categories[0] ?? "");
+    if (onFreeChange) {
+      onFreeChange(nextFilters.freeOnly);
+    }
   };
 
   const activeFilters: ActiveFilter[] = [
@@ -160,12 +273,17 @@ export function PopularEventsSection({
     ...(filters.maxPrice
       ? [{ key: "maxPrice" as const, label: `Up to $${filters.maxPrice}` }]
       : []),
+    ...(filters.freeOnly
+      ? [{ key: "freeOnly" as const, label: "Free events only" }]
+      : []),
   ];
 
   const removeFilter = (filter: ActiveFilter) => {
     const nextFilters = { ...filters };
 
-    if (filter.key === "categories" || filter.key === "locations") {
+    if (filter.key === "freeOnly") {
+      nextFilters.freeOnly = false;
+    } else if (filter.key === "categories" || filter.key === "locations") {
       nextFilters[filter.key] = nextFilters[filter.key].filter(
         (value) => value !== filter.value,
       );
@@ -177,28 +295,31 @@ export function PopularEventsSection({
   };
 
   const filteredAndSortedEvents = useMemo(() => {
-    let result = events;
+    let result: DiscoverEvent[] = events;
 
     // 1. Search Query
     const query = debouncedSearch.toLowerCase().trim();
     if (query) {
-      result = result.filter((event) =>
+      result = result.filter((event: DiscoverEvent) =>
         event.title.toLowerCase().includes(query),
       );
     }
 
     // 2. Categories
     if (filters.categories.length > 0) {
-      result = result.filter((event) =>
+      result = result.filter((event: DiscoverEvent) =>
         filters.categories.includes(event.category),
       );
-    } else if (activeCategory && activeCategory !== "All") {
-      result = result.filter((event) => event.category.toLowerCase() === activeCategory.toLowerCase());
+    } else if (currentCategory && currentCategory !== "All") {
+      result = result.filter(
+        (event: DiscoverEvent) =>
+          event.category.toLowerCase() === currentCategory.toLowerCase(),
+      );
     }
 
     // 3. Location
     if (filters.locations.length > 0) {
-      result = result.filter((event) =>
+      result = result.filter((event: DiscoverEvent) =>
         filters.locations.some((loc) =>
           event.location.toLowerCase().includes(loc.toLowerCase()),
         ),
@@ -207,7 +328,7 @@ export function PopularEventsSection({
 
     // 4. Price Range
     if (filters.minPrice !== "" || filters.maxPrice !== "") {
-      result = result.filter((event) => {
+      result = result.filter((event: DiscoverEvent) => {
         const isFree = event.price.toLowerCase() === "free";
         const price = isFree ? 0 : parseFloat(event.price);
 
@@ -219,8 +340,17 @@ export function PopularEventsSection({
       });
     }
 
+    // 5. Free events only
+    if (filters.freeOnly) {
+      result = result.filter((event: DiscoverEvent) => {
+        const isFree =
+          event.price.toLowerCase() === "free" || parseFloat(event.price) === 0;
+        return isFree;
+      });
+    }
+
     return sortEvents(result, sortBy);
-  }, [debouncedSearch, filters, events, activeCategory, sortBy]);
+  }, [debouncedSearch, filters, events, currentCategory, sortBy]);
 
   // Calculate pagination slices (at most 12 cards in the DOM)
   const totalPages = Math.ceil(filteredAndSortedEvents.length / ITEMS_PER_PAGE);
@@ -269,7 +399,8 @@ export function PopularEventsSection({
     (filters.date ? 1 : 0) +
     filters.categories.length +
     filters.locations.length +
-    (filters.minPrice !== "" || filters.maxPrice !== "" ? 1 : 0);
+    (filters.minPrice !== "" || filters.maxPrice !== "" ? 1 : 0) +
+    (filters.freeOnly ? 1 : 0);
 
   return (
     <section ref={gridSectionRef} className="px-4 bg-base py-12">

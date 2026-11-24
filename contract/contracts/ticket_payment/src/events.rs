@@ -37,6 +37,10 @@ pub enum AgoraEvent {
     EscrowWithdrawalApproved,
     EscrowWithdrawalExecuted,
     MilestoneReleased,
+    WithdrawalCapUpdated,
+    MaxTicketsPerWalletUpdated,
+    OracleUpdated,
+    SlippageUpdated,
 }
 
 #[contracttype]
@@ -334,5 +338,54 @@ pub struct EscrowWithdrawalExecutedEvent {
 pub struct EscrowDisputedEvent {
     pub event_id: String,
     pub opened_by: Address,
+    pub timestamp: u64,
+}
+
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawalCapUpdatedEvent {
+    pub token: Address,
+    pub old_cap: i128,
+    pub new_cap: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when an organizer changes the per-wallet purchase limit for an event.
+///
+/// A limit of `0` means "unlimited". `old_limit` is the value that was in effect
+/// before the update (also `0` if no limit had ever been configured), so
+/// indexers can reconcile cached limits without a separate read.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaxTicketsPerWalletUpdatedEvent {
+    pub event_id: String,
+    pub old_limit: u32,
+    pub new_limit: u32,
+    pub updated_by: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when the admin changes the FX price oracle used for FX-converted purchases.
+///
+/// `old_oracle` is `None` if no oracle had been configured before this call.
+/// Monitoring can use this to detect a change in the price source.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleUpdatedEvent {
+    pub old_oracle: Option<Address>,
+    pub new_oracle: Address,
+    pub timestamp: u64,
+}
+
+/// Emitted when the admin changes the FX slippage tolerance.
+///
+/// Values are in basis points. `old_bps` is the tolerance that was in effect
+/// before the call, including the default when none had been set explicitly.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SlippageUpdatedEvent {
+    pub old_bps: u32,
+    pub new_bps: u32,
     pub timestamp: u64,
 }

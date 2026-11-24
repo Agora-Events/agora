@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "My Wallet · Agora",
-  description: "View your upcoming and past event tickets in one place.",
+  title: "My Wallet",
+  robots: { index: false, follow: false },
 };
 
 export default function WalletLayout({
@@ -10,5 +10,5 @@ export default function WalletLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return children;
 }

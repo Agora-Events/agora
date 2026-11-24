@@ -5,6 +5,7 @@ import left from "../../public/icons/arrow-left.svg";
 import right from "../../public/icons/arrow-right.svg";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { fetchOrganizers, type DiscoverOrganizer } from "@/utils/api";
 import { Button } from "@/components/ui/button";
 import { WalletAddress } from "@/components/ui/wallet-address";
@@ -69,6 +70,7 @@ export function OrganizerComponent({
   onOrganizerChange = () => undefined,
   onError = () => undefined,
 }: OrganizerComponentProps) {
+  const t = useTranslations("discover");
   const cardsRef = useRef<HTMLDivElement>(null);
   const [cardsData, setCardsData] = useState<DiscoverOrganizer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -166,6 +168,7 @@ export function OrganizerComponent({
                   alt={card.title}
                   height={65}
                   width={65}
+                  loading="lazy"
                   className="relative z-10 border-4 border-black rounded-full object-cover"
                 />
                 <div className="absolute -left-1 top-1 w-15 h-15 bg-white rounded-full z-0" />

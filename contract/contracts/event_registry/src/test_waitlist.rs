@@ -212,6 +212,13 @@ fn register_event_with_supply(
     });
 }
 
+/// Checks waitlist membership from storage (storage access must run in-contract).
+fn on_waitlist(env: &Env, client: &EventRegistryClient, event_id: &String, user: &Address) -> bool {
+    env.as_contract(&client.address, || {
+        storage::is_on_waitlist(env, event_id, user)
+    })
+}
+
 // ── Helper: sell out an event by incrementing inventory up to max_supply ─────
 
 fn sell_out_event(env: &Env, client: &EventRegistryClient, event_id: &String, max_supply: u32) {
@@ -221,10 +228,11 @@ fn sell_out_event(env: &Env, client: &EventRegistryClient, event_id: &String, ma
     client.set_ticket_payment_contract(&ticket_payment);
 
     let tier_id = String::from_str(env, "general");
+    let payment_token = Address::generate(env);
     for i in 0..max_supply {
         let buyer = Address::generate(env);
         let _ = client
-            .try_increment_inventory(event_id, &tier_id, &buyer, &1)
+            .try_increment_inventory(event_id, &tier_id, &buyer, &1, &payment_token)
             .unwrap_or_else(|_| panic!("sell_out_event: increment failed at ticket {}", i));
     }
 }
@@ -342,29 +350,74 @@ fn test_join_waitlist_cancelled_event() {
     let event_id = String::from_str(&env, "event_cancelled_waitlist");
 
     register_test_event(&env, &client, &event_id, &organizer);
-
-    // Cancel the event
     client.cancel_event(&event_id, &None);
 
-    // Verify it is cancelled
     let event = client.get_event(&event_id).unwrap();
     assert!(
         matches!(event.status, crate::types::EventStatus::Cancelled),
         "event should be cancelled"
     );
 
-    // join_waitlist checks event existence but not cancellation status at the
-    // contract level — the event still exists in storage after cancellation.
-    // The call succeeds because join_waitlist only checks event_exists and
-    // AlreadyOnWaitlist. Document this behaviour and assert accordingly.
-    //
-    // If the contract is later updated to reject cancelled events, change this
-    // assertion to:
-    //   assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
     let result = client.try_join_waitlist(&event_id, &user);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventCancelled)));
+    assert!(!on_waitlist(&env, &client, &event_id, &user));
+}
+
+/// Joining the waitlist for an inactive event must return EventInactive,
+/// whether the event was marked inactive by status or suspended via is_active.
+#[test]
+fn test_join_waitlist_inactive_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _platform_wallet) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+    let user = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_inactive_waitlist");
+
+    register_test_event(&env, &client, &event_id, &organizer);
+
+    // Status-inactive event.
+    env.as_contract(&client.address, || {
+        let mut info = storage::get_event(&env, event_id.clone()).unwrap();
+        info.status = crate::types::EventStatus::Inactive;
+        storage::store_event(&env, info);
+    });
+    let result = client.try_join_waitlist(&event_id, &user);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventInactive)));
+
+    // Suspended event: status unchanged, but is_active cleared.
+    env.as_contract(&client.address, || {
+        let mut info = storage::get_event(&env, event_id.clone()).unwrap();
+        info.status = crate::types::EventStatus::Active;
+        info.is_active = false;
+        storage::store_event(&env, info);
+    });
+    let result = client.try_join_waitlist(&event_id, &user);
+    assert_eq!(result, Err(Ok(EventRegistryError::EventInactive)));
+
+    assert!(!on_waitlist(&env, &client, &event_id, &user));
+}
+
+/// Users who joined before the event was cancelled can still leave the waitlist.
+#[test]
+fn test_leave_waitlist_after_cancellation_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _platform_wallet) = setup_contract(&env);
+    let organizer = Address::generate(&env);
+    let user = Address::generate(&env);
+    let event_id = String::from_str(&env, "event_leave_after_cancel");
+
+    register_test_event(&env, &client, &event_id, &organizer);
+    client.join_waitlist(&event_id, &user);
+    client.cancel_event(&event_id, &None);
+
+    let result = client.try_leave_waitlist(&event_id, &user);
     assert!(
         result.is_ok(),
-        "join_waitlist currently succeeds for cancelled events (event still exists in storage); \
-         update this test if the contract adds a cancellation guard"
+        "leave_waitlist must work for cancelled events"
     );
+    assert!(!on_waitlist(&env, &client, &event_id, &user));
 }

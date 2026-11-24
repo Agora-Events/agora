@@ -137,3 +137,79 @@ mod get_global_promo_tests {
         );
     }
 }
+
+/// Unit tests for rejecting already-expired promos – issue #1738.
+#[cfg(test)]
+mod set_global_promo_expiry_validation_tests {
+    use crate::{error::EventRegistryError, EventRegistry, EventRegistryClient};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger, LedgerInfo},
+        Address, Env,
+    };
+
+    fn setup(env: &Env, now: u64) -> EventRegistryClient<'static> {
+        env.ledger().set(LedgerInfo {
+            timestamp: now,
+            protocol_version: 23,
+            sequence_number: 1,
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 1,
+            max_entry_ttl: 6_312_000,
+        });
+        let contract_id = env.register(EventRegistry, ());
+        let client = EventRegistryClient::new(env, &contract_id);
+        client.initialize(
+            &Address::generate(env),
+            &Address::generate(env),
+            &500,
+            &Address::generate(env),
+        );
+        client
+    }
+
+    #[test]
+    fn test_past_expiry_with_discount_is_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let client = setup(&env, 1_000);
+
+        let result = client.try_set_global_promo(&500, &999);
+        assert_eq!(result, Err(Ok(EventRegistryError::InvalidDeadline)));
+        assert_eq!(client.get_global_promo(), None);
+    }
+
+    #[test]
+    fn test_expiry_equal_to_now_is_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let client = setup(&env, 1_000);
+
+        let result = client.try_set_global_promo(&500, &1_000);
+        assert_eq!(result, Err(Ok(EventRegistryError::InvalidDeadline)));
+    }
+
+    #[test]
+    fn test_future_expiry_is_accepted() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let client = setup(&env, 1_000);
+
+        client.set_global_promo(&500, &2_000);
+        assert_eq!(client.get_global_promo(), Some((500, 2_000)));
+    }
+
+    #[test]
+    fn test_clearing_with_zero_bps_accepts_any_expiry() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let client = setup(&env, 1_000);
+
+        client.set_global_promo(&500, &2_000);
+        // Past expiry is fine when the call only clears the promo.
+        client.set_global_promo(&0, &1);
+        assert_eq!(client.get_global_promo_bps(), 0);
+        assert_eq!(client.get_global_promo(), None);
+    }
+}

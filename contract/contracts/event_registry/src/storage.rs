@@ -1120,29 +1120,36 @@ pub fn decrement_global_active_event_count(env: &Env) {
 }
 
 /// Returns the total number of tickets sold across all events.
+/// Uses the standard Soroban bumpable counter pattern to extend the key's TTL.
 pub fn get_global_tickets_sold(env: &Env) -> i128 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::GlobalTicketsSold)
-        .unwrap_or(0)
+    let key = DataKey::GlobalTicketsSold;
+    let count: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+    bump_persistent(env, &key);
+    count
 }
 
 /// Adds `quantity` to the global tickets sold counter.
+/// Uses the standard Soroban bumpable counter pattern to persist the new value and extend its TTL.
 pub fn add_to_global_tickets_sold(env: &Env, quantity: i128) {
-    let current = get_global_tickets_sold(env);
+    let key = DataKey::GlobalTicketsSold;
+    let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
     env.storage().persistent().set(
-        &DataKey::GlobalTicketsSold,
+        &key,
         &(current.saturating_add(quantity)),
     );
+    bump_persistent(env, &key);
 }
 
 /// Subtracts `quantity` from the global tickets sold counter.
+/// Uses the standard Soroban bumpable counter pattern to persist the new value and extend its TTL.
 pub fn subtract_from_global_tickets_sold(env: &Env, quantity: i128) {
-    let current = get_global_tickets_sold(env);
+    let key = DataKey::GlobalTicketsSold;
+    let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
     env.storage().persistent().set(
-        &DataKey::GlobalTicketsSold,
+        &key,
         &(current.saturating_sub(quantity)),
     );
+    bump_persistent(env, &key);
 }
 
 /// Returns the number of tickets a user has purchased for a specific event tier.

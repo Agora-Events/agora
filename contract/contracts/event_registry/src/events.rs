@@ -111,6 +111,8 @@ pub struct RegistryUpgradedEvent {
 pub struct MetadataUpdatedEvent {
     /// The unique identifier of the event whose metadata changed.
     pub event_id: String,
+    /// The IPFS CID the event pointed to before this update.
+    pub old_metadata_cid: String,
     /// The new IPFS CID pointing to updated metadata.
     pub new_metadata_cid: String,
     /// The address of the organizer who performed the update.

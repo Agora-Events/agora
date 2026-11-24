@@ -1,31 +1,57 @@
 "use client";
 
 import React from "react";
-import useIsMobile from "@/hooks/useIsMobile";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 
-export default function ShareButton({ title, text }: { title: string; text: string }) {
-  const isMobile = useIsMobile();
+interface ShareButtonProps {
+  title: string;
+  text?: string;
+  url?: string;
+  className?: string;
+}
+
+export default function ShareButton({
+  title,
+  text,
+  url: customUrl,
+  className = "px-4 py-2",
+}: ShareButtonProps) {
   const t = useTranslations("eventDetail");
 
   const handleShare = async () => {
-    const url = typeof window !== "undefined" ? window.location.href : "";
+    const url = customUrl || (typeof window !== "undefined" ? window.location.href : "");
+
     try {
-      if (navigator.share && isMobile) {
-        await navigator.share({ title, text, url });
+      // 1. Prioritize Web Share API when available
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        const shareData: ShareData = {
+          title,
+          ...(text ? { text } : {}),
+          ...(url ? { url } : {}),
+        };
+
+        if (!navigator.canShare || navigator.canShare(shareData)) {
+          await navigator.share(shareData);
+          return;
+        }
+      }
+
+      // 2. Fallback: Clipboard API
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText && url) {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied to clipboard");
         return;
       }
 
-      // Fallback: copy to clipboard
-      if (navigator.clipboard && url) {
-        await navigator.clipboard.writeText(url);
-        toast.success("Link copied to clipboard");
-      } else {
-        // Last-resort fallback
+      // 3. Fallback: Legacy execCommand
+      if (url) {
         const input = document.createElement("input");
         input.value = url;
+        input.setAttribute("readonly", "");
+        input.style.position = "absolute";
+        input.style.left = "-9999px";
         document.body.appendChild(input);
         input.select();
         document.execCommand("copy");
@@ -33,29 +59,19 @@ export default function ShareButton({ title, text }: { title: string; text: stri
         toast.success("Link copied to clipboard");
       }
     } catch (err) {
-      // User cancelled the native share sheet — not an error.
-      if (err instanceof DOMException && err.name === "AbortError") {
-        return;
-      }
-      if (err instanceof Error && err.name === "AbortError") {
+      // User cancelled share sheet — not an application error
+      if (
+        (err instanceof DOMException || err instanceof Error) &&
+        (err.name === "AbortError" || err.name === "NotAllowedError")
+      ) {
         return;
       }
       toast.error("Unable to share link");
     }
   };
 
-  if (!isMobile) {
-    // Show button on desktop as fallback to copy; acceptance asked mobile-only
-    // but we provide graceful fallback visible on desktop as well.
-    return (
-      <Button variant="ghost" onClick={handleShare} className="px-4 py-2">
-        {t("share")}
-      </Button>
-    );
-  }
-
   return (
-    <Button variant="ghost" onClick={handleShare} className="px-4 py-2">
+    <Button variant="ghost" onClick={handleShare} className={className}>
       {t("share")}
     </Button>
   );

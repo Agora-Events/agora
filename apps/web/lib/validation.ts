@@ -4,35 +4,77 @@ import { z } from "zod";
 export const MAX_DESCRIPTION_LENGTH = 10000;
 
 export const authSchema = z.object({
-  email: z
-    .string()
-    .min(1, "Email is required")
-    .email("Enter a valid email"),
+  email: z.string().min(1, "Email is required").email("Enter a valid email"),
 });
 
-export const createEventSchema = z.object({
-  title: z.string().trim().min(1, "Event title is required"),
-  startDate: z.string().min(1, "Start date is required"),
-  startTime: z.string().min(1, "Start time is required"),
-  endDate: z.string().optional(),
-  endTime: z.string().optional(),
-  location: z.string().trim().min(1, "Location is required"),
-  description: z.string().optional(),
-  capacity: z
-    .string()
-    .optional()
-    .refine((value) => !value || Number.parseInt(value, 10) > 0, {
-      message: "Capacity must be greater than 0",
+export const createEventSchema = z
+  .object({
+    title: z.string().trim().min(1, "Event title is required"),
+    startDate: z.string().min(1, "Start date is required"),
+    startTime: z.string().min(1, "Start time is required"),
+    endDate: z.string().optional(),
+    endTime: z.string().optional(),
+    location: z.string().trim().min(1, "Location is required"),
+    description: z.string().optional(),
+    capacity: z
+      .string()
+      .optional()
+      .superRefine((value, ctx) => {
+        if (!value) return;
+
+        if (/^(-\d+|0+)$/.test(value)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Capacity must be greater than 0",
+          });
+        } else if (/\D/.test(value)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Capacity must be a whole number containing only digits",
+          });
+        }
+      }),
+    price: z.string().superRefine((value, ctx) => {
+      if (!value.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Price is required (put 0 for free)",
+        });
+      } else if (!/^-?(?:\d+|\d*\.\d{1,7})$/.test(value)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Price must be a number with at most 7 decimal places",
+        });
+      } else if (value.startsWith("-")) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Price cannot be negative",
+        });
+      }
     }),
-  price: z
-    .string()
-    .trim()
-    .min(1, "Price is required (put 0 for free)")
-    .refine((value) => Number.parseFloat(value) >= 0, {
-      message: "Price cannot be negative",
-    }),
-  visibility: z.enum(["Public", "Private"]),
-});
+    visibility: z.enum(["Public", "Private"]),
+  })
+  .refine((data) => !data.endDate || !data.startDate || data.endDate >= data.startDate, {
+    message: "End date must be on or after the start date",
+    path: ["endDate"],
+  })
+  .refine(
+    (data) => {
+      if (!data.endDate || !data.endTime || !data.startDate || !data.startTime) {
+        return true;
+      }
+      const startDateTime = new Date(`${data.startDate}T${data.startTime}`);
+      const endDateTime = new Date(`${data.endDate}T${data.endTime}`);
+      if (!Number.isNaN(startDateTime.getTime()) && !Number.isNaN(endDateTime.getTime())) {
+        return endDateTime > startDateTime;
+      }
+      return `${data.endDate}T${data.endTime}` > `${data.startDate}T${data.startTime}`;
+    },
+    {
+      message: "End time must be after the start time",
+      path: ["endTime"],
+    }
+  );
 
 export type AuthFormData = z.infer<typeof authSchema>;
 export type CreateEventInput = z.infer<typeof createEventSchema>;

@@ -1,35 +1,43 @@
 /**
- * Issue #1467 — unit tests for `locationService`. `expo-location` and
+ * Issue #1467 & #1650 — unit tests for `locationService`. `expo-location` and
  * `expo-task-manager` are fully mocked so no native device APIs or network
  * requests are touched.
  */
 
-jest.mock('expo-location', () => ({
-  requestForegroundPermissionsAsync: jest.fn(),
-  requestBackgroundPermissionsAsync: jest.fn(),
-  getLastKnownPositionAsync: jest.fn(),
-  getCurrentPositionAsync: jest.fn(),
-  hasStartedLocationUpdatesAsync: jest.fn(),
-  startLocationUpdatesAsync: jest.fn(),
-  stopLocationUpdatesAsync: jest.fn(),
-  hasStartedGeofencingAsync: jest.fn(),
-  startGeofencingAsync: jest.fn(),
-  stopGeofencingAsync: jest.fn(),
-  Accuracy: { Balanced: 3 },
-  GeofencingEventType: { Enter: 1, Exit: 2 },
-}));
+jest.mock(
+  'expo-location',
+  () => ({
+    requestForegroundPermissionsAsync: jest.fn(),
+    requestBackgroundPermissionsAsync: jest.fn(),
+    getLastKnownPositionAsync: jest.fn(),
+    getCurrentPositionAsync: jest.fn(),
+    hasStartedLocationUpdatesAsync: jest.fn(),
+    startLocationUpdatesAsync: jest.fn(),
+    stopLocationUpdatesAsync: jest.fn(),
+    hasStartedGeofencingAsync: jest.fn(),
+    startGeofencingAsync: jest.fn(),
+    stopGeofencingAsync: jest.fn(),
+    Accuracy: { Balanced: 3 },
+    GeofencingEventType: { Enter: 1, Exit: 2 },
+  }),
+  { virtual: true }
+);
 
-jest.mock('expo-task-manager', () => ({
-  defineTask: jest.fn(),
-}));
+jest.mock(
+  'expo-task-manager',
+  () => ({
+    defineTask: jest.fn(),
+  }),
+  { virtual: true }
+);
 
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 
 type LocationServiceModule = typeof import('../locationService');
 
-const mockLocation = Location as jest.Mocked<typeof Location>;
-const mockTaskManager = TaskManager as jest.Mocked<typeof TaskManager>;
+const mockLocation = Location as any;
+const mockTaskManager = TaskManager as any;
 
 const MOCK_COORDS = { latitude: 6.5244, longitude: 3.3792, accuracy: 12 };
 
@@ -46,11 +54,11 @@ function mockPermissions(foreground: boolean, background: boolean) {
   mockLocation.requestForegroundPermissionsAsync.mockResolvedValue({
     status: foreground ? 'granted' : 'denied',
     granted: foreground,
-  } as any);
+  });
   mockLocation.requestBackgroundPermissionsAsync.mockResolvedValue({
     status: background ? 'granted' : 'denied',
     granted: background,
-  } as any);
+  });
 }
 
 beforeEach(() => {
@@ -63,7 +71,7 @@ beforeEach(() => {
   mockLocation.getCurrentPositionAsync.mockResolvedValue({
     coords: MOCK_COORDS,
     timestamp: Date.now(),
-  } as any);
+  });
   mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(false);
   mockLocation.hasStartedGeofencingAsync.mockResolvedValue(false);
 });
@@ -82,7 +90,7 @@ describe('locationService — permission granted', () => {
 
     expect(mockLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
     expect(mockLocation.getCurrentPositionAsync).toHaveBeenCalledWith({
-      accuracy: Location.Accuracy.Balanced,
+      accuracy: 3,
     });
     expect(position).toEqual(MOCK_COORDS);
   });
@@ -92,7 +100,7 @@ describe('locationService — permission granted', () => {
     mockLocation.getLastKnownPositionAsync.mockResolvedValueOnce({
       coords: { latitude: 1, longitude: 2, accuracy: 50 },
       timestamp: Date.now(),
-    } as any);
+    });
     const { locationService } = loadModule();
 
     const position = await locationService.getCurrentPosition();
@@ -133,13 +141,13 @@ describe('locationService — background task registration', () => {
   it('defines the location and geofence tasks with TaskManager on import', () => {
     const { LOCATION_TASK_NAME, GEOFENCE_TASK_NAME } = loadModule();
 
-    const taskNames = mockTaskManager.defineTask.mock.calls.map(([name]) => name);
+    const taskNames = mockTaskManager.defineTask.mock.calls.map(([name]: [string]) => name);
     expect(taskNames).toEqual(expect.arrayContaining([LOCATION_TASK_NAME, GEOFENCE_TASK_NAME]));
     expect(LOCATION_TASK_NAME).toBe('AGORA_BACKGROUND_LOCATION');
     expect(GEOFENCE_TASK_NAME).toBe('AGORA_GEOFENCE_MONITOR');
   });
 
-  it('starts background location updates under LOCATION_TASK_NAME', async () => {
+  it('starts background location updates with distance and deferred optimizations under LOCATION_TASK_NAME', async () => {
     mockPermissions(true, true);
     const { locationService, LOCATION_TASK_NAME } = loadModule();
 
@@ -147,7 +155,13 @@ describe('locationService — background task registration', () => {
 
     expect(mockLocation.startLocationUpdatesAsync).toHaveBeenCalledWith(
       LOCATION_TASK_NAME,
-      expect.objectContaining({ distanceInterval: 300 }),
+      expect.objectContaining({
+        accuracy: 3,
+        distanceInterval: 100,
+        deferredUpdatesInterval: 60_000,
+        deferredUpdatesDistance: 100,
+        pausesUpdatesAutomatically: true,
+      })
     );
   });
 
@@ -185,19 +199,19 @@ describe('locationService — background task registration', () => {
   it('notifies onGeofenceEnter subscribers when the geofence task fires an Enter event', async () => {
     const { locationService, GEOFENCE_TASK_NAME } = loadModule();
     const geofenceCall = mockTaskManager.defineTask.mock.calls.find(
-      ([name]) => name === GEOFENCE_TASK_NAME,
+      ([name]: [string]) => name === GEOFENCE_TASK_NAME
     );
     const geofenceTask = geofenceCall![1] as (body: any) => Promise<void>;
     const handler = jest.fn();
     const unsubscribe = locationService.onGeofenceEnter(handler);
 
     await geofenceTask({
-      data: { eventType: Location.GeofencingEventType.Enter, region: { identifier: 'evt-9' } },
+      data: { eventType: 1, region: { identifier: 'evt-9' } },
       error: null,
     });
     unsubscribe();
     await geofenceTask({
-      data: { eventType: Location.GeofencingEventType.Enter, region: { identifier: 'evt-10' } },
+      data: { eventType: 1, region: { identifier: 'evt-10' } },
       error: null,
     });
 

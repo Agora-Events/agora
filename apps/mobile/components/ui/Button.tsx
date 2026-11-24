@@ -7,18 +7,24 @@ import {
   StyleProp,
   ViewStyle,
   TextStyle,
+  AccessibilityRole,
+  AccessibilityState,
 } from 'react-native';
 import Colors from '../../constants/Colors';
 
 interface ButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'destructive';
   loading?: boolean;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
   testID?: string;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  accessibilityState?: AccessibilityState;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -30,10 +36,24 @@ export const Button: React.FC<ButtonProps> = ({
   style,
   textStyle,
   testID,
+  accessibilityRole = 'button',
+  accessibilityLabel,
+  accessibilityHint,
+  accessibilityState,
 }) => {
+  const getTextColorStyle = () => {
+    if (variant === 'primary') return styles.textPrimary;
+    if (variant === 'destructive') return styles.textDestructive;
+    return styles.textSecondary;
+  };
+
   return (
     <Pressable
       testID={testID}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel ?? title}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: disabled || loading, ...accessibilityState }}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
@@ -45,12 +65,15 @@ export const Button: React.FC<ButtonProps> = ({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? Colors.darkBackground : Colors.primaryText} />
+        <ActivityIndicator
+          color={variant === 'primary' ? Colors.darkBackground : '#FFFFFF'}
+          accessible={false}
+        />
       ) : (
         <Text
           style={[
             styles.text,
-            variant === 'primary' ? styles.textPrimary : styles.textSecondary,
+            getTextColorStyle(),
             disabled && styles.textDisabled,
             textStyle,
           ]}
@@ -83,6 +106,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.secondaryText,
   },
+  destructive: {
+    backgroundColor: Colors.accentRed,
+  },
   disabled: {
     opacity: 0.5,
   },
@@ -99,6 +125,9 @@ const styles = StyleSheet.create({
   },
   textSecondary: {
     color: Colors.primaryText,
+  },
+  textDestructive: {
+    color: '#FFFFFF',
   },
   textDisabled: {
     color: Colors.secondaryText,

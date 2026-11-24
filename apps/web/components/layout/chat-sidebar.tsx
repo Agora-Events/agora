@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Image from "next/image";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/Input";
 
 interface Conversation {
   id: string;
@@ -50,13 +51,14 @@ export function ChatSidebar({ conversations = [], onNewChat }: ChatSidebarProps)
       {/* Search / Filter */}
       {conversations.length > 0 && (
         <div className="px-4 py-3 border-b border-border-warm">
-          <input
+          <Input
             type="search"
+            tone="surface"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search conversations…"
             aria-label="Filter conversations"
-            className="w-full rounded-lg border border-border-warm bg-surface px-3 py-2 text-sm text-ink-deep placeholder:text-ink-deep/40 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full rounded-lg border border-border-warm bg-surface px-3 py-2 text-sm text-ink-deep focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
       )}

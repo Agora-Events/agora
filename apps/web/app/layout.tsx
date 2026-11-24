@@ -5,12 +5,14 @@
 //   toast.info("Loading...")
 // Toaster is globally mounted below — no per-page setup needed.
 
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
-import { CookieBanner } from "@/components/layout/cookie-banner";
-import { LiveAnnouncer } from "@/components/ui/live-announcer";
-import { LocaleProvider } from "@/lib/i18n/locale-context";
+import { cookies } from "next/headers";
+import { NextIntlClientProvider } from "next-intl";
 import "./globals.css";
+
+const SUPPORTED_LOCALES = ["en", "es", "fr"] as const;
+type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 const inter = Inter({
   variable: "--font-inter",
@@ -48,12 +50,19 @@ import { AttributionCapture } from "@/components/analytics/attribution-capture";
 import { TestnetBanner } from "@/components/layout/testnet-banner";
 
 export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const savedLocale = cookieStore.get("NEXT_LOCALE")?.value;
+  const locale: Locale =
+    SUPPORTED_LOCALES.find((supportedLocale) => supportedLocale === savedLocale) ??
+    "en";
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale}>
       <body className={`${inter.variable} antialiased`}>
         <a className="skip-link" href="#main-content">
           Skip to main content
@@ -64,9 +73,9 @@ export default function RootLayout({
               TestnetBanner is a client component that self-gates on
               NEXT_PUBLIC_STELLAR_NETWORK so it renders nothing in production. */}
           <TestnetBanner />
+        <NextIntlClientProvider locale={locale}>
           {children}
-          <CookieBanner />
-        </LocaleProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

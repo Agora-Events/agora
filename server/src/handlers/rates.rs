@@ -113,6 +113,12 @@ impl CircuitBreaker {
             let now = unix_now();
             // CAS: only set `opened_at` when it is currently zero (not already
             // open) to avoid resetting the timer mid-open window.
+            let _ = self.opened_at.compare_exchange(
+                0,
+                now,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            );
             let _ = self
                 .opened_at
                 .compare_exchange(0, now, Ordering::AcqRel, Ordering::Relaxed);
@@ -225,6 +231,26 @@ pub fn circuit_breaker_health(breaker: &CircuitBreaker) -> CircuitBreakerHealth 
     }
 }
 
+/// Get the current circuit breaker state for the exchange rate provider.
+///
+/// # Endpoint
+/// `GET /api/v1/rates/circuit-breaker`
+///
+/// Returns the breaker status (`closed`, `open` or `half_open`), the number
+/// of consecutive upstream failures, the failure threshold and the reset
+/// window in seconds.
+pub async fn circuit_breaker_status(State(state): State<RatesState>) -> Response {
+    let mut health = circuit_breaker_health(&state.breaker);
+
+    // Distinguish the half-open probe state: the breaker is not blocking
+    // requests but the failure counter is still non-zero.
+    if health.status == "closed" && health.failure_count > 0 {
+        health.status = "half_open";
+    }
+
+    success(health, "Circuit breaker status retrieved").into_response()
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Handler
 // ──────────────────────────────────────────────────────────────────────────────
@@ -262,14 +288,13 @@ pub async fn get_rates(
         );
 
         if let Ok(Some(stale_rate)) = state.redis.get::<ExchangeRate>(&stale_key).await {
-            let mut resp = success(
-                stale_rate,
-                "Stale exchange rate served (circuit breaker open)",
-            )
-            .into_response();
-            resp.headers_mut()
-                .insert("X-Rate-Source", HeaderValue::from_static("stale-cache"));
-            return resp;
+            let mut resp =
+                success(stale_rate.clone(), "Stale exchange rate served (circuit breaker open)")
+                    .into_response();
+            resp.headers_mut().insert(
+                "X-Rate-Source",
+                HeaderValue::from_static("stale-cache"),
+            );
         }
 
         return AppError::ExternalServiceError(

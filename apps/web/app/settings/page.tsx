@@ -28,7 +28,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#FFFBE9] px-4 py-12">
+    <main className="min-h-screen bg-[#FFFBE9] p-6">
       <div className="mx-auto max-w-3xl">
         <h1 className="mb-8 text-4xl font-bold italic">Settings</h1>
         <section

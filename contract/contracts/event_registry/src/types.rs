@@ -1,5 +1,15 @@
 use soroban_sdk::{contracttype, Address, Map, String, Vec};
 
+/// Platform-wide collateral staking configuration.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StakingConfig {
+    /// Token contract accepted for organizer collateral.
+    pub token: Option<Address>,
+    /// Minimum amount required for Verified status, in token base units.
+    pub min_amount: i128,
+}
+
 /// Role-based access control for event teams.
 /// Defines granular permissions for large events with multiple team members.
 #[contracttype]
@@ -234,6 +244,22 @@ pub struct PaymentInfo {
     pub tiers: Map<String, TicketTier>,
     /// Referral commission rate in basis points
     pub referral_rate_bps: u32,
+}
+
+/// Lightweight capacity snapshot for an event (Issue #1560).
+///
+/// Lets indexers and the frontend query how many tickets are still available
+/// without fetching and deserializing the full `EventInfo` struct.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct EventCapacity {
+    /// Maximum number of tickets available for this event (0 = unlimited).
+    pub max_supply: i128,
+    /// Current number of tickets that have been successfully purchased.
+    pub current_supply: i128,
+    /// Remaining tickets (`max_supply - current_supply`). `None` when the
+    /// event has unlimited supply (`max_supply == 0`).
+    pub available: Option<i128>,
 }
 
 /// Arguments required to register a new event

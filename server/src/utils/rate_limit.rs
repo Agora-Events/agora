@@ -84,7 +84,8 @@ struct AcquireOutcome {
     retry_after: u64,
 }
 
-/// Apply standard rate-limit headers. `Retry-After` is set only on 429s.
+/// Apply standard IETF RFC 6585 RateLimit-* headers as well as legacy X-RateLimit-* headers.
+/// `Retry-After` is set only on 429s.
 pub fn apply_rate_limit_headers(
     headers: &mut HeaderMap,
     limit: usize,
@@ -92,13 +93,32 @@ pub fn apply_rate_limit_headers(
     reset_epoch: u64,
     retry_after: Option<u64>,
 ) {
-    if let Ok(v) = HeaderValue::from_str(&limit.to_string()) {
+    let limit_str = limit.to_string();
+    let remaining_str = remaining.to_string();
+    let reset_epoch_str = reset_epoch.to_string();
+    let reset_delta = retry_after.unwrap_or_else(|| {
+        reset_epoch.saturating_sub(unix_now()).max(1)
+    });
+
+    // Standard IETF RateLimit-* response headers
+    if let Ok(v) = HeaderValue::from_str(&limit_str) {
+        headers.insert("ratelimit-limit", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&remaining_str) {
+        headers.insert("ratelimit-remaining", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&reset_delta.to_string()) {
+        headers.insert("ratelimit-reset", v);
+    }
+
+    // Legacy X-RateLimit-* headers for backward compatibility
+    if let Ok(v) = HeaderValue::from_str(&limit_str) {
         headers.insert("x-ratelimit-limit", v);
     }
-    if let Ok(v) = HeaderValue::from_str(&remaining.to_string()) {
+    if let Ok(v) = HeaderValue::from_str(&remaining_str) {
         headers.insert("x-ratelimit-remaining", v);
     }
-    if let Ok(v) = HeaderValue::from_str(&reset_epoch.to_string()) {
+    if let Ok(v) = HeaderValue::from_str(&reset_epoch_str) {
         headers.insert("x-ratelimit-reset", v);
     }
     if let Some(secs) = retry_after {
@@ -417,10 +437,13 @@ mod tests {
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
-        assert!(secs >= 1, "Retry-After must be at least 1, got {secs}");
+        assert!(secs > 0);
         assert!(resp.headers().contains_key("x-ratelimit-limit"));
         assert!(resp.headers().contains_key("x-ratelimit-remaining"));
         assert!(resp.headers().contains_key("x-ratelimit-reset"));
+        assert!(resp.headers().contains_key("ratelimit-limit"));
+        assert!(resp.headers().contains_key("ratelimit-remaining"));
+        assert!(resp.headers().contains_key("ratelimit-reset"));
     }
 
     #[tokio::test]
@@ -432,8 +455,14 @@ mod tests {
             allowed.headers().get("x-ratelimit-limit").unwrap(),
             "1"
         );
+        assert_eq!(
+            allowed.headers().get("ratelimit-limit").unwrap(),
+            "1"
+        );
         assert!(allowed.headers().contains_key("x-ratelimit-remaining"));
         assert!(allowed.headers().contains_key("x-ratelimit-reset"));
+        assert!(allowed.headers().contains_key("ratelimit-remaining"));
+        assert!(allowed.headers().contains_key("ratelimit-reset"));
         assert!(allowed.headers().get("retry-after").is_none());
 
         let rejected = send_full(&router, "8.8.8.8").await;
@@ -449,6 +478,11 @@ mod tests {
             rejected.headers().get("x-ratelimit-remaining").unwrap(),
             "0"
         );
+        assert_eq!(
+            rejected.headers().get("ratelimit-remaining").unwrap(),
+            "0"
+        );
+        assert!(rejected.headers().contains_key("ratelimit-reset"));
     }
 
     #[tokio::test]

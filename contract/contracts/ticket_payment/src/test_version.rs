@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{TicketPaymentContract, TicketPaymentContractClient};
+    use crate::contract::{TicketPaymentContract, TicketPaymentContractClient};
     use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
     #[test]

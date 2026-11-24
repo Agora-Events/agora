@@ -4,6 +4,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { useTranslations } from "next-intl";
 import { Footer } from "@/components/layout/footer";
 import { OrganizerComponent } from "@/components/events/organizer-component";
+import { ErrorToast } from "@/components/ui/Toast";
 import { useState } from "react";
 
 export default function OrganizersPage() {
@@ -12,15 +13,17 @@ export default function OrganizersPage() {
 
   const showErrorToast = (message: string) => {
     setToastMessage(message);
-    window.setTimeout(() => setToastMessage(null), 3500);
   };
 
   return (
     <main className="flex flex-col min-h-screen bg-base">
       <Navbar />
       {toastMessage && (
-        <div className="fixed top-4 right-4 z-[60] rounded-lg bg-black px-4 py-3 text-sm text-white shadow-lg">
-          {toastMessage}
+        <div className="fixed top-4 right-4 z-[60]">
+          <ErrorToast
+            message={toastMessage}
+            onDismiss={() => setToastMessage(null)}
+          />
         </div>
       )}
       <div className="p-10 pl-45 hidden lg:block bg-base">

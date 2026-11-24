@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { TicketCard, PastEventsSection } from "@/components/wallet";
@@ -11,6 +12,8 @@ import { useWalletTickets } from "@/hooks/useWalletTickets";
 import { useAuth } from "@/hooks/useAuth";
 import type { WalletTicket } from "@/hooks/useWalletTickets";
 import { TestnetFaucetCard } from "@/components/wallet/testnet-faucet-card";
+
+type SortOption = "soonest" | "latest";
 
 // ---------------------------------------------------------------------------
 // Skeletons
@@ -154,8 +157,45 @@ function WalletContent() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { upcoming, past, poaps, isLoading: ticketsLoading, mutate } = useWalletTickets();
   const [selectedSellTicket, setSelectedSellTicket] = useState<WalletTicket | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const isLoading = authLoading || ticketsLoading;
+
+  // Get sort preference from URL, default to "soonest"
+  const sortParam = searchParams.get("sort");
+  const sort: SortOption = sortParam === "latest" ? "latest" : "soonest";
+
+  const handleSortChange = (value: SortOption) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === "latest") {
+      params.set("sort", "latest");
+    } else {
+      params.delete("sort");
+    }
+    const query = params.toString();
+    router.replace(query ? `/wallet?${query}` : "/wallet", { scroll: false });
+  };
+
+  // Sort upcoming tickets on the client side
+  const sortedUpcoming = useMemo(() => {
+    const tickets = [...upcoming];
+    if (sort === "latest") {
+      tickets.sort((a, b) => {
+        const aTime = a.event_start_time ? new Date(a.event_start_time).getTime() : 0;
+        const bTime = b.event_start_time ? new Date(b.event_start_time).getTime() : 0;
+        return bTime - aTime; // Latest first
+      });
+    } else {
+      // Soonest first (default - already sorted by API, but ensure consistent ordering)
+      tickets.sort((a, b) => {
+        const aTime = a.event_start_time ? new Date(a.event_start_time).getTime() : 0;
+        const bTime = b.event_start_time ? new Date(b.event_start_time).getTime() : 0;
+        return aTime - bTime;
+      });
+    }
+    return tickets;
+  }, [upcoming, sort]);
 
   // Unauthenticated state
   if (!authLoading && !isAuthenticated) {
@@ -206,12 +246,28 @@ function WalletContent() {
       {isTestnet && user?.walletAddress && (
         <TestnetFaucetCard publicKey={user.walletAddress} />
       )}
+      {/* Sort control */}
+      <div className="flex items-center justify-end gap-2">
+        <label htmlFor="ticket-sort" className="text-xs font-medium text-muted-text whitespace-nowrap">
+          Sort by
+        </label>
+        <select
+          id="ticket-sort"
+          value={sort}
+          onChange={(e) => handleSortChange(e.target.value as SortOption)}
+          className="rounded-xl border border-border-warm bg-white px-3 py-1.5 text-xs font-semibold text-ink-soft shadow-xs focus:outline-none focus:ring-2 focus:ring-accent transition-all cursor-pointer"
+          aria-label="Sort upcoming tickets by event date"
+        >
+          <option value="soonest">Soonest first</option>
+          <option value="latest">Latest first</option>
+        </select>
+      </div>
 
       {/* Upcoming tickets */}
       <TicketSection
         title="Upcoming Tickets"
         subtitle="Events you're attending soon"
-        tickets={upcoming}
+        tickets={sortedUpcoming}
         isLoading={isLoading}
         emptyHeading="No upcoming tickets"
         emptySubtext="You don't have any upcoming events. Discover what's on near you."

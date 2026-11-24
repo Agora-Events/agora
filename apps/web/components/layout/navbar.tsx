@@ -105,7 +105,8 @@ export function Navbar() {
 
   return (
     <>
-      <nav className="w-full max-w-[1221px] h-[56px] mt-[35px] mx-auto flex px-4 lg:px-0 items-center justify-between relative z-50">
+      <header className="sticky top-0 z-50 w-full bg-white">
+      <nav className="w-full max-w-[1221px] h-[56px] mx-auto flex px-4 lg:px-0 items-center justify-between">
         {isLoggedIn ? (
           <UserNav pathname={pathname} />
         ) : (
@@ -139,6 +140,7 @@ export function Navbar() {
           </button>
         </div>
       </nav>
+      </header>
 
       {isOpen && <Overlay isOpen={isOpen} onClose={() => setIsOpen(false)} />}
 

@@ -22,6 +22,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -90,10 +91,64 @@ pub enum OrganizerEvent {
     StaffAuth(StaffAuthEvent),
 }
 
+/// A message sent by a connected client over an open WebSocket.
+///
+/// Today this only covers an application-level heartbeat and a latency-ack,
+/// but it gives the handler a single, testable place to grow client-sent
+/// message types without touching the connection loop itself.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ClientMessage {
+    /// Application-level keepalive, distinct from the WebSocket protocol ping frame.
+    Ping,
+    /// Client acknowledges the timestamp of the last event it received, for latency tracking.
+    Ack { timestamp: String },
+}
+
+/// Why an incoming text frame could not be parsed into a [`ClientMessage`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClientMessageParseError {
+    /// The frame was empty (or whitespace-only).
+    Empty,
+    /// The frame was not valid JSON at all.
+    InvalidJson(String),
+    /// The frame was valid JSON but did not match any known `ClientMessage` shape
+    /// (e.g. an unrecognized or missing `type` field).
+    UnknownType(String),
+}
+
+/// Parses a raw text frame received from a WebSocket client into a [`ClientMessage`].
+///
+/// This is a pure function (no I/O, no socket access) so it can be unit tested
+/// directly without spinning up a live WebSocket connection.
+pub fn parse_client_message(text: &str) -> Result<ClientMessage, ClientMessageParseError> {
+    if text.trim().is_empty() {
+        return Err(ClientMessageParseError::Empty);
+    }
+
+    let value: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| ClientMessageParseError::InvalidJson(e.to_string()))?;
+
+    serde_json::from_value(value.clone()).map_err(|_| {
+        let type_field = value
+            .get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("<missing>")
+            .to_string();
+        ClientMessageParseError::UnknownType(type_field)
+    })
+}
+
 /// Shared broadcaster — create once at startup and clone the `Arc` into state.
 #[derive(Clone)]
 pub struct PurchaseBroadcaster {
     sender: Arc<broadcast::Sender<PurchaseEvent>>,
+}
+
+#[derive(Clone)]
+pub struct PurchaseWsState {
+    pub pool: PgPool,
+    pub broadcaster: PurchaseBroadcaster,
 }
 
 impl PurchaseBroadcaster {
@@ -162,10 +217,21 @@ impl Default for OrganizerBroadcaster {
 /// `?token=<jwt>` query parameter. Returns 401 if authentication fails.
 pub async fn ws_purchases_handler(
     ws: WebSocketUpgrade,
-    State(broadcaster): State<PurchaseBroadcaster>,
+    State(state): State<PurchaseWsState>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
+    let event_id = match params.get("event_id").and_then(|value| Uuid::parse_str(value).ok()) {
+        Some(event_id) => event_id,
+        None => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "A valid event_id query parameter is required",
+            )
+                .into_response();
+        }
+    };
+
     // Extract JWT from Authorization header or ?token= query param.
     let token = headers
         .get(axum::http::header::AUTHORIZATION)
@@ -173,7 +239,7 @@ pub async fn ws_purchases_handler(
         .and_then(|v| v.strip_prefix("Bearer "))
         .or_else(|| params.get("token").map(|s| s.as_str()));
 
-    let _wallet = match token {
+    let wallet = match token {
         Some(t) => match crate::handlers::auth::verify_jwt(t) {
             Ok(claims) => claims.sub,
             Err(e) => {
@@ -195,11 +261,44 @@ pub async fn ws_purchases_handler(
         }
     };
 
-    // Pass the authenticated wallet to the socket handler for per-user scoping.
-    ws.on_upgrade(move |socket| handle_socket(socket, broadcaster, _wallet))
+    let authorized = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (
+            SELECT 1 FROM events e
+            JOIN organizers o ON o.id = e.organizer_id
+            WHERE e.id = $1 AND o.wallet_address = $2
+        )",
+    )
+    .bind(event_id)
+    .bind(&wallet)
+    .fetch_one(&state.pool)
+    .await;
+    match authorized {
+        Ok(true) => {}
+        Ok(false) => {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                "Not authorized to view purchases for this event",
+            )
+                .into_response();
+        }
+        Err(error) => {
+            tracing::error!(?error, "Failed to authorize purchase WebSocket");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Unable to authorize event telemetry",
+            )
+                .into_response();
+        }
+    }
+
+    ws.on_upgrade(move |socket| handle_socket(socket, state.broadcaster, event_id))
 }
 
-async fn handle_socket(mut socket: WebSocket, broadcaster: PurchaseBroadcaster, _wallet: String) {
+async fn handle_socket(
+    mut socket: WebSocket,
+    broadcaster: PurchaseBroadcaster,
+    event_id: Uuid,
+) {
     let mut rx = broadcaster.subscribe();
 
     loop {
@@ -208,6 +307,9 @@ async fn handle_socket(mut socket: WebSocket, broadcaster: PurchaseBroadcaster, 
             result = rx.recv() => {
                 match result {
                     Ok(event) => {
+                        if event.event_id != event_id {
+                            continue;
+                        }
                         let json = match serde_json::to_string(&event) {
                             Ok(j) => j,
                             Err(e) => {
@@ -232,6 +334,16 @@ async fn handle_socket(mut socket: WebSocket, broadcaster: PurchaseBroadcaster, 
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Ok(Message::Ping(payload))) => {
                         let _ = socket.send(Message::Pong(payload)).await;
+                    }
+                    Some(Ok(Message::Text(text))) => {
+                        match parse_client_message(&text) {
+                            Ok(client_msg) => {
+                                tracing::debug!(?client_msg, "received client message");
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = ?e, "failed to parse client message");
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -319,9 +431,90 @@ async fn handle_organizer_socket(mut socket: WebSocket, broadcaster: OrganizerBr
                     Some(Ok(Message::Ping(payload))) => {
                         let _ = socket.send(Message::Pong(payload)).await;
                     }
+                    Some(Ok(Message::Text(text))) => {
+                        match parse_client_message(&text) {
+                            Ok(client_msg) => {
+                                tracing::debug!(?client_msg, "received client message");
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = ?e, "failed to parse client message");
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_client_message_ping() {
+        let result = parse_client_message(r#"{"type":"ping"}"#);
+        assert_eq!(result, Ok(ClientMessage::Ping));
+    }
+
+    #[test]
+    fn test_parse_client_message_ack() {
+        let result = parse_client_message(r#"{"type":"ack","timestamp":"2026-01-01T00:00:00Z"}"#);
+        assert_eq!(
+            result,
+            Ok(ClientMessage::Ack {
+                timestamp: "2026-01-01T00:00:00Z".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_client_message_unknown_type() {
+        let result = parse_client_message(r#"{"type":"subscribe","channel":"purchases"}"#);
+        assert_eq!(
+            result,
+            Err(ClientMessageParseError::UnknownType("subscribe".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_client_message_missing_type_field() {
+        let result = parse_client_message(r#"{"foo":"bar"}"#);
+        assert_eq!(
+            result,
+            Err(ClientMessageParseError::UnknownType("<missing>".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_client_message_invalid_json() {
+        let result = parse_client_message("not valid json {{{");
+        match result {
+            Err(ClientMessageParseError::InvalidJson(_)) => {}
+            other => panic!("expected InvalidJson error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_client_message_empty_string() {
+        let result = parse_client_message("");
+        assert_eq!(result, Err(ClientMessageParseError::Empty));
+    }
+
+    #[test]
+    fn test_parse_client_message_whitespace_only() {
+        let result = parse_client_message("   \n\t  ");
+        assert_eq!(result, Err(ClientMessageParseError::Empty));
+    }
+
+    #[test]
+    fn test_parse_client_message_ack_missing_timestamp_field() {
+        // "ack" type recognized, but missing the required `timestamp` field.
+        let result = parse_client_message(r#"{"type":"ack"}"#);
+        assert!(matches!(
+            result,
+            Err(ClientMessageParseError::UnknownType(_))
+        ));
     }
 }

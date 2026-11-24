@@ -86,3 +86,37 @@ pub enum PricingKey {
     /// Pending commit-reveal: (event_id, tier_id, buyer) -> PendingCommit (Temporary)
     PendingCommit(String, String, Address),
 }
+
+/// Storage keys for per-wallet purchase limits.
+///
+/// Kept as a separate enum from `DataKey` to avoid exceeding the XDR symbol
+/// count limit on the main key enum.
+#[contracttype]
+pub enum WalletLimitKey {
+    /// Max tickets a single wallet may buy for an event: event_id -> u32 (Persistent)
+    MaxTicketsPerWallet(String),
+    /// Tickets bought so far by a wallet: (event_id, buyer) -> u32 (Persistent)
+    WalletTicketCount(String, Address),
+}
+
+/// Storage keys for admin dispute overrides.
+///
+/// Kept as a separate enum from `DataKey` to avoid exceeding the XDR symbol
+/// count limit on the main key enum.
+#[contracttype]
+pub enum DisputeKey {
+    /// Admin dispute override flag: event_id -> bool (Persistent)
+    EventDisputeOverride(String),
+}
+
+/// Storage keys for the numeric ticket-id index.
+///
+/// Kept as a separate enum from `DataKey` to avoid exceeding the XDR symbol
+/// count limit on the main key enum.
+#[contracttype]
+pub enum TicketKey {
+    /// Numeric ticket id -> payment_id mapping (Persistent)
+    TicketId(u64),
+    /// Monotonically increasing counter for numeric ticket ids (Persistent)
+    TicketIdCounter,
+}

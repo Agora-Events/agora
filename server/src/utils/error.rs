@@ -303,7 +303,17 @@ impl IntoResponse for AppError {
         let message = self.public_message();
 
         // Log *before* the message is moved into the JSON body.
+        // 404s are downgraded to trace so routine invalid-URL probes don't
+        // flood warning/error logs.
         match &self {
+            AppError::NotFound(_) => {
+                tracing::trace!(
+                    code = %machine_code,
+                    http_status = status.as_u16(),
+                    message,
+                    "Resource not found"
+                );
+            }
             AppError::DatabaseError(e) => match DatabaseErrorCategory::from_sqlx(e) {
                 DatabaseErrorCategory::Connection => {
                     error!(error = ?e, "Database connection error");
@@ -315,7 +325,7 @@ impl IntoResponse for AppError {
                 }
             },
             _ => {
-                    error!(
+                error!(
                     error = ?self,
                     code = %machine_code,
                     http_status = status.as_u16(),

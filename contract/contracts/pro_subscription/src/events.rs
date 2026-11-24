@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address};
+use soroban_sdk::{contracttype, Address, BytesN};
 
 use crate::types::SubscriptionTier;
 
@@ -22,10 +22,14 @@ pub enum ProSubscriptionEvent {
     ProMemberAdded,
     /// Organizer removed from the pro members list
     ProMemberRemoved,
-    /// Platform wallet address updated
+    /// Contract admin updated
+    AdminUpdated,
+    /// Platform wallet updated
     PlatformWalletUpdated,
-    /// Payment token address updated
+    /// Payment token updated
     PaymentTokenUpdated,
+    /// Contract WASM upgraded
+    ContractUpgraded,
 }
 
 /// Emitted when the contract is initialized
@@ -86,6 +90,18 @@ pub struct SubscriptionCancelledEvent {
     pub timestamp: u64,
 }
 
+/// Emitted when a Pro subscription is found to have expired.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionExpiredEvent {
+    /// The organizer whose subscription expired.
+    pub organizer: Address,
+    /// The ledger timestamp at which the subscription expired.
+    pub expires_at: u64,
+    /// Ledger timestamp when the expiration was observed.
+    pub timestamp: u64,
+}
+
 /// Emitted when the pro monthly price is updated
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -120,13 +136,27 @@ pub struct ProMemberRemovedEvent {
     pub timestamp: u64,
 }
 
-/// Emitted when the platform wallet address is updated
+/// Emitted when the contract admin is updated
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminUpdatedEvent {
+    /// The previous admin address
+    pub old_admin: Address,
+    /// The new admin address
+    pub new_admin: Address,
+    /// The address that performed the update (the previous admin)
+    pub updated_by: Address,
+    /// Ledger timestamp of the update
+    pub timestamp: u64,
+}
+
+/// Emitted when the platform wallet is updated
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlatformWalletUpdatedEvent {
-    /// Previous platform wallet address
+    /// The previous platform wallet address
     pub old_wallet: Address,
-    /// New platform wallet address
+    /// The new platform wallet address
     pub new_wallet: Address,
     /// Admin address that performed the update
     pub updated_by: Address,
@@ -134,16 +164,28 @@ pub struct PlatformWalletUpdatedEvent {
     pub timestamp: u64,
 }
 
-/// Emitted when the payment token address is updated
+/// Emitted when the accepted payment token is updated
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaymentTokenUpdatedEvent {
-    /// Previous payment token address
+    /// The previous payment token contract address
     pub old_token: Address,
-    /// New payment token address
+    /// The new payment token contract address
     pub new_token: Address,
     /// Admin address that performed the update
     pub updated_by: Address,
     /// Ledger timestamp of the update
+    pub timestamp: u64,
+}
+
+/// Emitted when the contract WASM is upgraded in place
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractUpgradedEvent {
+    /// The WASM hash of the contract before the upgrade
+    pub old_wasm_hash: BytesN<32>,
+    /// The WASM hash of the contract after the upgrade
+    pub new_wasm_hash: BytesN<32>,
+    /// Ledger timestamp of the upgrade
     pub timestamp: u64,
 }

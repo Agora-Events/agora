@@ -12,7 +12,11 @@
 
 use axum::{
     extract::{Path, Query, State},
+    http::HeaderMap,
     Json,
+};
+use crate::utils::cursor_pagination::{
+    decode_cursor, encode_cursor, CursorResponse, DisputeVoteCursor, ValidatedCursorParams,
 };
 use chrono::Utc;
 use serde::Deserialize;
@@ -21,6 +25,7 @@ use uuid::Uuid;
 
 use crate::utils::error::AppError;
 use crate::models::dispute::{Dispute, MediationVote};
+use crate::handlers::auth::extract_auth;
 
 /// Shared state for governance handlers.
 #[derive(Clone)]
@@ -41,15 +46,21 @@ pub struct DisputeFilters {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenDisputeRequest {
     pub event_id: Uuid,
-    pub opened_by: Uuid,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CastVoteRequest {
     pub voter_id: Uuid,
     pub vote: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DisputeVotesParams {
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -123,8 +134,11 @@ pub async fn get_dispute(
 /// POST /api/v1/admin/governance/disputes
 pub async fn open_dispute(
     State(state): State<GovernanceState>,
+    headers: HeaderMap,
     Json(payload): Json<OpenDisputeRequest>,
 ) -> Result<Json<Dispute>, AppError> {
+    let wallet = extract_auth(&headers)?;
+
     let event_ended: bool = sqlx::query_scalar::<_, bool>(
         "SELECT end_time < NOW() FROM events WHERE id = $1",
     )
@@ -138,6 +152,34 @@ pub async fn open_dispute(
             "Cannot open a dispute for an event that has not ended".to_string(),
         ));
     }
+
+    let owns_active_ticket = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (
+            SELECT 1
+            FROM tickets t
+            LEFT JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
+            WHERE COALESCE(t.event_id, tt.event_id) = $1
+              AND COALESCE(t.owner_wallet, t.buyer_wallet) = $2
+              AND t.status = 'active'
+        )",
+    )
+    .bind(payload.event_id)
+    .bind(&wallet)
+    .fetch_one(&state.pool)
+    .await?;
+    if !owns_active_ticket {
+        return Err(AppError::Forbidden(
+            "An active ticket for this event is required to open a dispute".to_string(),
+        ));
+    }
+
+    let opened_by = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE wallet_address = $1",
+    )
+    .bind(&wallet)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::AuthError("Authenticated wallet is not linked to a user".to_string()))?;
 
     let total_eligible: i32 = sqlx::query_scalar::<_, Option<i32>>(
         "SELECT COALESCE(SUM(total_quantity), 0) FROM ticket_tiers WHERE event_id = $1",
@@ -155,7 +197,7 @@ pub async fn open_dispute(
         "#,
     )
     .bind(payload.event_id)
-    .bind(payload.opened_by)
+    .bind(opened_by)
     .bind(total_eligible)
     .fetch_one(&state.pool)
     .await?;
@@ -299,15 +341,77 @@ pub async fn resolve_dispute(
 pub async fn get_dispute_votes(
     State(state): State<GovernanceState>,
     Path(dispute_id): Path<Uuid>,
-) -> Result<Json<Vec<MediationVote>>, AppError> {
-    let votes = sqlx::query_as::<_, MediationVote>(
-        "SELECT * FROM mediation_votes WHERE dispute_id = $1 ORDER BY voted_at DESC",
-    )
-    .bind(dispute_id)
-    .fetch_all(&state.pool)
-    .await?;
+    Query(params): Query<DisputeVotesParams>,
+) -> Result<Json<CursorResponse<MediationVote>>, AppError> {
+    let limit = params.limit.unwrap_or(50).clamp(1, 200);
 
-    Ok(Json(votes))
+    let cursor = match &params.cursor {
+        Some(c) => Some(
+            decode_cursor::<DisputeVoteCursor>(c)
+                .map_err(|e| AppError::ValidationError(format!("Invalid cursor: {e}")))?,
+        ),
+        None => None,
+    };
+
+    let votes = if let Some(ref cur) = cursor {
+        sqlx::query_as::<_, MediationVote>(
+            r#"
+            SELECT * FROM mediation_votes
+            WHERE dispute_id = $1
+              AND (voted_at, id) < ($2, $3)
+            ORDER BY voted_at DESC, id DESC
+            LIMIT $4
+            "#,
+        )
+        .bind(dispute_id)
+        .bind(cur.voted_at)
+        .bind(cur.id)
+        .bind((limit + 1) as i64)
+        .fetch_all(&state.pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, MediationVote>(
+            r#"
+            SELECT * FROM mediation_votes
+            WHERE dispute_id = $1
+            ORDER BY voted_at DESC, id DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(dispute_id)
+        .bind((limit + 1) as i64)
+        .fetch_all(&state.pool)
+        .await?
+    };
+
+    let has_more = votes.len() as u32 > limit;
+    let mut items = votes;
+    if has_more {
+        items.truncate(limit as usize);
+    }
+
+    let next_cursor = if has_more {
+        items.last().and_then(|v| {
+            encode_cursor(&DisputeVoteCursor {
+                voted_at: v.voted_at,
+                id: v.id,
+            })
+            .ok()
+        })
+    } else {
+        None
+    };
+
+    let response = CursorResponse::new(
+        items,
+        &ValidatedCursorParams {
+            limit,
+            cursor: params.cursor,
+            include_count: false,
+        },
+        next_cursor,
+    );
+    Ok(Json(response))
 }
 
 #[cfg(test)]
@@ -418,3 +522,30 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
+
+
+    #[test]
+    fn test_dispute_votes_limit_clamped_to_200() {
+        // endpoint-specific defaults/clamps: default 50, max 200
+        let default_limit = None::<u32>.unwrap_or(50).clamp(1, 200);
+        assert_eq!(default_limit, 50);
+        let clamped_high = Some(500u32).unwrap_or(50).clamp(1, 200);
+        assert_eq!(clamped_high, 200);
+        let clamped_low = Some(0u32).unwrap_or(50).clamp(1, 200);
+        assert_eq!(clamped_low, 1);
+    }
+
+    #[test]
+    fn test_dispute_vote_cursor_roundtrip_for_traversal() {
+        use crate::utils::cursor_pagination::{decode_cursor, encode_cursor, DisputeVoteCursor};
+        use chrono::Utc;
+        use uuid::Uuid;
+        let cursor = DisputeVoteCursor {
+            voted_at: Utc::now(),
+            id: Uuid::new_v4(),
+        };
+        let encoded = encode_cursor(&cursor).unwrap();
+        let decoded: DisputeVoteCursor = decode_cursor(&encoded).unwrap();
+        assert_eq!(decoded.voted_at, cursor.voted_at);
+        assert_eq!(decoded.id, cursor.id);
+    }

@@ -2,16 +2,27 @@
  * Staking service — wraps event_registry contract interactions for organizer
  * collateral staking, unstaking and reward claims.
  *
- * All contract calls are mocked in this implementation; swap the bodies of
- * callContract() for real Soroban RPC invocations when the contract is live.
+ * Staking configuration and organizer state are read from the event_registry
+ * Soroban contract.
  */
 
-import { Keypair, Networks, TransactionBuilder, Horizon } from '@stellar/stellar-sdk';
+import {
+  Address,
+  Contract,
+  Keypair,
+  nativeToScVal,
+  Networks,
+  scValToNative,
+  TransactionBuilder,
+  Horizon,
+} from '@stellar/stellar-sdk';
 import { StellarWalletManager } from './stellar';
+import { buildAndSimulateContractCall, loadSorobanAccount } from './sorobanClient';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
+const TOKEN_DECIMALS = 10_000_000;
 export const STELLAR_EXPERT_BASE = 'https://stellar.expert/explorer/testnet/tx';
 
 /** event_registry contract address (testnet placeholder) */
@@ -21,9 +32,9 @@ export const EVENT_REGISTRY_CONTRACT =
 // ── Public types ─────────────────────────────────────────────────────────────
 
 export interface StakingConfig {
-  /** Staking token — always USDC on the Agora testnet */
+  /** Configured staking token contract address */
   tokenAddress: string;
-  /** Minimum collateral required (in USDC, decimal-adjusted) */
+  /** Minimum collateral required, in decimal-adjusted token units */
   minimumStake: number;
 }
 
@@ -66,6 +77,42 @@ export function formatDate(iso: string): string {
   });
 }
 
+async function readContract(
+  publicKey: string,
+  method: string,
+  ...args: ReturnType<typeof nativeToScVal>[]
+): Promise<unknown> {
+  const sourceAccount = await loadSorobanAccount(publicKey);
+  const contract = new Contract(EVENT_REGISTRY_CONTRACT);
+  const { simulation } = await buildAndSimulateContractCall({
+    sourceAccount,
+    operation: contract.call(method, ...args),
+  });
+
+  const retval = simulation.result?.retval;
+  if (!retval) {
+    throw new Error(`The event registry returned no value for ${method}.`);
+  }
+  return scValToNative(retval);
+}
+
+async function resolveReadPublicKey(publicKey?: string): Promise<string> {
+  if (publicKey) return publicKey;
+  const secretKey = await StellarWalletManager.getSecretKey();
+  if (!secretKey) {
+    throw new Error('Connect a Stellar wallet to read staking data.');
+  }
+  return Keypair.fromSecret(secretKey).publicKey();
+}
+
+function toTokenAmount(value: unknown): number {
+  const amount = Number(BigInt(value as string | number | bigint));
+  if (!Number.isFinite(amount)) {
+    throw new Error('The event registry returned an invalid staking amount.');
+  }
+  return amount / TOKEN_DECIMALS;
+}
+
 // ── Contract call wrapper ─────────────────────────────────────────────────────
 
 async function callContract(
@@ -103,18 +150,29 @@ async function callContract(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function fetchStakingConfig(): Promise<StakingConfig> {
-  // TODO: replace with SorobanRpc call to event_registry.get_staking_config()
+export async function fetchStakingConfig(publicKey?: string): Promise<StakingConfig> {
+  const sourcePublicKey = await resolveReadPublicKey(publicKey);
+  const result = await readContract(sourcePublicKey, 'get_staking_config') as {
+    token?: Address | string | null;
+    min_amount?: string | number | bigint;
+  } | null;
+  if (!result) {
+    throw new Error('The event registry returned no staking configuration.');
+  }
+  const tokenAddress = result.token?.toString();
+  if (!tokenAddress || result.min_amount === undefined) {
+    throw new Error('Staking has not been configured in the event registry.');
+  }
+
   return {
-    tokenAddress: 'GBBD47IF6LWK7P7MABDHYZCYYZ277OEX22PQ6CHYA67BDN6C7CR27STN',
-    minimumStake: 500,
+    tokenAddress,
+    minimumStake: toTokenAmount(result.min_amount),
   };
 }
 
 export async function fetchOrganizerStakingState(
   publicKey?: string,
 ): Promise<OrganizerStakingState> {
-  // TODO: replace with SorobanRpc call to event_registry.get_organizer_stake(publicKey)
   if (!publicKey) {
     return {
       status: 'Unverified',
@@ -123,10 +181,37 @@ export async function fetchOrganizerStakingState(
       lockupEnds: null,
     };
   }
+  const result = await readContract(
+    publicKey,
+    'get_organizer_stake',
+    nativeToScVal(Address.fromString(publicKey), { type: 'address' }),
+  ) as {
+    amount?: string | number | bigint;
+    is_verified?: boolean;
+    reward_balance?: string | number | bigint;
+  } | null;
+
+  if (!result) {
+    return {
+      status: 'Unverified',
+      stakedAmount: 0,
+      pendingRewards: 0,
+      lockupEnds: null,
+    };
+  }
+
+  if (
+    result.amount === undefined ||
+    result.reward_balance === undefined ||
+    typeof result.is_verified !== 'boolean'
+  ) {
+    throw new Error('The event registry returned an invalid organizer stake.');
+  }
+
   return {
-    status: 'Unverified',
-    stakedAmount: 0,
-    pendingRewards: 0,
+    status: result.is_verified ? 'Verified' : 'Unverified',
+    stakedAmount: toTokenAmount(result.amount),
+    pendingRewards: toTokenAmount(result.reward_balance),
     lockupEnds: null,
   };
 }
@@ -134,10 +219,8 @@ export async function fetchOrganizerStakingState(
 export async function fetchStakingHistory(
   publicKey?: string,
 ): Promise<StakingTransaction[]> {
-  // TODO: replace with indexed on-chain query for publicKey
-  if (!publicKey) {
-    return [];
-  }
+  // The contract exposes current stake but no transaction-history entry point.
+  void publicKey;
   return [];
 }
 

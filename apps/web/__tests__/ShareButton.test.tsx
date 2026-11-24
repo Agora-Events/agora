@@ -11,20 +11,14 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => (key === "share" ? "Share" : key),
 }));
 
-const mockUseIsMobile = vi.fn(() => false);
-
-vi.mock("@/hooks/useIsMobile", () => ({
-  default: () => mockUseIsMobile(),
-}));
-
 describe("ShareButton", () => {
   const originalShare = navigator.share;
+  const originalCanShare = navigator.canShare;
   const originalClipboard = navigator.clipboard;
   const pageUrl = "https://agora.events/events/42";
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseIsMobile.mockReturnValue(false);
     Object.defineProperty(window, "location", {
       configurable: true,
       value: { href: pageUrl },
@@ -35,6 +29,10 @@ describe("ShareButton", () => {
     Object.defineProperty(navigator, "share", {
       configurable: true,
       value: originalShare,
+    });
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: originalCanShare,
     });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -47,9 +45,8 @@ describe("ShareButton", () => {
     expect(screen.getByRole("button", { name: /share/i })).toBeInTheDocument();
   });
 
-  it("calls navigator.share with title and text when available on mobile", async () => {
+  it("calls navigator.share with title, text, and url when available", async () => {
     const share = vi.fn().mockResolvedValue(undefined);
-    mockUseIsMobile.mockReturnValue(true);
     Object.defineProperty(navigator, "share", {
       configurable: true,
       value: share,
@@ -92,7 +89,6 @@ describe("ShareButton", () => {
   it("does not show an error when the user cancels navigator.share", async () => {
     const abortError = new DOMException("Share cancelled", "AbortError");
     const share = vi.fn().mockRejectedValue(abortError);
-    mockUseIsMobile.mockReturnValue(true);
     Object.defineProperty(navigator, "share", {
       configurable: true,
       value: share,
@@ -106,5 +102,21 @@ describe("ShareButton", () => {
     });
     expect(toast.error).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("shows an error toast if share throws an unexpected error", async () => {
+    const generalError = new Error("Failed to share");
+    const share = vi.fn().mockRejectedValue(generalError);
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: share,
+    });
+
+    render(<ShareButton title="Stellar Meetup" text="Join us" />);
+    fireEvent.click(screen.getByRole("button", { name: /share/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Unable to share link");
+    });
   });
 });

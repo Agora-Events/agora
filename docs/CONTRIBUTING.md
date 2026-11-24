@@ -7,7 +7,7 @@ Thanks for helping build Agora! This document is the entry point for contributin
 | Area | Start here | Run from |
 |---|---|---|
 | Frontend (Next.js, React, Tailwind) | [`apps/web/README.md`](apps/web/README.md) | `apps/web/` |
-| Mobile app | [`apps/mobile/README.md`](apps/mobile/README.md) | `apps/mobile/` |
+| Mobile app | [`apps/mobile/README.md`](apps/mobile/README.md) and [`docs/mobile-contributing.md`](mobile-contributing.md) | `apps/mobile/` |
 | Rust API server (Axum, PostgreSQL) | [`server/CONTRIBUTING.md`](server/CONTRIBUTING.md) and [`server/README.md`](server/README.md) | `server/` |
 | Soroban smart contracts | [`contract/README.md`](contract/README.md) and the [contract guides](contract/contracts/) | `contract/` |
 | Testing | [`docs/TESTING.md`](docs/TESTING.md) | Repository root |

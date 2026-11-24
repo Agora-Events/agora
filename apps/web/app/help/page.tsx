@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { Input } from "@/components/ui/Input";
 
 // Icon imports — all sourced from /public/icons/
 import SearchIcon from "@/public/icons/search.svg";
@@ -142,12 +143,13 @@ export default function HelpCenterPage() {
               height={20}
               className="shrink-0 opacity-50"
             />
-            <input
+            <Input
               type="text"
+              tone="light"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search for articles, topics…"
-              className="flex-1 bg-transparent text-sm font-medium text-black placeholder:text-gray-400 outline-none"
+              className="flex-1 bg-transparent text-sm font-medium text-black outline-none"
               aria-label="Search help articles"
             />
             {query && (

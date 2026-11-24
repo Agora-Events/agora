@@ -24,10 +24,12 @@ export interface UseStakingReturn {
   // Config
   config: StakingConfig | null;
   configLoading: boolean;
+  configError: string | null;
 
   // Organizer state
   stakingState: OrganizerStakingState | null;
   stateLoading: boolean;
+  stateError: string | null;
 
   // History
   history: StakingTransaction[];
@@ -48,9 +50,11 @@ export interface UseStakingReturn {
 export function useStaking(publicKey: string | null): UseStakingReturn {
   const [config, setConfig] = useState<StakingConfig | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
 
   const [stakingState, setStakingState] = useState<OrganizerStakingState | null>(null);
   const [stateLoading, setStateLoading] = useState(false);
+  const [stateError, setStateError] = useState<string | null>(null);
 
   const [history, setHistory] = useState<StakingTransaction[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -60,16 +64,24 @@ export function useStaking(publicKey: string | null): UseStakingReturn {
   // ── Fetch staking config once ────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
+    setConfigError(null);
+    setConfigLoading(true);
     (async () => {
       try {
-        const cfg = await fetchStakingConfig();
+        const cfg = await fetchStakingConfig(publicKey ?? undefined);
         if (!cancelled) setConfig(cfg);
+      } catch (error) {
+        if (!cancelled) {
+          setConfigError(
+            error instanceof Error ? error.message : 'Failed to load staking configuration.'
+          );
+        }
       } finally {
         if (!cancelled) setConfigLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [publicKey]);
 
   // ── Fetch organizer state + history whenever publicKey changes ───────────
   const loadOrganizerData = useCallback(async () => {
@@ -77,6 +89,7 @@ export function useStaking(publicKey: string | null): UseStakingReturn {
 
     setStateLoading(true);
     setHistoryLoading(true);
+    setStateError(null);
 
     try {
       const [state, txHistory] = await Promise.all([
@@ -85,6 +98,10 @@ export function useStaking(publicKey: string | null): UseStakingReturn {
       ]);
       setStakingState(state);
       setHistory(txHistory);
+    } catch (error) {
+      setStateError(
+        error instanceof Error ? error.message : 'Failed to load organizer staking data.'
+      );
     } finally {
       setStateLoading(false);
       setHistoryLoading(false);
@@ -134,8 +151,10 @@ export function useStaking(publicKey: string | null): UseStakingReturn {
   return {
     config,
     configLoading,
+    configError,
     stakingState,
     stateLoading,
+    stateError,
     history,
     historyLoading,
     usdcBalance,

@@ -5,6 +5,7 @@ This document provides a reference for all environment variables used in the fro
 | Variable Name | Description | Required/Optional | Example Value | Where to Obtain |
 |---------------|-------------|-------------------|---------------|-----------------|
 | `BACKEND_URL` | The base URL for the backend API. | Optional | `http://localhost:3001` | Developer setup or deployment environment |
+| `PINATA_JWT` | Server-side bearer token used to pin event cover images to IPFS. | Required for image uploads | `eyJ...` | Pinata dashboard > API Keys |
 | `DATABASE_URL` | Database connection string for Prisma. | Required | `postgresql://user:password@localhost:5432/agora` | Database provider (e.g., Supabase, Heroku, local Postgres) |
 | `NODE_ENV` | Defines the environment the application is running in (development, production, test). | Optional | `development` | Automatically set by framework or deployment platform |
 | `JWT_SECRET` | Secret key used to sign JSON Web Tokens. | Optional | `super_secret_string` | Generated securely by developer |
@@ -15,6 +16,7 @@ This document provides a reference for all environment variables used in the fro
 | `APPLE_CLIENT_SECRET` | Client Secret for Apple OAuth. | Optional | `secret_string` | Apple Developer Portal |
 | `APPLE_REDIRECT_URI` | Redirect URI for Apple OAuth callback. | Optional | `http://localhost:3000/api/auth/apple` | Apple Developer Portal |
 | `STELLAR_CONTRACT_ADDRESS` | The address of the deployed Stellar smart contract. | Optional | `CA...XYZ` | Provided after deploying the Stellar contract |
+| `NEXT_PUBLIC_TICKET_PAYMENT_CONTRACT_ID` | Public Soroban ticket-payment contract ID used by browser wallet checkout. | Required for resale purchases | `C...` | Set to the deployed ticket-payment contract ID |
 | `STELLAR_SOURCE_SECRET` | Secret key for the Stellar source account. | Optional | `SA...XYZ` | Stellar Laboratory or account generation tool |
 | `STELLAR_RPC_URL` | RPC URL for the Stellar network. | Optional | `https://soroban-testnet.stellar.org` | Stellar network provider |
 | `STELLAR_NETWORK_PASSPHRASE` | Passphrase for the Stellar network being used. | Optional | `Test SDF Network ; September 2015` | Stellar network documentation |

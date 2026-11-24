@@ -1,11 +1,16 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Colors from '@/constants/Colors';
 import Button from '@/components/ui/Button';
+import LikeableBanner from '@/components/LikeableBanner';
 import { useAuth } from '@/hooks/useAuth';
 import { useLiveTicketInventory } from '@/hooks/useLiveTicketInventory';
 import { getTiersForEvent, totalRemaining } from '@/lib/ticketTiers';
+
+/** AsyncStorage key for an event's liked/saved status (issue #1552). */
+const likedStorageKey = (eventId: string) => `agora.event.liked.${eventId}`;
 
 export default function EventDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -36,11 +41,44 @@ export default function EventDetailsScreen() {
   const remaining = totalRemaining(tiers);
   const isSoldOut = remaining === 0;
 
+  // Issue #1552: double-tap-to-like on the event banner, persisted locally
+  // per event so the "save/like" status survives navigating away and back.
+  const [liked, setLiked] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    AsyncStorage.getItem(likedStorageKey(eventId))
+      .then((value) => {
+        if (isMounted) setLiked(value === 'true');
+      })
+      .catch(() => {
+        // No persisted preference (or storage unavailable) — default to not liked.
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId]);
+
+  const handleLikeChange = useCallback(
+    (next: boolean) => {
+      setLiked(next);
+      AsyncStorage.setItem(likedStorageKey(eventId), next ? 'true' : 'false').catch(() => {
+        // Best-effort persistence; in-memory state still reflects the change.
+      });
+    },
+    [eventId]
+  );
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.heroPlaceholder}>
+      <LikeableBanner
+        liked={liked}
+        onChange={handleLikeChange}
+        style={styles.heroPlaceholder}
+        testID="event-banner"
+      >
         <Text style={styles.heroText}>AGORA EVENTS</Text>
-      </View>
+      </LikeableBanner>
 
       <View style={styles.detailsContainer}>
         <Text style={styles.title}>{title}</Text>
