@@ -1,11 +1,11 @@
 /**
  * Unit tests for `createEventSchema` (apps/web/lib/validation.ts).
  *
- * This Zod schema gates the "create event" form and enforces:
+ * This Zod schema enforces:
  *  - a required, non-empty title
  *  - required start date/time and location
  *  - an optional capacity that, when provided, must be a positive integer
- *  - a required, non-negative price
+ *  - a required, non-negative price with at most 7 decimal places
  *  - a visibility of either "Public" or "Private"
  *
  * Each test uses `safeParse` and inspects the returned issue messages
@@ -62,8 +62,8 @@ describe("createEventSchema", () => {
     }
   });
 
-  it('fails when capacity is "0"', () => {
-    const result = createEventSchema.safeParse(validPayload({ capacity: "0" }));
+  it.each(["0", "000", "-10"])("fails for non-positive capacity %j", (capacity) => {
+    const result = createEventSchema.safeParse(validPayload({ capacity }));
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -72,6 +72,61 @@ describe("createEventSchema", () => {
       expect(capacityIssue?.message).toBe("Capacity must be greater than 0");
     }
   });
+
+  it.each(["10abc", "1.5", "1e2", " 10", "10\n"])("rejects malformed capacity %j", (capacity) => {
+    const result = createEventSchema.safeParse(validPayload({ capacity }));
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual([
+        {
+          code: "custom",
+          path: ["capacity"],
+          message: "Capacity must be a whole number containing only digits",
+        },
+      ]);
+    }
+  });
+
+  it.each(["5usd", "1.23456789", "1e2", "1..5", "NaN", " 5", "5\n"])(
+    "rejects malformed price %j",
+    (price) => {
+      const result = createEventSchema.safeParse(validPayload({ price }));
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toEqual([
+          {
+            code: "custom",
+            path: ["price"],
+            message: "Price must be a number with at most 7 decimal places",
+          },
+        ]);
+      }
+    }
+  );
+
+  it("keeps the required price message for a blank price", () => {
+    const result = createEventSchema.safeParse(validPayload({ price: " " }));
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toHaveLength(1);
+      expect(result.error.issues[0]).toMatchObject({
+        path: ["price"],
+        message: "Price is required (put 0 for free)",
+      });
+    }
+  });
+
+  it.each(["0", "25", "1.2345678", ".5"])(
+    "accepts price %j and a positive whole-number capacity",
+    (price) => {
+      const result = createEventSchema.safeParse(validPayload({ price, capacity: "10" }));
+
+      expect(result.success).toBe(true);
+    }
+  );
 
   it('passes when capacity is "" (optional / absent)', () => {
     const resultWithEmptyString = createEventSchema.safeParse(validPayload({ capacity: "" }));
