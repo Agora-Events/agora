@@ -48,6 +48,21 @@ pub struct LeaderboardEntry {
     pub tickets_sold: i64,
 }
 
+/// SQL query used by [`get_leaderboard`] to rank organizers by total tickets
+/// sold with a deterministic `o.id ASC` tiebreaker.
+const LEADERBOARD_QUERY: &str = r#"
+        SELECT
+            o.id AS organizer_id,
+            o.name AS organizer_name,
+            COALESCE(SUM(tt.total_quantity - tt.available_quantity), 0)::bigint AS tickets_sold
+        FROM organizers o
+        LEFT JOIN events e ON e.organizer_id = o.id
+        LEFT JOIN ticket_tiers tt ON tt.event_id = e.id
+        GROUP BY o.id, o.name
+        ORDER BY tickets_sold DESC, o.id ASC
+        LIMIT $1 OFFSET $2
+        "#;
+
 /// List organizers ranked by tickets sold, most first.
 ///
 /// # Endpoint
@@ -82,24 +97,11 @@ pub async fn get_leaderboard(
         }
     };
 
-    let items = match sqlx::query_as::<_, LeaderboardEntry>(
-        r#"
-        SELECT
-            o.id AS organizer_id,
-            o.name AS organizer_name,
-            COALESCE(SUM(tt.total_quantity - tt.available_quantity), 0)::bigint AS tickets_sold
-        FROM organizers o
-        LEFT JOIN events e ON e.organizer_id = o.id
-        LEFT JOIN ticket_tiers tt ON tt.event_id = e.id
-        GROUP BY o.id, o.name
-        ORDER BY tickets_sold DESC, o.id ASC
-        LIMIT $1 OFFSET $2
-        "#,
-    )
-    .bind(validated_pagination.limit())
-    .bind(validated_pagination.offset())
-    .fetch_all(&pool)
-    .await
+    let items = match sqlx::query_as::<_, LeaderboardEntry>(LEADERBOARD_QUERY)
+        .bind(validated_pagination.limit())
+        .bind(validated_pagination.offset())
+        .fetch_all(&pool)
+        .await
     {
         Ok(rows) => rows,
         Err(e) => {
@@ -123,20 +125,7 @@ mod tests {
     /// pagination requests.
     #[test]
     fn test_leaderboard_query_has_deterministic_tiebreaker() {
-        let query = r#"
-        SELECT
-            o.id AS organizer_id,
-            o.name AS organizer_name,
-            COALESCE(SUM(tt.total_quantity - tt.available_quantity), 0)::bigint AS tickets_sold
-        FROM organizers o
-        LEFT JOIN events e ON e.organizer_id = o.id
-        LEFT JOIN ticket_tiers tt ON tt.event_id = e.id
-        GROUP BY o.id, o.name
-        ORDER BY tickets_sold DESC, o.id ASC
-        LIMIT $1 OFFSET $2
-        "#;
-
-        assert!(query.contains("ORDER BY tickets_sold DESC, o.id ASC"));
+        assert!(LEADERBOARD_QUERY.contains("ORDER BY tickets_sold DESC, o.id ASC"));
     }
 
     #[test]
