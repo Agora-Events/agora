@@ -1,11 +1,15 @@
 /**
  * Returns a relative time string for a given date.
  * Uses Intl.RelativeTimeFormat to format the time difference.
- * Special-cases "Yesterday", "Today", and "Tomorrow".
+ * Special-cases "today", "tomorrow", and "yesterday" via Intl (numeric: "auto")
+ * so labels are automatically localised — no hard-coded English strings.
  * Picks the largest sensible unit (minutes → hours → days → weeks → months → years).
+ *
+ * @param date   - The date to format relative to now.
+ * @param locale - BCP 47 locale tag (e.g. "en", "es", "fr"). Defaults to "en".
  */
 
-export function getRelativeTime(date: Date): string {
+export function getRelativeTime(date: Date, locale = "en"): string {
   if (Number.isNaN(date.getTime())) {
     return "";
   }
@@ -20,26 +24,30 @@ export function getRelativeTime(date: Date): string {
   const diffMonths = diffDays / 30;
   const diffYears = diffMonths / 12;
 
-  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
 
   const calendarDate = date.toDateString();
   const isToday = calendarDate === now.toDateString();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const isTomorrow = calendarDate === tomorrow.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = calendarDate === yesterday.toDateString();
 
+  // Use Intl.RelativeTimeFormat with numeric:"auto" to produce localised
+  // "today" / "tomorrow" / "yesterday" equivalents (e.g. "hoy", "mañana",
+  // "ayer" in Spanish) instead of hard-coded English literals.
   if (isToday) {
-    return "Today";
+    return rtf.format(0, "day");
   }
 
   if (isTomorrow) {
-    return "Tomorrow";
+    return rtf.format(1, "day");
   }
 
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (calendarDate === yesterday.toDateString()) {
-    return "Yesterday";
+  if (isYesterday) {
+    return rtf.format(-1, "day");
   }
 
   // Pick the largest sensible unit

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { LazyImage } from "@/components/ui/LazyImage";
 import { useIsMounted } from "@/hooks/useIsMounted";
+import { useLocaleContext } from "@/lib/i18n/locale-context";
 import { getRelativeTime } from "@/utils/relative-time";
 
 /**
@@ -45,11 +46,12 @@ export function EventCard({
 }: EventCardProps) {
   const isMounted = useIsMounted();
   const shouldReduceMotion = useReducedMotion();
+  const { locale } = useLocaleContext();
   const locationImageSrc = location.toLowerCase().includes("discord")
     ? "/icons/discord.svg"
     : "/icons/location.svg";
 
-  const relativeTime = isMounted && startsAt ? getRelativeTime(new Date(startsAt)) : null;
+  const relativeTime = isMounted && startsAt ? getRelativeTime(new Date(startsAt), locale) : null;
 
   const isFree = price.toLowerCase() === "free";
   const isSoldOutState = isSoldOut || price.toLowerCase() === "sold out" || price.toLowerCase() === "sold-out";

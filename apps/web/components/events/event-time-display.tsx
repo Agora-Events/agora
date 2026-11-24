@@ -1,6 +1,7 @@
 "use client";
 
 import { useIsMounted } from "@/hooks/useIsMounted";
+import { useLocaleContext } from "@/lib/i18n/locale-context";
 import { formatEventTime, getTimezone } from "@/utils/format-event-time";
 
 interface EventTimeDisplayProps {
@@ -9,13 +10,14 @@ interface EventTimeDisplayProps {
 
 export function EventTimeDisplay({ startsAt }: EventTimeDisplayProps) {
   const isMounted = useIsMounted();
+  const { locale } = useLocaleContext();
 
   if (!isMounted) {
     // Return placeholder during SSR to avoid hydration mismatch
     return <span className="text-[18px] sm:text-[19px] font-medium text-black">{startsAt}</span>;
   }
 
-  const formattedTime = formatEventTime(startsAt);
+  const formattedTime = formatEventTime(startsAt, locale);
   const timezone = getTimezone();
 
   return (
