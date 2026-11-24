@@ -17,21 +17,42 @@ function withTimezone<T>(tz: string, fn: () => T): T {
   }
 }
 
+/**
+ * Builds the reference string using the same Intl options the function uses.
+ * This keeps assertions correct across Node / ICU versions without hard-coding
+ * locale-specific strings that differ between releases.
+ */
+function expectedFormat(locale: string, tz: string, iso: string): string {
+  return withTimezone(tz, () =>
+    new Intl.DateTimeFormat(locale, {
+      weekday: "short",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(new Date(iso))
+  );
+}
+
+const ISO_LAGOS = "2026-06-01T18:00:00.000Z";
+const ISO_NYC   = "2026-06-15T16:00:00.000Z";
+
 describe("formatEventTime", () => {
+  // ── Existing en-US tests ────────────────────────────────────────────────
+
   it("formats a UTC time into a fixed timezone (Africa/Lagos)", () => {
-    const result = withTimezone("Africa/Lagos", () => formatEventTime("2026-06-01T18:00:00.000Z"));
+    const result = withTimezone("Africa/Lagos", () => formatEventTime(ISO_LAGOS));
     expect(result).toBe("Mon, Jun 1, 2026, 7:00 PM GMT+1");
   });
 
   it("formats the same instant differently in America/New_York", () => {
-    const result = withTimezone("America/New_York", () =>
-      formatEventTime("2026-06-15T16:00:00.000Z")
-    );
+    const result = withTimezone("America/New_York", () => formatEventTime(ISO_NYC));
     expect(result).toBe("Mon, Jun 15, 2026, 12:00 PM EDT");
   });
 
   it("shows the standard-time abbreviation just before a DST boundary", () => {
-    // US clocks spring forward at 2:00am EST on 8 March 2026 (07:00 UTC).
     const result = withTimezone("America/New_York", () =>
       formatEventTime("2026-03-08T06:59:00.000Z")
     );
@@ -52,6 +73,46 @@ describe("formatEventTime", () => {
 
   it("falls back to an empty string for a missing/empty timestamp", () => {
     expect(formatEventTime("")).toBe("");
+  });
+
+  // ── Locale-aware tests ──────────────────────────────────────────────────
+
+  it("honours an explicit en-US locale (backward-compatible default)", () => {
+    const result   = withTimezone("Africa/Lagos", () => formatEventTime(ISO_LAGOS, "en-US"));
+    const expected = expectedFormat("en-US", "Africa/Lagos", ISO_LAGOS);
+    expect(result).toBe(expected);
+  });
+
+  it("formats in Spanish (es) in Africa/Lagos", () => {
+    const result   = withTimezone("Africa/Lagos", () => formatEventTime(ISO_LAGOS, "es"));
+    const expected = expectedFormat("es", "Africa/Lagos", ISO_LAGOS);
+    expect(result).toBe(expected);
+    // Sanity-check: Spanish output must differ from US-English output.
+    const enResult = withTimezone("Africa/Lagos", () => formatEventTime(ISO_LAGOS, "en-US"));
+    expect(result).not.toBe(enResult);
+  });
+
+  it("formats in French (fr) in Africa/Lagos", () => {
+    const result   = withTimezone("Africa/Lagos", () => formatEventTime(ISO_LAGOS, "fr"));
+    const expected = expectedFormat("fr", "Africa/Lagos", ISO_LAGOS);
+    expect(result).toBe(expected);
+    const enResult = withTimezone("Africa/Lagos", () => formatEventTime(ISO_LAGOS, "en-US"));
+    expect(result).not.toBe(enResult);
+  });
+
+  it("formats in Spanish (es) in America/New_York", () => {
+    const result   = withTimezone("America/New_York", () => formatEventTime(ISO_NYC, "es"));
+    const expected = expectedFormat("es", "America/New_York", ISO_NYC);
+    expect(result).toBe(expected);
+  });
+
+  it("different locales produce different output for the same instant and timezone", () => {
+    const en = withTimezone("Africa/Lagos", () => formatEventTime(ISO_LAGOS, "en-US"));
+    const es = withTimezone("Africa/Lagos", () => formatEventTime(ISO_LAGOS, "es"));
+    const fr = withTimezone("Africa/Lagos", () => formatEventTime(ISO_LAGOS, "fr"));
+    // All three locales must produce distinct strings.
+    expect(en).not.toBe(es);
+    expect(en).not.toBe(fr);
   });
 });
 
