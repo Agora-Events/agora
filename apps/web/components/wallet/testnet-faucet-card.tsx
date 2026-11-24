@@ -25,7 +25,6 @@ import {
 } from "@stellar/freighter-api";
 import {
   Asset,
-  Keypair,
   Networks,
   Operation,
   TransactionBuilder,

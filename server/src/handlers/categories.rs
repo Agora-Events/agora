@@ -342,7 +342,10 @@ pub fn is_valid_category_slug(slug: &str) -> bool {
     }
 
     // All characters must be lowercase ASCII letters, digits, or hyphens.
-    if !slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !slug
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         return false;
     }
 
@@ -361,6 +364,7 @@ pub fn is_valid_category_slug(slug: &str) -> bool {
 }
 
 
+/// Canonical categories defined in the contract's Category enum.
 /// Used to validate database categories match the contract at startup.
 pub const CANONICAL_CATEGORIES: &[(u32, &str, &str)] = &[
     (
