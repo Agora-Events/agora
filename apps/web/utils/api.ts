@@ -93,7 +93,10 @@ export async function fetchPopularEvents(page = 1, signal?: AbortSignal): Promis
     const combined = await fetchDiscoverPayload(signal);
     const events = combined.popularEvents || [];
     return { events, meta: { total: events.length, page, perPage: events.length } };
-  } catch (_err) {
+  } catch (error) {
+    if (error && typeof error === "object" && "name" in error && error.name === "AbortError") {
+      throw error;
+    }
     throw new Error("Unable to normalize popular events payload");
   }
 }
