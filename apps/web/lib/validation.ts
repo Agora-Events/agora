@@ -19,16 +19,39 @@ export const createEventSchema = z
     capacity: z
       .string()
       .optional()
-      .refine((value) => !value || Number.parseInt(value, 10) > 0, {
-        message: "Capacity must be greater than 0",
+      .superRefine((value, ctx) => {
+        if (!value) return;
+
+        if (/^(-\d+|0+)$/.test(value)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Capacity must be greater than 0",
+          });
+        } else if (/\D/.test(value)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Capacity must be a whole number containing only digits",
+          });
+        }
       }),
-    price: z
-      .string()
-      .trim()
-      .min(1, "Price is required (put 0 for free)")
-      .refine((value) => Number.parseFloat(value) >= 0, {
-        message: "Price cannot be negative",
-      }),
+    price: z.string().superRefine((value, ctx) => {
+      if (!value.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Price is required (put 0 for free)",
+        });
+      } else if (!/^-?(?:\d+|\d*\.\d{1,7})$/.test(value)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Price must be a number with at most 7 decimal places",
+        });
+      } else if (value.startsWith("-")) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Price cannot be negative",
+        });
+      }
+    }),
     visibility: z.enum(["Public", "Private"]),
   })
   .refine((data) => !data.endDate || !data.startDate || data.endDate >= data.startDate, {
