@@ -45,9 +45,7 @@ describe("createEventSchema", () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      const titleIssue = result.error.issues.find((issue) =>
-        issue.path.includes("title")
-      );
+      const titleIssue = result.error.issues.find((issue) => issue.path.includes("title"));
       expect(titleIssue).toBeDefined();
       expect(titleIssue?.message).toBe("Event title is required");
     }
@@ -58,9 +56,7 @@ describe("createEventSchema", () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      const priceIssue = result.error.issues.find((issue) =>
-        issue.path.includes("price")
-      );
+      const priceIssue = result.error.issues.find((issue) => issue.path.includes("price"));
       expect(priceIssue).toBeDefined();
       expect(priceIssue?.message).toBe("Price cannot be negative");
     }
@@ -71,18 +67,14 @@ describe("createEventSchema", () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      const capacityIssue = result.error.issues.find((issue) =>
-        issue.path.includes("capacity")
-      );
+      const capacityIssue = result.error.issues.find((issue) => issue.path.includes("capacity"));
       expect(capacityIssue).toBeDefined();
       expect(capacityIssue?.message).toBe("Capacity must be greater than 0");
     }
   });
 
   it('passes when capacity is "" (optional / absent)', () => {
-    const resultWithEmptyString = createEventSchema.safeParse(
-      validPayload({ capacity: "" })
-    );
+    const resultWithEmptyString = createEventSchema.safeParse(validPayload({ capacity: "" }));
     expect(resultWithEmptyString.success).toBe(true);
 
     const resultWithoutCapacity = createEventSchema.safeParse(validPayload());
@@ -90,9 +82,7 @@ describe("createEventSchema", () => {
   });
 
   it("fails when visibility is not Public or Private", () => {
-    const result = createEventSchema.safeParse(
-      validPayload({ visibility: "Hidden" })
-    );
+    const result = createEventSchema.safeParse(validPayload({ visibility: "Hidden" }));
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -106,5 +96,89 @@ describe("createEventSchema", () => {
       expect(visibilityIssue?.message).toMatch(/Public/);
       expect(visibilityIssue?.message).toMatch(/Private/);
     }
+  });
+
+  describe("end time validation relative to start time", () => {
+    it("passes when end date is the same day with a later end time", () => {
+      const result = createEventSchema.safeParse(
+        validPayload({
+          startDate: "2026-09-01",
+          startTime: "18:00",
+          endDate: "2026-09-01",
+          endTime: "20:00",
+        })
+      );
+
+      expect(result.success).toBe(true);
+    });
+
+    it("fails when end date is the same day with an earlier end time", () => {
+      const result = createEventSchema.safeParse(
+        validPayload({
+          startDate: "2026-09-01",
+          startTime: "18:00",
+          endDate: "2026-09-01",
+          endTime: "10:00",
+        })
+      );
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const endTimeIssue = result.error.issues.find((issue) => issue.path.includes("endTime"));
+        expect(endTimeIssue).toBeDefined();
+        expect(endTimeIssue?.message).toBe("End time must be after the start time");
+      }
+    });
+
+    it("passes when end date is a later day even with an earlier clock time", () => {
+      const result = createEventSchema.safeParse(
+        validPayload({
+          startDate: "2026-09-01",
+          startTime: "18:00",
+          endDate: "2026-09-02",
+          endTime: "10:00",
+        })
+      );
+
+      expect(result.success).toBe(true);
+    });
+
+    it("fails when end date and end time are identical to start date and start time", () => {
+      const result = createEventSchema.safeParse(
+        validPayload({
+          startDate: "2026-09-01",
+          startTime: "18:00",
+          endDate: "2026-09-01",
+          endTime: "18:00",
+        })
+      );
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const endTimeIssue = result.error.issues.find((issue) => issue.path.includes("endTime"));
+        expect(endTimeIssue).toBeDefined();
+        expect(endTimeIssue?.message).toBe("End time must be after the start time");
+      }
+    });
+
+    it("preserves existing behaviour when end date or end time is omitted", () => {
+      const withoutEndDate = createEventSchema.safeParse(
+        validPayload({
+          startDate: "2026-09-01",
+          startTime: "18:00",
+          endTime: "10:00",
+        })
+      );
+      expect(withoutEndDate.success).toBe(true);
+
+      const withoutEndTime = createEventSchema.safeParse(
+        validPayload({
+          startDate: "2026-09-01",
+          startTime: "18:00",
+          endDate: "2026-09-01",
+        })
+      );
+      expect(withoutEndTime.success).toBe(true);
+    });
   });
 });
