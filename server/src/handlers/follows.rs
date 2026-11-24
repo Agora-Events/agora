@@ -128,6 +128,23 @@ pub async fn get_followers_count(
     State(state): State<FollowState>,
     Path(organizer_address): Path<String>,
 ) -> Response {
+    // Ensure organizer exists
+    let exists = match sqlx::query_scalar::<_, Option<String>>(
+        "SELECT address FROM organizer_profiles WHERE address = $1",
+    )
+    .bind(&organizer_address)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(e) => return AppError::DatabaseError(e).into_response(),
+    };
+    if !exists {
+        return AppError::NotFound(format!("Organizer {organizer_address} not found"))
+            .into_response();
+    }
+
     let count = match sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM user_follows WHERE following_id = $1",
     )
@@ -446,5 +463,84 @@ mod tests {
         let unique: std::collections::HashSet<_> = recipients.iter().collect();
         assert_eq!(unique.len(), follower_count);
         assert!(recipients.iter().all(|r| r.starts_with("GFOLLOWER-")));
+    }
+
+    #[tokio::test]
+    async fn get_followers_count_unknown_organizer_returns_404() {
+        let Ok(database_url) = std::env::var("TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL")) else {
+            eprintln!(
+                "Skipping PostgreSQL-backed follower count test: TEST_DATABASE_URL and DATABASE_URL are unset"
+            );
+            return;
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&database_url)
+            .await
+            .expect("connect test database");
+
+        sqlx::query(
+            "CREATE TEMP TABLE IF NOT EXISTS organizer_profiles (
+                address TEXT PRIMARY KEY,
+                name TEXT NOT NULL DEFAULT ''
+             )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create temporary organizer_profiles table");
+
+        sqlx::query(
+            "CREATE TEMP TABLE IF NOT EXISTS user_follows (
+                follower_id TEXT NOT NULL,
+                following_id TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (follower_id, following_id)
+             )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create temporary user_follows table");
+
+        let state = FollowState { pool: pool.clone() };
+        let resp = get_followers_count(
+            State(state.clone()),
+            Path("GUNKNOWN_ORGANIZER".to_string()),
+        )
+        .await;
+
+        assert_eq!(resp.status(), axum::http::StatusCode::NOT_FOUND);
+
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        let json: serde_json::Value =
+            serde_json::from_slice(&body_bytes).expect("parse json");
+        assert_eq!(
+            json["message"],
+            "Organizer GUNKNOWN_ORGANIZER not found"
+        );
+
+        // Also test an existing organizer with 0 followers returns 200 with followers_count = 0
+        sqlx::query("INSERT INTO organizer_profiles (address) VALUES ($1) ON CONFLICT DO NOTHING")
+            .bind("GKNOWN_ORGANIZER")
+            .execute(&pool)
+            .await
+            .expect("insert organizer");
+
+        let resp_known = get_followers_count(
+            State(state),
+            Path("GKNOWN_ORGANIZER".to_string()),
+        )
+        .await;
+
+        assert_eq!(resp_known.status(), axum::http::StatusCode::OK);
+        let body_bytes_known = axum::body::to_bytes(resp_known.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        let json_known: serde_json::Value =
+            serde_json::from_slice(&body_bytes_known).expect("parse json");
+        assert_eq!(json_known["data"]["followers_count"], 0);
+        assert_eq!(json_known["data"]["organizer_id"], "GKNOWN_ORGANIZER");
     }
 }
