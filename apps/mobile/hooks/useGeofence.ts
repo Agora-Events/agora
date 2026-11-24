@@ -25,7 +25,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
-import { locationService, VenueGeofence } from '@/services/locationService';
+import { LocationError, locationService, VenueGeofence } from '@/services/locationService';
 
 import { apiUrl } from '@/constants/api';
 
@@ -40,12 +40,7 @@ export interface TicketWithVenue {
   venueLng: number;
 }
 
-export type GeofenceStatus =
-  | 'idle'
-  | 'initialising'
-  | 'active'
-  | 'permission-denied'
-  | 'error';
+export type GeofenceStatus = 'idle' | 'initialising' | 'active' | 'permission-denied' | 'error';
 
 export interface UseGeofenceOptions {
   tickets: TicketWithVenue[];
@@ -105,7 +100,7 @@ async function registerGeofenceOnServer(
   pushToken: string,
   venueLat: number,
   venueLng: number,
-  authToken: string,
+  authToken: string
 ): Promise<void> {
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), 15_000);
@@ -136,10 +131,7 @@ async function registerGeofenceOnServer(
 // Local notification helper
 // ---------------------------------------------------------------------------
 
-async function scheduleProximityNotification(
-  eventId: string,
-  eventTitle: string,
-): Promise<void> {
+async function scheduleProximityNotification(eventId: string, eventTitle: string): Promise<void> {
   await Notifications.scheduleNotificationAsync({
     content: {
       title: "You're near the venue! 🎟️",
@@ -165,9 +157,7 @@ export function useGeofence({
   radiusMeters = DEFAULT_RADIUS_M,
 }: UseGeofenceOptions): UseGeofenceResult {
   const [status, setStatus] = useState<GeofenceStatus>('idle');
-  const [geofencedEventIds, setGeofencedEventIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const [geofencedEventIds, setGeofencedEventIds] = useState<Set<string>>(new Set());
   const [nearbyEventId, setNearbyEventId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -198,20 +188,18 @@ export function useGeofence({
       eventTitle: t.eventTitle,
     }));
 
-    await locationService.registerGeofences(venues);
-    setGeofencedEventIds(new Set(current.map((t) => t.eventId)));
+    const registered = await locationService.registerGeofences(venues);
+    // When background permission is denied the OS never registers any region,
+    // so reporting ids as geofenced would make consumers render proximity UI
+    // for alerts that cannot fire (issue #1463).
+    setGeofencedEventIds(registered ? new Set(current.map((t) => t.eventId)) : new Set());
 
-    // Server sync — fire-and-forget; best effort.
-    if (pushToken && authToken) {
+    // Server sync — fire-and-forget; best effort. Skipped when the OS refused
+    // to register regions for the same reason.
+    if (registered && pushToken && authToken) {
       for (const t of current) {
-        registerGeofenceOnServer(
-          t.eventId,
-          pushToken,
-          t.venueLat,
-          t.venueLng,
-          authToken,
-        ).catch((e) =>
-          console.warn(`[useGeofence] Server sync failed (${t.eventId}):`, e),
+        registerGeofenceOnServer(t.eventId, pushToken, t.venueLat, t.venueLng, authToken).catch(
+          (e) => console.warn(`[useGeofence] Server sync failed (${t.eventId}):`, e)
         );
       }
     }
@@ -221,60 +209,75 @@ export function useGeofence({
   // Initialise
   // ------------------------------------------------------------------
 
-  const initialise = useCallback(async () => {
-    setStatus('initialising');
-    setErrorMessage(null);
+  const initialise = useCallback(
+    async (isCancelled: () => boolean = () => false) => {
+      setStatus('initialising');
+      setErrorMessage(null);
 
-    try {
-      await ensureNotificationSetup();
-      await locationService.init();
-      await registerGeofences();
+      try {
+        await ensureNotificationSetup();
+        if (isCancelled()) return;
 
-      // Subscribe to OS geofence-enter events.
-      unsubscribeRef.current?.();
-      unsubscribeRef.current = locationService.onGeofenceEnter(
-        async (eventId) => {
+        await locationService.init();
+        if (isCancelled()) {
+          // The hook unmounted while permissions were being requested; make sure
+          // init() cannot leave regions behind after cleanup already ran.
+          await locationService.clearGeofences().catch(() => {});
+          return;
+        }
+
+        await registerGeofences();
+        if (isCancelled()) {
+          await locationService.clearGeofences().catch(() => {});
+          return;
+        }
+
+        // Subscribe to OS geofence-enter events.
+        unsubscribeRef.current?.();
+        unsubscribeRef.current = locationService.onGeofenceEnter(async (eventId) => {
           const ticket = ticketsRef.current.find((t) => t.eventId === eventId);
           if (!ticket) return;
           setNearbyEventId(eventId);
-          await scheduleProximityNotification(
-            eventId,
-            ticket.eventTitle,
-          ).catch((e) =>
-            console.warn('[useGeofence] Notification failed:', e),
+          await scheduleProximityNotification(eventId, ticket.eventTitle).catch((e) =>
+            console.warn('[useGeofence] Notification failed:', e)
           );
-        },
-      );
+        });
 
-      setStatus('active');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setStatus(msg.includes('PERMISSION_DENIED') ? 'permission-denied' : 'error');
-      setErrorMessage(msg);
-      console.error('[useGeofence] Init failed:', err);
-    }
-  }, [registerGeofences]);
+        setStatus('active');
+      } catch (err: unknown) {
+        if (isCancelled()) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        // `locationService` reports denials through `LocationError.code`; the
+        // message is human-readable and never contains the code, so matching on
+        // the message made the `permission-denied` state unreachable (#1463).
+        const permissionDenied =
+          err instanceof LocationError && err.code.startsWith('PERMISSION_DENIED');
+        setStatus(permissionDenied ? 'permission-denied' : 'error');
+        setErrorMessage(msg);
+        console.error('[useGeofence] Init failed:', err);
+      }
+    },
+    [registerGeofences]
+  );
 
   // ------------------------------------------------------------------
   // Notification response listener (quick-action buttons)
   // ------------------------------------------------------------------
 
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
-        const { actionIdentifier, notification } = response;
-        const data = notification.request.content.data as Record<string, unknown>;
-        const eventId = data?.eventId as string | undefined;
-        if (!eventId) return;
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const { actionIdentifier, notification } = response;
+      const data = notification.request.content.data as Record<string, unknown>;
+      const eventId = data?.eventId as string | undefined;
+      if (!eventId) return;
 
-        if (actionIdentifier === 'SHOW_TICKET') {
-          setNearbyEventId(eventId);
-        } else if (actionIdentifier === 'GATE_MAP') {
-          // Prefix signals gate-map intent to the navigation layer.
-          setNearbyEventId(`gate-map::${eventId}`);
-        }
-      },
-    );
+      if (actionIdentifier === 'SHOW_TICKET') {
+        setNearbyEventId(eventId);
+      } else if (actionIdentifier === 'GATE_MAP') {
+        // Prefix signals gate-map intent to the navigation layer.
+        setNearbyEventId(`gate-map::${eventId}`);
+      }
+    });
     return () => sub.remove();
   }, []);
 
@@ -283,8 +286,10 @@ export function useGeofence({
   // ------------------------------------------------------------------
 
   useEffect(() => {
-    initialise();
+    let cancelled = false;
+    initialise(() => cancelled);
     return () => {
+      cancelled = true;
       unsubscribeRef.current?.();
       locationService.clearGeofences().catch(() => {});
     };
@@ -294,9 +299,7 @@ export function useGeofence({
   // Re-register when ticket list changes after first init.
   useEffect(() => {
     if (status === 'active') {
-      registerGeofences().catch((e) =>
-        console.warn('[useGeofence] Re-registration failed:', e),
-      );
+      registerGeofences().catch((e) => console.warn('[useGeofence] Re-registration failed:', e));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickets]);
