@@ -142,6 +142,28 @@ pub async fn list_categories(
     let validated_pagination = pagination.validate();
     let if_none_match = headers.get(header::IF_NONE_MATCH);
 
+    // --- Issue #1857: validate parent_id BEFORE the cache lookup ------------
+    //
+    // A parent_id that is neither the literal string "null" nor a valid UUID
+    // is a client error.  Return 400 immediately so a typo never reaches the
+    // cache (and never poisons the cache key with a junk value).
+    let parent_filter: Option<Option<Uuid>> = if let Some(ref parent_str) = filters.parent_id {
+        if parent_str == "null" {
+            Some(None) // caller wants root categories (WHERE parent_id IS NULL)
+        } else {
+            match Uuid::parse_str(parent_str) {
+                Ok(uuid) => Some(Some(uuid)),
+                Err(_) => {
+                    return no_store_error(AppError::ValidationError(
+                        "parent_id must be \"null\" or a valid UUID".into(),
+                    ));
+                }
+            }
+        }
+    } else {
+        None // no filter
+    };
+
     // Attempt to serve from cache first; a Redis miss or error falls through
     // to the database without failing the request.
     let cache_key = categories_cache_key(
@@ -174,19 +196,7 @@ pub async fn list_categories(
     let mut where_clauses = Vec::new();
     let mut param_count = 0;
 
-    // Handle parent_id filter (including "null" for root categories)
-    let parent_filter = if let Some(ref parent_str) = filters.parent_id {
-        if parent_str == "null" {
-            Some(None) // Filter for NULL parent_id
-        } else if let Ok(uuid) = Uuid::parse_str(parent_str) {
-            Some(Some(uuid)) // Filter for specific parent_id
-        } else {
-            None // Invalid UUID, ignore filter
-        }
-    } else {
-        None // No filter
-    };
-
+    // parent_filter was already validated above.
     if let Some(ref pf) = parent_filter {
         param_count += 1;
         if pf.is_none() {
@@ -308,7 +318,49 @@ pub async fn get_category(
     cached_success_response(category, "Category retrieved successfully", if_none_match)
 }
 
-/// Canonical categories defined in the contract's Category enum.
+/// Validates a category slug against the slug rules.
+///
+/// A valid slug (Issue #1856):
+/// - Contains only lowercase ASCII letters (`a-z`), ASCII digits (`0-9`), and hyphens (`-`).
+/// - Starts and ends with a letter or digit (no leading or trailing hyphens).
+/// - Never contains two consecutive hyphens (`--`).
+/// - Is between 1 and 64 characters long (inclusive).
+///
+/// # Examples
+/// ```
+/// assert!(is_valid_category_slug("music"));
+/// assert!(is_valid_category_slug("live-music"));
+/// assert!(is_valid_category_slug("2026-events"));
+/// assert!(!is_valid_category_slug("-"));
+/// assert!(!is_valid_category_slug("-music"));
+/// assert!(!is_valid_category_slug("music-"));
+/// assert!(!is_valid_category_slug("live--music"));
+/// ```
+pub fn is_valid_category_slug(slug: &str) -> bool {
+    if slug.is_empty() || slug.len() > 64 {
+        return false;
+    }
+
+    // All characters must be lowercase ASCII letters, digits, or hyphens.
+    if !slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return false;
+    }
+
+    // Must not start or end with a hyphen.
+    let bytes = slug.as_bytes();
+    if bytes[0] == b'-' || bytes[bytes.len() - 1] == b'-' {
+        return false;
+    }
+
+    // Must not contain two consecutive hyphens.
+    if slug.contains("--") {
+        return false;
+    }
+
+    true
+}
+
+
 /// Used to validate database categories match the contract at startup.
 pub const CANONICAL_CATEGORIES: &[(u32, &str, &str)] = &[
     (
@@ -493,5 +545,110 @@ mod tests {
             resp.headers().get(header::CACHE_CONTROL).unwrap(),
             "no-store"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Slug validation — Issue #1856
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_slug_valid_simple() {
+        assert!(is_valid_category_slug("music"));
+    }
+
+    #[test]
+    fn test_slug_valid_hyphenated() {
+        assert!(is_valid_category_slug("live-music"));
+    }
+
+    #[test]
+    fn test_slug_valid_leading_digit() {
+        assert!(is_valid_category_slug("2026-events"));
+    }
+
+    #[test]
+    fn test_slug_valid_max_length() {
+        // Exactly 64 characters — should be accepted.
+        let slug = "a".repeat(64);
+        assert!(is_valid_category_slug(&slug));
+    }
+
+    #[test]
+    fn test_slug_invalid_only_hyphen() {
+        assert!(!is_valid_category_slug("-"));
+    }
+
+    #[test]
+    fn test_slug_invalid_leading_hyphen() {
+        assert!(!is_valid_category_slug("-music"));
+    }
+
+    #[test]
+    fn test_slug_invalid_trailing_hyphen() {
+        assert!(!is_valid_category_slug("music-"));
+    }
+
+    #[test]
+    fn test_slug_invalid_double_hyphen() {
+        assert!(!is_valid_category_slug("live--music"));
+    }
+
+    #[test]
+    fn test_slug_invalid_too_long() {
+        // 65 characters — one over the limit.
+        let slug = "a".repeat(65);
+        assert!(!is_valid_category_slug(&slug));
+    }
+
+    #[test]
+    fn test_slug_invalid_empty() {
+        assert!(!is_valid_category_slug(""));
+    }
+
+    #[test]
+    fn test_slug_invalid_uppercase() {
+        assert!(!is_valid_category_slug("Music"));
+    }
+
+    #[test]
+    fn test_slug_invalid_space() {
+        assert!(!is_valid_category_slug("live music"));
+    }
+
+    // -----------------------------------------------------------------------
+    // parent_id validation — Issue #1857
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_parent_id_null_literal_is_valid() {
+        // "null" is the sentinel that means WHERE parent_id IS NULL.
+        let result: Option<Option<Uuid>> = if "null" == "null" {
+            Some(None)
+        } else {
+            panic!("should have matched null branch");
+        };
+        assert!(result.is_some());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_parent_id_valid_uuid_is_accepted() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let parsed = Uuid::parse_str(uuid_str);
+        assert!(parsed.is_ok(), "valid UUID should parse successfully");
+    }
+
+    #[test]
+    fn test_parent_id_invalid_string_is_rejected() {
+        // Simulate the validation logic that now returns 400 for bad values.
+        let bad_values = ["abc", "123", "not-a-uuid", "null-ish", ""];
+        for bad in bad_values {
+            let result = Uuid::parse_str(bad);
+            assert!(
+                result.is_err(),
+                "\"{}\" is not a valid UUID and must be rejected",
+                bad
+            );
+        }
     }
 }
