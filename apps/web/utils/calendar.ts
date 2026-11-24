@@ -38,34 +38,37 @@ export function formatToUtcString(date: Date): string {
 
 /**
  * Parses an event date string or Date object into a valid Date.
- * Falls back to current date if parsing fails.
+ * Returns null if parsing fails or input is missing.
  */
-export function parseEventDate(dateInput?: string | Date): Date {
-  if (!dateInput) return new Date();
-  if (dateInput instanceof Date) return isNaN(dateInput.getTime()) ? new Date() : dateInput;
+export function parseEventDate(dateInput?: string | Date | null): Date | null {
+  if (!dateInput) return null;
+  if (dateInput instanceof Date) return isNaN(dateInput.getTime()) ? null : dateInput;
 
   const parsed = new Date(dateInput);
   if (!isNaN(parsed.getTime())) {
     return parsed;
   }
-  return new Date();
+  return null;
 }
 
 /**
  * Builds a spec-compliant VCALENDAR / VEVENT .ics string from an event object.
+ * Returns null if start date is missing or invalid.
  */
-export function buildIcsFile(event: CalendarEventInput): string {
+export function buildIcsFile(event: CalendarEventInput): string | null {
   const startDate = parseEventDate(event.startsAt || event.date);
-  const endDate = event.endsAt
-    ? parseEventDate(event.endsAt)
-    : new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+  if (!startDate) return null;
+
+  const parsedEndDate = event.endsAt ? parseEventDate(event.endsAt) : null;
+  const endDate =
+    parsedEndDate ?? new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
 
   const now = new Date();
   const dtStamp = formatToUtcString(now);
   const dtStart = formatToUtcString(startDate);
   const dtEnd = formatToUtcString(endDate);
   const eventKey =
-    event.id ?? `agora-event-${startDate.getTime()}-${encodeURIComponent(event.title)}`;
+    event.id ?? `agora-event-${startDate.getTime()}-${encodeURIComponent(event.title || "")}`;
   const uid = `${eventKey}@agora.events`;
 
   const summary = escapeIcsText(event.title || "Agora Event");
@@ -95,12 +98,15 @@ export function buildIcsFile(event: CalendarEventInput): string {
 
 /**
  * Generates a prefilled Google Calendar creation URL from an event object.
+ * Returns null if start date is missing or invalid.
  */
-export function buildGoogleCalendarUrl(event: CalendarEventInput): string {
+export function buildGoogleCalendarUrl(event: CalendarEventInput): string | null {
   const startDate = parseEventDate(event.startsAt || event.date);
-  const endDate = event.endsAt
-    ? parseEventDate(event.endsAt)
-    : new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+  if (!startDate) return null;
+
+  const parsedEndDate = event.endsAt ? parseEventDate(event.endsAt) : null;
+  const endDate =
+    parsedEndDate ?? new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
 
   const dtStart = formatToUtcString(startDate);
   const dtEnd = formatToUtcString(endDate);
