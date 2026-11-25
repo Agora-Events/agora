@@ -56,10 +56,18 @@ fn cached_success_response<T: Serialize>(
     };
 
     let etag = weak_etag(&json);
-    if if_none_match
-        .map(|v| v.as_bytes() == etag.as_bytes())
-        .unwrap_or(false)
-    {
+    if if_none_match.is_some_and(|value| {
+        let value = value.as_bytes().trim_ascii();
+        let current = etag
+            .as_bytes()
+            .strip_prefix(b"W/")
+            .unwrap_or(etag.as_bytes());
+        value == b"*"
+            || value.split(|&byte| byte == b',').any(|entry| {
+                let entry = entry.trim_ascii();
+                entry.strip_prefix(b"W/").unwrap_or(entry) == current
+            })
+    }) {
         return Response::builder()
             .status(StatusCode::NOT_MODIFIED)
             .header(header::CACHE_CONTROL, CATEGORY_CACHE_CONTROL)
@@ -349,11 +357,7 @@ pub async fn list_categories(
         tracing::warn!("Failed to cache categories: {:?}", e);
     }
 
-    cached_success_response(
-        response,
-        "Categories retrieved successfully",
-        if_none_match,
-    )
+    cached_success_response(response, "Categories retrieved successfully", if_none_match)
 }
 
 /// Get a single category by ID
@@ -608,8 +612,29 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_cached_success_response_mismatched_etag_returns_200() {
+    #[tokio::test]
+    async fn test_cached_success_response_handles_list_strong_tag_and_wildcard() {
+        let first = cached_success_response(vec![1, 2, 3], "ok", None);
+        let etag = first.headers()[header::ETAG].to_str().unwrap();
+        let strong = etag.strip_prefix("W/").unwrap();
+        for validator in [
+            format!(r#""other",  {etag} , "last""#),
+            strong.to_owned(),
+            "*".into(),
+        ] {
+            let value = HeaderValue::from_str(&validator).unwrap();
+            let resp = cached_success_response(vec![1, 2, 3], "ok", Some(&value));
+            assert_eq!(resp.status(), StatusCode::NOT_MODIFIED, "{validator}");
+            assert_eq!(resp.headers()[header::ETAG], etag);
+            assert!(axum::body::to_bytes(resp.into_body(), 0)
+                .await
+                .unwrap()
+                .is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cached_success_response_mismatched_etag_returns_200() {
         let first = cached_success_response(vec![1i32, 2, 3], "ok", None);
         let etag = first.headers().get(header::ETAG).unwrap().clone();
         let other = HeaderValue::from_static("W/\"different-etag\"");
@@ -617,6 +642,12 @@ mod tests {
         let resp = cached_success_response(vec![1i32, 2, 3], "ok", Some(&other));
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get(header::ETAG).unwrap(), &etag);
+        let expected = axum::body::to_bytes(first.into_body(), 1024).await.unwrap();
+        assert!(!expected.is_empty());
+        assert_eq!(
+            axum::body::to_bytes(resp.into_body(), 1024).await.unwrap(),
+            expected
+        );
     }
 
     #[test]
