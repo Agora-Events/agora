@@ -62,7 +62,8 @@ describe("AddToCalendar", () => {
 
     const link = screen.getByRole("link", { name: /google calendar/i });
     const expected = buildGoogleCalendarUrl(event);
-    expect(link).toHaveAttribute("href", expected);
+    expect(expected).not.toBeNull();
+    expect(link).toHaveAttribute("href", expected!);
     expect(link.getAttribute("href")).toContain("text=Stellar+Asado");
     expect(link.getAttribute("href")).toContain("location=Buenos+Aires");
     expect(link.getAttribute("href")).toContain(
@@ -95,5 +96,52 @@ describe("AddToCalendar", () => {
     );
 
     expect(container.firstChild).toHaveClass("custom-calendar-class");
+  });
+
+  it("disables the button and hides calendar actions when start date is invalid", () => {
+    render(
+      <AddToCalendar
+        event={{
+          id: 99,
+          title: "Invalid Event",
+          startsAt: "invalid-date",
+        }}
+      />
+    );
+
+    const button = screen.getByRole("button", { name: /add to calendar/i });
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+
+    expect(
+      screen.queryByRole("link", { name: /google calendar/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /apple \/ outlook \(\.ics\)/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables the button and hides calendar actions when date is missing", () => {
+    render(
+      <AddToCalendar
+        event={{
+          id: 100,
+          title: "Missing Date Event",
+        }}
+      />
+    );
+
+    const button = screen.getByRole("button", { name: /add to calendar/i });
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+
+    expect(
+      screen.queryByRole("link", { name: /google calendar/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /apple \/ outlook \(\.ics\)/i })
+    ).not.toBeInTheDocument();
   });
 });

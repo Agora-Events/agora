@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   escapeIcsText,
   formatToUtcString,
+  parseEventDate,
   buildIcsFile,
   buildGoogleCalendarUrl,
 } from "../utils/calendar";
@@ -26,6 +27,36 @@ describe("calendar utils", () => {
     });
   });
 
+  describe("parseEventDate", () => {
+    it("returns a Date for valid ISO string", () => {
+      const parsed = parseEventDate("2026-11-17T18:00:00Z");
+      expect(parsed).toBeInstanceOf(Date);
+      expect(parsed?.toISOString()).toBe("2026-11-17T18:00:00.000Z");
+    });
+
+    it("returns the Date instance for valid Date", () => {
+      const date = new Date(Date.UTC(2026, 10, 17, 18, 0, 0));
+      const parsed = parseEventDate(date);
+      expect(parsed).toBe(date);
+    });
+
+    it("returns null for missing input", () => {
+      expect(parseEventDate()).toBeNull();
+      expect(parseEventDate(undefined)).toBeNull();
+      expect(parseEventDate("")).toBeNull();
+    });
+
+    it("returns null for invalid string", () => {
+      expect(parseEventDate("not-a-date")).toBeNull();
+      expect(parseEventDate("invalid")).toBeNull();
+    });
+
+    it("returns null for invalid Date instance", () => {
+      expect(parseEventDate(new Date(NaN))).toBeNull();
+      expect(parseEventDate(new Date("invalid"))).toBeNull();
+    });
+  });
+
   describe("buildIcsFile", () => {
     it("emits a spec-compliant VCALENDAR and VEVENT", () => {
       const event = {
@@ -37,6 +68,7 @@ describe("calendar utils", () => {
       };
 
       const ics = buildIcsFile(event);
+      expect(ics).not.toBeNull();
       expect(ics).toContain("BEGIN:VCALENDAR");
       expect(ics).toContain("VERSION:2.0");
       expect(ics).toContain("BEGIN:VEVENT");
@@ -55,8 +87,8 @@ describe("calendar utils", () => {
       const original = buildIcsFile(event);
       const rescheduled = buildIcsFile({ ...event, startsAt: "2026-11-18T10:00:00Z" });
 
-      expect(original.split("\r\n")).toContain(`UID:${id}@agora.events`);
-      expect(rescheduled.split("\r\n")).toContain(`UID:${id}@agora.events`);
+      expect(original!.split("\r\n")).toContain(`UID:${id}@agora.events`);
+      expect(rescheduled!.split("\r\n")).toContain(`UID:${id}@agora.events`);
       expect(original).toContain("DTSTART:20261117T100000Z");
       expect(rescheduled).toContain("DTSTART:20261118T100000Z");
     });
@@ -64,12 +96,12 @@ describe("calendar utils", () => {
     it("uses title and start time to distinguish events without IDs", () => {
       const event = { title: "Morning workshop", startsAt: "2026-11-17T10:00:00Z" };
       const getUid = (ics: string) => ics.split("\r\n").find((line) => line.startsWith("UID:"));
-      const uid = getUid(buildIcsFile(event));
+      const uid = getUid(buildIcsFile(event)!);
 
       expect(uid).toBeDefined();
-      expect(getUid(buildIcsFile(event))).toBe(uid);
-      expect(getUid(buildIcsFile({ ...event, title: "Builder meetup" }))).not.toBe(uid);
-      expect(getUid(buildIcsFile({ ...event, startsAt: "2026-11-17T11:00:00Z" }))).not.toBe(uid);
+      expect(getUid(buildIcsFile(event)!)).toBe(uid);
+      expect(getUid(buildIcsFile({ ...event, title: "Builder meetup" })!)).not.toBe(uid);
+      expect(getUid(buildIcsFile({ ...event, startsAt: "2026-11-17T11:00:00Z" })!)).not.toBe(uid);
     });
 
     it("uses explicit end time when provided", () => {
@@ -82,6 +114,25 @@ describe("calendar utils", () => {
       const ics = buildIcsFile(event);
       expect(ics).toContain("DTSTART:20261117T100000Z");
       expect(ics).toContain("DTEND:20261117T150000Z");
+    });
+
+    it("returns null when start date is missing or invalid", () => {
+      expect(buildIcsFile({ title: "No start date" })).toBeNull();
+      expect(buildIcsFile({ title: "Invalid start date", startsAt: "invalid" })).toBeNull();
+      expect(buildIcsFile({ title: "Empty start date", startsAt: "" })).toBeNull();
+    });
+
+    it("falls back to start plus two hours when end date is invalid", () => {
+      const event = {
+        title: "Invalid End",
+        startsAt: "2026-11-17T10:00:00Z",
+        endsAt: "invalid-date",
+      };
+
+      const ics = buildIcsFile(event);
+      expect(ics).not.toBeNull();
+      expect(ics).toContain("DTSTART:20261117T100000Z");
+      expect(ics).toContain("DTEND:20261117T120000Z");
     });
   });
 
@@ -100,6 +151,24 @@ describe("calendar utils", () => {
       expect(url).toContain("location=Buenos+Aires");
       expect(url).toContain("details=Kickoff+event");
       expect(url).toContain("dates=20261117T180000Z%2F20261117T200000Z");
+    });
+
+    it("returns null when start date is missing or invalid", () => {
+      expect(buildGoogleCalendarUrl({ title: "No start date" })).toBeNull();
+      expect(buildGoogleCalendarUrl({ title: "Invalid start date", startsAt: "invalid" })).toBeNull();
+      expect(buildGoogleCalendarUrl({ title: "Empty start date", startsAt: "" })).toBeNull();
+    });
+
+    it("falls back to start plus two hours when end date is invalid", () => {
+      const event = {
+        title: "Invalid End",
+        startsAt: "2026-11-17T10:00:00Z",
+        endsAt: "invalid-date",
+      };
+
+      const url = buildGoogleCalendarUrl(event);
+      expect(url).not.toBeNull();
+      expect(url).toContain("dates=20261117T100000Z%2F20261117T120000Z");
     });
   });
 });
