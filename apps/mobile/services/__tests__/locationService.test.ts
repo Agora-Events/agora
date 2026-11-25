@@ -128,10 +128,11 @@ describe('locationService — permission denied', () => {
     const { locationService } = loadModule();
 
     await locationService.init();
-    await locationService.registerGeofences([
+    const registered = await locationService.registerGeofences([
       { eventId: 'evt-1', latitude: 1, longitude: 2, radiusMeters: 150 },
     ]);
 
+    expect(registered).toBe(false);
     expect(mockLocation.startLocationUpdatesAsync).not.toHaveBeenCalled();
     expect(mockLocation.startGeofencingAsync).not.toHaveBeenCalled();
   });
@@ -180,9 +181,11 @@ describe('locationService — background task registration', () => {
     const { locationService, GEOFENCE_TASK_NAME } = loadModule();
 
     await locationService.init();
-    await locationService.registerGeofences([
-      { eventId: 'evt-1', latitude: 6.5, longitude: 3.3, radiusMeters: 150 },
-    ]);
+    await expect(
+      locationService.registerGeofences([
+        { eventId: 'evt-1', latitude: 6.5, longitude: 3.3, radiusMeters: 150 },
+      ])
+    ).resolves.toBe(true);
 
     expect(mockLocation.startGeofencingAsync).toHaveBeenCalledWith(GEOFENCE_TASK_NAME, [
       {

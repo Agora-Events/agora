@@ -188,17 +188,22 @@ class LocationService {
   /**
    * Register OS-level 150 m geofence regions for all provided venues.
    * Replaces any previously registered regions atomically.
+   *
+   * @returns `true` when the OS region set was applied (or cleared), `false`
+   * when it was skipped because background permission is not granted. Callers
+   * need this to avoid reporting venues as geofenced when nothing is actually
+   * monitored.
    */
-  async registerGeofences(venues: VenueGeofence[]): Promise<void> {
+  async registerGeofences(venues: VenueGeofence[]): Promise<boolean> {
     if (!this.backgroundGranted) {
       console.warn('[LocationService] Background permission required for OS geofences.');
-      return;
+      return false;
     }
 
     if (venues.length === 0) {
       const running = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK_NAME);
       if (running) await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
-      return;
+      return true;
     }
 
     const regions: Location.LocationRegion[] = venues.map((v) => ({
@@ -212,6 +217,7 @@ class LocationService {
 
     await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, regions);
     console.info(`[LocationService] Registered ${regions.length} geofence(s).`);
+    return true;
   }
 
   async clearGeofences(): Promise<void> {
