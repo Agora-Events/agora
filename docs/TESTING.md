@@ -54,9 +54,9 @@ All backend API calls are stubbed with `cy.intercept()` — no live database req
 
 Visual snapshot tests guard the **Neubrutalist design system** (hard borders, specific drop-shadow offsets, accent colour tokens) against accidental CSS regressions.
 
-Four core components are tested in both **light** and **dark** mode, producing **8 base snapshots**:
+Five screenshot cases cover four core components (the TicketModal purchase and waitlist states are separate cases). Each case runs in both **light** and **dark** Playwright projects (`chromium-light` and `chromium-dark`), producing **10 base snapshots** (5 × 2):
 
-| Component | Light snapshot | Dark snapshot |
+| Component / state | Light snapshot name | Dark snapshot name |
 |---|---|---|
 | `Button` | `button-light.png` | `button-dark.png` |
 | `EventCard` | `event-card-light.png` | `event-card-dark.png` |
@@ -64,7 +64,9 @@ Four core components are tested in both **light** and **dark** mode, producing *
 | `TicketModal` (purchase) | `ticket-modal-purchase-light.png` | `ticket-modal-purchase-dark.png` |
 | `TicketModal` (waitlist) | `ticket-modal-waitlist-light.png` | `ticket-modal-waitlist-dark.png` |
 
-Snapshots are committed to `tests/visual/__snapshots__/` and diff-visible in pull request reviews.
+These are the names passed to `toHaveScreenshot()`. Playwright adds the project and platform suffixes to the stored baseline filenames. For this suite, baselines live beside the spec in `apps/web/tests/visual/neubrutalist-components.spec.ts-snapshots/`.
+
+Commit regenerated baseline images in the same PR as any intentional visual change so reviewers can diff them directly in GitHub.
 
 ### Setup
 
@@ -121,7 +123,7 @@ The `Neubrutalist design tokens – runtime assertion` test group will also fail
 
 ### Fixture page
 
-The fixture page (`/apps/web/app/__visual_fixtures__/page.tsx`) renders all four components in isolation using static props — no authentication, no API calls, no routing dependencies. It is never linked from the public app and is excluded from the sitemap.
+The fixture page is served at `/visual-fixtures` (implemented in `apps/web/app/__visual_fixtures__/page.tsx`). It renders isolated fixtures for Button, EventCard, RegistrationBox, and the TicketModal purchase and waitlist states using static props — no authentication, no API calls, no routing dependencies. It is never linked from the public app and is excluded from the sitemap.
 
 ---
 
