@@ -208,4 +208,126 @@ describe('useStaking', () => {
     expect(mockUnstake).toHaveBeenCalledTimes(1);
     expect(mockClaim).toHaveBeenCalledTimes(1);
   });
+
+  it('sets configError and resets configLoading when fetchStakingConfig rejects', async () => {
+    mockFetchConfig.mockRejectedValueOnce(new Error('RPC unavailable'));
+
+    const { result } = renderHook(() => useStaking(PUBLIC_KEY));
+
+    await waitFor(() => expect(result.current.configLoading).toBe(false));
+    expect(result.current.config).toBeNull();
+    expect(result.current.configError).toBe('RPC unavailable');
+  });
+
+  it('uses fallback configError message when fetchStakingConfig rejects with a non-Error value', async () => {
+    mockFetchConfig.mockRejectedValueOnce('timeout');
+
+    const { result } = renderHook(() => useStaking(PUBLIC_KEY));
+
+    await waitFor(() => expect(result.current.configLoading).toBe(false));
+    expect(result.current.configError).toBe('Failed to load staking configuration.');
+  });
+
+  it('sets stateError and resets loading flags when organizer staking data fails to load', async () => {
+    mockFetchState.mockRejectedValueOnce(new Error('Contract query failed'));
+
+    const { result } = renderHook(() => useStaking(PUBLIC_KEY));
+
+    await waitFor(() => expect(result.current.stateLoading).toBe(false));
+    expect(result.current.historyLoading).toBe(false);
+    expect(result.current.stateError).toBe('Contract query failed');
+    expect(result.current.stakingState).toBeNull();
+
+    // A subsequent refresh clears the previous stateError on success.
+    mockFetchState.mockResolvedValueOnce(stakedState);
+    mockFetchHistory.mockResolvedValueOnce([stakeTx]);
+    act(() => {
+      result.current.refresh();
+    });
+
+    await waitFor(() => expect(result.current.stakingState).toEqual(stakedState));
+    expect(result.current.stateError).toBeNull();
+    expect(result.current.history).toEqual([stakeTx]);
+  });
+
+  it('uses fallback stateError message when organizer data fetch rejects with a non-Error value', async () => {
+    mockFetchHistory.mockRejectedValueOnce('unexpected failure');
+
+    const { result } = renderHook(() => useStaking(PUBLIC_KEY));
+
+    await waitFor(() => expect(result.current.stateLoading).toBe(false));
+    expect(result.current.historyLoading).toBe(false);
+    expect(result.current.stateError).toBe('Failed to load organizer staking data.');
+  });
+
+  it('does not refresh when unstake or claim fails or rejects', async () => {
+    const { result } = renderHook(() => useStaking(PUBLIC_KEY));
+    await waitFor(() => expect(result.current.stateLoading).toBe(false));
+    mockFetchState.mockClear();
+    mockGetBalances.mockClear();
+
+    mockUnstake.mockResolvedValueOnce({ success: false, message: 'Lockup active' });
+    mockClaim.mockRejectedValueOnce(new Error('No rewards available'));
+
+    let unstakeResult: Awaited<ReturnType<typeof result.current.handleUnstake>> | undefined;
+    await act(async () => {
+      unstakeResult = await result.current.handleUnstake();
+    });
+    expect(unstakeResult).toEqual({ success: false, message: 'Lockup active' });
+
+    await act(async () => {
+      await expect(result.current.handleClaim()).rejects.toThrow('No rewards available');
+    });
+
+    expect(mockFetchState).not.toHaveBeenCalled();
+    expect(mockGetBalances).not.toHaveBeenCalled();
+    expect(result.current.stateLoading).toBe(false);
+    expect(result.current.historyLoading).toBe(false);
+  });
+
+  it('re-fetches config and organizer data when publicKey changes', async () => {
+    const SECOND_KEY = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+    const { result, rerender } = renderHook(({ key }: { key: string | null }) => useStaking(key), {
+      initialProps: { key: null as string | null },
+    });
+
+    await waitFor(() => expect(result.current.configLoading).toBe(false));
+    expect(mockFetchConfig).toHaveBeenCalledWith(undefined);
+    expect(mockFetchState).not.toHaveBeenCalled();
+
+    rerender({ key: SECOND_KEY });
+
+    await waitFor(() => expect(mockFetchState).toHaveBeenCalledWith(SECOND_KEY));
+    expect(mockFetchConfig).toHaveBeenCalledWith(SECOND_KEY);
+    expect(mockFetchHistory).toHaveBeenCalledWith(SECOND_KEY);
+    expect(mockGetBalances).toHaveBeenCalledWith(SECOND_KEY);
+  });
+
+  it('ignores stale config responses after unmount', async () => {
+    let resolveConfig: (value: { tokenAddress: string; minimumStake: number }) => void = () => {};
+    mockFetchConfig.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveConfig = resolve;
+        })
+    );
+
+    const { unmount } = renderHook(() => useStaking(null));
+    unmount();
+
+    await act(async () => {
+      resolveConfig({ tokenAddress: 'CUSDC', minimumStake: 100 });
+    });
+
+    expect(mockFetchConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to zero balance when wallet returns a non-numeric USDC balance', async () => {
+    mockGetBalances.mockResolvedValueOnce({ usdcBalance: 'not-a-number' } as any);
+
+    const { result } = renderHook(() => useStaking(PUBLIC_KEY));
+
+    await waitFor(() => expect(mockGetBalances).toHaveBeenCalledTimes(1));
+    expect(result.current.usdcBalance).toBe(0);
+  });
 });
